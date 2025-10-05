@@ -20,6 +20,14 @@ export default function Inventory() {
   const [categoryMode, setCategoryMode] = useState<'select' | 'new'>('select');
   const [lineMode, setLineMode] = useState<'select' | 'new'>('select');
   
+  // Sorting and filtering state
+  const [sortField, setSortField] = useState<string>('name');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [filterLine, setFilterLine] = useState<string>('all');
+  const [showFilters, setShowFilters] = useState(false);
+  
   // Get unique categories and lines from existing inventory
   const existingCategories = [...new Set(inventory
     .map(item => item.category)
@@ -173,6 +181,104 @@ export default function Inventory() {
     }
   };
 
+  // Sorting and filtering logic
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const filteredAndSortedInventory = inventory
+    .filter(item => {
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const matchesSearch = 
+          item.name.toLowerCase().includes(query) ||
+          item.sku.toLowerCase().includes(query) ||
+          item.supplierSKU.toLowerCase().includes(query) ||
+          item.description.toLowerCase().includes(query);
+        if (!matchesSearch) return false;
+      }
+      
+      // Category filter
+      if (filterCategory !== 'all' && item.category !== filterCategory) {
+        return false;
+      }
+      
+      // Line filter
+      if (filterLine !== 'all' && item.line !== filterLine) {
+        return false;
+      }
+      
+      return true;
+    })
+    .sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+      
+      switch (sortField) {
+        case 'name':
+          aValue = a.name.toLowerCase();
+          bValue = b.name.toLowerCase();
+          break;
+        case 'sku':
+          aValue = a.sku.toLowerCase();
+          bValue = b.sku.toLowerCase();
+          break;
+        case 'category':
+          aValue = a.category.toLowerCase();
+          bValue = b.category.toLowerCase();
+          break;
+        case 'line':
+          aValue = a.line.toLowerCase();
+          bValue = b.line.toLowerCase();
+          break;
+        case 'ecuadorStock':
+          aValue = a.ecuadorStock;
+          bValue = b.ecuadorStock;
+          break;
+        case 'usaStock':
+          aValue = a.usaStock;
+          bValue = b.usaStock;
+          break;
+        case 'totalStock':
+          aValue = getTotalStock(a);
+          bValue = getTotalStock(b);
+          break;
+        default:
+          aValue = a.name.toLowerCase();
+          bValue = b.name.toLowerCase();
+          break;
+      }
+      
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+  const SortIcon = ({ field }: { field: string }) => {
+    if (sortField !== field) {
+      return (
+        <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+        </svg>
+      );
+    }
+    return sortDirection === 'asc' ? (
+      <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+      </svg>
+    ) : (
+      <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    );
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
@@ -198,6 +304,101 @@ export default function Inventory() {
             Add Inventory Item
           </button>
         </div>
+      </div>
+
+      {/* Compact Search and Filter Controls */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {/* Compact Search Bar - Always Visible */}
+        <div className="p-3 flex items-center gap-3">
+          <div className="flex-1 relative">
+            <input
+              type="text"
+              placeholder="Search inventory (Name, SKU, Description...)"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm"
+            />
+            <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+          
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all text-sm font-medium ${
+              showFilters 
+                ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' 
+                : 'bg-white text-gray-700 border-gray-300 hover:border-[#4f0c1b]'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            Filters
+            {(filterCategory !== 'all' || filterLine !== 'all') && (
+              <span className="bg-white text-[#4f0c1b] rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+                {[filterCategory !== 'all', filterLine !== 'all'].filter(Boolean).length}
+              </span>
+            )}
+          </button>
+          
+          <span className="text-sm text-gray-600 whitespace-nowrap">
+            <span className="font-semibold text-gray-900">{filteredAndSortedInventory.length}</span> of {inventory.length}
+          </span>
+        </div>
+        
+        {/* Expandable Filters */}
+        {showFilters && (
+          <div className="border-t border-gray-200 p-4 bg-gray-50">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Category Filter */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Category</label>
+                <select
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                >
+                  <option value="all">All Categories</option>
+                  {existingCategories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+              
+              {/* Line Filter */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Line</label>
+                <select
+                  value={filterLine}
+                  onChange={(e) => setFilterLine(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                >
+                  <option value="all">All Lines</option>
+                  {existingLines.map(line => (
+                    <option key={line} value={line}>{line}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            
+            {/* Clear filters button */}
+            {(searchQuery || filterCategory !== 'all' || filterLine !== 'all') && (
+              <div className="mt-3 flex justify-end">
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setFilterCategory('all');
+                    setFilterLine('all');
+                  }}
+                  className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium text-sm"
+                >
+                  Clear All Filters
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Warning Banner for Items Needing Review */}
@@ -515,29 +716,71 @@ export default function Inventory() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Name
+                <th 
+                  onClick={() => handleSort('name')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    Name
+                    <SortIcon field="name" />
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  SKU
+                <th 
+                  onClick={() => handleSort('sku')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    SKU
+                    <SortIcon field="sku" />
+                  </div>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Barcode
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Category
+                <th 
+                  onClick={() => handleSort('category')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    Category
+                    <SortIcon field="category" />
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Line
+                <th 
+                  onClick={() => handleSort('line')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    Line
+                    <SortIcon field="line" />
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Ecuador
+                <th 
+                  onClick={() => handleSort('ecuadorStock')}
+                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1 justify-center">
+                    Ecuador
+                    <SortIcon field="ecuadorStock" />
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  USA
+                <th 
+                  onClick={() => handleSort('usaStock')}
+                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1 justify-center">
+                    USA
+                    <SortIcon field="usaStock" />
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Total
+                <th 
+                  onClick={() => handleSort('totalStock')}
+                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1 justify-center">
+                    Total
+                    <SortIcon field="totalStock" />
+                  </div>
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
@@ -545,14 +788,16 @@ export default function Inventory() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {inventory.length === 0 ? (
+              {filteredAndSortedInventory.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-6 py-12 text-center text-sm text-gray-500">
-                    No inventory items yet. Add your first item to get started.
+                    {inventory.length === 0 
+                      ? 'No inventory items yet. Add your first item to get started.'
+                      : 'No items match your filters. Try adjusting your search or filters.'}
                   </td>
                 </tr>
               ) : (
-                inventory.map((item) => {
+                filteredAndSortedInventory.map((item) => {
                   const needsReview = item.category.includes('NEEDS REVIEW');
                   return (
                     <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${needsReview ? 'bg-amber-50/30' : ''}`}>
