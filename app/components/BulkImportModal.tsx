@@ -13,7 +13,7 @@ interface BulkImportModalProps {
 type ImportStep = 'upload' | 'mapping' | 'preview' | 'complete';
 
 export default function BulkImportModal({ onClose }: BulkImportModalProps) {
-  const { addPurchaseOrdersBulk, inventory, addInventoryItemsBulk, updateInventoryItem, suppliers } = useInventory();
+  const { addPurchaseOrdersBulk, inventory, addInventoryItemsBulk, suppliers } = useInventory();
   const [step, setStep] = useState<ImportStep>('upload');
   const [parsedData, setParsedData] = useState<ParsedRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -79,9 +79,6 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
     const ordersToAdd: Omit<PurchaseOrder, 'id' | 'createdAt'>[] = [];
     const itemsToAdd: Omit<InventoryItem, 'id' | 'createdAt'>[] = [];
     const existingSkuSet = new Set(existingSkus);
-    
-    // Track inventory updates for stock additions
-    const inventoryUpdates = new Map<string, { ecuadorStock: number; usaStock: number }>();
 
     parsedData.forEach((row, index) => {
       // Extract mapped fields
@@ -160,28 +157,15 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
         totalLandedCost: quantity * costPerUnit,
         landedCostPerUnit: costPerUnit,
         purchaseDate: new Date(purchaseDate),
+        status: 'Ordered' as const,
       };
 
       ordersToAdd.push(orderData);
 
-      // Handle inventory updates
-      if (autoLinked && matchedInventoryItem) {
-        // Update existing inventory item's stock
-        const itemId = matchedInventoryItem.id;
-        const existing = inventoryUpdates.get(itemId) || { 
-          ecuadorStock: matchedInventoryItem.ecuadorStock, 
-          usaStock: matchedInventoryItem.usaStock 
-        };
-        
-        if (defaultDestination === 'Ecuador') {
-          existing.ecuadorStock += quantity;
-        } else {
-          existing.usaStock += quantity;
-        }
-        
-        inventoryUpdates.set(itemId, existing);
-      } else if (!autoLinked && !existingSkuSet.has(internalSku) && internalSku) {
-        // Create new inventory item
+      // DON'T update inventory immediately - only when order status changes to 'Verified'
+      // Just create new inventory items if needed (with 0 stock until verified)
+      if (!autoLinked && !existingSkuSet.has(internalSku) && internalSku) {
+        // Create new inventory item with 0 stock (will be updated when order is received)
         itemsToAdd.push({
           name: description,
           sku: internalSku,
@@ -190,29 +174,11 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
           line: line,
           description: description,
           images: [],
-          ecuadorStock: defaultDestination === 'Ecuador' ? quantity : 0,
-          usaStock: defaultDestination === 'USA' ? quantity : 0,
+          ecuadorStock: 0, // Start with 0 - will update when order is verified
+          usaStock: 0,
           linkedPurchaseOrders: [],
         });
         existingSkuSet.add(internalSku); // Prevent duplicates within this batch
-      } else if (existingSkuSet.has(internalSku)) {
-        // Item already exists (from existing inventory or earlier in this batch)
-        const existingItem = inventory.find(item => item.sku === internalSku);
-        if (existingItem) {
-          const itemId = existingItem.id;
-          const existing = inventoryUpdates.get(itemId) || { 
-            ecuadorStock: existingItem.ecuadorStock, 
-            usaStock: existingItem.usaStock 
-          };
-          
-          if (defaultDestination === 'Ecuador') {
-            existing.ecuadorStock += quantity;
-          } else {
-            existing.usaStock += quantity;
-          }
-          
-          inventoryUpdates.set(itemId, existing);
-        }
       }
 
       if (needsReview) {
@@ -226,10 +192,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
       addInventoryItemsBulk(itemsToAdd);
     }
     
-    // Update stock quantities for existing items
-    inventoryUpdates.forEach((stockUpdate, itemId) => {
-      updateInventoryItem(itemId, stockUpdate);
-    });
+    // DON'T update inventory stock yet - will be updated when orders are marked as 'Verified'
 
     setImportResults({ success: ordersToAdd.length, warnings: warningCount, autoLinked: autoLinkedCount });
     setStep('complete');

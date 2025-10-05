@@ -56,6 +56,7 @@ export default function PurchaseOrders() {
     tariffCost: 0,
     otherFees: 0,
     purchaseDate: new Date().toISOString().split('T')[0],
+    status: 'Ordered' as 'Ordered' | 'Shipped' | 'Received' | 'Verified',
   });
 
   // Auto-generate SKU when creating new item or when category/line changes during edit
@@ -180,15 +181,44 @@ export default function PurchaseOrders() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const totals = calculateTotals();
+    
+    // Prepare dates based on status
+    const statusDates: any = {};
+    if (formData.status === 'Received' || formData.status === 'Verified') {
+      statusDates.receivedDate = editingOrder?.receivedDate || new Date();
+    }
+    if (formData.status === 'Verified') {
+      statusDates.verifiedDate = editingOrder?.verifiedDate || new Date();
+    }
+    
     const orderData = {
       ...formData,
       ...totals,
+      ...statusDates,
       purchaseDate: new Date(formData.purchaseDate),
     };
 
     if (editingOrder) {
       // Update the purchase order
       const updatedOrder = { ...editingOrder, ...orderData };
+      
+      // Check if status changed to 'Verified' - update inventory stock (counted and confirmed)
+      const oldStatus = editingOrder.status;
+      const newStatus = formData.status;
+      if ((oldStatus === 'Ordered' || oldStatus === 'Shipped' || oldStatus === 'Received') && newStatus === 'Verified') {
+        // Add quantity to inventory
+        const inventoryItem = inventory.find(item => item.sku === updatedOrder.sku);
+        if (inventoryItem) {
+          const stockUpdate: any = {};
+          if (updatedOrder.destinationStock === 'Ecuador') {
+            stockUpdate.ecuadorStock = inventoryItem.ecuadorStock + updatedOrder.quantity;
+          } else {
+            stockUpdate.usaStock = inventoryItem.usaStock + updatedOrder.quantity;
+          }
+          updateInventoryItem(inventoryItem.id, stockUpdate);
+        }
+      }
+      
       updatePurchaseOrder(editingOrder.id, orderData);
       
       // Sync changes to inventory, passing original SKU if it changed
@@ -200,7 +230,7 @@ export default function PurchaseOrders() {
       const newOrder = { ...orderData, id: newOrderId, createdAt: new Date() };
       addPurchaseOrder(orderData);
 
-      // If creating new item, add it to inventory
+      // If creating new item, add it to inventory (with 0 stock - will update when received)
       if (isCreatingNewItem && formData.sku && formData.category && formData.line) {
         addInventoryItem({
           name: formData.description,
@@ -210,8 +240,8 @@ export default function PurchaseOrders() {
           line: formData.line,
           description: formData.description,
           images: formData.images,
-          ecuadorStock: formData.destinationStock === 'Ecuador' ? formData.quantity : 0,
-          usaStock: formData.destinationStock === 'USA' ? formData.quantity : 0,
+          ecuadorStock: 0, // Start with 0 - will update when order is verified
+          usaStock: 0,
           linkedPurchaseOrders: [newOrderId],
         });
       } else if (formData.sku) {
@@ -243,6 +273,7 @@ export default function PurchaseOrders() {
       tariffCost: 0,
       otherFees: 0,
       purchaseDate: new Date().toISOString().split('T')[0],
+      status: 'Ordered',
     });
     setEditingOrder(null);
     setIsFormOpen(false);
@@ -266,6 +297,39 @@ export default function PurchaseOrders() {
   const handleSkuChange = (newSku: string) => {
     setFormData({ ...formData, sku: newSku });
     setSkuManuallyEdited(true);
+  };
+
+  const handleStatusChange = (order: PurchaseOrder, newStatus: 'Ordered' | 'Shipped' | 'Received' | 'Verified') => {
+    const oldStatus = order.status;
+    const statusUpdate: any = { status: newStatus };
+    
+    // Add timestamp dates
+    if (newStatus === 'Received' || newStatus === 'Verified') {
+      if (!order.receivedDate) {
+        statusUpdate.receivedDate = new Date();
+      }
+    }
+    if (newStatus === 'Verified') {
+      if (!order.verifiedDate) {
+        statusUpdate.verifiedDate = new Date();
+      }
+    }
+    
+    // Update inventory stock ONLY when changing to 'Verified' (counted and confirmed)
+    if ((oldStatus === 'Ordered' || oldStatus === 'Shipped' || oldStatus === 'Received') && newStatus === 'Verified') {
+      const inventoryItem = inventory.find(item => item.sku === order.sku);
+      if (inventoryItem) {
+        const stockUpdate: any = {};
+        if (order.destinationStock === 'Ecuador') {
+          stockUpdate.ecuadorStock = inventoryItem.ecuadorStock + order.quantity;
+        } else {
+          stockUpdate.usaStock = inventoryItem.usaStock + order.quantity;
+        }
+        updateInventoryItem(inventoryItem.id, stockUpdate);
+      }
+    }
+    
+    updatePurchaseOrder(order.id, statusUpdate);
   };
 
   const handleEdit = (order: PurchaseOrder) => {
@@ -292,6 +356,7 @@ export default function PurchaseOrders() {
       tariffCost: order.tariffCost,
       otherFees: order.otherFees,
       purchaseDate: order.purchaseDate.toISOString().split('T')[0],
+      status: order.status || 'Ordered',
     });
     setIsFormOpen(true);
   };
@@ -860,6 +925,9 @@ export default function PurchaseOrders() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Destination
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Landed Cost/Unit
                 </th>
@@ -871,7 +939,7 @@ export default function PurchaseOrders() {
             <tbody className="divide-y divide-gray-100">
               {purchaseOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-sm text-gray-500">
+                  <td colSpan={9} className="px-6 py-12 text-center text-sm text-gray-500">
                     No purchase orders yet. Add your first purchase order to get started.
                   </td>
                 </tr>
@@ -907,6 +975,23 @@ export default function PurchaseOrders() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.sku}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.quantity}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.destinationStock}</td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <select
+                          value={order.status || 'Ordered'}
+                          onChange={(e) => handleStatusChange(order, e.target.value as any)}
+                          className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:ring-2 focus:ring-[#4f0c1b] ${
+                            order.status === 'Verified' ? 'bg-green-100 text-green-800' :
+                            order.status === 'Received' ? 'bg-blue-100 text-blue-800' :
+                            order.status === 'Shipped' ? 'bg-purple-100 text-purple-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}
+                        >
+                          <option value="Ordered">📦 Ordered</option>
+                          <option value="Shipped">🚚 Shipped</option>
+                          <option value="Received">📥 Received</option>
+                          <option value="Verified">✅ Verified</option>
+                        </select>
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         <div className="font-medium text-gray-900">${order.landedCostPerUnit.toFixed(2)}</div>
                         <div className="text-xs text-gray-500">Total: ${order.totalLandedCost.toFixed(2)}</div>

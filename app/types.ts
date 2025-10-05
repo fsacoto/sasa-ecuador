@@ -11,6 +11,8 @@ export interface Supplier {
   createdAt: Date;
 }
 
+export type PurchaseOrderStatus = 'Ordered' | 'Shipped' | 'Received' | 'Verified';
+
 export interface PurchaseOrder {
   id: string;
   invoice: string;
@@ -39,6 +41,9 @@ export interface PurchaseOrder {
   totalLandedCost: number;
   landedCostPerUnit: number;
   purchaseDate: Date;
+  status: PurchaseOrderStatus;
+  receivedDate?: Date;
+  verifiedDate?: Date;
   createdAt: Date;
 }
 
