@@ -27,7 +27,7 @@ export default function CatalogDownloadButton({
 
   useEffect(() => {
     setIsClient(true);
-    // Dynamically import PDF components only on client side
+    // Dynamically import PDF components only on client
     import('@react-pdf/renderer').then((module) => {
       setPDFDownloadLink(() => module.PDFDownloadLink);
     });
