@@ -8,6 +8,7 @@ import ProductCatalogModal from './ProductCatalogModal';
 import { generateUniqueSKU } from '../utils/skuGenerator';
 import { syncInventoryToOrders } from '../utils/syncUpdates';
 import { handleMultipleImageUpload, validateImageFile } from '../utils/imageUpload';
+import { generateBarcodeFromSKU, isValidBarcodeInput } from '../utils/barcodeGenerator';
 
 export default function Inventory() {
   const { inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, purchaseOrders, updatePurchaseOrder } = useInventory();
@@ -155,6 +156,21 @@ export default function Inventory() {
 
   const getTotalStock = (item: InventoryItem) => {
     return item.ecuadorStock + item.usaStock;
+  };
+
+  const handleGenerateBarcode = (item: InventoryItem) => {
+    if (!isValidBarcodeInput(item.sku)) {
+      alert('Invalid SKU format for barcode generation');
+      return;
+    }
+    
+    try {
+      const barcodeImage = generateBarcodeFromSKU(item.sku);
+      updateInventoryItem(item.id, { barcode: barcodeImage });
+    } catch (error) {
+      alert('Failed to generate barcode. Please try again.');
+      console.error('Barcode generation error:', error);
+    }
   };
 
   return (
@@ -506,6 +522,9 @@ export default function Inventory() {
                   SKU
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Barcode
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Category
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -528,7 +547,7 @@ export default function Inventory() {
             <tbody className="divide-y divide-gray-100">
               {inventory.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-sm text-gray-500">
+                  <td colSpan={9} className="px-6 py-12 text-center text-sm text-gray-500">
                     No inventory items yet. Add your first item to get started.
                   </td>
                 </tr>
@@ -572,7 +591,37 @@ export default function Inventory() {
                         </div>
                       </button>
                     </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.sku}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-mono">{item.sku}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {item.barcode ? (
+                          <div className="flex items-center gap-2">
+                            <img 
+                              src={item.barcode} 
+                              alt={`Barcode for ${item.sku}`}
+                              className="h-12 w-auto border border-gray-200 rounded"
+                            />
+                            <button
+                              onClick={() => handleGenerateBarcode(item)}
+                              className="text-gray-400 hover:text-[#4f0c1b] transition-colors"
+                              title="Regenerate barcode"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleGenerateBarcode(item)}
+                            className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium text-sm transition-colors flex items-center gap-1"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                            Generate
+                          </button>
+                        )}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                         {needsReview ? '-' : item.category}
                       </td>

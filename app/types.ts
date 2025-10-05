@@ -54,5 +54,6 @@ export interface InventoryItem {
   ecuadorStock: number;
   usaStock: number;
   images: string[]; // Array of image URLs or base64 data
+  barcode?: string; // Base64 encoded barcode image
   createdAt: Date;
 }

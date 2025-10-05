@@ -73,6 +73,20 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
               </div>
             )}
 
+            {/* Barcode */}
+            {item.barcode && (
+              <div>
+                <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Barcode</h3>
+                <div className="bg-gray-50 rounded-lg p-4 flex justify-center">
+                  <img 
+                    src={item.barcode} 
+                    alt={`Barcode for ${item.sku}`}
+                    className="h-20 w-auto"
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Basic Info */}
             <div>
               <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Product Information</h3>
