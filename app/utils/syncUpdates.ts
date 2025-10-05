@@ -6,14 +6,32 @@ export function syncPurchaseOrderToInventory(
   updatedOrder: PurchaseOrder,
   inventory: InventoryItem[],
   updateInventoryItem: (id: string, item: Partial<InventoryItem>) => void,
-  addInventoryItem: (item: Omit<InventoryItem, 'id' | 'createdAt'>) => void
+  addInventoryItem: (item: Omit<InventoryItem, 'id' | 'createdAt'>) => void,
+  previousSku?: string
 ) {
-  // Find inventory item with matching SKU
-  const inventoryItem = inventory.find(item => item.sku === updatedOrder.sku);
+  // If SKU changed, find inventory item by the old SKU or by linked purchase orders
+  let inventoryItem = inventory.find(item => item.sku === updatedOrder.sku);
+  
+  // If not found by current SKU, try finding by previous SKU or by linked purchase orders
+  if (!inventoryItem && previousSku) {
+    inventoryItem = inventory.find(item => item.sku === previousSku);
+  }
+  
+  // If still not found, try finding by linked purchase orders
+  if (!inventoryItem) {
+    inventoryItem = inventory.find(item => 
+      item.linkedPurchaseOrders.includes(updatedOrder.id)
+    );
+  }
 
   if (inventoryItem) {
     // Update existing inventory item
     const updates: Partial<InventoryItem> = {};
+
+    // Update SKU if changed
+    if (updatedOrder.sku && inventoryItem.sku !== updatedOrder.sku) {
+      updates.sku = updatedOrder.sku;
+    }
 
     // Update category/line if changed
     if (updatedOrder.category && updatedOrder.category !== '⚠️ NEEDS REVIEW') {

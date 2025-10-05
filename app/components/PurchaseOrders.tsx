@@ -22,6 +22,8 @@ export default function PurchaseOrders() {
   const [lastRateUpdate, setLastRateUpdate] = useState<string>('');
   const [categoryMode, setCategoryMode] = useState<'select' | 'new'>('select');
   const [lineMode, setLineMode] = useState<'select' | 'new'>('select');
+  const [skuManuallyEdited, setSkuManuallyEdited] = useState(false);
+  const [originalSku, setOriginalSku] = useState<string>('');
   
   // Get unique categories and lines from existing data
   const existingCategories = [...new Set([
@@ -56,14 +58,22 @@ export default function PurchaseOrders() {
     purchaseDate: new Date().toISOString().split('T')[0],
   });
 
-  // Auto-generate SKU when creating new item
+  // Auto-generate SKU when creating new item or when category/line changes during edit
   useEffect(() => {
-    if (isCreatingNewItem && formData.category && formData.line && !editingOrder) {
+    if (isCreatingNewItem && formData.category && formData.line && !editingOrder && !skuManuallyEdited) {
       const existingSkus = inventory.map(item => item.sku);
       const newSku = generateUniqueSKU(formData.category, formData.line, existingSkus);
       setFormData(prev => ({ ...prev, sku: newSku }));
     }
-  }, [formData.category, formData.line, isCreatingNewItem, editingOrder, inventory]);
+    // Auto-regenerate during edit if not manually edited
+    if (editingOrder && formData.category && formData.line && !skuManuallyEdited) {
+      const existingSkus = inventory.map(item => item.sku).filter(sku => sku !== editingOrder.sku);
+      const newSku = generateUniqueSKU(formData.category, formData.line, existingSkus);
+      if (newSku !== formData.sku) {
+        setFormData(prev => ({ ...prev, sku: newSku }));
+      }
+    }
+  }, [formData.category, formData.line, isCreatingNewItem, editingOrder, inventory, skuManuallyEdited]);
 
   // When selecting an existing inventory item, auto-fill fields
   useEffect(() => {
@@ -180,8 +190,9 @@ export default function PurchaseOrders() {
       const updatedOrder = { ...editingOrder, ...orderData };
       updatePurchaseOrder(editingOrder.id, orderData);
       
-      // Sync changes to inventory
-      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem);
+      // Sync changes to inventory, passing original SKU if it changed
+      const previousSku = originalSku !== updatedOrder.sku ? originalSku : undefined;
+      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, previousSku);
     } else {
       // Add the purchase order
       const newOrderId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -238,10 +249,27 @@ export default function PurchaseOrders() {
     setIsCreatingNewItem(false);
     setCategoryMode('select');
     setLineMode('select');
+    setSkuManuallyEdited(false);
+    setOriginalSku('');
+  };
+
+  const handleRegenerateSku = () => {
+    if (formData.category && formData.line) {
+      const existingSkus = inventory.map(item => item.sku).filter(sku => sku !== formData.sku);
+      const newSku = generateUniqueSKU(formData.category, formData.line, existingSkus);
+      setFormData({ ...formData, sku: newSku });
+      setSkuManuallyEdited(false);
+    }
+  };
+
+  const handleSkuChange = (newSku: string) => {
+    setFormData({ ...formData, sku: newSku });
+    setSkuManuallyEdited(true);
   };
 
   const handleEdit = (order: PurchaseOrder) => {
     setEditingOrder(order);
+    setOriginalSku(order.sku); // Track original SKU for sync purposes
     setFormData({
       invoice: order.invoice,
       invoiceLink: order.invoiceLink,
@@ -435,9 +463,9 @@ export default function PurchaseOrders() {
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1 text-gray-700">
-                      Category {isCreatingNewItem && '*'}
+                      Category {(isCreatingNewItem || editingOrder) && '*'}
                     </label>
-                    {(selectedInventoryId && selectedInventoryId !== 'new') ? (
+                    {(selectedInventoryId && selectedInventoryId !== 'new' && !editingOrder) ? (
                       <input
                         type="text"
                         value={formData.category}
@@ -446,7 +474,7 @@ export default function PurchaseOrders() {
                       />
                     ) : categoryMode === 'select' ? (
                       <select
-                        required={isCreatingNewItem}
+                        required={isCreatingNewItem || !!editingOrder}
                         value={formData.category}
                         onChange={(e) => {
                           if (e.target.value === '__new__') {
@@ -468,7 +496,7 @@ export default function PurchaseOrders() {
                       <div className="flex gap-1">
                         <input
                           type="text"
-                          required={isCreatingNewItem}
+                          required={isCreatingNewItem || !!editingOrder}
                           value={formData.category}
                           onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                           placeholder="New category"
@@ -487,9 +515,9 @@ export default function PurchaseOrders() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1 text-gray-700">
-                      Line {isCreatingNewItem && '*'}
+                      Line {(isCreatingNewItem || editingOrder) && '*'}
                     </label>
-                    {(selectedInventoryId && selectedInventoryId !== 'new') ? (
+                    {(selectedInventoryId && selectedInventoryId !== 'new' && !editingOrder) ? (
                       <input
                         type="text"
                         value={formData.line}
@@ -498,7 +526,7 @@ export default function PurchaseOrders() {
                       />
                     ) : lineMode === 'select' ? (
                       <select
-                        required={isCreatingNewItem}
+                        required={isCreatingNewItem || !!editingOrder}
                         value={formData.line}
                         onChange={(e) => {
                           if (e.target.value === '__new__') {
@@ -520,7 +548,7 @@ export default function PurchaseOrders() {
                       <div className="flex gap-1">
                         <input
                           type="text"
-                          required={isCreatingNewItem}
+                          required={isCreatingNewItem || !!editingOrder}
                           value={formData.line}
                           onChange={(e) => setFormData({ ...formData, line: e.target.value })}
                           placeholder="New line"
@@ -541,20 +569,40 @@ export default function PurchaseOrders() {
                     <label className="block text-sm font-medium mb-1 text-gray-700">
                       SKU {isCreatingNewItem && '*'}
                     </label>
-                    <input
-                      type="text"
-                      required={isCreatingNewItem}
-                      value={formData.sku}
-                      onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                      placeholder={isCreatingNewItem ? 'Auto' : ''}
-                      disabled={!!(selectedInventoryId && selectedInventoryId !== 'new')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 font-mono text-sm"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        required={isCreatingNewItem || !!editingOrder}
+                        value={formData.sku}
+                        onChange={(e) => handleSkuChange(e.target.value)}
+                        placeholder={isCreatingNewItem ? 'Auto' : ''}
+                        disabled={!!(selectedInventoryId && selectedInventoryId !== 'new' && !editingOrder)}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 font-mono text-sm"
+                      />
+                      {(isCreatingNewItem || editingOrder) && (
+                        <button
+                          type="button"
+                          onClick={handleRegenerateSku}
+                          disabled={!formData.category || !formData.line}
+                          className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-white hover:border-[#4f0c1b] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                          title="Regenerate SKU from category & line"
+                        >
+                          <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
                 {isCreatingNewItem && formData.category && formData.line && formData.sku && (
                   <p className="text-xs text-gray-500">
                     SKU will be: {formData.sku}
+                  </p>
+                )}
+                {editingOrder && formData.category && formData.line && (
+                  <p className="text-xs text-[#4f0c1b]">
+                    💡 Tip: Update Category & Line, then click the regenerate button to create a new SKU. Changes will sync to linked inventory.
                   </p>
                 )}
               </div>
