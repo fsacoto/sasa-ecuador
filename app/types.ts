@@ -3,7 +3,8 @@
 export interface Supplier {
   id: string;
   name: string;
-  contact: string;
+  email: string;
+  phone: string;
   country: string;
   currency: string;
   notes: string;

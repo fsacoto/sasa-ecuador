@@ -205,36 +205,44 @@ export default function PurchaseOrders() {
                 </svg>
               </button>
             </div>
-            <form onSubmit={handleSubmit} className="overflow-y-auto max-h-[calc(90vh-8rem)] p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="overflow-y-auto max-h-[calc(90vh-8rem)] p-6 space-y-5">
               {/* Inventory Item Selector */}
               {!editingOrder && (
-                <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
-                  <label className="block text-sm font-semibold mb-2 text-blue-900">
-                    📦 Select Product or Create New
-                  </label>
-                  <select
-                    value={selectedInventoryId}
-                    onChange={(e) => setSelectedInventoryId(e.target.value)}
-                    className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent bg-white"
-                  >
-                    <option value="">-- Select existing product or create new --</option>
-                    <option value="new" className="font-semibold text-[#4f0c1b]">✨ Create New Product</option>
-                    <optgroup label="Existing Products">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Product</label>
+                  <div className="flex gap-2">
+                    <select
+                      value={selectedInventoryId}
+                      onChange={(e) => setSelectedInventoryId(e.target.value)}
+                      className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent bg-white text-sm"
+                    >
+                      <option value="">Select existing product or create new...</option>
+                      <option value="new">Create New Product</option>
+                      {inventory.length > 0 && <option disabled>──────────</option>}
                       {inventory.map((item) => (
                         <option key={item.id} value={item.id}>
-                          {item.name} ({item.sku}) - {item.category}
+                          {item.name} · {item.sku}
                         </option>
                       ))}
-                    </optgroup>
-                  </select>
+                    </select>
+                    {selectedInventoryId === 'new' && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedInventoryId('')}
+                        className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
                   {selectedInventoryId && selectedInventoryId !== 'new' && (
-                    <p className="text-xs text-blue-700 mt-2">
-                      ✓ Product details auto-filled below
+                    <p className="text-xs text-gray-500 mt-1.5">
+                      Product details loaded from inventory
                     </p>
                   )}
                   {isCreatingNewItem && (
-                    <p className="text-xs text-blue-700 mt-2">
-                      ✨ New product will be created automatically with this purchase order
+                    <p className="text-xs text-[#4f0c1b] mt-1.5 font-medium">
+                      New product will be added to inventory
                     </p>
                   )}
                 </div>
@@ -291,14 +299,7 @@ export default function PurchaseOrders() {
               </div>
 
               {/* Product Details Section */}
-              <div className={`space-y-4 p-4 rounded-lg ${isCreatingNewItem ? 'bg-green-50 border-2 border-green-200' : 'bg-gray-50 border border-gray-200'}`}>
-                {isCreatingNewItem && (
-                  <div className="flex items-center gap-2 text-sm font-medium text-green-800 mb-2">
-                    <span>✨</span>
-                    <span>New Product Information</span>
-                  </div>
-                )}
-                
+              <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-1 text-gray-700">
                     {isCreatingNewItem ? 'Product Name *' : 'Description'}
@@ -308,13 +309,13 @@ export default function PurchaseOrders() {
                     required={isCreatingNewItem}
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder={isCreatingNewItem ? 'e.g., Gold Diamond Ring' : ''}
+                    placeholder={isCreatingNewItem ? 'e.g., Gold Diamond Ring' : 'Order description'}
                     disabled={selectedInventoryId && selectedInventoryId !== 'new'}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-100 disabled:text-gray-600"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1 text-gray-700">
                       Category {isCreatingNewItem && '*'}
@@ -324,9 +325,9 @@ export default function PurchaseOrders() {
                       required={isCreatingNewItem}
                       value={formData.category}
                       onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                      placeholder={isCreatingNewItem ? 'e.g., Rings' : ''}
+                      placeholder={isCreatingNewItem ? 'Rings' : ''}
                       disabled={selectedInventoryId && selectedInventoryId !== 'new'}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-100 disabled:text-gray-600"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
                     />
                   </div>
                   <div>
@@ -338,33 +339,31 @@ export default function PurchaseOrders() {
                       required={isCreatingNewItem}
                       value={formData.line}
                       onChange={(e) => setFormData({ ...formData, line: e.target.value })}
-                      placeholder={isCreatingNewItem ? 'e.g., Gold' : ''}
+                      placeholder={isCreatingNewItem ? 'Gold' : ''}
                       disabled={selectedInventoryId && selectedInventoryId !== 'new'}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-100 disabled:text-gray-600"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">
+                      SKU {isCreatingNewItem && '*'}
+                    </label>
+                    <input
+                      type="text"
+                      required={isCreatingNewItem}
+                      value={formData.sku}
+                      onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+                      placeholder={isCreatingNewItem ? 'Auto' : ''}
+                      disabled={selectedInventoryId && selectedInventoryId !== 'new'}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 font-mono text-sm"
                     />
                   </div>
                 </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">
-                    Internal SKU {isCreatingNewItem && '*'}
-                  </label>
-                  <input
-                    type="text"
-                    required={isCreatingNewItem}
-                    value={formData.sku}
-                    onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                    placeholder={isCreatingNewItem ? 'Auto-generated' : ''}
-                    disabled={selectedInventoryId && selectedInventoryId !== 'new'}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-100 disabled:text-gray-600 font-mono"
-                  />
-                  {isCreatingNewItem && formData.category && formData.line && (
-                    <p className="text-xs text-green-700 mt-1">
-                      ✓ SKU format: {formData.category.substring(0, 2).toUpperCase()}
-                      {formData.line.substring(0, 2).toUpperCase()}-##### (auto-generated)
-                    </p>
-                  )}
-                </div>
+                {isCreatingNewItem && formData.category && formData.line && formData.sku && (
+                  <p className="text-xs text-gray-500">
+                    SKU will be: {formData.sku}
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-3 gap-4">
@@ -398,10 +397,11 @@ export default function PurchaseOrders() {
                     onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                   >
-                    <option value="USD">USD</option>
-                    <option value="EUR">EUR</option>
-                    <option value="GBP">GBP</option>
-                    <option value="CNY">CNY</option>
+                    <option value="USD">USD - US Dollar</option>
+                    <option value="COP">COP - Colombian Peso</option>
+                    <option value="BRL">BRL - Brazilian Real</option>
+                    <option value="EUR">EUR - Euro</option>
+                    <option value="CNY">CNY - Chinese Yuan</option>
                   </select>
                 </div>
               </div>

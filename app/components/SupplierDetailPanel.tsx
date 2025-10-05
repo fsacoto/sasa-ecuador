@@ -41,10 +41,22 @@ export default function SupplierDetailPanel({ supplier, onClose }: SupplierDetai
           <div>
             <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Contact Information</h3>
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Contact:</span>
-                <span className="font-medium text-gray-900">{supplier.contact || 'N/A'}</span>
-              </div>
+              {supplier.email && (
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">Email:</span>
+                  <a href={`mailto:${supplier.email}`} className="font-medium text-[#4f0c1b] hover:underline">
+                    {supplier.email}
+                  </a>
+                </div>
+              )}
+              {supplier.phone && (
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">Phone:</span>
+                  <a href={`tel:${supplier.phone}`} className="font-medium text-[#4f0c1b] hover:underline">
+                    {supplier.phone}
+                  </a>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-gray-600">Currency:</span>
                 <span className="font-medium text-gray-900">{supplier.currency}</span>

@@ -12,7 +12,8 @@ export default function Suppliers() {
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [formData, setFormData] = useState({
     name: '',
-    contact: '',
+    email: '',
+    phone: '',
     country: '',
     currency: 'USD',
     notes: '',
@@ -29,7 +30,7 @@ export default function Suppliers() {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', contact: '', country: '', currency: 'USD', notes: '' });
+    setFormData({ name: '', email: '', phone: '', country: '', currency: 'USD', notes: '' });
     setEditingSupplier(null);
     setIsFormOpen(false);
   };
@@ -38,7 +39,8 @@ export default function Suppliers() {
     setEditingSupplier(supplier);
     setFormData({
       name: supplier.name,
-      contact: supplier.contact,
+      email: supplier.email,
+      phone: supplier.phone,
       country: supplier.country,
       currency: supplier.currency,
       notes: supplier.notes,
@@ -89,24 +91,50 @@ export default function Suppliers() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700">Contact</label>
-                <input
-                  type="text"
-                  value={formData.contact}
-                  onChange={(e) => setFormData({ ...formData, contact: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">Email</label>
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    placeholder="supplier@email.com"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">Phone</label>
+                  <input
+                    type="tel"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    placeholder="+1 (555) 123-4567"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1 text-gray-700">Country</label>
-                  <input
-                    type="text"
+                  <select
                     value={formData.country}
                     onChange={(e) => setFormData({ ...formData, country: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
-                  />
+                  >
+                    <option value="">Select country</option>
+                    <option value="USA">🇺🇸 USA</option>
+                    <option value="Ecuador">🇪🇨 Ecuador</option>
+                    <option value="Colombia">🇨🇴 Colombia</option>
+                    <option value="Brazil">🇧🇷 Brazil</option>
+                    <option value="China">🇨🇳 China</option>
+                    <option value="India">🇮🇳 India</option>
+                    <option value="Thailand">🇹🇭 Thailand</option>
+                    <option value="Italy">🇮🇹 Italy</option>
+                    <option value="Spain">🇪🇸 Spain</option>
+                    <option value="Mexico">🇲🇽 Mexico</option>
+                    <option value="Peru">🇵🇪 Peru</option>
+                    <option value="Other">Other</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1 text-gray-700">Currency</label>
@@ -115,10 +143,11 @@ export default function Suppliers() {
                     onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                   >
-                    <option value="USD">USD</option>
-                    <option value="EUR">EUR</option>
-                    <option value="GBP">GBP</option>
-                    <option value="CNY">CNY</option>
+                    <option value="USD">USD - US Dollar</option>
+                    <option value="COP">COP - Colombian Peso</option>
+                    <option value="BRL">BRL - Brazilian Real</option>
+                    <option value="EUR">EUR - Euro</option>
+                    <option value="CNY">CNY - Chinese Yuan</option>
                   </select>
                 </div>
               </div>
@@ -161,13 +190,13 @@ export default function Suppliers() {
                   Name
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Contact
+                  Email
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Phone
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Country
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Currency
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
@@ -192,9 +221,9 @@ export default function Suppliers() {
                         {supplier.name}
                       </button>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{supplier.contact}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{supplier.email || '-'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{supplier.phone || '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{supplier.country}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{supplier.currency}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                       <button
                         onClick={() => handleEdit(supplier)}
