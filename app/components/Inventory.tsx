@@ -120,6 +120,20 @@ export default function Inventory() {
         </button>
       </div>
 
+      {/* Warning Banner for Items Needing Review */}
+      {inventory.some(item => item.category.includes('NEEDS REVIEW')) && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+          <span className="text-2xl">⚠️</span>
+          <div>
+            <h3 className="text-sm font-semibold text-amber-900">Items Need Review</h3>
+            <p className="text-sm text-amber-700 mt-1">
+              {inventory.filter(item => item.category.includes('NEEDS REVIEW')).length} items from bulk import need additional information.
+              Click on them to edit and complete the details.
+            </p>
+          </div>
+        </div>
+      )}
+
       {isFormOpen && (
         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 duration-300">
@@ -342,45 +356,57 @@ export default function Inventory() {
                   </td>
                 </tr>
               ) : (
-                inventory.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <button
-                        onClick={() => setSelectedItem(item)}
-                        className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity"
-                      >
-                        {item.image && (
-                          <img src={item.image} alt={item.name} className="w-10 h-10 object-cover rounded-lg border border-gray-200" />
-                        )}
-                        <span className="font-medium text-[#4f0c1b] hover:underline">{item.name}</span>
-                      </button>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.sku}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.category}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.line}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-700">{item.ecuadorStock}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-700">{item.usaStock}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center font-semibold text-gray-900">{getTotalStock(item)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                      <button
-                        onClick={() => handleEdit(item)}
-                        className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium mr-4 transition-colors"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (confirm('Are you sure you want to delete this inventory item?')) {
-                            deleteInventoryItem(item.id);
-                          }
-                        }}
-                        className="text-red-600 hover:text-red-700 font-medium transition-colors"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                inventory.map((item) => {
+                  const needsReview = item.category.includes('NEEDS REVIEW');
+                  return (
+                    <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${needsReview ? 'bg-amber-50/30' : ''}`}>
+                      <td className="px-6 py-4">
+                        <button
+                          onClick={() => setSelectedItem(item)}
+                          className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity"
+                        >
+                          {item.image && (
+                            <img src={item.image} alt={item.name} className="w-10 h-10 object-cover rounded-lg border border-gray-200" />
+                          )}
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-[#4f0c1b] hover:underline">{item.name}</span>
+                            {needsReview && (
+                              <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
+                                Needs Review
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.sku}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        {needsReview ? '-' : item.category}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.line || '-'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-700">{item.ecuadorStock}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-700">{item.usaStock}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center font-semibold text-gray-900">{getTotalStock(item)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                        <button
+                          onClick={() => handleEdit(item)}
+                          className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium mr-4 transition-colors"
+                        >
+                          {needsReview ? 'Complete Info' : 'Edit'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm('Are you sure you want to delete this inventory item?')) {
+                              deleteInventoryItem(item.id);
+                            }
+                          }}
+                          className="text-red-600 hover:text-red-700 font-medium transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

@@ -6,11 +6,13 @@ import { PurchaseOrder, Supplier } from '../types';
 import SupplierDetailPanel from './SupplierDetailPanel';
 import { generateUniqueSKU } from '../utils/skuGenerator';
 import { getExchangeRates, getExchangeRate, formatLastUpdate } from '../utils/currencyApi';
+import BulkImportModal from './BulkImportModal';
 
 export default function PurchaseOrders() {
   const { purchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, suppliers, inventory, addInventoryItem } = useInventory();
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<PurchaseOrder | null>(null);
   const [selectedInventoryId, setSelectedInventoryId] = useState<string>('');
   const [isCreatingNewItem, setIsCreatingNewItem] = useState(false);
@@ -247,12 +249,20 @@ export default function PurchaseOrders() {
           <h2 className="text-2xl font-semibold text-gray-900">Purchase Orders</h2>
           <p className="text-sm text-gray-500 mt-1">Track orders from suppliers</p>
         </div>
-        <button
-          onClick={() => setIsFormOpen(true)}
-          className="bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-5 py-2.5 rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow active:scale-95"
-        >
-          Add Purchase Order
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setIsBulkImportOpen(true)}
+            className="border border-[#4f0c1b] text-[#4f0c1b] hover:bg-[#4f0c1b] hover:text-white px-5 py-2.5 rounded-lg transition-all font-medium text-sm"
+          >
+            Bulk Import
+          </button>
+          <button
+            onClick={() => setIsFormOpen(true)}
+            className="bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-5 py-2.5 rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow active:scale-95"
+          >
+            Add Purchase Order
+          </button>
+        </div>
       </div>
 
       {isFormOpen && (
@@ -377,7 +387,7 @@ export default function PurchaseOrders() {
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     placeholder={isCreatingNewItem ? 'e.g., Gold Diamond Ring' : 'Order description'}
-                    disabled={selectedInventoryId && selectedInventoryId !== 'new'}
+                    disabled={!!(selectedInventoryId && selectedInventoryId !== 'new')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
                   />
                 </div>
@@ -393,7 +403,7 @@ export default function PurchaseOrders() {
                       value={formData.category}
                       onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                       placeholder={isCreatingNewItem ? 'Rings' : ''}
-                      disabled={selectedInventoryId && selectedInventoryId !== 'new'}
+                      disabled={!!(selectedInventoryId && selectedInventoryId !== 'new')}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
                     />
                   </div>
@@ -407,7 +417,7 @@ export default function PurchaseOrders() {
                       value={formData.line}
                       onChange={(e) => setFormData({ ...formData, line: e.target.value })}
                       placeholder={isCreatingNewItem ? 'Gold' : ''}
-                      disabled={selectedInventoryId && selectedInventoryId !== 'new'}
+                      disabled={!!(selectedInventoryId && selectedInventoryId !== 'new')}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
                     />
                   </div>
@@ -421,7 +431,7 @@ export default function PurchaseOrders() {
                       value={formData.sku}
                       onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
                       placeholder={isCreatingNewItem ? 'Auto' : ''}
-                      disabled={selectedInventoryId && selectedInventoryId !== 'new'}
+                      disabled={!!(selectedInventoryId && selectedInventoryId !== 'new')}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 font-mono text-sm"
                     />
                   </div>
@@ -756,6 +766,11 @@ export default function PurchaseOrders() {
           supplier={selectedSupplier}
           onClose={() => setSelectedSupplier(null)}
         />
+      )}
+
+      {/* Bulk Import Modal */}
+      {isBulkImportOpen && (
+        <BulkImportModal onClose={() => setIsBulkImportOpen(false)} />
       )}
     </div>
   );
