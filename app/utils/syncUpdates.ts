@@ -51,7 +51,7 @@ export function syncPurchaseOrderToInventory(
       category: updatedOrder.category || '',
       line: updatedOrder.line || '',
       description: updatedOrder.description,
-      image: updatedOrder.image || '',
+      images: updatedOrder.images || [],
       ecuadorStock: updatedOrder.destinationStock === 'Ecuador' ? updatedOrder.quantity : 0,
       usaStock: updatedOrder.destinationStock === 'USA' ? updatedOrder.quantity : 0,
       linkedPurchaseOrders: [updatedOrder.id],

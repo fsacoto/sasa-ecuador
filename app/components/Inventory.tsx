@@ -6,6 +6,7 @@ import { InventoryItem } from '../types';
 import InventoryDetailPanel from './InventoryDetailPanel';
 import { generateUniqueSKU } from '../utils/skuGenerator';
 import { syncInventoryToOrders } from '../utils/syncUpdates';
+import { handleMultipleImageUpload, validateImageFile } from '../utils/imageUpload';
 
 export default function Inventory() {
   const { inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, purchaseOrders, updatePurchaseOrder } = useInventory();
@@ -36,7 +37,7 @@ export default function Inventory() {
     line: '',
     ecuadorStock: 0,
     usaStock: 0,
-    image: '',
+    images: [] as string[],
   });
 
   // Auto-generate SKU when category or line changes (unless manually edited)
@@ -74,7 +75,7 @@ export default function Inventory() {
       line: '',
       ecuadorStock: 0,
       usaStock: 0,
-      image: '',
+      images: [],
     });
     setEditingItem(null);
     setIsFormOpen(false);
@@ -95,10 +96,38 @@ export default function Inventory() {
       line: item.line,
       ecuadorStock: item.ecuadorStock,
       usaStock: item.usaStock,
-      image: item.image,
+      images: item.images || [],
     });
     setSkuManuallyEdited(true); // Don't auto-generate when editing
     setIsFormOpen(true);
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    // Validate all files first
+    for (let i = 0; i < files.length; i++) {
+      const validation = validateImageFile(files[i]);
+      if (!validation.valid) {
+        alert(`${files[i].name}: ${validation.error}`);
+        return;
+      }
+    }
+
+    // Convert to base64
+    const newImages = await handleMultipleImageUpload(files);
+    setFormData(prev => ({ ...prev, images: [...prev.images, ...newImages] }));
+    
+    // Reset input
+    e.target.value = '';
+  };
+
+  const handleRemoveImage = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      images: prev.images.filter((_, i) => i !== index)
+    }));
   };
 
   const handleSkuChange = (newSku: string) => {
@@ -353,14 +382,56 @@ export default function Inventory() {
                 </div>
               </div>
 
+              {/* Image Upload */}
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700">Image URL</label>
-                <input
-                  type="url"
-                  value={formData.image}
-                  onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
-                />
+                <label className="block text-sm font-medium mb-2 text-gray-700">Product Images</label>
+                
+                {/* Image Grid */}
+                {formData.images.length > 0 && (
+                  <div className="grid grid-cols-4 gap-3 mb-3">
+                    {formData.images.map((image, index) => (
+                      <div key={index} className="relative group">
+                        <img
+                          src={image}
+                          alt={`Product ${index + 1}`}
+                          className="w-full h-24 object-cover rounded-lg border-2 border-gray-200"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveImage(index)}
+                          className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                        {index === 0 && (
+                          <div className="absolute bottom-1 left-1 bg-[#4f0c1b] text-white text-xs px-2 py-0.5 rounded">
+                            Main
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Upload Button */}
+                <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-[#4f0c1b] hover:bg-gray-50 cursor-pointer transition-all">
+                  <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span className="text-sm text-gray-600">Upload Images</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleImageUpload}
+                    className="hidden"
+                  />
+                </label>
+                <p className="text-xs text-gray-500 mt-1">
+                  Upload up to 10 images. First image is the main product image. Max 5MB each.
+                </p>
               </div>
 
               <div>
@@ -452,24 +523,41 @@ export default function Inventory() {
                   const needsReview = item.category.includes('NEEDS REVIEW');
                   return (
                     <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${needsReview ? 'bg-amber-50/30' : ''}`}>
-                      <td className="px-6 py-4">
-                        <button
-                          onClick={() => setSelectedItem(item)}
-                          className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity"
-                        >
-                          {item.image && (
-                            <img src={item.image} alt={item.name} className="w-10 h-10 object-cover rounded-lg border border-gray-200" />
-                          )}
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-[#4f0c1b] hover:underline">{item.name}</span>
-                            {needsReview && (
-                              <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
-                                Needs Review
-                              </span>
+                    <td className="px-6 py-4">
+                      <button
+                        onClick={() => setSelectedItem(item)}
+                        className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity"
+                      >
+                        {item.images && item.images.length > 0 ? (
+                          <div className="relative">
+                            <img 
+                              src={item.images[0]} 
+                              alt={item.name} 
+                              className="w-12 h-12 object-cover rounded-lg border border-gray-200" 
+                            />
+                            {item.images.length > 1 && (
+                              <div className="absolute -bottom-1 -right-1 bg-[#4f0c1b] text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-medium">
+                                {item.images.length}
+                              </div>
                             )}
                           </div>
-                        </button>
-                      </td>
+                        ) : (
+                          <div className="w-12 h-12 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
+                            <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-[#4f0c1b] hover:underline">{item.name}</span>
+                          {needsReview && (
+                            <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
+                              Needs Review
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.sku}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                         {needsReview ? '-' : item.category}

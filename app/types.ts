@@ -21,7 +21,7 @@ export interface PurchaseOrder {
   sku: string;
   category: string;
   line: string;
-  image: string;
+  images: string[]; // Array of image URLs or base64 data
   quantity: number;
   destinationStock: 'Ecuador' | 'USA';
   currency: string;
@@ -53,6 +53,6 @@ export interface InventoryItem {
   line: string;
   ecuadorStock: number;
   usaStock: number;
-  image: string;
+  images: string[]; // Array of image URLs or base64 data
   createdAt: Date;
 }

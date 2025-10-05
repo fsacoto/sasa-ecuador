@@ -46,14 +46,30 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            {/* Image */}
-            {item.image && (
-              <div className="flex justify-center">
-                <img 
-                  src={item.image} 
-                  alt={item.name} 
-                  className="w-full max-w-xs rounded-lg border border-gray-200 object-cover"
-                />
+            {/* Images Gallery */}
+            {item.images && item.images.length > 0 && (
+              <div>
+                {/* Main Image */}
+                <div className="mb-3">
+                  <img 
+                    src={item.images[0]} 
+                    alt={item.name} 
+                    className="w-full rounded-lg border border-gray-200 object-cover"
+                  />
+                </div>
+                {/* Thumbnail Grid */}
+                {item.images.length > 1 && (
+                  <div className="grid grid-cols-4 gap-2">
+                    {item.images.slice(1).map((image, index) => (
+                      <img
+                        key={index}
+                        src={image}
+                        alt={`${item.name} ${index + 2}`}
+                        className="w-full h-16 object-cover rounded border border-gray-200"
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 

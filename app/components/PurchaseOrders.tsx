@@ -43,7 +43,7 @@ export default function PurchaseOrders() {
     sku: '',
     category: '',
     line: '',
-    image: '',
+    images: [] as string[],
     quantity: 0,
     destinationStock: 'Ecuador' as 'Ecuador' | 'USA',
     currency: 'USD',
@@ -76,7 +76,7 @@ export default function PurchaseOrders() {
           description: item.description || item.name,
           category: item.category,
           line: item.line,
-          image: item.image,
+          images: item.images || [],
           supplierSKU: item.supplierSKU,
         }));
         setIsCreatingNewItem(false);
@@ -90,7 +90,7 @@ export default function PurchaseOrders() {
         description: '',
         category: '',
         line: '',
-        image: '',
+        images: [],
         supplierSKU: '',
       }));
     }
@@ -197,7 +197,7 @@ export default function PurchaseOrders() {
           category: formData.category,
           line: formData.line,
           description: formData.description,
-          image: formData.image,
+          images: formData.images,
           ecuadorStock: formData.destinationStock === 'Ecuador' ? formData.quantity : 0,
           usaStock: formData.destinationStock === 'USA' ? formData.quantity : 0,
           linkedPurchaseOrders: [newOrderId],
@@ -220,7 +220,7 @@ export default function PurchaseOrders() {
       sku: '',
       category: '',
       line: '',
-      image: '',
+      images: [],
       quantity: 0,
       destinationStock: 'Ecuador',
       currency: 'USD',
@@ -251,7 +251,7 @@ export default function PurchaseOrders() {
       sku: order.sku,
       category: order.category,
       line: order.line,
-      image: order.image,
+      images: order.images || [],
       quantity: order.quantity,
       destinationStock: order.destinationStock,
       currency: order.currency,
@@ -742,26 +742,18 @@ export default function PurchaseOrders() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Purchase Date *</label>
-                  <input
-                    type="date"
-                    required
-                    value={formData.purchaseDate}
-                    onChange={(e) => setFormData({ ...formData, purchaseDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Image URL</label>
-                  <input
-                    type="url"
-                    value={formData.image}
-                    onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
-                  />
-                </div>
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-700">Purchase Date *</label>
+                <input
+                  type="date"
+                  required
+                  value={formData.purchaseDate}
+                  onChange={(e) => setFormData({ ...formData, purchaseDate: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Product images are managed in the Inventory section
+                </p>
               </div>
 
             </form>
