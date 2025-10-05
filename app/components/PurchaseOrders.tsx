@@ -5,6 +5,7 @@ import { useInventory } from '../context/InventoryContext';
 import { PurchaseOrder, Supplier } from '../types';
 import SupplierDetailPanel from './SupplierDetailPanel';
 import { generateUniqueSKU } from '../utils/skuGenerator';
+import { getExchangeRates, getExchangeRate, formatLastUpdate } from '../utils/currencyApi';
 
 export default function PurchaseOrders() {
   const { purchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, suppliers, inventory, addInventoryItem } = useInventory();
@@ -13,6 +14,9 @@ export default function PurchaseOrders() {
   const [editingOrder, setEditingOrder] = useState<PurchaseOrder | null>(null);
   const [selectedInventoryId, setSelectedInventoryId] = useState<string>('');
   const [isCreatingNewItem, setIsCreatingNewItem] = useState(false);
+  const [exchangeRates, setExchangeRates] = useState<any>(null);
+  const [isLoadingRates, setIsLoadingRates] = useState(false);
+  const [lastRateUpdate, setLastRateUpdate] = useState<string>('');
   const [formData, setFormData] = useState({
     invoice: '',
     invoiceLink: '',
@@ -74,6 +78,44 @@ export default function PurchaseOrders() {
       }));
     }
   }, [selectedInventoryId, inventory]);
+
+  // Fetch exchange rates when form opens
+  useEffect(() => {
+    if (isFormOpen && !exchangeRates) {
+      fetchExchangeRates();
+    }
+  }, [isFormOpen]);
+
+  // Auto-update exchange rate when currency changes
+  useEffect(() => {
+    if (exchangeRates && formData.currency !== 'USD') {
+      const rate = getExchangeRate(formData.currency, 'USD', exchangeRates);
+      if (rate !== formData.exchangeRate) {
+        setFormData(prev => ({ ...prev, exchangeRate: rate }));
+      }
+    }
+  }, [formData.currency, exchangeRates]);
+
+  const fetchExchangeRates = async () => {
+    setIsLoadingRates(true);
+    try {
+      const rates = await getExchangeRates('USD');
+      if (rates) {
+        setExchangeRates(rates);
+        setLastRateUpdate(formatLastUpdate(rates.time_last_update_utc));
+        
+        // Auto-set exchange rate if currency is already selected
+        if (formData.currency !== 'USD') {
+          const rate = getExchangeRate(formData.currency, 'USD', rates);
+          setFormData(prev => ({ ...prev, exchangeRate: rate }));
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch exchange rates:', error);
+    } finally {
+      setIsLoadingRates(false);
+    }
+  };
 
   const calculateTotals = () => {
     const totalCost = formData.quantity * formData.costPerUnit;
@@ -456,15 +498,36 @@ export default function PurchaseOrders() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Exchange Rate</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formData.exchangeRate}
-                    onChange={(e) => setFormData({ ...formData, exchangeRate: parseFloat(e.target.value) || 1 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
-                  />
+                  <label className="block text-sm font-medium mb-1 text-gray-700">Exchange Rate to USD</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.0001"
+                      value={formData.exchangeRate}
+                      onChange={(e) => setFormData({ ...formData, exchangeRate: parseFloat(e.target.value) || 1 })}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    />
+                    <button
+                      type="button"
+                      onClick={fetchExchangeRates}
+                      disabled={isLoadingRates || formData.currency === 'USD'}
+                      className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      title="Refresh exchange rate"
+                    >
+                      {isLoadingRates ? '...' : '↻'}
+                    </button>
+                  </div>
+                  {lastRateUpdate && formData.currency !== 'USD' && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Rate updated: {lastRateUpdate}
+                    </p>
+                  )}
+                  {formData.currency === 'USD' && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      No conversion needed (USD)
+                    </p>
+                  )}
                 </div>
               </div>
 

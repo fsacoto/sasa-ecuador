@@ -86,6 +86,12 @@ export default function Home() {
           <p className="text-center text-xs text-gray-500">
             © {new Date().getFullYear()} SASA Jewelry. All rights reserved.
           </p>
+          <p className="text-center text-xs text-gray-400 mt-2">
+            Exchange rates by{' '}
+            <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer" className="hover:text-gray-600">
+              Exchange Rate API
+            </a>
+          </p>
         </div>
       </footer>
     </div>
