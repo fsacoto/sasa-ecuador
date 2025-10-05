@@ -1,136 +1,149 @@
 'use client';
 
-import { Document, Page, Text, View, Image, StyleSheet, Font } from '@react-pdf/renderer';
+import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { InventoryItem } from '../types';
 
-// Create styles for the PDF
+// Images are pre-converted to JPEG in CatalogDownloadButton for PDF compatibility
+
+// Create sophisticated styles for luxury jewelry catalog
 const styles = StyleSheet.create({
   page: {
-    backgroundColor: '#F5F5F0',
-    padding: 40,
+    backgroundColor: '#FAFAF8',
+    padding: 45,
+    paddingTop: 35,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 30,
-    textAlign: 'center',
-    paddingBottom: 20,
-    borderBottom: '3pt solid #4f0c1b',
+    paddingBottom: 18,
+    borderBottom: '0.5pt solid #D4C5B5',
+  },
+  titleContainer: {
+    flexDirection: 'column',
+    alignItems: 'center',
   },
   title: {
-    fontSize: 32,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#4f0c1b',
-    marginBottom: 5,
+    color: '#2B1810',
+    letterSpacing: 2.5,
   },
-  subtitle: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 5,
+  catalogSubtext: {
+    fontSize: 8,
+    color: '#9A8774',
+    letterSpacing: 2.5,
+    marginTop: 4,
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 20,
+    gap: 16,
   },
   productCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 20,
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    borderRadius: 2,
+    padding: 0,
+    marginBottom: 16,
+    border: '0.5pt solid #E8E3DC',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
   },
-  productCard2x2: {
-    width: '47%',
+  productCard4: {
+    width: '23%',
   },
-  productCard2x3: {
-    width: '47%',
+  productCard6: {
+    width: '31.5%',
   },
-  productCard2x4: {
-    width: '47%',
+  productCard8: {
+    width: '23%',
   },
-  productCard3x3: {
-    width: '30%',
+  productCard9: {
+    width: '31.5%',
   },
   imageContainer: {
     width: '100%',
-    height: 180,
-    marginBottom: 12,
-    borderRadius: 8,
-    overflow: 'hidden',
-    backgroundColor: '#f0f0f0',
-  },
-  imageContainer3x3: {
-    height: 150,
+    height: 145,
+    backgroundColor: '#FCFBF9',
+    position: 'relative',
   },
   productImage: {
     width: '100%',
     height: '100%',
-    objectFit: 'cover',
+    objectFit: 'contain',
+    objectPosition: 'center',
   },
   noImage: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#e5e5e5',
+    backgroundColor: '#F7F5F2',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
   },
   noImageText: {
-    fontSize: 10,
-    color: '#999',
+    fontSize: 8,
+    color: '#C9BFB1',
+    letterSpacing: 1.5,
+  },
+  infoContainer: {
+    padding: 14,
+    paddingTop: 12,
   },
   badge: {
-    backgroundColor: '#E8D77F',
-    borderRadius: 12,
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    backgroundColor: '#4f0c1b',
     paddingVertical: 4,
-    paddingHorizontal: 10,
-    marginBottom: 8,
-    alignSelf: 'flex-start',
+    paddingHorizontal: 9,
+    borderRadius: 2,
   },
   badgeText: {
-    fontSize: 9,
+    fontSize: 7,
     fontWeight: 'bold',
-    color: '#333',
-    letterSpacing: 0.5,
+    color: '#FFFFFF',
+    letterSpacing: 1.2,
   },
   productName: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: 'bold',
-    color: '#1a1a1a',
+    color: '#1A120E',
     marginBottom: 4,
+    lineHeight: 1.35,
   },
   sku: {
-    fontSize: 10,
-    color: '#666',
-    marginBottom: 8,
+    fontSize: 7.5,
+    color: '#9A8774',
+    marginBottom: 6,
+    letterSpacing: 0.8,
   },
   description: {
-    fontSize: 9,
-    color: '#777',
-    marginBottom: 8,
-    lineHeight: 1.4,
+    fontSize: 7.5,
+    color: '#706659',
+    lineHeight: 1.45,
+    marginTop: 5,
   },
   stockInfo: {
-    fontSize: 8,
-    color: '#888',
-    marginTop: 4,
-    paddingTop: 8,
-    borderTop: '1pt solid #e5e5e5',
+    fontSize: 6.5,
+    color: '#A89B8C',
+    marginTop: 8,
+    paddingTop: 7,
+    borderTop: '0.5pt solid #EDE8DF',
   },
   footer: {
     position: 'absolute',
-    bottom: 30,
-    left: 40,
-    right: 40,
-    textAlign: 'center',
-    fontSize: 8,
-    color: '#999',
-    borderTop: '1pt solid #ddd',
-    paddingTop: 10,
+    bottom: 25,
+    left: 50,
+    right: 50,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   pageNumber: {
     fontSize: 8,
-    color: '#999',
+    color: '#B0A598',
+    letterSpacing: 0.5,
   },
 });
 
@@ -156,95 +169,87 @@ export default function ProductCatalogPDF({
   // Determine card style based on items per page
   const getCardStyle = () => {
     switch (itemsPerPage) {
-      case 9:
-        return styles.productCard3x3;
-      case 8:
-      case 6:
       case 4:
+        return styles.productCard4;
+      case 6:
+        return styles.productCard6;
+      case 8:
+        return styles.productCard8;
+      case 9:
+        return styles.productCard9;
       default:
-        return styles.productCard2x2;
+        return styles.productCard4;
     }
   };
 
-  const getImageStyle = () => {
-    return itemsPerPage === 9 ? styles.imageContainer3x3 : styles.imageContainer;
-  };
-
   const cardStyle = getCardStyle();
-  const imageContainerStyle = getImageStyle();
 
   return (
     <Document>
       {pages.map((pageProducts, pageIndex) => (
-        <Page key={pageIndex} size="A4" style={styles.page}>
-          {/* Header (only on first page) */}
-          {pageIndex === 0 && (
-            <View style={styles.header}>
-              <Text style={styles.title}>{catalogTitle}</Text>
-              <Text style={styles.subtitle}>
-                {new Date().toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                })}
-              </Text>
+        <Page key={pageIndex} size="A4" orientation="landscape" style={styles.page}>
+          {/* Elegant Header */}
+          <View style={styles.header}>
+            <View style={styles.titleContainer}>
+              <Text style={styles.title}>{catalogTitle.toUpperCase()}</Text>
+              <Text style={styles.catalogSubtext}>FINE JEWELRY COLLECTION</Text>
             </View>
-          )}
+          </View>
 
           {/* Product Grid */}
           <View style={styles.grid}>
             {pageProducts.map((product) => (
               <View key={product.id} style={[styles.productCard, cardStyle]}>
                 {/* Product Image */}
-                <View style={[styles.imageContainer, imageContainerStyle]}>
-                  {product.images && product.images.length > 0 ? (
+                <View style={styles.imageContainer}>
+                  {product.images && product.images.length > 0 && product.images[0] ? (
                     <Image
                       src={product.images[0]}
                       style={styles.productImage}
                     />
                   ) : (
                     <View style={styles.noImage}>
-                      <Text style={styles.noImageText}>No Image</Text>
+                      <Text style={styles.noImageText}>NO IMAGE</Text>
                     </View>
                   )}
-                </View>
-
-                {/* Category Badge */}
-                {product.category && !product.category.includes('NEEDS REVIEW') && (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>
-                      {product.category.toUpperCase()}
-                    </Text>
+                    
+                    {/* Category Badge Overlay */}
+                    {product.category && !product.category.includes('NEEDS REVIEW') && (
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>
+                          {product.category.toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
                   </View>
-                )}
 
                 {/* Product Info */}
-                <Text style={styles.productName}>{product.name}</Text>
-                <Text style={styles.sku}>{product.sku}</Text>
+                <View style={styles.infoContainer}>
+                  <Text style={styles.productName}>{product.name}</Text>
+                  <Text style={styles.sku}>{product.sku}</Text>
 
-                {product.description && (
-                  <Text style={styles.description}>
-                    {product.description.substring(0, 80)}
-                    {product.description.length > 80 ? '...' : ''}
-                  </Text>
-                )}
-
-                {/* Stock Information */}
-                {includeStock && (
-                  <View style={styles.stockInfo}>
-                    <Text>
-                      Stock: Ecuador: {product.ecuadorStock} | USA: {product.usaStock} | Total: {product.ecuadorStock + product.usaStock}
+                  {product.description && (
+                    <Text style={styles.description}>
+                      {product.description.substring(0, 60)}
+                      {product.description.length > 60 ? '...' : ''}
                     </Text>
-                  </View>
-                )}
+                  )}
+
+                  {/* Stock Information */}
+                  {includeStock && (
+                    <Text style={styles.stockInfo}>
+                      In Stock: {product.ecuadorStock + product.usaStock} units available
+                    </Text>
+                  )}
+                </View>
               </View>
             ))}
           </View>
 
-          {/* Footer */}
+          {/* Minimal Footer */}
           <View style={styles.footer}>
             <Text style={styles.pageNumber}>
-              Page {pageIndex + 1} of {pages.length} • {products.length} Products
+              {pageIndex + 1} / {pages.length}
             </Text>
           </View>
         </Page>

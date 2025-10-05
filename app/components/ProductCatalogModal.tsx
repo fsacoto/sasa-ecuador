@@ -77,10 +77,10 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                 onChange={(e) => setItemsPerPage(Number(e.target.value))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
               >
-                <option value={4}>4 items per page (2x2)</option>
-                <option value={6}>6 items per page (2x3)</option>
-                <option value={8}>8 items per page (2x4)</option>
-                <option value={9}>9 items per page (3x3)</option>
+                <option value={4}>4 items per page</option>
+                <option value={6}>6 items per page</option>
+                <option value={8}>8 items per page</option>
+                <option value={9}>9 items per page</option>
               </select>
             </div>
             <div className="flex items-end">

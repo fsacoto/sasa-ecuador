@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { InventoryItem } from '../types';
+import { convertImageForPDF } from '../utils/imageConverter';
 
 interface CatalogDownloadButtonProps {
   products: InventoryItem[];
@@ -21,6 +22,8 @@ export default function CatalogDownloadButton({
   const [isClient, setIsClient] = useState(false);
   const [PDFDownloadLink, setPDFDownloadLink] = useState<React.ComponentType<any> | null>(null);
   const [ProductCatalogPDF, setProductCatalogPDF] = useState<React.ComponentType<any> | null>(null);
+  const [convertedProducts, setConvertedProducts] = useState<InventoryItem[]>([]);
+  const [isConverting, setIsConverting] = useState(false);
 
   useEffect(() => {
     setIsClient(true);
@@ -33,7 +36,40 @@ export default function CatalogDownloadButton({
     });
   }, []);
 
-  if (!isClient || !PDFDownloadLink || !ProductCatalogPDF) {
+  // Convert WebP images to JPEG for PDF compatibility
+  useEffect(() => {
+    async function convertImages() {
+      if (!products || products.length === 0) {
+        setConvertedProducts([]);
+        return;
+      }
+
+      setIsConverting(true);
+      const converted = await Promise.all(
+        products.map(async (product) => {
+          if (!product.images || product.images.length === 0) {
+            return product;
+          }
+
+          const convertedImages = await Promise.all(
+            product.images.map(img => convertImageForPDF(img))
+          );
+
+          return {
+            ...product,
+            images: convertedImages.filter((img): img is string => img !== null),
+          };
+        })
+      );
+
+      setConvertedProducts(converted);
+      setIsConverting(false);
+    }
+
+    convertImages();
+  }, [products]);
+
+  if (!isClient || !PDFDownloadLink || !ProductCatalogPDF || isConverting) {
     return (
       <button
         disabled
@@ -44,7 +80,7 @@ export default function CatalogDownloadButton({
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
-          Loading...
+          {isConverting ? 'Converting images...' : 'Loading...'}
         </span>
       </button>
     );
@@ -54,7 +90,7 @@ export default function CatalogDownloadButton({
     <PDFDownloadLink
       document={
         <ProductCatalogPDF
-          products={products}
+          products={convertedProducts}
           catalogTitle={catalogTitle}
           includeStock={includeStock}
           itemsPerPage={itemsPerPage}
