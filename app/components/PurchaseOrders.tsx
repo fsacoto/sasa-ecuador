@@ -25,6 +25,15 @@ export default function PurchaseOrders() {
   const [skuManuallyEdited, setSkuManuallyEdited] = useState(false);
   const [originalSku, setOriginalSku] = useState<string>('');
   
+  // Sorting and filtering state
+  const [sortField, setSortField] = useState<string>('createdAt');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterSupplier, setFilterSupplier] = useState<string>('all');
+  const [filterDestination, setFilterDestination] = useState<string>('all');
+  const [showFilters, setShowFilters] = useState(false);
+  
   // Get unique categories and lines from existing data
   const existingCategories = [...new Set([
     ...inventory.map(item => item.category),
@@ -507,6 +516,121 @@ export default function PurchaseOrders() {
 
   const totals = calculateTotals();
 
+  // Sorting and filtering logic
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const filteredAndSortedOrders = purchaseOrders
+    .filter(order => {
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const matchesSearch = 
+          order.invoice.toLowerCase().includes(query) ||
+          order.description.toLowerCase().includes(query) ||
+          order.sku.toLowerCase().includes(query) ||
+          order.supplierSKU.toLowerCase().includes(query);
+        if (!matchesSearch) return false;
+      }
+      
+      // Status filter
+      if (filterStatus !== 'all' && order.status !== filterStatus) {
+        return false;
+      }
+      
+      // Supplier filter
+      if (filterSupplier !== 'all' && order.supplierId !== filterSupplier) {
+        return false;
+      }
+      
+      // Destination filter
+      if (filterDestination !== 'all' && order.destinationStock !== filterDestination) {
+        return false;
+      }
+      
+      return true;
+    })
+    .sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+      
+      switch (sortField) {
+        case 'invoice':
+          aValue = a.invoice.toLowerCase();
+          bValue = b.invoice.toLowerCase();
+          break;
+        case 'supplier':
+          const supplierA = suppliers.find(s => s.id === a.supplierId)?.name || '';
+          const supplierB = suppliers.find(s => s.id === b.supplierId)?.name || '';
+          aValue = supplierA.toLowerCase();
+          bValue = supplierB.toLowerCase();
+          break;
+        case 'description':
+          aValue = a.description.toLowerCase();
+          bValue = b.description.toLowerCase();
+          break;
+        case 'sku':
+          aValue = a.sku.toLowerCase();
+          bValue = b.sku.toLowerCase();
+          break;
+        case 'quantity':
+          aValue = a.quantity;
+          bValue = b.quantity;
+          break;
+        case 'destination':
+          aValue = a.destinationStock;
+          bValue = b.destinationStock;
+          break;
+        case 'status':
+          const statusOrder = { 'Ordered': 1, 'Shipped': 2, 'Received': 3, 'Verified': 4 };
+          aValue = statusOrder[a.status] || 0;
+          bValue = statusOrder[b.status] || 0;
+          break;
+        case 'landedCost':
+          aValue = a.landedCostPerUnit;
+          bValue = b.landedCostPerUnit;
+          break;
+        case 'purchaseDate':
+          aValue = new Date(a.purchaseDate).getTime();
+          bValue = new Date(b.purchaseDate).getTime();
+          break;
+        case 'createdAt':
+        default:
+          aValue = new Date(a.createdAt).getTime();
+          bValue = new Date(b.createdAt).getTime();
+          break;
+      }
+      
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+  const SortIcon = ({ field }: { field: string }) => {
+    if (sortField !== field) {
+      return (
+        <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+        </svg>
+      );
+    }
+    return sortDirection === 'asc' ? (
+      <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+      </svg>
+    ) : (
+      <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    );
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
@@ -528,6 +652,117 @@ export default function PurchaseOrders() {
             Add Purchase Order
           </button>
         </div>
+      </div>
+
+      {/* Compact Search and Filter Controls */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {/* Compact Search Bar - Always Visible */}
+        <div className="p-3 flex items-center gap-3">
+          <div className="flex-1 relative">
+            <input
+              type="text"
+              placeholder="Search orders (Invoice, Description, SKU...)"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm"
+            />
+            <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+          
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all text-sm font-medium ${
+              showFilters 
+                ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' 
+                : 'bg-white text-gray-700 border-gray-300 hover:border-[#4f0c1b]'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            Filters
+            {(filterStatus !== 'all' || filterSupplier !== 'all' || filterDestination !== 'all') && (
+              <span className="bg-white text-[#4f0c1b] rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+                {[filterStatus !== 'all', filterSupplier !== 'all', filterDestination !== 'all'].filter(Boolean).length}
+              </span>
+            )}
+          </button>
+          
+          <span className="text-sm text-gray-600 whitespace-nowrap">
+            <span className="font-semibold text-gray-900">{filteredAndSortedOrders.length}</span> of {purchaseOrders.length}
+          </span>
+        </div>
+        
+        {/* Expandable Filters */}
+        {showFilters && (
+          <div className="border-t border-gray-200 p-4 bg-gray-50">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Status Filter */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                >
+                  <option value="all">All Status</option>
+                  <option value="Ordered">📦 Ordered</option>
+                  <option value="Shipped">🚚 Shipped</option>
+                  <option value="Received">📥 Received</option>
+                  <option value="Verified">✅ Verified</option>
+                </select>
+              </div>
+              
+              {/* Supplier Filter */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Supplier</label>
+                <select
+                  value={filterSupplier}
+                  onChange={(e) => setFilterSupplier(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                >
+                  <option value="all">All Suppliers</option>
+                  {suppliers.map(supplier => (
+                    <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
+                  ))}
+                </select>
+              </div>
+              
+              {/* Destination Filter */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Destination</label>
+                <select
+                  value={filterDestination}
+                  onChange={(e) => setFilterDestination(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                >
+                  <option value="all">All Destinations</option>
+                  <option value="Ecuador">Ecuador</option>
+                  <option value="USA">USA</option>
+                </select>
+              </div>
+            </div>
+            
+            {/* Clear filters button */}
+            {(searchQuery || filterStatus !== 'all' || filterSupplier !== 'all' || filterDestination !== 'all') && (
+              <div className="mt-3 flex justify-end">
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setFilterStatus('all');
+                    setFilterSupplier('all');
+                    setFilterDestination('all');
+                  }}
+                  className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium text-sm"
+                >
+                  Clear All Filters
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Warning Banner for Orders Needing Review */}
@@ -1051,29 +1286,77 @@ export default function PurchaseOrders() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Invoice
+                <th 
+                  onClick={() => handleSort('invoice')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    Invoice
+                    <SortIcon field="invoice" />
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Supplier
+                <th 
+                  onClick={() => handleSort('supplier')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    Supplier
+                    <SortIcon field="supplier" />
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Description
+                <th 
+                  onClick={() => handleSort('description')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    Description
+                    <SortIcon field="description" />
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  SKU
+                <th 
+                  onClick={() => handleSort('sku')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    SKU
+                    <SortIcon field="sku" />
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Quantity
+                <th 
+                  onClick={() => handleSort('quantity')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    Quantity
+                    <SortIcon field="quantity" />
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Destination
+                <th 
+                  onClick={() => handleSort('destination')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    Destination
+                    <SortIcon field="destination" />
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
+                <th 
+                  onClick={() => handleSort('status')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    Status
+                    <SortIcon field="status" />
+                  </div>
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Landed Cost/Unit
+                <th 
+                  onClick={() => handleSort('landedCost')}
+                  className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1 justify-end">
+                    Landed Cost/Unit
+                    <SortIcon field="landedCost" />
+                  </div>
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
@@ -1081,14 +1364,16 @@ export default function PurchaseOrders() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {purchaseOrders.length === 0 ? (
+              {filteredAndSortedOrders.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-6 py-12 text-center text-sm text-gray-500">
-                    No purchase orders yet. Add your first purchase order to get started.
+                    {purchaseOrders.length === 0 
+                      ? 'No purchase orders yet. Add your first purchase order to get started.'
+                      : 'No orders match your filters. Try adjusting your search or filters.'}
                   </td>
                 </tr>
               ) : (
-                purchaseOrders.map((order) => {
+                filteredAndSortedOrders.map((order) => {
                   const supplier = suppliers.find(s => s.id === order.supplierId);
                   const needsReview = order.category.includes('NEEDS REVIEW') || !order.supplierId;
                   return (
