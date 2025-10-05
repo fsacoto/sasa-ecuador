@@ -4,17 +4,51 @@ export interface ParsedRow {
   [key: string]: string | number;
 }
 
+// Helper function to split CSV line respecting quotes
+function splitCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    const nextChar = line[i + 1];
+    
+    if (char === '"') {
+      // Handle escaped quotes ("")
+      if (inQuotes && nextChar === '"') {
+        current += '"';
+        i++; // Skip next quote
+      } else {
+        // Toggle quote state
+        inQuotes = !inQuotes;
+      }
+    } else if ((char === ',' || char === '\t') && !inQuotes) {
+      // End of field
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  
+  // Add last field
+  result.push(current.trim());
+  
+  return result;
+}
+
 export function parseCSV(csvText: string): ParsedRow[] {
   const lines = csvText.split('\n').filter(line => line.trim());
   if (lines.length === 0) return [];
 
   // Get headers from first line
-  const headers = lines[0].split(/[,\t]/).map(h => h.trim().replace(/^["']|["']$/g, ''));
+  const headers = splitCSVLine(lines[0]).map(h => h.replace(/^["']|["']$/g, ''));
   
   // Parse data rows
   const rows: ParsedRow[] = [];
   for (let i = 1; i < lines.length; i++) {
-    const values = lines[i].split(/[,\t]/).map(v => v.trim().replace(/^["']|["']$/g, ''));
+    const values = splitCSVLine(lines[i]).map(v => v.replace(/^["']|["']$/g, ''));
     
     if (values.length === headers.length) {
       const row: ParsedRow = {};

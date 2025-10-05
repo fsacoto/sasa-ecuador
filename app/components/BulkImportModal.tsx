@@ -13,7 +13,7 @@ interface BulkImportModalProps {
 type ImportStep = 'upload' | 'mapping' | 'preview' | 'complete';
 
 export default function BulkImportModal({ onClose }: BulkImportModalProps) {
-  const { addPurchaseOrdersBulk, inventory, addInventoryItemsBulk, suppliers } = useInventory();
+  const { addPurchaseOrdersBulk, inventory, addInventoryItemsBulk, updateInventoryItem, suppliers } = useInventory();
   const [step, setStep] = useState<ImportStep>('upload');
   const [parsedData, setParsedData] = useState<ParsedRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -23,7 +23,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
   const [defaultDestination, setDefaultDestination] = useState<'Ecuador' | 'USA'>('Ecuador');
   const [invoicePrefix, setInvoicePrefix] = useState<string>('');
   const [purchaseDate, setPurchaseDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [importResults, setImportResults] = useState<{ success: number; warnings: number }>({ success: 0, warnings: 0 });
+  const [importResults, setImportResults] = useState<{ success: number; warnings: number; autoLinked?: number }>({ success: 0, warnings: 0, autoLinked: 0 });
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -71,6 +71,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
     setStep('preview');
     
     let warningCount = 0;
+    let autoLinkedCount = 0;
     const existingSkus = inventory.map(item => item.sku);
     const timestamp = Date.now();
     
@@ -78,6 +79,9 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
     const ordersToAdd: Omit<PurchaseOrder, 'id' | 'createdAt'>[] = [];
     const itemsToAdd: Omit<InventoryItem, 'id' | 'createdAt'>[] = [];
     const existingSkuSet = new Set(existingSkus);
+    
+    // Track inventory updates for stock additions
+    const inventoryUpdates = new Map<string, { ecuadorStock: number; usaStock: number }>();
 
     parsedData.forEach((row, index) => {
       // Extract mapped fields
@@ -95,16 +99,31 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
       const category = mappedData.category || '';
       const line = mappedData.line || '';
 
+      // SMART LINKING: Try to find existing inventory item by supplier SKU
+      let matchedInventoryItem: InventoryItem | undefined;
+      if (supplierSKU) {
+        matchedInventoryItem = inventory.find(item => 
+          item.supplierSKU && item.supplierSKU.toLowerCase() === supplierSKU.toLowerCase()
+        );
+      }
+
       // Use SKU as-is from CSV (supplier's SKU system)
       let internalSku = sku;
+      let autoLinked = false;
       
-      if (!sku) {
-        // Generate a placeholder SKU if missing
+      if (matchedInventoryItem) {
+        // Use the matched item's internal SKU
+        internalSku = matchedInventoryItem.sku;
+        autoLinked = true;
+        autoLinkedCount++;
+      } else if (!sku) {
+        // Generate a placeholder SKU if missing and no match found
         internalSku = `IMP${timestamp.toString().slice(-5)}${String(index).padStart(3, '0')}`;
       }
 
       // Determine if this order needs review
-      const needsReview = !defaultSupplier || !sku || !description || costPerUnit === 0;
+      // Auto-linked items don't need review if they have all required info
+      const needsReview = !autoLinked && (!defaultSupplier || !sku || !description || costPerUnit === 0);
 
       // Each row is a SEPARATE purchase order
       // Use invoice from CSV if provided, otherwise auto-generate
@@ -113,17 +132,18 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
         : `IMPORT-${timestamp}-${String(index + 1).padStart(3, '0')}`);
 
       // Create individual purchase order
+      // Use existing item's info if auto-linked
       const orderData = {
         invoice: invoiceNumber,
         invoiceLink: '',
         supplierId: defaultSupplier || '',
         supplierSKU: supplierSKU,
-        description: description,
+        description: autoLinked && matchedInventoryItem ? matchedInventoryItem.name : description,
         sku: internalSku,
-          category: needsReview ? '⚠️ NEEDS REVIEW' : category,
-          line: line,
-          images: [],
-          quantity: quantity,
+        category: autoLinked && matchedInventoryItem ? matchedInventoryItem.category : (needsReview ? '⚠️ NEEDS REVIEW' : category),
+        line: autoLinked && matchedInventoryItem ? matchedInventoryItem.line : line,
+        images: autoLinked && matchedInventoryItem ? matchedInventoryItem.images : [],
+        quantity: quantity,
         destinationStock: defaultDestination,
         currency: defaultCurrency,
         costPerUnit: costPerUnit,
@@ -144,8 +164,23 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
 
       ordersToAdd.push(orderData);
 
-      // Check if inventory item exists with this SKU
-      if (!existingSkuSet.has(internalSku) && internalSku) {
+      // Handle inventory updates
+      if (autoLinked && matchedInventoryItem) {
+        // Update existing inventory item's stock
+        const itemId = matchedInventoryItem.id;
+        const existing = inventoryUpdates.get(itemId) || { 
+          ecuadorStock: matchedInventoryItem.ecuadorStock, 
+          usaStock: matchedInventoryItem.usaStock 
+        };
+        
+        if (defaultDestination === 'Ecuador') {
+          existing.ecuadorStock += quantity;
+        } else {
+          existing.usaStock += quantity;
+        }
+        
+        inventoryUpdates.set(itemId, existing);
+      } else if (!autoLinked && !existingSkuSet.has(internalSku) && internalSku) {
         // Create new inventory item
         itemsToAdd.push({
           name: description,
@@ -160,6 +195,24 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
           linkedPurchaseOrders: [],
         });
         existingSkuSet.add(internalSku); // Prevent duplicates within this batch
+      } else if (existingSkuSet.has(internalSku)) {
+        // Item already exists (from existing inventory or earlier in this batch)
+        const existingItem = inventory.find(item => item.sku === internalSku);
+        if (existingItem) {
+          const itemId = existingItem.id;
+          const existing = inventoryUpdates.get(itemId) || { 
+            ecuadorStock: existingItem.ecuadorStock, 
+            usaStock: existingItem.usaStock 
+          };
+          
+          if (defaultDestination === 'Ecuador') {
+            existing.ecuadorStock += quantity;
+          } else {
+            existing.usaStock += quantity;
+          }
+          
+          inventoryUpdates.set(itemId, existing);
+        }
       }
 
       if (needsReview) {
@@ -172,8 +225,13 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
     if (itemsToAdd.length > 0) {
       addInventoryItemsBulk(itemsToAdd);
     }
+    
+    // Update stock quantities for existing items
+    inventoryUpdates.forEach((stockUpdate, itemId) => {
+      updateInventoryItem(itemId, stockUpdate);
+    });
 
-    setImportResults({ success: ordersToAdd.length, warnings: warningCount });
+    setImportResults({ success: ordersToAdd.length, warnings: warningCount, autoLinked: autoLinkedCount });
     setStep('complete');
   };
 
@@ -405,6 +463,11 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                 <p className="text-gray-700">
                   Successfully imported <span className="font-semibold text-[#4f0c1b]">{importResults.success}</span> purchase orders
                 </p>
+                {importResults.autoLinked && importResults.autoLinked > 0 && (
+                  <p className="text-green-600 font-medium">
+                    🔗 {importResults.autoLinked} {importResults.autoLinked === 1 ? 'item was' : 'items were'} automatically linked to existing products by Supplier SKU!
+                  </p>
+                )}
                 {importResults.warnings > 0 && (
                   <p className="text-amber-600">
                     ⚠️ {importResults.warnings} items need review (marked with "⚠️ NEEDS REVIEW")

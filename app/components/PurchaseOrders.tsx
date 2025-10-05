@@ -83,13 +83,14 @@ export default function PurchaseOrders() {
         setFormData(prev => ({
           ...prev,
           sku: item.sku,
-          description: item.description || item.name,
+          description: editingOrder ? prev.description : (item.description || item.name),
           category: item.category,
           line: item.line,
           images: item.images || [],
-          supplierSKU: item.supplierSKU,
+          supplierSKU: editingOrder ? prev.supplierSKU : item.supplierSKU,
         }));
         setIsCreatingNewItem(false);
+        setSkuManuallyEdited(true); // Prevent auto-regeneration when linked to existing
       }
     } else if (selectedInventoryId === 'new') {
       setIsCreatingNewItem(true);
@@ -104,7 +105,7 @@ export default function PurchaseOrders() {
         supplierSKU: '',
       }));
     }
-  }, [selectedInventoryId, inventory]);
+  }, [selectedInventoryId, inventory, editingOrder]);
 
   // Fetch exchange rates when form opens
   useEffect(() => {
@@ -270,6 +271,7 @@ export default function PurchaseOrders() {
   const handleEdit = (order: PurchaseOrder) => {
     setEditingOrder(order);
     setOriginalSku(order.sku); // Track original SKU for sync purposes
+    setSelectedInventoryId(''); // Reset selector for fresh linking option
     setFormData({
       invoice: order.invoice,
       invoiceLink: order.invoiceLink,
@@ -351,22 +353,27 @@ export default function PurchaseOrders() {
               </button>
             </div>
             <form onSubmit={handleSubmit} className="overflow-y-auto max-h-[calc(90vh-8rem)] p-6 space-y-5">
-              {/* Inventory Item Selector */}
-              {!editingOrder && (
+              {/* Inventory Item Selector - for new orders OR editing orders that need review */}
+              {(!editingOrder || (editingOrder && editingOrder.category.includes('NEEDS REVIEW'))) && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Product</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {editingOrder ? 'Link to Existing Product (Optional)' : 'Product'}
+                  </label>
                   <div className="flex gap-2">
                     <select
                       value={selectedInventoryId}
                       onChange={(e) => setSelectedInventoryId(e.target.value)}
                       className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent bg-white text-sm"
                     >
-                      <option value="">Select existing product or create new...</option>
-                      <option value="new">Create New Product</option>
+                      <option value="">
+                        {editingOrder ? 'Keep current / create new product...' : 'Select existing product or create new...'}
+                      </option>
+                      {!editingOrder && <option value="new">Create New Product</option>}
                       {inventory.length > 0 && <option disabled>──────────</option>}
                       {inventory.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.name} · {item.sku}
+                          {item.supplierSKU && formData.supplierSKU && item.supplierSKU === formData.supplierSKU && ' ✓ (Supplier SKU Match)'}
                         </option>
                       ))}
                     </select>
@@ -380,9 +387,14 @@ export default function PurchaseOrders() {
                       </button>
                     )}
                   </div>
-                  {selectedInventoryId && selectedInventoryId !== 'new' && (
+                  {selectedInventoryId && selectedInventoryId !== 'new' && !editingOrder && (
                     <p className="text-xs text-gray-500 mt-1.5">
                       Product details loaded from inventory
+                    </p>
+                  )}
+                  {selectedInventoryId && selectedInventoryId !== 'new' && editingOrder && (
+                    <p className="text-xs text-green-600 mt-1.5 font-medium">
+                      ✓ Will link to existing product and use its SKU, Category, and Line
                     </p>
                   )}
                   {isCreatingNewItem && (
@@ -455,7 +467,7 @@ export default function PurchaseOrders() {
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     placeholder={isCreatingNewItem ? 'e.g., Gold Diamond Ring' : 'Order description'}
-                    disabled={!!(selectedInventoryId && selectedInventoryId !== 'new')}
+                    disabled={!!(selectedInventoryId && selectedInventoryId !== 'new' && !editingOrder)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
                   />
                 </div>
