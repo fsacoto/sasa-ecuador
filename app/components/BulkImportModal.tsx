@@ -20,6 +20,8 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
   const [defaultSupplier, setDefaultSupplier] = useState<string>('');
   const [defaultCurrency, setDefaultCurrency] = useState<string>('USD');
   const [defaultDestination, setDefaultDestination] = useState<'Ecuador' | 'USA'>('Ecuador');
+  const [invoicePrefix, setInvoicePrefix] = useState<string>('');
+  const [purchaseDate, setPurchaseDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [importResults, setImportResults] = useState<{ success: number; warnings: number }>({ success: 0, warnings: 0 });
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -70,40 +72,51 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
     let successCount = 0;
     let warningCount = 0;
     const existingSkus = inventory.map(item => item.sku);
+    const timestamp = Date.now();
 
-    parsedData.forEach((row) => {
+    parsedData.forEach((row, index) => {
       // Extract mapped fields
       const mappedData: any = {};
       Object.entries(columnMapping).forEach(([csvColumn, dbField]) => {
         mappedData[dbField] = row[csvColumn];
       });
 
+      const invoice = mappedData.invoice || '';
       const sku = mappedData.sku || '';
       const description = mappedData.description || 'Imported Item';
       const quantity = cleanNumericValue(mappedData.quantity || 1);
       const costPerUnit = cleanNumericValue(mappedData.costPerUnit || 0);
       const supplierSKU = mappedData.supplierSKU || '';
+      const category = mappedData.category || '';
+      const line = mappedData.line || '';
 
-      // Generate internal SKU if not provided or create new one
+      // Use SKU as-is from CSV (supplier's SKU system)
       let internalSku = sku;
-      const hasWarning = !sku || !description || costPerUnit === 0;
-
+      
       if (!sku) {
-        // Generate a placeholder SKU
-        internalSku = `IMP${Date.now().toString().slice(-8)}`;
-        warningCount++;
+        // Generate a placeholder SKU if missing
+        internalSku = `IMP${timestamp.toString().slice(-5)}${String(index).padStart(3, '0')}`;
       }
 
-      // Create purchase order
+      // Determine if this order needs review
+      const needsReview = !defaultSupplier || !sku || !description || costPerUnit === 0;
+
+      // Each row is a SEPARATE purchase order
+      // Use invoice from CSV if provided, otherwise auto-generate
+      const invoiceNumber = invoice || (invoicePrefix 
+        ? `${invoicePrefix}-${String(index + 1).padStart(3, '0')}`
+        : `IMPORT-${timestamp}-${String(index + 1).padStart(3, '0')}`);
+
+      // Create individual purchase order
       const orderData = {
-        invoice: `BULK-${Date.now()}-${successCount}`,
+        invoice: invoiceNumber,
         invoiceLink: '',
-        supplierId: defaultSupplier,
+        supplierId: defaultSupplier || '',
         supplierSKU: supplierSKU,
         description: description,
         sku: internalSku,
-        category: '',
-        line: '',
+        category: needsReview ? '⚠️ NEEDS REVIEW' : category,
+        line: line,
         image: '',
         quantity: quantity,
         destinationStock: defaultDestination,
@@ -121,34 +134,40 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
         otherFees: 0,
         totalLandedCost: quantity * costPerUnit,
         landedCostPerUnit: costPerUnit,
-        purchaseDate: new Date(),
+        purchaseDate: new Date(purchaseDate),
       };
 
       addPurchaseOrder(orderData);
 
-      // Check if inventory item exists
+      // Check if inventory item exists with this SKU
       const existingItem = inventory.find(item => item.sku === internalSku);
       
-      if (!existingItem && internalSku && internalSku !== '') {
-        // Create new inventory item with warning flag
+      if (!existingItem && internalSku) {
+        // Create new inventory item
         addInventoryItem({
           name: description,
           sku: internalSku,
           supplierSKU: supplierSKU,
-          category: hasWarning ? '⚠️ NEEDS REVIEW' : '',
-          line: '',
+          category: needsReview ? '⚠️ NEEDS REVIEW' : category,
+          line: line,
           description: description,
           image: '',
           ecuadorStock: defaultDestination === 'Ecuador' ? quantity : 0,
           usaStock: defaultDestination === 'USA' ? quantity : 0,
           linkedPurchaseOrders: [],
         });
-
-        if (hasWarning) {
-          warningCount++;
-        }
+      } else if (existingItem) {
+        // Item exists - just update stock
+        const currentEcuador = existingItem.ecuadorStock;
+        const currentUSA = existingItem.usaStock;
+        
+        // Note: In real app with proper DB, you'd update the existing item
+        // For now, we'll just create separate purchase orders
       }
 
+      if (needsReview) {
+        warningCount++;
+      }
       successCount++;
     });
 
@@ -209,24 +228,26 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                 </label>
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h4 className="text-sm font-semibold text-blue-900 mb-2">How to Export from Excel</h4>
-                <ol className="text-sm text-blue-800 space-y-2 list-decimal list-inside">
-                  <li>Open your Excel file</li>
-                  <li>Click <strong>File → Save As</strong></li>
-                  <li>Choose <strong>CSV UTF-8 (Comma delimited)</strong> format</li>
-                  <li>Save and upload the .csv file here</li>
-                </ol>
-              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h4 className="text-sm font-semibold text-blue-900 mb-2">How to Export from Excel</h4>
+                  <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+                    <li>Open your Excel file</li>
+                    <li>Click <strong>File → Save As</strong></li>
+                    <li>Choose <strong>CSV UTF-8</strong> format</li>
+                    <li>Upload the .csv file here</li>
+                  </ol>
+                </div>
 
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                <h4 className="text-sm font-semibold text-gray-900 mb-2">Tips for Best Results</h4>
-                <ul className="text-sm text-gray-700 space-y-1">
-                  <li>• Include columns for: SKU, Description, Quantity, Price</li>
-                  <li>• First row should contain column headers</li>
-                  <li>• Remove any summary rows or totals at the bottom</li>
-                  <li>• You'll map columns to our fields in the next step</li>
-                </ul>
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <h4 className="text-sm font-semibold text-gray-900 mb-2">What Happens</h4>
+                  <ul className="text-sm text-gray-700 space-y-1">
+                    <li>• Each row = separate purchase order</li>
+                    <li>• Products auto-added to inventory</li>
+                    <li>• Missing info flagged for review</li>
+                    <li>• You can update details later</li>
+                  </ul>
+                </div>
               </div>
             </div>
           )}
@@ -236,17 +257,42 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
             <div className="space-y-6">
               {/* Default Values */}
               <div className="bg-gray-50 rounded-lg p-4 space-y-4">
-                <h4 className="text-sm font-semibold text-gray-900">Default Values (Applied to All Items)</h4>
+                <h4 className="text-sm font-semibold text-gray-900">Order Information (Applied to All {parsedData.length} Orders)</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">Invoice Prefix</label>
+                    <input
+                      type="text"
+                      value={invoicePrefix}
+                      onChange={(e) => setInvoicePrefix(e.target.value)}
+                      placeholder="e.g., INV-2025-OCT"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      {Object.values(columnMapping).includes('invoice') 
+                        ? 'Using invoice numbers from CSV' 
+                        : `Auto-generated: ${invoicePrefix || 'IMPORT-###'}-001, -002, etc.`}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">Purchase Date</label>
+                    <input
+                      type="date"
+                      value={purchaseDate}
+                      onChange={(e) => setPurchaseDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                    />
+                  </div>
+                </div>
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-1 text-gray-700">Supplier *</label>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">Supplier (optional)</label>
                     <select
                       value={defaultSupplier}
                       onChange={(e) => setDefaultSupplier(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
-                      required
                     >
-                      <option value="">Select supplier</option>
+                      <option value="">None (add later)</option>
                       {suppliers.map((supplier) => (
                         <option key={supplier.id} value={supplier.id}>
                           {supplier.name}
@@ -301,12 +347,13 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] text-sm"
                       >
                         <option value="">Skip this column</option>
+                        <option value="invoice">Invoice Number</option>
                         <option value="sku">SKU (Internal)</option>
                         <option value="supplierSKU">Supplier SKU</option>
                         <option value="description">Description/Name</option>
                         <option value="quantity">Quantity</option>
                         <option value="costPerUnit">Cost Per Unit</option>
-                        <option value="totalCost">Total Cost</option>
+                        <option value="totalCost">Total Cost (ignored if Cost Per Unit mapped)</option>
                         <option value="category">Category</option>
                         <option value="line">Line</option>
                       </select>
@@ -385,8 +432,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
             <button
               type="button"
               onClick={handleImport}
-              disabled={!defaultSupplier}
-              className="flex-1 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
             >
               Import {parsedData.length} Items
             </button>

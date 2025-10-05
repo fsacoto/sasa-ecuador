@@ -35,6 +35,7 @@ export function detectColumnMapping(headers: string[]): {
   
   // Common patterns for each field
   const patterns = {
+    invoice: ['invoice', 'invoice number', 'invoice no', 'order number', 'po number', 'po#'],
     sku: ['sku', 'item no', 'item number', 'product code', 'code'],
     description: ['description', 'name', 'product name', 'item name', 'desc'],
     quantity: ['qty', 'quantity', 'amount', 'units', 'pcs'],

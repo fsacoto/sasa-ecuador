@@ -265,6 +265,20 @@ export default function PurchaseOrders() {
         </div>
       </div>
 
+      {/* Warning Banner for Orders Needing Review */}
+      {purchaseOrders.some(order => order.category.includes('NEEDS REVIEW') || !order.supplierId) && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+          <span className="text-2xl">⚠️</span>
+          <div>
+            <h3 className="text-sm font-semibold text-amber-900">Orders Need Review</h3>
+            <p className="text-sm text-amber-700 mt-1">
+              {purchaseOrders.filter(order => order.category.includes('NEEDS REVIEW') || !order.supplierId).length} orders from bulk import need additional information.
+              Click Edit to add missing supplier or other details.
+            </p>
+          </div>
+        </div>
+      )}
+
       {isFormOpen && (
         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 duration-300">
@@ -710,9 +724,19 @@ export default function PurchaseOrders() {
               ) : (
                 purchaseOrders.map((order) => {
                   const supplier = suppliers.find(s => s.id === order.supplierId);
+                  const needsReview = order.category.includes('NEEDS REVIEW') || !order.supplierId;
                   return (
-                    <tr key={order.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{order.invoice}</td>
+                    <tr key={order.id} className={`hover:bg-gray-50 transition-colors ${needsReview ? 'bg-amber-50/30' : ''}`}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-900">{order.invoice}</span>
+                          {needsReview && (
+                            <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
+                              Needs Review
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         {supplier ? (
                           <button
@@ -722,7 +746,7 @@ export default function PurchaseOrders() {
                             {supplier.name}
                           </button>
                         ) : (
-                          <span className="text-gray-500">N/A</span>
+                          <span className="text-amber-600 font-medium">Missing Supplier</span>
                         )}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-700">{order.description}</td>
@@ -738,7 +762,7 @@ export default function PurchaseOrders() {
                           onClick={() => handleEdit(order)}
                           className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium mr-4 transition-colors"
                         >
-                          Edit
+                          {needsReview ? 'Complete Info' : 'Edit'}
                         </button>
                         <button
                           onClick={() => {
