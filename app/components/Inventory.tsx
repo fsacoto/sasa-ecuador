@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { InventoryItem } from '../types';
 import InventoryDetailPanel from './InventoryDetailPanel';
+import ProductCatalogModal from './ProductCatalogModal';
 import { generateUniqueSKU } from '../utils/skuGenerator';
 import { syncInventoryToOrders } from '../utils/syncUpdates';
 import { handleMultipleImageUpload, validateImageFile } from '../utils/imageUpload';
@@ -13,6 +14,7 @@ export default function Inventory() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+  const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
   const [skuManuallyEdited, setSkuManuallyEdited] = useState(false);
   const [categoryMode, setCategoryMode] = useState<'select' | 'new'>('select');
   const [lineMode, setLineMode] = useState<'select' | 'new'>('select');
@@ -162,12 +164,24 @@ export default function Inventory() {
           <h2 className="text-2xl font-semibold text-gray-900">Inventory</h2>
           <p className="text-sm text-gray-500 mt-1">Manage your jewelry inventory</p>
         </div>
-        <button
-          onClick={() => setIsFormOpen(true)}
-          className="bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-5 py-2.5 rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow active:scale-95"
-        >
-          Add Inventory Item
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setIsCatalogModalOpen(true)}
+            disabled={inventory.length === 0}
+            className="bg-white border-2 border-[#4f0c1b] text-[#4f0c1b] hover:bg-[#4f0c1b] hover:text-white px-5 py-2.5 rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Create Catalog
+          </button>
+          <button
+            onClick={() => setIsFormOpen(true)}
+            className="bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-5 py-2.5 rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow active:scale-95"
+          >
+            Add Inventory Item
+          </button>
+        </div>
       </div>
 
       {/* Warning Banner for Items Needing Review */}
@@ -598,6 +612,14 @@ export default function Inventory() {
         <InventoryDetailPanel
           item={selectedItem}
           onClose={() => setSelectedItem(null)}
+        />
+      )}
+
+      {/* Catalog Modal */}
+      {isCatalogModalOpen && (
+        <ProductCatalogModal
+          inventory={inventory}
+          onClose={() => setIsCatalogModalOpen(false)}
         />
       )}
     </div>
