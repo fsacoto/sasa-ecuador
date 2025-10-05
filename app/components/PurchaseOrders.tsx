@@ -29,6 +29,9 @@ export default function PurchaseOrders() {
     costPerUnit: 0,
     discountPerUnit: 0,
     exchangeRate: 1,
+    shippingCost: 0,
+    tariffCost: 0,
+    otherFees: 0,
     purchaseDate: new Date().toISOString().split('T')[0],
   });
 
@@ -79,12 +82,28 @@ export default function PurchaseOrders() {
     const totalCostWithDiscount = totalCost - totalDiscount;
     const costInUSD = totalCostWithDiscount * formData.exchangeRate;
     
+    // Additional costs in USD
+    const shippingCost = formData.shippingCost;
+    const tariffCost = formData.tariffCost;
+    const otherFees = formData.otherFees;
+    
+    // Total landed cost = product cost + all fees
+    const totalLandedCost = costInUSD + shippingCost + tariffCost + otherFees;
+    
+    // Landed cost per unit = total landed cost / quantity
+    const landedCostPerUnit = formData.quantity > 0 ? totalLandedCost / formData.quantity : 0;
+    
     return {
       totalCost,
       totalDiscount,
       costPerUnitWithDiscount,
       totalCostWithDiscount,
       costInUSD,
+      shippingCost,
+      tariffCost,
+      otherFees,
+      totalLandedCost,
+      landedCostPerUnit,
     };
   };
 
@@ -140,6 +159,9 @@ export default function PurchaseOrders() {
       costPerUnit: 0,
       discountPerUnit: 0,
       exchangeRate: 1,
+      shippingCost: 0,
+      tariffCost: 0,
+      otherFees: 0,
       purchaseDate: new Date().toISOString().split('T')[0],
     });
     setEditingOrder(null);
@@ -166,6 +188,9 @@ export default function PurchaseOrders() {
       costPerUnit: order.costPerUnit,
       discountPerUnit: order.discountPerUnit,
       exchangeRate: order.exchangeRate,
+      shippingCost: order.shippingCost,
+      tariffCost: order.tariffCost,
+      otherFees: order.otherFees,
       purchaseDate: order.purchaseDate.toISOString().split('T')[0],
     });
     setIsFormOpen(true);
@@ -443,14 +468,88 @@ export default function PurchaseOrders() {
                 </div>
               </div>
 
-              <div className="bg-[#f8f7f4] p-4 rounded-lg border-l-4 border-[#4f0c1b]">
-                <h4 className="font-medium mb-2 text-[#4f0c1b]">Calculated Totals</h4>
-                <div className="grid grid-cols-2 gap-2 text-sm text-gray-700">
-                  <div>Total Cost: {formData.currency} {totals.totalCost.toFixed(2)}</div>
-                  <div>Total Discount: {formData.currency} {totals.totalDiscount.toFixed(2)}</div>
-                  <div>Cost Per Unit (with discount): {formData.currency} {totals.costPerUnitWithDiscount.toFixed(2)}</div>
-                  <div>Total Cost (with discount): {formData.currency} {totals.totalCostWithDiscount.toFixed(2)}</div>
-                  <div className="col-span-2 font-medium text-[#4f0c1b]">Cost in USD: ${totals.costInUSD.toFixed(2)}</div>
+              {/* Additional Costs */}
+              <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+                <h4 className="font-medium text-sm text-gray-900">Additional Costs (USD)</h4>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">Shipping</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.shippingCost}
+                      onChange={(e) => setFormData({ ...formData, shippingCost: parseFloat(e.target.value) || 0 })}
+                      placeholder="0.00"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">Tariffs/Duties</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.tariffCost}
+                      onChange={(e) => setFormData({ ...formData, tariffCost: parseFloat(e.target.value) || 0 })}
+                      placeholder="0.00"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">Other Fees</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.otherFees}
+                      onChange={(e) => setFormData({ ...formData, otherFees: parseFloat(e.target.value) || 0 })}
+                      placeholder="0.00"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Cost Summary */}
+              <div className="bg-white border-2 border-[#4f0c1b] rounded-lg p-4">
+                <h4 className="font-semibold mb-3 text-[#4f0c1b]">Cost Summary</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between text-gray-600">
+                    <span>Product Cost ({formData.currency}):</span>
+                    <span>{totals.totalCostWithDiscount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>Product Cost (USD):</span>
+                    <span>${totals.costInUSD.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>Shipping:</span>
+                    <span>${totals.shippingCost.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>Tariffs/Duties:</span>
+                    <span>${totals.tariffCost.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>Other Fees:</span>
+                    <span>${totals.otherFees.toFixed(2)}</span>
+                  </div>
+                  <div className="border-t-2 border-gray-200 pt-2 mt-2">
+                    <div className="flex justify-between font-semibold text-gray-900 text-base">
+                      <span>Total Landed Cost:</span>
+                      <span>${totals.totalLandedCost.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="bg-[#4f0c1b] text-white rounded-lg p-3 mt-3">
+                    <div className="flex justify-between font-semibold">
+                      <span>Landed Cost Per Unit:</span>
+                      <span>${totals.landedCostPerUnit.toFixed(2)}</span>
+                    </div>
+                    <div className="text-xs mt-1 opacity-90">
+                      vs Supplier Cost: {formData.currency} {totals.costPerUnitWithDiscount.toFixed(2)}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -521,7 +620,7 @@ export default function PurchaseOrders() {
                   Destination
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Cost (USD)
+                  Landed Cost/Unit
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
@@ -557,7 +656,10 @@ export default function PurchaseOrders() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.sku}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.quantity}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.destinationStock}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right font-medium text-gray-900">${order.costInUSD.toFixed(2)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                        <div className="font-medium text-gray-900">${order.landedCostPerUnit.toFixed(2)}</div>
+                        <div className="text-xs text-gray-500">Total: ${order.totalLandedCost.toFixed(2)}</div>
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                         <button
                           onClick={() => handleEdit(order)}

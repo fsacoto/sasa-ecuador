@@ -33,6 +33,11 @@ export interface PurchaseOrder {
   totalCostWithDiscount: number;
   exchangeRate: number;
   costInUSD: number;
+  shippingCost: number;
+  tariffCost: number;
+  otherFees: number;
+  totalLandedCost: number;
+  landedCostPerUnit: number;
   purchaseDate: Date;
   createdAt: Date;
 }
