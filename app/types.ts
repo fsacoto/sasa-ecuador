@@ -25,6 +25,7 @@ export interface PurchaseOrder {
   line: string;
   images: string[]; // Array of image URLs or base64 data
   quantity: number;
+  quantityReceived?: number; // Actual quantity received after verification
   destinationStock: 'Ecuador' | 'USA';
   currency: string;
   costPerUnit: number;

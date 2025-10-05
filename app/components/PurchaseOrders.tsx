@@ -202,18 +202,87 @@ export default function PurchaseOrders() {
       // Update the purchase order
       const updatedOrder = { ...editingOrder, ...orderData };
       
-      // Check if status changed to 'Verified' - update inventory stock (counted and confirmed)
+      // SAFEGUARD: Handle inventory updates based on status changes
       const oldStatus = editingOrder.status;
       const newStatus = formData.status;
-      if ((oldStatus === 'Ordered' || oldStatus === 'Shipped' || oldStatus === 'Received') && newStatus === 'Verified') {
-        // Add quantity to inventory
+      
+      // Moving backwards from Verified - remove inventory
+      if (oldStatus === 'Verified' && newStatus !== 'Verified') {
+        const quantityToRemove = editingOrder.quantityReceived || updatedOrder.quantity;
+        const confirmed = confirm(
+          `⚠️ WARNING: This order was already verified and added to inventory!\n\n` +
+          `Changing status will REMOVE ${quantityToRemove} units from your ${updatedOrder.destinationStock} inventory.\n\n` +
+          `Continue?`
+        );
+        
+        if (!confirmed) {
+          return; // Cancel the edit
+        }
+        
         const inventoryItem = inventory.find(item => item.sku === updatedOrder.sku);
         if (inventoryItem) {
           const stockUpdate: any = {};
           if (updatedOrder.destinationStock === 'Ecuador') {
-            stockUpdate.ecuadorStock = inventoryItem.ecuadorStock + updatedOrder.quantity;
+            stockUpdate.ecuadorStock = Math.max(0, inventoryItem.ecuadorStock - quantityToRemove);
           } else {
-            stockUpdate.usaStock = inventoryItem.usaStock + updatedOrder.quantity;
+            stockUpdate.usaStock = Math.max(0, inventoryItem.usaStock - quantityToRemove);
+          }
+          updateInventoryItem(inventoryItem.id, stockUpdate);
+        }
+      }
+      // Moving TO Verified - prompt for actual quantity and add to inventory
+      else if (oldStatus !== 'Verified' && newStatus === 'Verified') {
+        const quantityReceived = prompt(
+          `📦 INVENTORY VERIFICATION\n\n` +
+          `Order: ${updatedOrder.description}\n` +
+          `SKU: ${updatedOrder.sku}\n` +
+          `Expected Quantity: ${updatedOrder.quantity}\n` +
+          `Destination: ${updatedOrder.destinationStock}\n\n` +
+          `Enter the ACTUAL quantity received and counted:`,
+          updatedOrder.quantity.toString()
+        );
+        
+        if (quantityReceived === null) {
+          return; // User cancelled
+        }
+        
+        const actualQuantity = parseInt(quantityReceived);
+        
+        if (isNaN(actualQuantity) || actualQuantity < 0) {
+          alert('Invalid quantity entered. Please enter a valid number.');
+          return;
+        }
+        
+        // Warn if quantity doesn't match
+        if (actualQuantity !== updatedOrder.quantity) {
+          const difference = actualQuantity - updatedOrder.quantity;
+          const diffText = difference > 0 ? `+${difference} MORE` : `${Math.abs(difference)} LESS`;
+          
+          const confirmMismatch = confirm(
+            `⚠️ QUANTITY MISMATCH\n\n` +
+            `Expected: ${updatedOrder.quantity}\n` +
+            `Received: ${actualQuantity}\n` +
+            `Difference: ${diffText}\n\n` +
+            `This will add ${actualQuantity} units to inventory.\n\n` +
+            `Continue with this quantity?`
+          );
+          
+          if (!confirmMismatch) {
+            return;
+          }
+        }
+        
+        // Store the actual quantity received in orderData
+        orderData.quantityReceived = actualQuantity;
+        
+        // Add to inventory using actual quantity
+        const inventoryItem = inventory.find(item => item.sku === updatedOrder.sku);
+        if (inventoryItem) {
+          const stockUpdate: any = {};
+          if (updatedOrder.destinationStock === 'Ecuador') {
+            stockUpdate.ecuadorStock = inventoryItem.ecuadorStock + actualQuantity;
+          } else {
+            stockUpdate.usaStock = inventoryItem.usaStock + actualQuantity;
           }
           updateInventoryItem(inventoryItem.id, stockUpdate);
         }
@@ -301,6 +370,35 @@ export default function PurchaseOrders() {
 
   const handleStatusChange = (order: PurchaseOrder, newStatus: 'Ordered' | 'Shipped' | 'Received' | 'Verified') => {
     const oldStatus = order.status;
+    
+    // SAFEGUARD: Prevent moving backwards from Verified without confirmation
+    if (oldStatus === 'Verified' && newStatus !== 'Verified') {
+      const quantityToRemove = order.quantityReceived || order.quantity;
+      const confirmed = confirm(
+        `⚠️ WARNING: This order has already been verified and added to inventory!\n\n` +
+        `Moving back to "${newStatus}" will REMOVE ${quantityToRemove} units from your ${order.destinationStock} inventory.\n\n` +
+        `This should only be done if the verification was a mistake.\n\n` +
+        `Are you sure you want to continue?`
+      );
+      
+      if (!confirmed) {
+        // User cancelled - don't change status
+        return;
+      }
+      
+      // Remove inventory that was previously added
+      const inventoryItem = inventory.find(item => item.sku === order.sku);
+      if (inventoryItem) {
+        const stockUpdate: any = {};
+        if (order.destinationStock === 'Ecuador') {
+          stockUpdate.ecuadorStock = Math.max(0, inventoryItem.ecuadorStock - quantityToRemove);
+        } else {
+          stockUpdate.usaStock = Math.max(0, inventoryItem.usaStock - quantityToRemove);
+        }
+        updateInventoryItem(inventoryItem.id, stockUpdate);
+      }
+    }
+    
     const statusUpdate: any = { status: newStatus };
     
     // Add timestamp dates
@@ -315,15 +413,61 @@ export default function PurchaseOrders() {
       }
     }
     
-    // Update inventory stock ONLY when changing to 'Verified' (counted and confirmed)
-    if ((oldStatus === 'Ordered' || oldStatus === 'Shipped' || oldStatus === 'Received') && newStatus === 'Verified') {
+    // VERIFICATION: When moving to Verified, prompt for actual quantity received
+    if (oldStatus !== 'Verified' && newStatus === 'Verified') {
+      const quantityReceived = prompt(
+        `📦 INVENTORY VERIFICATION\n\n` +
+        `Order: ${order.description}\n` +
+        `SKU: ${order.sku}\n` +
+        `Expected Quantity: ${order.quantity}\n` +
+        `Destination: ${order.destinationStock}\n\n` +
+        `Enter the ACTUAL quantity received and counted:`,
+        order.quantity.toString()
+      );
+      
+      // User cancelled
+      if (quantityReceived === null) {
+        return;
+      }
+      
+      const actualQuantity = parseInt(quantityReceived);
+      
+      // Validate input
+      if (isNaN(actualQuantity) || actualQuantity < 0) {
+        alert('Invalid quantity entered. Please enter a valid number.');
+        return;
+      }
+      
+      // Warn if quantity doesn't match
+      if (actualQuantity !== order.quantity) {
+        const difference = actualQuantity - order.quantity;
+        const diffText = difference > 0 ? `+${difference} MORE` : `${Math.abs(difference)} LESS`;
+        
+        const confirmMismatch = confirm(
+          `⚠️ QUANTITY MISMATCH\n\n` +
+          `Expected: ${order.quantity}\n` +
+          `Received: ${actualQuantity}\n` +
+          `Difference: ${diffText}\n\n` +
+          `This will add ${actualQuantity} units to inventory.\n\n` +
+          `Continue with this quantity?`
+        );
+        
+        if (!confirmMismatch) {
+          return;
+        }
+      }
+      
+      // Store the actual quantity received
+      statusUpdate.quantityReceived = actualQuantity;
+      
+      // Add to inventory using actual quantity
       const inventoryItem = inventory.find(item => item.sku === order.sku);
       if (inventoryItem) {
         const stockUpdate: any = {};
         if (order.destinationStock === 'Ecuador') {
-          stockUpdate.ecuadorStock = inventoryItem.ecuadorStock + order.quantity;
+          stockUpdate.ecuadorStock = inventoryItem.ecuadorStock + actualQuantity;
         } else {
-          stockUpdate.usaStock = inventoryItem.usaStock + order.quantity;
+          stockUpdate.usaStock = inventoryItem.usaStock + actualQuantity;
         }
         updateInventoryItem(inventoryItem.id, stockUpdate);
       }
@@ -973,24 +1117,40 @@ export default function PurchaseOrders() {
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-700">{order.description}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.sku}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.quantity}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-700">{order.quantity}</span>
+                          {order.status === 'Verified' && order.quantityReceived !== undefined && order.quantityReceived !== order.quantity && (
+                            <span className="text-amber-600 text-xs font-medium" title={`Actually received: ${order.quantityReceived}`}>
+                              (⚠️ {order.quantityReceived})
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.destinationStock}</td>
                       <td className="px-4 py-4 whitespace-nowrap">
-                        <select
-                          value={order.status || 'Ordered'}
-                          onChange={(e) => handleStatusChange(order, e.target.value as any)}
-                          className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:ring-2 focus:ring-[#4f0c1b] ${
-                            order.status === 'Verified' ? 'bg-green-100 text-green-800' :
-                            order.status === 'Received' ? 'bg-blue-100 text-blue-800' :
-                            order.status === 'Shipped' ? 'bg-purple-100 text-purple-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}
-                        >
-                          <option value="Ordered">📦 Ordered</option>
-                          <option value="Shipped">🚚 Shipped</option>
-                          <option value="Received">📥 Received</option>
-                          <option value="Verified">✅ Verified</option>
-                        </select>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={order.status || 'Ordered'}
+                            onChange={(e) => handleStatusChange(order, e.target.value as any)}
+                            className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:ring-2 focus:ring-[#4f0c1b] ${
+                              order.status === 'Verified' ? 'bg-green-100 text-green-800 font-bold' :
+                              order.status === 'Received' ? 'bg-blue-100 text-blue-800' :
+                              order.status === 'Shipped' ? 'bg-purple-100 text-purple-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}
+                          >
+                            <option value="Ordered">📦 Ordered</option>
+                            <option value="Shipped">🚚 Shipped</option>
+                            <option value="Received">📥 Received</option>
+                            <option value="Verified">✅ Verified</option>
+                          </select>
+                          {order.status === 'Verified' && (
+                            <span className="text-green-600 text-xs" title="Inventory updated">
+                              🔒
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         <div className="font-medium text-gray-900">${order.landedCostPerUnit.toFixed(2)}</div>
