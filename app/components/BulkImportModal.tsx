@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { parseCSV, detectColumnMapping, cleanNumericValue, ParsedRow } from '../utils/csvParser';
 import { useInventory } from '../context/InventoryContext';
 import { generateUniqueSKU } from '../utils/skuGenerator';
+import { PurchaseOrder, InventoryItem } from '../types';
 
 interface BulkImportModalProps {
   onClose: () => void;
@@ -12,7 +13,7 @@ interface BulkImportModalProps {
 type ImportStep = 'upload' | 'mapping' | 'preview' | 'complete';
 
 export default function BulkImportModal({ onClose }: BulkImportModalProps) {
-  const { addPurchaseOrder, inventory, addInventoryItem, suppliers } = useInventory();
+  const { addPurchaseOrdersBulk, inventory, addInventoryItemsBulk, suppliers } = useInventory();
   const [step, setStep] = useState<ImportStep>('upload');
   const [parsedData, setParsedData] = useState<ParsedRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -69,10 +70,14 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
   const handleImport = () => {
     setStep('preview');
     
-    let successCount = 0;
     let warningCount = 0;
     const existingSkus = inventory.map(item => item.sku);
     const timestamp = Date.now();
+    
+    // Collect all orders to add in bulk
+    const ordersToAdd: Omit<PurchaseOrder, 'id' | 'createdAt'>[] = [];
+    const itemsToAdd: Omit<InventoryItem, 'id' | 'createdAt'>[] = [];
+    const existingSkuSet = new Set(existingSkus);
 
     parsedData.forEach((row, index) => {
       // Extract mapped fields
@@ -137,14 +142,12 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
         purchaseDate: new Date(purchaseDate),
       };
 
-      addPurchaseOrder(orderData);
+      ordersToAdd.push(orderData);
 
       // Check if inventory item exists with this SKU
-      const existingItem = inventory.find(item => item.sku === internalSku);
-      
-      if (!existingItem && internalSku) {
+      if (!existingSkuSet.has(internalSku) && internalSku) {
         // Create new inventory item
-        addInventoryItem({
+        itemsToAdd.push({
           name: description,
           sku: internalSku,
           supplierSKU: supplierSKU,
@@ -156,22 +159,21 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
           usaStock: defaultDestination === 'USA' ? quantity : 0,
           linkedPurchaseOrders: [],
         });
-      } else if (existingItem) {
-        // Item exists - just update stock
-        const currentEcuador = existingItem.ecuadorStock;
-        const currentUSA = existingItem.usaStock;
-        
-        // Note: In real app with proper DB, you'd update the existing item
-        // For now, we'll just create separate purchase orders
+        existingSkuSet.add(internalSku); // Prevent duplicates within this batch
       }
 
       if (needsReview) {
         warningCount++;
       }
-      successCount++;
     });
 
-    setImportResults({ success: successCount, warnings: warningCount });
+    // Add all orders and items in bulk
+    addPurchaseOrdersBulk(ordersToAdd);
+    if (itemsToAdd.length > 0) {
+      addInventoryItemsBulk(itemsToAdd);
+    }
+
+    setImportResults({ success: ordersToAdd.length, warnings: warningCount });
     setStep('complete');
   };
 

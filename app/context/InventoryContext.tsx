@@ -13,12 +13,14 @@ interface InventoryContextType {
   // Purchase Orders
   purchaseOrders: PurchaseOrder[];
   addPurchaseOrder: (order: Omit<PurchaseOrder, 'id' | 'createdAt'>) => void;
+  addPurchaseOrdersBulk: (orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]) => void;
   updatePurchaseOrder: (id: string, order: Partial<PurchaseOrder>) => void;
   deletePurchaseOrder: (id: string) => void;
   
   // Inventory
   inventory: InventoryItem[];
   addInventoryItem: (item: Omit<InventoryItem, 'id' | 'createdAt'>) => void;
+  addInventoryItemsBulk: (items: Omit<InventoryItem, 'id' | 'createdAt'>[]) => void;
   updateInventoryItem: (id: string, item: Partial<InventoryItem>) => void;
   deleteInventoryItem: (id: string) => void;
 }
@@ -52,10 +54,20 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   const addPurchaseOrder = (order: Omit<PurchaseOrder, 'id' | 'createdAt'>) => {
     const newOrder: PurchaseOrder = {
       ...order,
-      id: Date.now().toString(),
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       createdAt: new Date(),
     };
-    setPurchaseOrders([...purchaseOrders, newOrder]);
+    setPurchaseOrders(prev => [...prev, newOrder]);
+  };
+
+  // Bulk add multiple purchase orders
+  const addPurchaseOrdersBulk = (orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]) => {
+    const newOrders: PurchaseOrder[] = orders.map((order, index) => ({
+      ...order,
+      id: `${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
+      createdAt: new Date(),
+    }));
+    setPurchaseOrders(prev => [...prev, ...newOrders]);
   };
 
   const updatePurchaseOrder = (id: string, orderUpdate: Partial<PurchaseOrder>) => {
@@ -70,10 +82,20 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   const addInventoryItem = (item: Omit<InventoryItem, 'id' | 'createdAt'>) => {
     const newItem: InventoryItem = {
       ...item,
-      id: Date.now().toString(),
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       createdAt: new Date(),
     };
-    setInventory([...inventory, newItem]);
+    setInventory(prev => [...prev, newItem]);
+  };
+
+  // Bulk add multiple inventory items
+  const addInventoryItemsBulk = (items: Omit<InventoryItem, 'id' | 'createdAt'>[]) => {
+    const newItems: InventoryItem[] = items.map((item, index) => ({
+      ...item,
+      id: `${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
+      createdAt: new Date(),
+    }));
+    setInventory(prev => [...prev, ...newItems]);
   };
 
   const updateInventoryItem = (id: string, itemUpdate: Partial<InventoryItem>) => {
@@ -93,10 +115,12 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         deleteSupplier,
         purchaseOrders,
         addPurchaseOrder,
+        addPurchaseOrdersBulk,
         updatePurchaseOrder,
         deletePurchaseOrder,
         inventory,
         addInventoryItem,
+        addInventoryItemsBulk,
         updateInventoryItem,
         deleteInventoryItem,
       }}
