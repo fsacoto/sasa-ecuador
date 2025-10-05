@@ -5,9 +5,10 @@ import { useInventory } from '../context/InventoryContext';
 import { InventoryItem } from '../types';
 import InventoryDetailPanel from './InventoryDetailPanel';
 import { generateUniqueSKU } from '../utils/skuGenerator';
+import { syncInventoryToOrders } from '../utils/syncUpdates';
 
 export default function Inventory() {
-  const { inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, purchaseOrders } = useInventory();
+  const { inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, purchaseOrders, updatePurchaseOrder } = useInventory();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
@@ -37,7 +38,12 @@ export default function Inventory() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingItem) {
+      // Update the inventory item
+      const updatedItem = { ...editingItem, ...formData };
       updateInventoryItem(editingItem.id, formData);
+      
+      // Sync changes to linked purchase orders
+      syncInventoryToOrders(updatedItem, purchaseOrders, updatePurchaseOrder);
     } else {
       addInventoryItem(formData);
     }

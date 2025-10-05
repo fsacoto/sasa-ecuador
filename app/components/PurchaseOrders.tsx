@@ -7,9 +7,10 @@ import SupplierDetailPanel from './SupplierDetailPanel';
 import { generateUniqueSKU } from '../utils/skuGenerator';
 import { getExchangeRates, getExchangeRate, formatLastUpdate } from '../utils/currencyApi';
 import BulkImportModal from './BulkImportModal';
+import { syncPurchaseOrderToInventory } from '../utils/syncUpdates';
 
 export default function PurchaseOrders() {
-  const { purchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, suppliers, inventory, addInventoryItem } = useInventory();
+  const { purchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, suppliers, inventory, addInventoryItem, updateInventoryItem } = useInventory();
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
@@ -161,14 +162,20 @@ export default function PurchaseOrders() {
     };
 
     if (editingOrder) {
+      // Update the purchase order
+      const updatedOrder = { ...editingOrder, ...orderData };
       updatePurchaseOrder(editingOrder.id, orderData);
+      
+      // Sync changes to inventory
+      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem);
     } else {
       // Add the purchase order
+      const newOrderId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const newOrder = { ...orderData, id: newOrderId, createdAt: new Date() };
       addPurchaseOrder(orderData);
 
       // If creating new item, add it to inventory
       if (isCreatingNewItem && formData.sku && formData.category && formData.line) {
-        const newOrderId = Date.now().toString(); // This will be the order ID
         addInventoryItem({
           name: formData.description,
           sku: formData.sku,
@@ -181,6 +188,9 @@ export default function PurchaseOrders() {
           usaStock: formData.destinationStock === 'USA' ? formData.quantity : 0,
           linkedPurchaseOrders: [newOrderId],
         });
+      } else if (formData.sku) {
+        // Sync to existing inventory if needed
+        syncPurchaseOrderToInventory(newOrder, inventory, updateInventoryItem, addInventoryItem);
       }
     }
     resetForm();

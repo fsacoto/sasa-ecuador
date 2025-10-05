@@ -71,7 +71,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   };
 
   const updatePurchaseOrder = (id: string, orderUpdate: Partial<PurchaseOrder>) => {
-    setPurchaseOrders(purchaseOrders.map(o => o.id === id ? { ...o, ...orderUpdate } : o));
+    setPurchaseOrders(prev => prev.map(o => o.id === id ? { ...o, ...orderUpdate } : o));
   };
 
   const deletePurchaseOrder = (id: string) => {
@@ -99,7 +99,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   };
 
   const updateInventoryItem = (id: string, itemUpdate: Partial<InventoryItem>) => {
-    setInventory(inventory.map(i => i.id === id ? { ...i, ...itemUpdate } : i));
+    setInventory(prev => prev.map(i => i.id === id ? { ...i, ...itemUpdate } : i));
   };
 
   const deleteInventoryItem = (id: string) => {
