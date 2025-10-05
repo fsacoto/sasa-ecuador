@@ -20,6 +20,20 @@ export default function PurchaseOrders() {
   const [exchangeRates, setExchangeRates] = useState<any>(null);
   const [isLoadingRates, setIsLoadingRates] = useState(false);
   const [lastRateUpdate, setLastRateUpdate] = useState<string>('');
+  const [categoryMode, setCategoryMode] = useState<'select' | 'new'>('select');
+  const [lineMode, setLineMode] = useState<'select' | 'new'>('select');
+  
+  // Get unique categories and lines from existing data
+  const existingCategories = [...new Set([
+    ...inventory.map(item => item.category),
+    ...purchaseOrders.map(order => order.category)
+  ].filter(cat => cat && !cat.includes('NEEDS REVIEW')))].sort();
+  
+  const existingLines = [...new Set([
+    ...inventory.map(item => item.line),
+    ...purchaseOrders.map(order => order.line)
+  ].filter(line => line && line.trim() !== ''))].sort();
+  
   const [formData, setFormData] = useState({
     invoice: '',
     invoiceLink: '',
@@ -222,6 +236,8 @@ export default function PurchaseOrders() {
     setIsFormOpen(false);
     setSelectedInventoryId('');
     setIsCreatingNewItem(false);
+    setCategoryMode('select');
+    setLineMode('select');
   };
 
   const handleEdit = (order: PurchaseOrder) => {
@@ -421,29 +437,105 @@ export default function PurchaseOrders() {
                     <label className="block text-sm font-medium mb-1 text-gray-700">
                       Category {isCreatingNewItem && '*'}
                     </label>
-                    <input
-                      type="text"
-                      required={isCreatingNewItem}
-                      value={formData.category}
-                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                      placeholder={isCreatingNewItem ? 'Rings' : ''}
-                      disabled={!!(selectedInventoryId && selectedInventoryId !== 'new')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
-                    />
+                    {(selectedInventoryId && selectedInventoryId !== 'new') ? (
+                      <input
+                        type="text"
+                        value={formData.category}
+                        disabled
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500"
+                      />
+                    ) : categoryMode === 'select' ? (
+                      <select
+                        required={isCreatingNewItem}
+                        value={formData.category}
+                        onChange={(e) => {
+                          if (e.target.value === '__new__') {
+                            setCategoryMode('new');
+                            setFormData({ ...formData, category: '' });
+                          } else {
+                            setFormData({ ...formData, category: e.target.value });
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                      >
+                        <option value="">Select...</option>
+                        {existingCategories.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                        <option value="__new__">+ Add New</option>
+                      </select>
+                    ) : (
+                      <div className="flex gap-1">
+                        <input
+                          type="text"
+                          required={isCreatingNewItem}
+                          value={formData.category}
+                          onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                          placeholder="New category"
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setCategoryMode('select')}
+                          className="px-2 text-xs text-gray-600"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1 text-gray-700">
                       Line {isCreatingNewItem && '*'}
                     </label>
-                    <input
-                      type="text"
-                      required={isCreatingNewItem}
-                      value={formData.line}
-                      onChange={(e) => setFormData({ ...formData, line: e.target.value })}
-                      placeholder={isCreatingNewItem ? 'Gold' : ''}
-                      disabled={!!(selectedInventoryId && selectedInventoryId !== 'new')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
-                    />
+                    {(selectedInventoryId && selectedInventoryId !== 'new') ? (
+                      <input
+                        type="text"
+                        value={formData.line}
+                        disabled
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500"
+                      />
+                    ) : lineMode === 'select' ? (
+                      <select
+                        required={isCreatingNewItem}
+                        value={formData.line}
+                        onChange={(e) => {
+                          if (e.target.value === '__new__') {
+                            setLineMode('new');
+                            setFormData({ ...formData, line: '' });
+                          } else {
+                            setFormData({ ...formData, line: e.target.value });
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                      >
+                        <option value="">Select...</option>
+                        {existingLines.map(line => (
+                          <option key={line} value={line}>{line}</option>
+                        ))}
+                        <option value="__new__">+ Add New</option>
+                      </select>
+                    ) : (
+                      <div className="flex gap-1">
+                        <input
+                          type="text"
+                          required={isCreatingNewItem}
+                          value={formData.line}
+                          onChange={(e) => setFormData({ ...formData, line: e.target.value })}
+                          placeholder="New line"
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setLineMode('select')}
+                          className="px-2 text-xs text-gray-600"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1 text-gray-700">

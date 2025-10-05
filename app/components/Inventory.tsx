@@ -13,6 +13,19 @@ export default function Inventory() {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [skuManuallyEdited, setSkuManuallyEdited] = useState(false);
+  const [categoryMode, setCategoryMode] = useState<'select' | 'new'>('select');
+  const [lineMode, setLineMode] = useState<'select' | 'new'>('select');
+  
+  // Get unique categories and lines from existing inventory
+  const existingCategories = [...new Set(inventory
+    .map(item => item.category)
+    .filter(cat => cat && !cat.includes('NEEDS REVIEW'))
+  )].sort();
+  
+  const existingLines = [...new Set(inventory
+    .map(item => item.line)
+    .filter(line => line && line.trim() !== '')
+  )].sort();
   const [formData, setFormData] = useState({
     name: '',
     supplierSKU: '',
@@ -66,6 +79,8 @@ export default function Inventory() {
     setEditingItem(null);
     setIsFormOpen(false);
     setSkuManuallyEdited(false);
+    setCategoryMode('select');
+    setLineMode('select');
   };
 
   const handleEdit = (item: InventoryItem) => {
@@ -182,48 +197,119 @@ export default function Inventory() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1 text-gray-700">Category *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    placeholder="e.g., Rings, Necklaces"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
-                  />
+                  {categoryMode === 'select' ? (
+                    <div className="flex gap-2">
+                      <select
+                        required
+                        value={formData.category}
+                        onChange={(e) => {
+                          if (e.target.value === '__new__') {
+                            setCategoryMode('new');
+                            setFormData({ ...formData, category: '' });
+                          } else {
+                            setFormData({ ...formData, category: e.target.value });
+                          }
+                        }}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                      >
+                        <option value="">Select category...</option>
+                        {existingCategories.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                        <option value="__new__">+ Add New Category</option>
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        required
+                        value={formData.category}
+                        onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                        placeholder="Enter new category"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setCategoryMode('select')}
+                        className="px-3 text-sm text-gray-600 hover:text-gray-900"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1 text-gray-700">Line *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.line}
-                    onChange={(e) => setFormData({ ...formData, line: e.target.value })}
-                    placeholder="e.g., Gold, Silver"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
-                  />
+                  {lineMode === 'select' ? (
+                    <div className="flex gap-2">
+                      <select
+                        required
+                        value={formData.line}
+                        onChange={(e) => {
+                          if (e.target.value === '__new__') {
+                            setLineMode('new');
+                            setFormData({ ...formData, line: '' });
+                          } else {
+                            setFormData({ ...formData, line: e.target.value });
+                          }
+                        }}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                      >
+                        <option value="">Select line...</option>
+                        {existingLines.map(line => (
+                          <option key={line} value={line}>{line}</option>
+                        ))}
+                        <option value="__new__">+ Add New Line</option>
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        required
+                        value={formData.line}
+                        onChange={(e) => setFormData({ ...formData, line: e.target.value })}
+                        placeholder="Enter new line"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setLineMode('select')}
+                        className="px-3 text-sm text-gray-600 hover:text-gray-900"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-gray-700">Internal SKU *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Internal SKU *</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    required
+                    value={formData.sku}
+                    onChange={(e) => handleSkuChange(e.target.value)}
+                    placeholder="Auto-generated from category & line"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent bg-white font-mono"
+                  />
                   <button
                     type="button"
                     onClick={handleRegenerateSku}
                     disabled={!formData.category || !formData.line}
-                    className="text-xs text-[#4f0c1b] hover:text-[#3d0a15] font-medium disabled:text-gray-400 disabled:cursor-not-allowed"
+                    className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-white hover:border-[#4f0c1b] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                    title="Regenerate SKU"
                   >
-                    ↻ Regenerate
+                    <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
                   </button>
                 </div>
-                <input
-                  type="text"
-                  required
-                  value={formData.sku}
-                  onChange={(e) => handleSkuChange(e.target.value)}
-                  placeholder="Auto-generated from category & line"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent bg-white font-mono"
-                />
                 <p className="text-xs text-gray-500 mt-2">
                   Format: {formData.category ? formData.category.substring(0, 2).toUpperCase() : 'XX'}
                   {formData.line ? formData.line.substring(0, 2).toUpperCase() : 'XX'}-#####
