@@ -483,6 +483,10 @@ export default function PurchaseOrders() {
     }
     
     updatePurchaseOrder(order.id, statusUpdate);
+    
+    // Sync changes to inventory after status update
+    const updatedOrder = { ...order, ...statusUpdate };
+    syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem);
   };
 
   const handleEdit = (order: PurchaseOrder) => {

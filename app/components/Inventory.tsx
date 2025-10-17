@@ -193,6 +193,14 @@ export default function Inventory() {
 
   const filteredAndSortedInventory = inventory
     .filter(item => {
+      // Only show items that have at least one verified purchase order
+      const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
+        const order = purchaseOrders.find(o => o.id === orderId);
+        return order && order.status === 'Verified';
+      });
+      
+      if (!hasVerifiedOrder) return false;
+      
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();

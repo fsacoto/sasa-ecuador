@@ -62,6 +62,10 @@ export function syncPurchaseOrderToInventory(
     }
   } else if (updatedOrder.sku && updatedOrder.description) {
     // Create new inventory item if it doesn't exist
+    // Only add stock if the order is verified
+    const stockQuantity = updatedOrder.status === 'Verified' ? 
+      (updatedOrder.quantityReceived || updatedOrder.quantity) : 0;
+    
     addInventoryItem({
       name: updatedOrder.description,
       sku: updatedOrder.sku,
@@ -70,8 +74,8 @@ export function syncPurchaseOrderToInventory(
       line: updatedOrder.line || '',
       description: updatedOrder.description,
       images: updatedOrder.images || [],
-      ecuadorStock: updatedOrder.destinationStock === 'Ecuador' ? updatedOrder.quantity : 0,
-      usaStock: updatedOrder.destinationStock === 'USA' ? updatedOrder.quantity : 0,
+      ecuadorStock: updatedOrder.destinationStock === 'Ecuador' ? stockQuantity : 0,
+      usaStock: updatedOrder.destinationStock === 'USA' ? stockQuantity : 0,
       linkedPurchaseOrders: [updatedOrder.id],
     });
   }
