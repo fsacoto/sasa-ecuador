@@ -83,12 +83,28 @@ export default function PurchaseOrders() {
       const newSku = generateUniqueSKU(formData.category, formData.line, existingSkus);
       setFormData(prev => ({ ...prev, sku: newSku }));
     }
-    // Auto-regenerate during edit if not manually edited
+    // Auto-regenerate during edit if category/line changed and SKU wasn't manually edited
     if (editingOrder && formData.category && formData.line && !skuManuallyEdited) {
-      const existingSkus = inventory.map(item => item.sku).filter(sku => sku !== editingOrder.sku);
-      const newSku = generateUniqueSKU(formData.category, formData.line, existingSkus);
-      if (newSku !== formData.sku) {
-        setFormData(prev => ({ ...prev, sku: newSku }));
+      // Check if category or line changed from original values
+      const categoryChanged = formData.category !== editingOrder.category;
+      const lineChanged = formData.line !== editingOrder.line;
+      
+      if (categoryChanged || lineChanged) {
+        console.log('SKU regeneration triggered:', {
+          originalCategory: editingOrder.category,
+          newCategory: formData.category,
+          originalLine: editingOrder.line,
+          newLine: formData.line,
+          categoryChanged,
+          lineChanged
+        });
+        
+        const existingSkus = inventory.map(item => item.sku).filter(sku => sku !== editingOrder.sku);
+        const newSku = generateUniqueSKU(formData.category, formData.line, existingSkus);
+        if (newSku !== formData.sku) {
+          console.log('SKU updated from', formData.sku, 'to', newSku);
+          setFormData(prev => ({ ...prev, sku: newSku }));
+        }
       }
     }
   }, [formData.category, formData.line, isCreatingNewItem, editingOrder, inventory, skuManuallyEdited]);
@@ -501,6 +517,7 @@ export default function PurchaseOrders() {
     setEditingOrder(order);
     setOriginalSku(order.sku); // Track original SKU for sync purposes
     setSelectedInventoryId(''); // Reset selector for fresh linking option
+    setSkuManuallyEdited(false); // Reset SKU manual edit flag to allow regeneration
     setFormData({
       invoice: order.invoice,
       invoiceLink: order.invoiceLink,
