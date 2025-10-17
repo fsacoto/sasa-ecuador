@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import React from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { PurchaseOrder, Supplier } from '../types';
 import SupplierDetailPanel from './SupplierDetailPanel';
@@ -34,13 +35,70 @@ export default function PurchaseOrders() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterSupplier, setFilterSupplier] = useState<string>('all');
   const [filterDestination, setFilterDestination] = useState<string>('all');
+  const [filterDuplicateSku, setFilterDuplicateSku] = useState<boolean>(false);
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [filterLine, setFilterLine] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'grouped'>('list');
+  const [showColumnDropdown, setShowColumnDropdown] = useState(false);
+  
+  // Column visibility state
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
+  const dropdownRef = useRef<HTMLDivElement>(null);
   
   // Predefined category options
   const predefinedCategories = ['Necklace', 'Ring', 'Bracelet', 'Set', 'Anklet', 'Earring'];
   
   // Predefined line options
   const predefinedLines = ['Gold Plated', 'Gold Filled', 'Sterling Silver'];
+  
+  // Get visible columns based on current view mode
+  const getVisibleColumns = () => {
+    const allColumns = [
+      { key: 'invoice', label: 'Invoice' },
+      { key: 'supplier', label: 'Supplier' },
+      { key: 'description', label: 'Description' },
+      { key: 'sku', label: 'SKU' },
+      { key: 'quantity', label: 'Quantity' },
+      { key: 'destination', label: 'Destination' },
+      { key: 'status', label: 'Status' },
+      { key: 'landedCost', label: 'Landed Cost/Unit' }
+    ];
+    
+    // Return all columns that can be toggled (excluding # and Actions which are always visible)
+    return allColumns;
+  };
+
+  // Get visible column keys for rendering
+  const getVisibleColumnKeys = () => {
+    const allColumns = ['invoice', 'supplier', 'description', 'sku', 'quantity', 'destination', 'status', 'landedCost'];
+    return allColumns.filter(key => !hiddenColumns.has(key));
+  };
+  
+  // Toggle column visibility
+  const toggleColumnVisibility = (columnKey: string) => {
+    setHiddenColumns(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(columnKey)) {
+        newSet.delete(columnKey);
+      } else {
+        newSet.add(columnKey);
+      }
+      return newSet;
+    });
+  };
+  
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showColumnDropdown && dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowColumnDropdown(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showColumnDropdown]);
   
   // Get unique categories and lines from existing data (excluding predefined ones)
   const existingCategories = [...new Set([
@@ -52,6 +110,19 @@ export default function PurchaseOrders() {
     ...inventory.map(item => item.line),
     ...purchaseOrders.map(order => order.line)
   ].filter(line => line && line.trim() !== '' && !predefinedLines.includes(line)))].sort();
+
+  // Get SKUs that appear multiple times across purchase orders
+  const getDuplicateSkus = () => {
+    const skuCounts: { [sku: string]: number } = {};
+    purchaseOrders.forEach(order => {
+      if (order.sku) {
+        skuCounts[order.sku] = (skuCounts[order.sku] || 0) + 1;
+      }
+    });
+    return Object.keys(skuCounts).filter(sku => skuCounts[sku] > 1);
+  };
+
+  const duplicateSkus = getDuplicateSkus();
   
   const [formData, setFormData] = useState({
     invoice: '',
@@ -583,6 +654,21 @@ export default function PurchaseOrders() {
         return false;
       }
       
+      // Duplicate SKU filter
+      if (filterDuplicateSku && !duplicateSkus.includes(order.sku)) {
+        return false;
+      }
+      
+      // Category filter
+      if (filterCategory !== 'all' && order.category !== filterCategory) {
+        return false;
+      }
+      
+      // Line filter
+      if (filterLine !== 'all' && order.line !== filterLine) {
+        return false;
+      }
+      
       return true;
     })
     .sort((a, b) => {
@@ -641,6 +727,20 @@ export default function PurchaseOrders() {
       return 0;
     });
 
+  // Group orders by invoice for grouped view
+  const getGroupedOrders = () => {
+    const groups: { [invoice: string]: PurchaseOrder[] } = {};
+    filteredAndSortedOrders.forEach(order => {
+      if (!groups[order.invoice]) {
+        groups[order.invoice] = [];
+      }
+      groups[order.invoice].push(order);
+    });
+    return groups;
+  };
+
+  const groupedOrders = getGroupedOrders();
+
   const SortIcon = ({ field }: { field: string }) => {
     if (sortField !== field) {
       return (
@@ -668,6 +768,30 @@ export default function PurchaseOrders() {
           <p className="text-sm text-gray-500 mt-1">Track orders from suppliers</p>
         </div>
         <div className="flex gap-3">
+          {/* View Mode Toggle */}
+          <div className="flex items-center bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                viewMode === 'list' 
+                  ? 'bg-white text-[#4f0c1b] shadow-sm' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              List View
+            </button>
+            <button
+              onClick={() => setViewMode('grouped')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                viewMode === 'grouped' 
+                  ? 'bg-white text-[#4f0c1b] shadow-sm' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Group by Invoice
+            </button>
+          </div>
+          
           <button
             onClick={() => setIsBulkImportOpen(true)}
             className="border border-[#4f0c1b] text-[#4f0c1b] hover:bg-[#4f0c1b] hover:text-white px-5 py-2.5 rounded-lg transition-all font-medium text-sm"
@@ -718,9 +842,9 @@ export default function PurchaseOrders() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
             Filters
-            {(filterStatus !== 'all' || filterSupplier !== 'all' || filterDestination !== 'all') && (
+            {(filterStatus !== 'all' || filterSupplier !== 'all' || filterDestination !== 'all' || filterDuplicateSku || filterCategory !== 'all' || filterLine !== 'all') && (
               <span className="bg-white text-[#4f0c1b] rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
-                {[filterStatus !== 'all', filterSupplier !== 'all', filterDestination !== 'all'].filter(Boolean).length}
+                {[filterStatus !== 'all', filterSupplier !== 'all', filterDestination !== 'all', filterDuplicateSku, filterCategory !== 'all', filterLine !== 'all'].filter(Boolean).length}
               </span>
             )}
           </button>
@@ -733,7 +857,7 @@ export default function PurchaseOrders() {
         {/* Expandable Filters */}
         {showFilters && (
           <div className="border-t border-gray-200 p-4 bg-gray-50">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
               {/* Status Filter */}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
@@ -778,10 +902,69 @@ export default function PurchaseOrders() {
                   <option value="USA">USA</option>
                 </select>
               </div>
+              
+              {/* Category Filter */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Category</label>
+                <select
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                >
+                  <option value="all">All Categories</option>
+                  {predefinedCategories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                  {existingCategories.length > 0 && (
+                    <optgroup label="Custom Categories">
+                      {existingCategories.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </div>
+              
+              {/* Line Filter */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Line</label>
+                <select
+                  value={filterLine}
+                  onChange={(e) => setFilterLine(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                >
+                  <option value="all">All Lines</option>
+                  {predefinedLines.map(line => (
+                    <option key={line} value={line}>{line}</option>
+                  ))}
+                  {existingLines.length > 0 && (
+                    <optgroup label="Custom Lines">
+                      {existingLines.map(line => (
+                        <option key={line} value={line}>{line}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </div>
+            </div>
+            
+            {/* Duplicate SKU Filter */}
+            <div className="mt-3">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={filterDuplicateSku}
+                  onChange={(e) => setFilterDuplicateSku(e.target.checked)}
+                  className="w-4 h-4 text-[#4f0c1b] border-gray-300 rounded focus:ring-[#4f0c1b] focus:ring-2"
+                />
+                <span className="text-gray-700">
+                  Show only duplicate SKUs ({duplicateSkus.length} SKUs with multiple orders)
+                </span>
+              </label>
             </div>
             
             {/* Clear filters button */}
-            {(searchQuery || filterStatus !== 'all' || filterSupplier !== 'all' || filterDestination !== 'all') && (
+            {(searchQuery || filterStatus !== 'all' || filterSupplier !== 'all' || filterDestination !== 'all' || filterDuplicateSku || filterCategory !== 'all' || filterLine !== 'all') && (
               <div className="mt-3 flex justify-end">
                 <button
                   onClick={() => {
@@ -789,6 +972,9 @@ export default function PurchaseOrders() {
                     setFilterStatus('all');
                     setFilterSupplier('all');
                     setFilterDestination('all');
+                    setFilterDuplicateSku(false);
+                    setFilterCategory('all');
+                    setFilterLine('all');
                   }}
                   className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium text-sm"
                 >
@@ -798,6 +984,69 @@ export default function PurchaseOrders() {
             )}
           </div>
         )}
+      </div>
+
+      {/* Column Visibility Control */}
+      <div className="mt-4 flex items-center justify-end">
+        <div className="relative">
+          <button
+            onClick={() => setShowColumnDropdown(!showColumnDropdown)}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+          >
+            <svg className={`w-4 h-4 ${hiddenColumns.size > 0 ? 'text-gray-400' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            {hiddenColumns.size > 0 && (
+              <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
+                {hiddenColumns.size}
+              </span>
+            )}
+            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          
+          {showColumnDropdown && (
+            <div ref={dropdownRef} className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
+              <div className="p-4">
+                <div className="text-sm font-medium text-gray-700 mb-3">Column Visibility</div>
+                <div className="grid grid-cols-2 gap-3">
+                  {getVisibleColumns().map(column => (
+                    <div key={column.key} className="flex items-center justify-between">
+                      <span className="text-sm text-gray-700">{column.label}</span>
+                      <button
+                        onClick={() => {
+                          // Use the exact same click handler that works outside dropdown
+                          if (hiddenColumns.has(column.key)) {
+                            // Show column
+                            setHiddenColumns(prev => {
+                              const newSet = new Set(prev);
+                              newSet.delete(column.key);
+                              return newSet;
+                            });
+                          } else {
+                            // Hide column
+                            setHiddenColumns(prev => new Set([...prev, column.key]));
+                          }
+                        }}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:ring-offset-2 ${
+                          hiddenColumns.has(column.key) ? 'bg-gray-300' : 'bg-[#4f0c1b]'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            hiddenColumns.has(column.key) ? 'translate-x-1' : 'translate-x-6'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Warning Banner for Orders Needing Review */}
@@ -1336,164 +1585,294 @@ export default function PurchaseOrders() {
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th 
-                  onClick={() => handleSort('invoice')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    Invoice
-                    <SortIcon field="invoice" />
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('supplier')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    Supplier
-                    <SortIcon field="supplier" />
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('description')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    Description
-                    <SortIcon field="description" />
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('sku')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    SKU
-                    <SortIcon field="sku" />
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('quantity')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    Quantity
-                    <SortIcon field="quantity" />
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('destination')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    Destination
-                    <SortIcon field="destination" />
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('status')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    Status
-                    <SortIcon field="status" />
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('landedCost')}
-                  className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1 justify-end">
-                    Landed Cost/Unit
-                    <SortIcon field="landedCost" />
-                  </div>
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
+          <table className="w-full" key={`table-${Array.from(hiddenColumns).join('-')}`}>
+            {viewMode === 'list' ? (
+              // List view headers
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
+                    #
+                  </th>
+                  {!hiddenColumns.has('invoice') && (
+                    <th 
+                      onClick={() => handleSort('invoice')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Invoice
+                        <SortIcon field="invoice" />
+                      </div>
+                    </th>
+                  )}
+                  {!hiddenColumns.has('supplier') && (
+                    <th 
+                      onClick={() => handleSort('supplier')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Supplier
+                        <SortIcon field="supplier" />
+                      </div>
+                    </th>
+                  )}
+                  {!hiddenColumns.has('description') && (
+                    <th 
+                      onClick={() => handleSort('description')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Description
+                        <SortIcon field="description" />
+                      </div>
+                    </th>
+                  )}
+                  {!hiddenColumns.has('sku') && (
+                    <th 
+                      onClick={() => handleSort('sku')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        SKU
+                        <SortIcon field="sku" />
+                      </div>
+                    </th>
+                  )}
+                  {!hiddenColumns.has('quantity') && (
+                    <th 
+                      onClick={() => handleSort('quantity')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Quantity
+                        <SortIcon field="quantity" />
+                      </div>
+                    </th>
+                  )}
+                  {!hiddenColumns.has('destination') && (
+                    <th 
+                      onClick={() => handleSort('destination')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Destination
+                        <SortIcon field="destination" />
+                      </div>
+                    </th>
+                  )}
+                  {!hiddenColumns.has('status') && (
+                    <th 
+                      onClick={() => handleSort('status')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Status
+                        <SortIcon field="status" />
+                      </div>
+                    </th>
+                  )}
+                  {!hiddenColumns.has('landedCost') && (
+                    <th 
+                      onClick={() => handleSort('landedCost')}
+                      className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1 justify-end">
+                        Landed Cost/Unit
+                        <SortIcon field="landedCost" />
+                      </div>
+                    </th>
+                  )}
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+            ) : (
+              // Grouped view headers (no Invoice column)
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
+                    #
+                  </th>
+                  {!hiddenColumns.has('supplier') && (
+                    <th 
+                      onClick={() => handleSort('supplier')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Supplier
+                        <SortIcon field="supplier" />
+                      </div>
+                    </th>
+                  )}
+                  {!hiddenColumns.has('description') && (
+                    <th 
+                      onClick={() => handleSort('description')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Description
+                        <SortIcon field="description" />
+                      </div>
+                    </th>
+                  )}
+                  {!hiddenColumns.has('sku') && (
+                    <th 
+                      onClick={() => handleSort('sku')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        SKU
+                        <SortIcon field="sku" />
+                      </div>
+                    </th>
+                  )}
+                  {!hiddenColumns.has('quantity') && (
+                    <th 
+                      onClick={() => handleSort('quantity')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Quantity
+                        <SortIcon field="quantity" />
+                      </div>
+                    </th>
+                  )}
+                  {!hiddenColumns.has('destination') && (
+                    <th 
+                      onClick={() => handleSort('destination')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Destination
+                        <SortIcon field="destination" />
+                      </div>
+                    </th>
+                  )}
+                  {!hiddenColumns.has('status') && (
+                    <th 
+                      onClick={() => handleSort('status')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        Status
+                        <SortIcon field="status" />
+                      </div>
+                    </th>
+                  )}
+                  {!hiddenColumns.has('landedCost') && (
+                    <th 
+                      onClick={() => handleSort('landedCost')}
+                      className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-1 justify-end">
+                        Landed Cost/Unit
+                        <SortIcon field="landedCost" />
+                      </div>
+                    </th>
+                  )}
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+            )}
             <tbody className="divide-y divide-gray-100">
               {filteredAndSortedOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-12 text-center text-sm text-gray-500">
+                  <td colSpan={viewMode === 'list' ? 10 - hiddenColumns.size : 9 - hiddenColumns.size} className="px-6 py-12 text-center text-sm text-gray-500">
                     {purchaseOrders.length === 0 
                       ? 'No purchase orders yet. Add your first purchase order to get started.'
                       : 'No orders match your filters. Try adjusting your search or filters.'}
                   </td>
                 </tr>
-              ) : (
-                filteredAndSortedOrders.map((order) => {
+              ) : viewMode === 'list' ? (
+                filteredAndSortedOrders.map((order, index) => {
                   const supplier = suppliers.find(s => s.id === order.supplierId);
                   const needsReview = order.category.includes('NEEDS REVIEW') || !order.supplierId;
                   return (
                     <tr key={order.id} className={`hover:bg-gray-50 transition-colors ${needsReview ? 'bg-amber-50/30' : ''}`}>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-900">{order.invoice}</span>
-                          {needsReview && (
-                            <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
-                              Needs Review
-                            </span>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                        {index + 1}
+                      </td>
+                      {!hiddenColumns.has('invoice') && (
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900">{order.invoice}</span>
+                            {needsReview && (
+                              <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
+                                Needs Review
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                      {!hiddenColumns.has('supplier') && (
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          {supplier ? (
+                            <button
+                              onClick={() => setSelectedSupplier(supplier)}
+                              className="text-[#4f0c1b] hover:text-[#3d0a15] hover:underline transition-colors font-medium"
+                            >
+                              {supplier.name}
+                            </button>
+                          ) : (
+                            <span className="text-amber-600 font-medium">Missing Supplier</span>
                           )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        {supplier ? (
-                          <button
-                            onClick={() => setSelectedSupplier(supplier)}
-                            className="text-[#4f0c1b] hover:text-[#3d0a15] hover:underline transition-colors font-medium"
-                          >
-                            {supplier.name}
-                          </button>
-                        ) : (
-                          <span className="text-amber-600 font-medium">Missing Supplier</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-700">{order.description}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.sku}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-700">{order.quantity}</span>
-                          {order.status === 'Verified' && order.quantityReceived !== undefined && order.quantityReceived !== order.quantity && (
-                            <span className="text-amber-600 text-xs font-medium" title={`Actually received: ${order.quantityReceived}`}>
-                              (⚠️ {order.quantityReceived})
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.destinationStock}</td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <select
-                            value={order.status || 'Ordered'}
-                            onChange={(e) => handleStatusChange(order, e.target.value as any)}
-                            className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:ring-2 focus:ring-[#4f0c1b] ${
-                              order.status === 'Verified' ? 'bg-green-100 text-green-800 font-bold' :
-                              order.status === 'Received' ? 'bg-blue-100 text-blue-800' :
-                              order.status === 'Shipped' ? 'bg-purple-100 text-purple-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}
-                          >
-                            <option value="Ordered">📦 Ordered</option>
-                            <option value="Shipped">🚚 Shipped</option>
-                            <option value="Received">📥 Received</option>
-                            <option value="Verified">✅ Verified</option>
-                          </select>
-                          {order.status === 'Verified' && (
-                            <span className="text-green-600 text-xs" title="Inventory updated">
-                              🔒
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right">
-                        <div className="font-medium text-gray-900">${order.landedCostPerUnit.toFixed(2)}</div>
-                        <div className="text-xs text-gray-500">Total: ${order.totalLandedCost.toFixed(2)}</div>
-                      </td>
+                        </td>
+                      )}
+                      {!hiddenColumns.has('description') && (
+                        <td className="px-6 py-4 text-sm text-gray-700">{order.description}</td>
+                      )}
+                      {!hiddenColumns.has('sku') && (
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.sku}</td>
+                      )}
+                      {!hiddenColumns.has('quantity') && (
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-700">{order.quantity}</span>
+                            {order.status === 'Verified' && order.quantityReceived !== undefined && order.quantityReceived !== order.quantity && (
+                              <span className="text-amber-600 text-xs font-medium" title={`Actually received: ${order.quantityReceived}`}>
+                                (⚠️ {order.quantityReceived})
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                      {!hiddenColumns.has('destination') && (
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.destinationStock}</td>
+                      )}
+                      {!hiddenColumns.has('status') && (
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={order.status || 'Ordered'}
+                              onChange={(e) => handleStatusChange(order, e.target.value as any)}
+                              className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:ring-2 focus:ring-[#4f0c1b] ${
+                                order.status === 'Verified' ? 'bg-green-100 text-green-800 font-bold' :
+                                order.status === 'Received' ? 'bg-blue-100 text-blue-800' :
+                                order.status === 'Shipped' ? 'bg-purple-100 text-purple-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}
+                            >
+                              <option value="Ordered">📦 Ordered</option>
+                              <option value="Shipped">🚚 Shipped</option>
+                              <option value="Received">📥 Received</option>
+                              <option value="Verified">✅ Verified</option>
+                            </select>
+                            {order.status === 'Verified' && (
+                              <span className="text-green-600 text-xs" title="Inventory updated">
+                                🔒
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                      {!hiddenColumns.has('landedCost') && (
+                        <td className="px-6 py-4 whitespace-nowrap text-right">
+                          <div className="font-medium text-gray-900">${order.landedCostPerUnit.toFixed(2)}</div>
+                          <div className="text-xs text-gray-500">Total: ${order.totalLandedCost.toFixed(2)}</div>
+                        </td>
+                      )}
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                         <button
                           onClick={() => handleEdit(order)}
@@ -1517,9 +1896,186 @@ export default function PurchaseOrders() {
                     </tr>
                   );
                 })
+              ) : (
+                // Grouped view by invoice - separate table structure
+                Object.entries(groupedOrders).map(([invoice, orders]) => {
+                  const totalOrders = orders.length;
+                  const totalValue = orders.reduce((sum, order) => sum + order.totalCostWithDiscount, 0);
+                  const supplier = suppliers.find(s => s.id === orders[0].supplierId);
+                  const hasNeedsReview = orders.some(order => order.category.includes('NEEDS REVIEW') || !order.supplierId);
+                  
+                  return (
+                    <React.Fragment key={invoice}>
+                      {/* Invoice Header Row */}
+                      <tr className="bg-gray-50 border-t-2 border-gray-200">
+                        <td colSpan={9 - hiddenColumns.size} className="px-6 py-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <h3 className="text-lg font-semibold text-gray-900">{invoice}</h3>
+                              <span className="bg-[#4f0c1b] text-white px-2 py-1 rounded-full text-xs font-medium">
+                                {totalOrders} order{totalOrders !== 1 ? 's' : ''}
+                              </span>
+                              {hasNeedsReview && (
+                                <span className="bg-amber-100 text-amber-800 text-xs px-2 py-1 rounded-full font-medium">
+                                  Needs Review
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-medium text-gray-900">
+                                ${totalValue.toFixed(2)}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                Total Value
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      
+                      {/* Individual Orders - Grouped View Structure (no Invoice column) */}
+                      {orders.map((order, orderIndex) => {
+                        const supplier = suppliers.find(s => s.id === order.supplierId);
+                        const needsReview = order.category.includes('NEEDS REVIEW') || !order.supplierId;
+                        return (
+                          <tr key={order.id} className={`hover:bg-gray-50 transition-colors ${needsReview ? 'bg-amber-50/30' : ''}`}>
+                            {/* Row Number */}
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                              {orderIndex + 1}
+                            </td>
+                            
+                            {/* Supplier */}
+                            {!hiddenColumns.has('supplier') && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                <div className="flex items-center gap-2">
+                                  {supplier ? (
+                                    <button
+                                      onClick={() => setSelectedSupplier(supplier)}
+                                      className="text-[#4f0c1b] hover:text-[#3d0a15] hover:underline transition-colors font-medium"
+                                    >
+                                      {supplier.name}
+                                    </button>
+                                  ) : (
+                                    <span className="text-amber-600 font-medium">Missing Supplier</span>
+                                  )}
+                                  {needsReview && (
+                                    <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
+                                      Needs Review
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            )}
+                            
+                            {/* Description */}
+                            {!hiddenColumns.has('description') && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {order.description}
+                              </td>
+                            )}
+                            
+                            {/* SKU */}
+                            {!hiddenColumns.has('sku') && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {order.sku}
+                              </td>
+                            )}
+                            
+                            {/* Quantity */}
+                            {!hiddenColumns.has('quantity') && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {order.quantity}
+                                {order.quantityReceived && order.quantityReceived !== order.quantity && (
+                                  <span className="text-amber-600 ml-1">
+                                    (⚠️ {order.quantityReceived})
+                                  </span>
+                                )}
+                              </td>
+                            )}
+                            
+                            {/* Destination */}
+                            {!hiddenColumns.has('destination') && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {order.destinationStock}
+                              </td>
+                            )}
+                            
+                            {/* Status */}
+                            {!hiddenColumns.has('status') && (
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                <div className="flex items-center gap-2">
+                                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                    order.status === 'Verified' ? 'bg-green-100 text-green-800' :
+                                    order.status === 'Received' ? 'bg-blue-100 text-blue-800' :
+                                    order.status === 'Shipped' ? 'bg-yellow-100 text-yellow-800' :
+                                    'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {order.status === 'Verified' ? '✅' : order.status === 'Received' ? '📥' : order.status === 'Shipped' ? '🚚' : '📦'} {order.status}
+                                  </span>
+                                </div>
+                              </td>
+                            )}
+                            
+                            {/* Landed Cost */}
+                            {!hiddenColumns.has('landedCost') && (
+                              <td className="px-6 py-4 whitespace-nowrap text-right">
+                                <div className="font-medium text-gray-900">${order.landedCostPerUnit.toFixed(2)}</div>
+                                <div className="text-xs text-gray-500">Total: ${order.totalLandedCost.toFixed(2)}</div>
+                              </td>
+                            )}
+                            
+                            {/* Actions */}
+                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handleEdit(order)}
+                                  className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium mr-4 transition-colors"
+                                >
+                                  {needsReview ? 'Complete Info' : 'Edit'}
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    if (confirm('Are you sure you want to delete this purchase order?')) {
+                                      // Clean up orphaned inventory items
+                                      cleanupInventoryAfterOrderDeletion([order.id], inventory, deleteInventoryItem);
+                                      deletePurchaseOrder(order.id);
+                                    }
+                                  }}
+                                  className="text-red-600 hover:text-red-700 font-medium transition-colors"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </React.Fragment>
+                  );
+                })
               )}
             </tbody>
           </table>
+        </div>
+        
+        {/* Item Count Indicator */}
+        <div className="bg-gray-50 border-t border-gray-200 px-6 py-3 flex items-center justify-between text-sm text-gray-600">
+          <div className="flex items-center gap-4">
+            <span>
+              Showing <span className="font-semibold text-gray-900">{filteredAndSortedOrders.length}</span> of <span className="font-semibold text-gray-900">{purchaseOrders.length}</span> orders
+            </span>
+            {viewMode === 'grouped' && (
+              <span className="text-gray-400">•</span>
+            )}
+            {viewMode === 'grouped' && (
+              <span>
+                <span className="font-semibold text-gray-900">{Object.keys(groupedOrders).length}</span> invoices
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <span>Row numbers reset per invoice in grouped view</span>
+          </div>
         </div>
       </div>
 

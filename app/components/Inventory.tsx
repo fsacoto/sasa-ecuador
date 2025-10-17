@@ -28,6 +28,11 @@ export default function Inventory() {
   const [filterLine, setFilterLine] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
   
+  // Column visibility state
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
+  const [showColumnDropdown, setShowColumnDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  
   // Ref to track if we're currently editing an item (prevents SKU auto-generation)
   const isEditingRef = useRef(false);
   
@@ -47,6 +52,35 @@ export default function Inventory() {
     .map(item => item.line)
     .filter(line => line && line.trim() !== '' && !predefinedLines.includes(line))
   )].sort();
+
+  // Get visible columns for inventory table
+  const getVisibleColumns = () => {
+    const allColumns = [
+      { key: 'name', label: 'Name' },
+      { key: 'sku', label: 'SKU' },
+      { key: 'barcode', label: 'Barcode' },
+      { key: 'category', label: 'Category' },
+      { key: 'line', label: 'Line' },
+      { key: 'ecuadorStock', label: 'Ecuador' },
+      { key: 'usaStock', label: 'USA' },
+      { key: 'totalStock', label: 'Total' },
+      { key: 'actions', label: 'Actions' }
+    ];
+    return allColumns;
+  };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showColumnDropdown && dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowColumnDropdown(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showColumnDropdown]);
+
   const [formData, setFormData] = useState({
     name: '',
     supplierSKU: '',
@@ -329,6 +363,66 @@ export default function Inventory() {
           >
             Add Inventory Item
           </button>
+        </div>
+      </div>
+
+      {/* Column Visibility Control */}
+      <div className="flex items-center justify-end">
+        <div className="relative">
+          <button
+            onClick={() => setShowColumnDropdown(!showColumnDropdown)}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+          >
+            <svg className={`w-4 h-4 ${hiddenColumns.size > 0 ? 'text-gray-400' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            {hiddenColumns.size > 0 && (
+              <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
+                {hiddenColumns.size}
+              </span>
+            )}
+            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          
+          {showColumnDropdown && (
+            <div ref={dropdownRef} className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
+              <div className="p-4">
+                <div className="text-sm font-medium text-gray-700 mb-3">Column Visibility</div>
+                <div className="grid grid-cols-2 gap-3">
+                  {getVisibleColumns().map(column => (
+                    <div key={column.key} className="flex items-center justify-between">
+                      <span className="text-sm text-gray-700">{column.label}</span>
+                      <button
+                        onClick={() => {
+                          if (hiddenColumns.has(column.key)) {
+                            setHiddenColumns(prev => {
+                              const newSet = new Set(prev);
+                              newSet.delete(column.key);
+                              return newSet;
+                            });
+                          } else {
+                            setHiddenColumns(prev => new Set([...prev, column.key]));
+                          }
+                        }}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:ring-offset-2 ${
+                          hiddenColumns.has(column.key) ? 'bg-gray-300' : 'bg-[#4f0c1b]'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            hiddenColumns.has(column.key) ? 'translate-x-1' : 'translate-x-6'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -787,81 +881,99 @@ export default function Inventory() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th 
-                  onClick={() => handleSort('name')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    Name
-                    <SortIcon field="name" />
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('sku')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    SKU
-                    <SortIcon field="sku" />
-                  </div>
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Barcode
-                </th>
-                <th 
-                  onClick={() => handleSort('category')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    Category
-                    <SortIcon field="category" />
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('line')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    Line
-                    <SortIcon field="line" />
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('ecuadorStock')}
-                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1 justify-center">
-                    Ecuador
-                    <SortIcon field="ecuadorStock" />
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('usaStock')}
-                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1 justify-center">
-                    USA
-                    <SortIcon field="usaStock" />
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('totalStock')}
-                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1 justify-center">
-                    Total
-                    <SortIcon field="totalStock" />
-                  </div>
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
+                {!hiddenColumns.has('name') && (
+                  <th 
+                    onClick={() => handleSort('name')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-1">
+                      Name
+                      <SortIcon field="name" />
+                    </div>
+                  </th>
+                )}
+                {!hiddenColumns.has('sku') && (
+                  <th 
+                    onClick={() => handleSort('sku')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-1">
+                      SKU
+                      <SortIcon field="sku" />
+                    </div>
+                  </th>
+                )}
+                {!hiddenColumns.has('barcode') && (
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Barcode
+                  </th>
+                )}
+                {!hiddenColumns.has('category') && (
+                  <th 
+                    onClick={() => handleSort('category')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-1">
+                      Category
+                      <SortIcon field="category" />
+                    </div>
+                  </th>
+                )}
+                {!hiddenColumns.has('line') && (
+                  <th 
+                    onClick={() => handleSort('line')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-1">
+                      Line
+                      <SortIcon field="line" />
+                    </div>
+                  </th>
+                )}
+                {!hiddenColumns.has('ecuadorStock') && (
+                  <th 
+                    onClick={() => handleSort('ecuadorStock')}
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-1 justify-center">
+                      Ecuador
+                      <SortIcon field="ecuadorStock" />
+                    </div>
+                  </th>
+                )}
+                {!hiddenColumns.has('usaStock') && (
+                  <th 
+                    onClick={() => handleSort('usaStock')}
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-1 justify-center">
+                      USA
+                      <SortIcon field="usaStock" />
+                    </div>
+                  </th>
+                )}
+                {!hiddenColumns.has('totalStock') && (
+                  <th 
+                    onClick={() => handleSort('totalStock')}
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-1 justify-center">
+                      Total
+                      <SortIcon field="totalStock" />
+                    </div>
+                  </th>
+                )}
+                {!hiddenColumns.has('actions') && (
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredAndSortedInventory.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-12 text-center text-sm text-gray-500">
+                  <td colSpan={getVisibleColumns().length} className="px-6 py-12 text-center text-sm text-gray-500">
                     {inventory.length === 0 
                       ? 'No inventory items yet. Add your first item to get started.'
                       : 'No items match your filters. Try adjusting your search or filters.'}
