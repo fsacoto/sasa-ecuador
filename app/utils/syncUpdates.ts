@@ -113,3 +113,22 @@ export function syncInventoryToOrders(
     }
   });
 }
+
+export function cleanupInventoryAfterOrderDeletion(
+  deletedOrderIds: string[],
+  inventory: InventoryItem[],
+  deleteInventoryItem: (id: string) => void
+) {
+  // Find inventory items that are only linked to the deleted orders
+  inventory.forEach(item => {
+    const remainingLinkedOrders = item.linkedPurchaseOrders.filter(
+      orderId => !deletedOrderIds.includes(orderId)
+    );
+    
+    // If no remaining linked orders, delete the inventory item
+    if (remainingLinkedOrders.length === 0 && item.linkedPurchaseOrders.length > 0) {
+      console.log('Deleting orphaned inventory item:', item.sku, item.name);
+      deleteInventoryItem(item.id);
+    }
+  });
+}

@@ -8,6 +8,14 @@ export default function Dashboard() {
   const getTotalInventoryValue = () => {
     let total = 0;
     inventory.forEach(item => {
+      // Only count items that have at least one verified purchase order
+      const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
+        const order = purchaseOrders.find(o => o.id === orderId);
+        return order && order.status === 'Verified';
+      });
+      
+      if (!hasVerifiedOrder) return;
+      
       const linkedOrders = purchaseOrders.filter(order => 
         item.linkedPurchaseOrders.includes(order.id)
       );
@@ -20,11 +28,43 @@ export default function Dashboard() {
   };
 
   const getTotalStock = () => {
-    return inventory.reduce((sum, item) => sum + item.ecuadorStock + item.usaStock, 0);
+    return inventory.reduce((sum, item) => {
+      // Only count items that have at least one verified purchase order
+      const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
+        const order = purchaseOrders.find(o => o.id === orderId);
+        return order && order.status === 'Verified';
+      });
+      
+      if (!hasVerifiedOrder) return sum;
+      
+      return sum + item.ecuadorStock + item.usaStock;
+    }, 0);
   };
 
   const getLowStockItems = () => {
-    return inventory.filter(item => (item.ecuadorStock + item.usaStock) < 10);
+    return inventory.filter(item => {
+      // Only include items that have at least one verified purchase order
+      const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
+        const order = purchaseOrders.find(o => o.id === orderId);
+        return order && order.status === 'Verified';
+      });
+      
+      if (!hasVerifiedOrder) return false;
+      
+      return (item.ecuadorStock + item.usaStock) < 10;
+    });
+  };
+
+  const getVerifiedInventoryCount = () => {
+    return inventory.filter(item => {
+      // Only count items that have at least one verified purchase order
+      const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
+        const order = purchaseOrders.find(o => o.id === orderId);
+        return order && order.status === 'Verified';
+      });
+      
+      return hasVerifiedOrder;
+    }).length;
   };
 
   const getRecentPurchaseOrders = () => {
@@ -52,7 +92,7 @@ export default function Dashboard() {
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-sm transition-shadow">
           <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Inventory Items</div>
-          <div className="text-3xl font-semibold text-gray-900">{inventory.length}</div>
+          <div className="text-3xl font-semibold text-gray-900">{getVerifiedInventoryCount()}</div>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-sm transition-shadow">
           <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Total Stock</div>

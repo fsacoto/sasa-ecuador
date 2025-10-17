@@ -8,10 +8,10 @@ import { generateUniqueSKU } from '../utils/skuGenerator';
 import { getExchangeRates, getExchangeRate, formatLastUpdate } from '../utils/currencyApi';
 import BulkImportModal from './BulkImportModal';
 import BulkDeleteModal from './BulkDeleteModal';
-import { syncPurchaseOrderToInventory } from '../utils/syncUpdates';
+import { syncPurchaseOrderToInventory, cleanupInventoryAfterOrderDeletion } from '../utils/syncUpdates';
 
 export default function PurchaseOrders() {
-  const { purchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, suppliers, inventory, addInventoryItem, updateInventoryItem } = useInventory();
+  const { purchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, suppliers, inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem } = useInventory();
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
@@ -1504,6 +1504,8 @@ export default function PurchaseOrders() {
                         <button
                           onClick={() => {
                             if (confirm('Are you sure you want to delete this purchase order?')) {
+                              // Clean up orphaned inventory items
+                              cleanupInventoryAfterOrderDeletion([order.id], inventory, deleteInventoryItem);
                               deletePurchaseOrder(order.id);
                             }
                           }}
@@ -1543,15 +1545,23 @@ export default function PurchaseOrders() {
             console.log('Bulk delete triggered with invoices:', invoiceNumbers);
             console.log('Total purchase orders before delete:', purchaseOrders.length);
             
+            // Collect all order IDs that will be deleted
+            const deletedOrderIds: string[] = [];
+            
             // Delete orders by invoice numbers
             invoiceNumbers.forEach(invoice => {
               const ordersToDelete = purchaseOrders.filter(order => order.invoice === invoice);
               console.log(`Deleting ${ordersToDelete.length} orders for invoice: ${invoice}`);
               ordersToDelete.forEach(order => {
                 console.log('Deleting order:', order.id, order.invoice);
+                deletedOrderIds.push(order.id);
                 deletePurchaseOrder(order.id);
               });
             });
+            
+            // Clean up orphaned inventory items
+            console.log('Cleaning up inventory items for deleted orders:', deletedOrderIds);
+            cleanupInventoryAfterOrderDeletion(deletedOrderIds, inventory, deleteInventoryItem);
             
             console.log('Bulk delete completed');
           }}
