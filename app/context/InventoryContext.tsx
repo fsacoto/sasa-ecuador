@@ -47,7 +47,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteSupplier = (id: string) => {
-    setSuppliers(suppliers.filter(s => s.id !== id));
+    setSuppliers(prev => prev.filter(s => s.id !== id));
   };
 
   // Purchase Order operations
@@ -75,7 +75,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   };
 
   const deletePurchaseOrder = (id: string) => {
-    setPurchaseOrders(purchaseOrders.filter(o => o.id !== id));
+    setPurchaseOrders(prev => prev.filter(o => o.id !== id));
   };
 
   // Inventory operations
@@ -103,7 +103,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteInventoryItem = (id: string) => {
-    setInventory(inventory.filter(i => i.id !== id));
+    setInventory(prev => prev.filter(i => i.id !== id));
   };
 
   return (

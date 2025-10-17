@@ -80,6 +80,37 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
     const itemsToAdd: Omit<InventoryItem, 'id' | 'createdAt'>[] = [];
     const existingSkuSet = new Set(existingSkus);
 
+    // First, determine the invoice number for the entire batch
+    let batchInvoiceNumber = '';
+    const invoicesFromCSV: string[] = [];
+    
+    // Check if invoice numbers are provided in CSV
+    parsedData.forEach((row) => {
+      const mappedData: any = {};
+      Object.entries(columnMapping).forEach(([csvColumn, dbField]) => {
+        mappedData[dbField] = row[csvColumn];
+      });
+      
+      if (mappedData.invoice) {
+        invoicesFromCSV.push(mappedData.invoice);
+      }
+    });
+
+    if (invoicesFromCSV.length > 0) {
+      // Validate that all invoice numbers are the same
+      const uniqueInvoices = [...new Set(invoicesFromCSV)];
+      if (uniqueInvoices.length > 1) {
+        alert(`❌ ERROR: All items in the CSV must have the same invoice number!\n\nFound different invoice numbers: ${uniqueInvoices.join(', ')}\n\nPlease fix your CSV file and try again.`);
+        return;
+      }
+      batchInvoiceNumber = uniqueInvoices[0];
+    } else {
+      // Generate one invoice number for the entire batch
+      batchInvoiceNumber = invoicePrefix 
+        ? `${invoicePrefix}-${timestamp}`
+        : `IMPORT-${timestamp}`;
+    }
+
     parsedData.forEach((row, index) => {
       // Extract mapped fields
       const mappedData: any = {};
@@ -123,10 +154,8 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
       const needsReview = !autoLinked && (!defaultSupplier || !sku || !description || costPerUnit === 0);
 
       // Each row is a SEPARATE purchase order
-      // Use invoice from CSV if provided, otherwise auto-generate
-      const invoiceNumber = invoice || (invoicePrefix 
-        ? `${invoicePrefix}-${String(index + 1).padStart(3, '0')}`
-        : `IMPORT-${timestamp}-${String(index + 1).padStart(3, '0')}`);
+      // Use the batch invoice number for all items
+      const invoiceNumber = batchInvoiceNumber;
 
       // Create individual purchase order
       // Use existing item's info if auto-linked
@@ -293,8 +322,8 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                     />
                     <p className="text-xs text-gray-500 mt-1">
                       {Object.values(columnMapping).includes('invoice') 
-                        ? 'Using invoice numbers from CSV' 
-                        : `Auto-generated: ${invoicePrefix || 'IMPORT-###'}-001, -002, etc.`}
+                        ? 'Using invoice number from CSV (must be same for all rows)' 
+                        : `Auto-generated: ${invoicePrefix || 'IMPORT-###'}-${Date.now().toString().slice(-6)}`}
                     </p>
                   </div>
                   <div>

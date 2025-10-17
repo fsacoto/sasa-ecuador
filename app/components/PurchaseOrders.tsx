@@ -7,6 +7,7 @@ import SupplierDetailPanel from './SupplierDetailPanel';
 import { generateUniqueSKU } from '../utils/skuGenerator';
 import { getExchangeRates, getExchangeRate, formatLastUpdate } from '../utils/currencyApi';
 import BulkImportModal from './BulkImportModal';
+import BulkDeleteModal from './BulkDeleteModal';
 import { syncPurchaseOrderToInventory } from '../utils/syncUpdates';
 
 export default function PurchaseOrders() {
@@ -14,6 +15,7 @@ export default function PurchaseOrders() {
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<PurchaseOrder | null>(null);
   const [selectedInventoryId, setSelectedInventoryId] = useState<string>('');
   const [isCreatingNewItem, setIsCreatingNewItem] = useState(false);
@@ -34,16 +36,22 @@ export default function PurchaseOrders() {
   const [filterDestination, setFilterDestination] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
   
-  // Get unique categories and lines from existing data
+  // Predefined category options
+  const predefinedCategories = ['Necklace', 'Ring', 'Bracelet', 'Set', 'Anklet', 'Earring'];
+  
+  // Predefined line options
+  const predefinedLines = ['Gold Plated', 'Gold Filled', 'Sterling Silver'];
+  
+  // Get unique categories and lines from existing data (excluding predefined ones)
   const existingCategories = [...new Set([
     ...inventory.map(item => item.category),
     ...purchaseOrders.map(order => order.category)
-  ].filter(cat => cat && !cat.includes('NEEDS REVIEW')))].sort();
+  ].filter(cat => cat && !cat.includes('NEEDS REVIEW') && !predefinedCategories.includes(cat)))].sort();
   
   const existingLines = [...new Set([
     ...inventory.map(item => item.line),
     ...purchaseOrders.map(order => order.line)
-  ].filter(line => line && line.trim() !== ''))].sort();
+  ].filter(line => line && line.trim() !== '' && !predefinedLines.includes(line)))].sort();
   
   const [formData, setFormData] = useState({
     invoice: '',
@@ -650,6 +658,12 @@ export default function PurchaseOrders() {
             Bulk Import
           </button>
           <button
+            onClick={() => setIsBulkDeleteOpen(true)}
+            className="border border-red-600 text-red-600 hover:bg-red-600 hover:text-white px-5 py-2.5 rounded-lg transition-all font-medium text-sm"
+          >
+            Bulk Delete
+          </button>
+          <button
             onClick={() => setIsFormOpen(true)}
             className="bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-5 py-2.5 rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow active:scale-95"
           >
@@ -947,9 +961,18 @@ export default function PurchaseOrders() {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                       >
                         <option value="">Select...</option>
-                        {existingCategories.map(cat => (
+                        {predefinedCategories.map(cat => (
                           <option key={cat} value={cat}>{cat}</option>
                         ))}
+                        {existingCategories.length > 0 && (
+                          <>
+                            <optgroup label="Other Categories">
+                              {existingCategories.map(cat => (
+                                <option key={cat} value={cat}>{cat}</option>
+                              ))}
+                            </optgroup>
+                          </>
+                        )}
                         <option value="__new__">+ Add New</option>
                       </select>
                     ) : (
@@ -999,9 +1022,18 @@ export default function PurchaseOrders() {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                       >
                         <option value="">Select...</option>
-                        {existingLines.map(line => (
+                        {predefinedLines.map(line => (
                           <option key={line} value={line}>{line}</option>
                         ))}
+                        {existingLines.length > 0 && (
+                          <>
+                            <optgroup label="Other Lines">
+                              {existingLines.map(line => (
+                                <option key={line} value={line}>{line}</option>
+                              ))}
+                            </optgroup>
+                          </>
+                        )}
                         <option value="__new__">+ Add New</option>
                       </select>
                     ) : (
@@ -1483,6 +1515,30 @@ export default function PurchaseOrders() {
       {/* Bulk Import Modal */}
       {isBulkImportOpen && (
         <BulkImportModal onClose={() => setIsBulkImportOpen(false)} />
+      )}
+
+      {/* Bulk Delete Modal */}
+      {isBulkDeleteOpen && (
+        <BulkDeleteModal 
+          purchaseOrders={purchaseOrders}
+          onClose={() => setIsBulkDeleteOpen(false)}
+          onBulkDelete={(invoiceNumbers) => {
+            console.log('Bulk delete triggered with invoices:', invoiceNumbers);
+            console.log('Total purchase orders before delete:', purchaseOrders.length);
+            
+            // Delete orders by invoice numbers
+            invoiceNumbers.forEach(invoice => {
+              const ordersToDelete = purchaseOrders.filter(order => order.invoice === invoice);
+              console.log(`Deleting ${ordersToDelete.length} orders for invoice: ${invoice}`);
+              ordersToDelete.forEach(order => {
+                console.log('Deleting order:', order.id, order.invoice);
+                deletePurchaseOrder(order.id);
+              });
+            });
+            
+            console.log('Bulk delete completed');
+          }}
+        />
       )}
     </div>
   );

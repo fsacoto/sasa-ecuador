@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { InventoryItem } from '../types';
 import InventoryDetailPanel from './InventoryDetailPanel';
@@ -28,15 +28,24 @@ export default function Inventory() {
   const [filterLine, setFilterLine] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
   
-  // Get unique categories and lines from existing inventory
+  // Ref to track if we're currently editing an item (prevents SKU auto-generation)
+  const isEditingRef = useRef(false);
+  
+  // Predefined category options
+  const predefinedCategories = ['Necklace', 'Ring', 'Bracelet', 'Set', 'Anklet', 'Earring'];
+  
+  // Predefined line options
+  const predefinedLines = ['Gold Plated', 'Gold Filled', 'Sterling Silver'];
+  
+  // Get unique categories and lines from existing inventory (excluding predefined ones)
   const existingCategories = [...new Set(inventory
     .map(item => item.category)
-    .filter(cat => cat && !cat.includes('NEEDS REVIEW'))
+    .filter(cat => cat && !cat.includes('NEEDS REVIEW') && !predefinedCategories.includes(cat))
   )].sort();
   
   const existingLines = [...new Set(inventory
     .map(item => item.line)
-    .filter(line => line && line.trim() !== '')
+    .filter(line => line && line.trim() !== '' && !predefinedLines.includes(line))
   )].sort();
   const [formData, setFormData] = useState({
     name: '',
@@ -51,14 +60,15 @@ export default function Inventory() {
     images: [] as string[],
   });
 
-  // Auto-generate SKU when category or line changes (unless manually edited)
-  useEffect(() => {
-    if (!editingItem && !skuManuallyEdited && formData.category && formData.line) {
+  // Manual SKU generation function - only called when explicitly needed
+  const generateSkuIfNeeded = () => {
+    // Only generate SKU for new items (not editing existing ones)
+    if (!editingItem && !skuManuallyEdited && formData.category && formData.line && (!formData.sku || formData.sku.trim() === '')) {
       const existingSkus = inventory.map(item => item.sku);
       const newSku = generateUniqueSKU(formData.category, formData.line, existingSkus);
       setFormData(prev => ({ ...prev, sku: newSku }));
     }
-  }, [formData.category, formData.line, editingItem, skuManuallyEdited, inventory]);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,10 +103,18 @@ export default function Inventory() {
     setSkuManuallyEdited(false);
     setCategoryMode('select');
     setLineMode('select');
+    // Reset editing ref
+    isEditingRef.current = false;
   };
 
   const handleEdit = (item: InventoryItem) => {
+    // Set editing ref IMMEDIATELY to prevent auto-generation
+    isEditingRef.current = true;
+    
+    // Set editing state first to prevent auto-generation
     setEditingItem(item);
+    setSkuManuallyEdited(true); // Don't auto-generate when editing
+    
     setFormData({
       name: item.name,
       supplierSKU: item.supplierSKU,
@@ -109,7 +127,7 @@ export default function Inventory() {
       usaStock: item.usaStock,
       images: item.images || [],
     });
-    setSkuManuallyEdited(true); // Don't auto-generate when editing
+    
     setIsFormOpen(true);
   };
 
@@ -368,6 +386,9 @@ export default function Inventory() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">All Categories</option>
+                  {predefinedCategories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
                   {existingCategories.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
@@ -383,6 +404,9 @@ export default function Inventory() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">All Lines</option>
+                  {predefinedLines.map(line => (
+                    <option key={line} value={line}>{line}</option>
+                  ))}
                   {existingLines.map(line => (
                     <option key={line} value={line}>{line}</option>
                   ))}
@@ -476,14 +500,25 @@ export default function Inventory() {
                             setFormData({ ...formData, category: '' });
                           } else {
                             setFormData({ ...formData, category: e.target.value });
+                            // Generate SKU after category change (only for new items)
+                            setTimeout(() => generateSkuIfNeeded(), 0);
                           }
                         }}
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                       >
                         <option value="">Select category...</option>
-                        {existingCategories.map(cat => (
+                        {predefinedCategories.map(cat => (
                           <option key={cat} value={cat}>{cat}</option>
                         ))}
+                        {existingCategories.length > 0 && (
+                          <>
+                            <optgroup label="Other Categories">
+                              {existingCategories.map(cat => (
+                                <option key={cat} value={cat}>{cat}</option>
+                              ))}
+                            </optgroup>
+                          </>
+                        )}
                         <option value="__new__">+ Add New Category</option>
                       </select>
                     </div>
@@ -493,7 +528,11 @@ export default function Inventory() {
                         type="text"
                         required
                         value={formData.category}
-                        onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                        onChange={(e) => {
+                          setFormData({ ...formData, category: e.target.value });
+                          // Generate SKU after category change (only for new items)
+                          setTimeout(() => generateSkuIfNeeded(), 0);
+                        }}
                         placeholder="Enter new category"
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                         autoFocus
@@ -521,14 +560,25 @@ export default function Inventory() {
                             setFormData({ ...formData, line: '' });
                           } else {
                             setFormData({ ...formData, line: e.target.value });
+                            // Generate SKU after line change (only for new items)
+                            setTimeout(() => generateSkuIfNeeded(), 0);
                           }
                         }}
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                       >
                         <option value="">Select line...</option>
-                        {existingLines.map(line => (
+                        {predefinedLines.map(line => (
                           <option key={line} value={line}>{line}</option>
                         ))}
+                        {existingLines.length > 0 && (
+                          <>
+                            <optgroup label="Other Lines">
+                              {existingLines.map(line => (
+                                <option key={line} value={line}>{line}</option>
+                              ))}
+                            </optgroup>
+                          </>
+                        )}
                         <option value="__new__">+ Add New Line</option>
                       </select>
                     </div>
@@ -538,7 +588,11 @@ export default function Inventory() {
                         type="text"
                         required
                         value={formData.line}
-                        onChange={(e) => setFormData({ ...formData, line: e.target.value })}
+                        onChange={(e) => {
+                          setFormData({ ...formData, line: e.target.value });
+                          // Generate SKU after line change (only for new items)
+                          setTimeout(() => generateSkuIfNeeded(), 0);
+                        }}
                         placeholder="Enter new line"
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                         autoFocus
@@ -565,11 +619,12 @@ export default function Inventory() {
                     onChange={(e) => handleSkuChange(e.target.value)}
                     placeholder="Auto-generated from category & line"
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent bg-white font-mono"
+                    readOnly={!!editingItem}
                   />
                   <button
                     type="button"
                     onClick={handleRegenerateSku}
-                    disabled={!formData.category || !formData.line}
+                    disabled={!!editingItem || !formData.category || !formData.line}
                     className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-white hover:border-[#4f0c1b] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                     title="Regenerate SKU"
                   >
@@ -580,7 +635,15 @@ export default function Inventory() {
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
                   Format: {formData.category ? formData.category.substring(0, 2).toUpperCase() : 'XX'}
-                  {formData.line ? formData.line.substring(0, 2).toUpperCase() : 'XX'}-#####
+                  {formData.line ? (() => {
+                    const words = formData.line.trim().split(/\s+/);
+                    if (words.length >= 2) {
+                      return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase();
+                    } else if (words.length === 1) {
+                      return words[0].substring(0, 2).toUpperCase();
+                    }
+                    return 'XX';
+                  })() : 'XX'}-#####
                   {!editingItem && ' (auto-generates when you enter category & line)'}
                 </p>
               </div>
