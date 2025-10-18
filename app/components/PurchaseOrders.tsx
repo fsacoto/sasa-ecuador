@@ -39,7 +39,6 @@ export default function PurchaseOrders() {
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterLine, setFilterLine] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
-  const [viewMode, setViewMode] = useState<'list' | 'grouped'>('list');
   const [showColumnDropdown, setShowColumnDropdown] = useState(false);
   
   // Column visibility state
@@ -48,7 +47,16 @@ export default function PurchaseOrders() {
   
   // Search dropdown state
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  
+  // Group by state
+  const [groupByField, setGroupByField] = useState<string>('');
+  const [showGroupByDropdown, setShowGroupByDropdown] = useState(false);
+  const groupByDropdownRef = useRef<HTMLDivElement>(null);
   const searchDropdownRef = useRef<HTMLDivElement>(null);
+  
+  // Bulk operations state
+  const [showBulkDropdown, setShowBulkDropdown] = useState(false);
+  const bulkDropdownRef = useRef<HTMLDivElement>(null);
   
   // Predefined category options
   const predefinedCategories = ['Necklace', 'Ring', 'Bracelet', 'Set', 'Anklet', 'Earring'];
@@ -71,6 +79,19 @@ export default function PurchaseOrders() {
     
     // Return all columns that can be toggled (excluding # and Actions which are always visible)
     return allColumns;
+  };
+
+  // Get group by fields
+  const getGroupByFields = () => {
+    return [
+      { key: 'invoice', label: 'Invoice' },
+      { key: 'supplier', label: 'Supplier' },
+      { key: 'category', label: 'Category' },
+      { key: 'line', label: 'Line' },
+      { key: 'destination', label: 'Destination' },
+      { key: 'status', label: 'Status' },
+      { key: 'createdAt', label: 'Date Created' },
+    ];
   };
 
   // Get visible column keys for rendering
@@ -101,11 +122,17 @@ export default function PurchaseOrders() {
       if (showSearchDropdown && searchDropdownRef.current && !searchDropdownRef.current.contains(event.target as Node)) {
         setShowSearchDropdown(false);
       }
+      if (showGroupByDropdown && groupByDropdownRef.current && !groupByDropdownRef.current.contains(event.target as Node)) {
+        setShowGroupByDropdown(false);
+      }
+      if (showBulkDropdown && bulkDropdownRef.current && !bulkDropdownRef.current.contains(event.target as Node)) {
+        setShowBulkDropdown(false);
+      }
     };
     
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showColumnDropdown, showSearchDropdown]);
+  }, [showColumnDropdown, showSearchDropdown, showGroupByDropdown, showBulkDropdown]);
   
   // Get unique categories and lines from existing data (excluding predefined ones)
   const existingCategories = [...new Set([
@@ -734,15 +761,49 @@ export default function PurchaseOrders() {
       return 0;
     });
 
-  // Group orders by invoice for grouped view
+  // Group orders by selected field
   const getGroupedOrders = () => {
-    const groups: { [invoice: string]: PurchaseOrder[] } = {};
+    if (!groupByField) {
+      return {};
+    }
+
+    const groups: { [key: string]: PurchaseOrder[] } = {};
     filteredAndSortedOrders.forEach(order => {
-      if (!groups[order.invoice]) {
-        groups[order.invoice] = [];
+      let groupKey: string;
+      
+      switch (groupByField) {
+        case 'invoice':
+          groupKey = order.invoice;
+          break;
+        case 'supplier':
+          const supplier = suppliers.find(s => s.id === order.supplierId);
+          groupKey = supplier ? supplier.name : 'Unknown Supplier';
+          break;
+        case 'category':
+          groupKey = order.category || 'No Category';
+          break;
+        case 'line':
+          groupKey = order.line || 'No Line';
+          break;
+        case 'destination':
+          groupKey = order.destination;
+          break;
+        case 'status':
+          groupKey = order.status;
+          break;
+        case 'createdAt':
+          groupKey = new Date(order.createdAt).toLocaleDateString();
+          break;
+        default:
+          groupKey = 'Unknown';
       }
-      groups[order.invoice].push(order);
+      
+      if (!groups[groupKey]) {
+        groups[groupKey] = [];
+      }
+      groups[groupKey].push(order);
     });
+    
     return groups;
   };
 
@@ -772,50 +833,64 @@ export default function PurchaseOrders() {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-semibold text-gray-900">Purchase Orders</h2>
-          <p className="text-sm text-gray-500 mt-1">Track orders from suppliers</p>
+          <p className="text-sm text-gray-500 mt-1">Import, track, and manage supplier orders</p>
         </div>
         <div className="flex gap-3">
-          {/* View Mode Toggle */}
-          <div className="flex items-center bg-gray-100 rounded-lg p-1">
+          {/* Bulk Operations Dropdown */}
+          <div className="relative">
             <button
-              onClick={() => setViewMode('list')}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                viewMode === 'list' 
-                  ? 'bg-white text-[#4f0c1b] shadow-sm' 
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
+              onClick={() => setShowBulkDropdown(!showBulkDropdown)}
+              className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm"
             >
-              List View
+              <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+              </svg>
+              <span className="text-sm font-medium text-gray-700">Bulk</span>
+              <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
             </button>
-            <button
-              onClick={() => setViewMode('grouped')}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                viewMode === 'grouped' 
-                  ? 'bg-white text-[#4f0c1b] shadow-sm' 
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Group by Invoice
-            </button>
+
+            {showBulkDropdown && (
+              <div ref={bulkDropdownRef} className="absolute top-full right-0 mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
+                <div className="p-2">
+                  <button
+                    onClick={() => {
+                      setIsBulkImportOpen(true);
+                      setShowBulkDropdown(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors text-gray-700 hover:bg-gray-50"
+                  >
+                    <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                    </svg>
+                    Import Orders
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsBulkDeleteOpen(true);
+                      setShowBulkDropdown(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors text-red-600 hover:bg-red-50"
+                  >
+                    <svg className="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    Delete Orders
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-          
-          <button
-            onClick={() => setIsBulkImportOpen(true)}
-            className="border border-[#4f0c1b] text-[#4f0c1b] hover:bg-[#4f0c1b] hover:text-white px-5 py-2.5 rounded-lg transition-all font-medium text-sm"
-          >
-            Bulk Import
-          </button>
-          <button
-            onClick={() => setIsBulkDeleteOpen(true)}
-            className="border border-red-600 text-red-600 hover:bg-red-600 hover:text-white px-5 py-2.5 rounded-lg transition-all font-medium text-sm"
-          >
-            Bulk Delete
-          </button>
+
           <button
             onClick={() => setIsFormOpen(true)}
-            className="bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-5 py-2.5 rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow active:scale-95"
+            className="flex items-center gap-2 px-4 py-2 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow-md active:scale-95"
           >
-            Add Purchase Order
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            <span className="text-sm font-medium text-white">Add Order</span>
           </button>
         </div>
       </div>
@@ -840,6 +915,67 @@ export default function PurchaseOrders() {
               </span>
             )}
           </button>
+        </div>
+
+        {/* Group By Button */}
+        <div className="relative">
+          <button
+            onClick={() => setShowGroupByDropdown(!showGroupByDropdown)}
+            className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
+              groupByField ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            <span className="text-sm font-medium">Group by</span>
+            {groupByField && (
+              <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
+                1
+              </span>
+            )}
+          </button>
+
+          {showGroupByDropdown && (
+            <div ref={groupByDropdownRef} className="absolute top-full right-0 mt-2 w-64 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
+              <div className="p-4">
+                <div className="text-sm font-medium text-gray-700 mb-3">Group by Field</div>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => {
+                      setGroupByField('');
+                      setShowGroupByDropdown(false);
+                    }}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                      !groupByField ? 'bg-[#4f0c1b] text-white' : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    No Grouping
+                  </button>
+                  {getGroupByFields().map(field => (
+                    <button
+                      key={field.key}
+                      onClick={() => {
+                        setGroupByField(field.key);
+                        setShowGroupByDropdown(false);
+                      }}
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                        groupByField === field.key ? 'bg-[#4f0c1b] text-white' : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                      </svg>
+                      {field.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Column Visibility Control */}
@@ -1604,7 +1740,7 @@ export default function PurchaseOrders() {
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full" key={`table-${Array.from(hiddenColumns).join('-')}`}>
-            {viewMode === 'list' ? (
+            {!groupByField ? (
               // List view headers
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -1797,13 +1933,13 @@ export default function PurchaseOrders() {
             <tbody className="divide-y divide-gray-100">
               {filteredAndSortedOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={viewMode === 'list' ? 10 - hiddenColumns.size : 9 - hiddenColumns.size} className="px-6 py-12 text-center text-sm text-gray-500">
+                  <td colSpan={!groupByField ? 10 - hiddenColumns.size : 9 - hiddenColumns.size} className="px-6 py-12 text-center text-sm text-gray-500">
                     {purchaseOrders.length === 0 
                       ? 'No purchase orders yet. Add your first purchase order to get started.'
                       : 'No orders match your filters. Try adjusting your search or filters.'}
                   </td>
                 </tr>
-              ) : viewMode === 'list' ? (
+              ) : !groupByField ? (
                 filteredAndSortedOrders.map((order, index) => {
                   const supplier = suppliers.find(s => s.id === order.supplierId);
                   const needsReview = order.category.includes('NEEDS REVIEW') || !order.supplierId;
@@ -1915,21 +2051,21 @@ export default function PurchaseOrders() {
                   );
                 })
               ) : (
-                // Grouped view by invoice - separate table structure
-                Object.entries(groupedOrders).map(([invoice, orders]) => {
+                // Grouped view by selected field - separate table structure
+                Object.entries(groupedOrders).map(([groupKey, orders]) => {
                   const totalOrders = orders.length;
                   const totalValue = orders.reduce((sum, order) => sum + order.totalCostWithDiscount, 0);
                   const supplier = suppliers.find(s => s.id === orders[0].supplierId);
                   const hasNeedsReview = orders.some(order => order.category.includes('NEEDS REVIEW') || !order.supplierId);
                   
                   return (
-                    <React.Fragment key={invoice}>
-                      {/* Invoice Header Row */}
+                    <React.Fragment key={groupKey}>
+                      {/* Group Header Row */}
                       <tr className="bg-gray-50 border-t-2 border-gray-200">
                         <td colSpan={9 - hiddenColumns.size} className="px-6 py-4">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <h3 className="text-lg font-semibold text-gray-900">{invoice}</h3>
+                              <h3 className="text-lg font-semibold text-gray-900">{groupKey}</h3>
                               <span className="bg-[#4f0c1b] text-white px-2 py-1 rounded-full text-xs font-medium">
                                 {totalOrders} order{totalOrders !== 1 ? 's' : ''}
                               </span>
@@ -2082,17 +2218,17 @@ export default function PurchaseOrders() {
             <span>
               Showing <span className="font-semibold text-gray-900">{filteredAndSortedOrders.length}</span> of <span className="font-semibold text-gray-900">{purchaseOrders.length}</span> orders
             </span>
-            {viewMode === 'grouped' && (
+            {groupByField && (
               <span className="text-gray-400">•</span>
             )}
-            {viewMode === 'grouped' && (
+            {groupByField && (
               <span>
-                <span className="font-semibold text-gray-900">{Object.keys(groupedOrders).length}</span> invoices
+                <span className="font-semibold text-gray-900">{Object.keys(groupedOrders).length}</span> {getGroupByFields().find(f => f.key === groupByField)?.label.toLowerCase() || 'groups'}
               </span>
             )}
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-500">
-            <span>Row numbers reset per invoice in grouped view</span>
+            <span>Row numbers reset per group when grouping is active</span>
           </div>
         </div>
       </div>

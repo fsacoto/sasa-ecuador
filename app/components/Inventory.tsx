@@ -47,6 +47,7 @@ export default function Inventory() {
   const [showGalleryFieldsDropdown, setShowGalleryFieldsDropdown] = useState(false);
   const galleryFieldsDropdownRef = useRef<HTMLDivElement>(null);
   
+  
   // Ref to track if we're currently editing an item (prevents SKU auto-generation)
   const isEditingRef = useRef(false);
   
@@ -383,24 +384,28 @@ export default function Inventory() {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-semibold text-gray-900">Inventory</h2>
-          <p className="text-sm text-gray-500 mt-1">Manage your jewelry inventory</p>
+          <p className="text-sm text-gray-500 mt-1">View stock levels and create product catalogs</p>
         </div>
         <div className="flex gap-3">
           <button
             onClick={() => setIsCatalogModalOpen(true)}
             disabled={inventory.length === 0}
-            className="bg-white border-2 border-[#4f0c1b] text-[#4f0c1b] hover:bg-[#4f0c1b] hover:text-white px-5 py-2.5 rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-            Create Catalog
+            <span className="text-sm font-medium text-gray-700">Create Catalog</span>
           </button>
+          
           <button
             onClick={() => setIsFormOpen(true)}
-            className="bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-5 py-2.5 rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow active:scale-95"
+            className="flex items-center gap-2 px-3 py-2 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white rounded-lg hover:shadow-md transition-all duration-200 text-sm shadow-sm"
           >
-            Add Inventory Item
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            <span className="text-sm font-medium text-white">Add Item</span>
           </button>
         </div>
       </div>

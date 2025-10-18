@@ -100,13 +100,16 @@ export default function Suppliers() {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-semibold text-gray-900">Suppliers</h2>
-          <p className="text-sm text-gray-500 mt-1">Manage your jewelry suppliers</p>
+          <p className="text-sm text-gray-500 mt-1">Manage vendor information and contacts</p>
         </div>
         <button
           onClick={() => setIsFormOpen(true)}
-          className="bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-5 py-2.5 rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow active:scale-95"
+          className="flex items-center gap-2 px-5 py-2.5 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow-md active:scale-95"
         >
-          Add Supplier
+          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+          </svg>
+          <span className="text-sm font-medium text-white">Add Supplier</span>
         </button>
       </div>
 
