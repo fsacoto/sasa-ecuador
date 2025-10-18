@@ -33,6 +33,16 @@ export default function Inventory() {
   const [showColumnDropdown, setShowColumnDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   
+  // View mode state
+  const [viewMode, setViewMode] = useState<'grid' | 'gallery'>('grid');
+  const [showViewDropdown, setShowViewDropdown] = useState(false);
+  const viewDropdownRef = useRef<HTMLDivElement>(null);
+  
+  // Gallery view state
+  const [galleryFields, setGalleryFields] = useState<Set<string>>(new Set(['name', 'sku', 'category', 'line']));
+  const [showGalleryFieldsDropdown, setShowGalleryFieldsDropdown] = useState(false);
+  const galleryFieldsDropdownRef = useRef<HTMLDivElement>(null);
+  
   // Ref to track if we're currently editing an item (prevents SKU auto-generation)
   const isEditingRef = useRef(false);
   
@@ -69,17 +79,39 @@ export default function Inventory() {
     return allColumns;
   };
 
+  // Get available fields for gallery view
+  const getGalleryFields = () => {
+    const allFields = [
+      { key: 'name', label: 'Name' },
+      { key: 'sku', label: 'SKU' },
+      { key: 'category', label: 'Category' },
+      { key: 'line', label: 'Line' },
+      { key: 'ecuadorStock', label: 'Ecuador Stock' },
+      { key: 'usaStock', label: 'USA Stock' },
+      { key: 'totalStock', label: 'Total Stock' },
+      { key: 'unitCost', label: 'Unit Cost' },
+      { key: 'totalValue', label: 'Total Value' }
+    ];
+    return allFields;
+  };
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (showColumnDropdown && dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setShowColumnDropdown(false);
       }
+      if (showViewDropdown && viewDropdownRef.current && !viewDropdownRef.current.contains(event.target as Node)) {
+        setShowViewDropdown(false);
+      }
+      if (showGalleryFieldsDropdown && galleryFieldsDropdownRef.current && !galleryFieldsDropdownRef.current.contains(event.target as Node)) {
+        setShowGalleryFieldsDropdown(false);
+      }
     };
     
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showColumnDropdown]);
+  }, [showColumnDropdown, showViewDropdown, showGalleryFieldsDropdown]);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -366,64 +398,180 @@ export default function Inventory() {
         </div>
       </div>
 
-      {/* Column Visibility Control */}
-      <div className="flex items-center justify-end">
+      {/* View Controls */}
+      <div className="flex items-center justify-end gap-3">
+        {/* View Mode Toggle */}
         <div className="relative">
           <button
-            onClick={() => setShowColumnDropdown(!showColumnDropdown)}
+            onClick={() => setShowViewDropdown(!showViewDropdown)}
             className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
           >
-            <svg className={`w-4 h-4 ${hiddenColumns.size > 0 ? 'text-gray-400' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              {viewMode === 'grid' ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+              )}
             </svg>
-            {hiddenColumns.size > 0 && (
-              <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
-                {hiddenColumns.size}
-              </span>
-            )}
+            <span className="text-sm font-medium text-gray-700">
+              {viewMode === 'grid' ? 'Grid View' : 'Gallery View'}
+            </span>
             <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
           
-          {showColumnDropdown && (
-            <div ref={dropdownRef} className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
-              <div className="p-4">
-                <div className="text-sm font-medium text-gray-700 mb-3">Column Visibility</div>
-                <div className="grid grid-cols-2 gap-3">
-                  {getVisibleColumns().map(column => (
-                    <div key={column.key} className="flex items-center justify-between">
-                      <span className="text-sm text-gray-700">{column.label}</span>
-                      <button
-                        onClick={() => {
-                          if (hiddenColumns.has(column.key)) {
-                            setHiddenColumns(prev => {
-                              const newSet = new Set(prev);
-                              newSet.delete(column.key);
-                              return newSet;
-                            });
-                          } else {
-                            setHiddenColumns(prev => new Set([...prev, column.key]));
-                          }
-                        }}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:ring-offset-2 ${
-                          hiddenColumns.has(column.key) ? 'bg-gray-300' : 'bg-[#4f0c1b]'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            hiddenColumns.has(column.key) ? 'translate-x-1' : 'translate-x-6'
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  ))}
-                </div>
+          {showViewDropdown && (
+            <div ref={viewDropdownRef} className="absolute top-full right-0 mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
+              <div className="p-2">
+                <button
+                  onClick={() => {
+                    setViewMode('grid');
+                    setShowViewDropdown(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                    viewMode === 'grid' ? 'bg-[#4f0c1b] text-white' : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                  </svg>
+                  Grid View
+                </button>
+                <button
+                  onClick={() => {
+                    setViewMode('gallery');
+                    setShowViewDropdown(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                    viewMode === 'gallery' ? 'bg-[#4f0c1b] text-white' : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                  </svg>
+                  Gallery View
+                </button>
               </div>
             </div>
           )}
         </div>
+
+        {/* Gallery Fields Selection (only show in gallery view) */}
+        {viewMode === 'gallery' && (
+          <div className="relative">
+            <button
+              onClick={() => setShowGalleryFieldsDropdown(!showGalleryFieldsDropdown)}
+              className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+            >
+              <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span className="text-sm font-medium text-gray-700">Fields</span>
+              <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            
+            {showGalleryFieldsDropdown && (
+              <div ref={galleryFieldsDropdownRef} className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
+                <div className="p-4">
+                  <div className="text-sm font-medium text-gray-700 mb-3">Gallery Fields</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {getGalleryFields().map(field => (
+                      <div key={field.key} className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">{field.label}</span>
+                        <button
+                          onClick={() => {
+                            if (galleryFields.has(field.key)) {
+                              setGalleryFields(prev => {
+                                const newSet = new Set(prev);
+                                newSet.delete(field.key);
+                                return newSet;
+                              });
+                            } else {
+                              setGalleryFields(prev => new Set([...prev, field.key]));
+                            }
+                          }}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:ring-offset-2 ${
+                            galleryFields.has(field.key) ? 'bg-[#4f0c1b]' : 'bg-gray-300'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                              galleryFields.has(field.key) ? 'translate-x-6' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Column Visibility Control (only show in grid view) */}
+        {viewMode === 'grid' && (
+          <div className="relative">
+            <button
+              onClick={() => setShowColumnDropdown(!showColumnDropdown)}
+              className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+            >
+              <svg className={`w-4 h-4 ${hiddenColumns.size > 0 ? 'text-gray-400' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+              {hiddenColumns.size > 0 && (
+                <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
+                  {hiddenColumns.size}
+                </span>
+              )}
+              <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            
+            {showColumnDropdown && (
+              <div ref={dropdownRef} className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
+                <div className="p-4">
+                  <div className="text-sm font-medium text-gray-700 mb-3">Column Visibility</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {getVisibleColumns().map(column => (
+                      <div key={column.key} className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">{column.label}</span>
+                        <button
+                          onClick={() => {
+                            if (hiddenColumns.has(column.key)) {
+                              setHiddenColumns(prev => {
+                                const newSet = new Set(prev);
+                                newSet.delete(column.key);
+                                return newSet;
+                              });
+                            } else {
+                              setHiddenColumns(prev => new Set([...prev, column.key]));
+                            }
+                          }}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:ring-offset-2 ${
+                            hiddenColumns.has(column.key) ? 'bg-gray-300' : 'bg-[#4f0c1b]'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                              hiddenColumns.has(column.key) ? 'translate-x-1' : 'translate-x-6'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Compact Search and Filter Controls */}
@@ -876,9 +1024,11 @@ export default function Inventory() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
+      {/* Grid View */}
+      {viewMode === 'grid' && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 {!hiddenColumns.has('name') && (
@@ -1083,6 +1233,146 @@ export default function Inventory() {
           </table>
         </div>
       </div>
+      )}
+
+      {/* Gallery View */}
+      {viewMode === 'gallery' && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="p-6">
+            {filteredAndSortedInventory.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="text-sm text-gray-500">
+                  {inventory.length === 0 
+                    ? 'No inventory items yet. Add your first item to get started.'
+                    : 'No items match your filters. Try adjusting your search or filters.'}
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                {filteredAndSortedInventory.map((item) => {
+                  const needsReview = item.category.includes('NEEDS REVIEW');
+                  return (
+                    <div key={item.id} className={`group relative bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-lg transition-all duration-200 hover:border-[#4f0c1b] ${needsReview ? 'ring-2 ring-amber-200' : ''}`}>
+                      {/* Image Section */}
+                      <div className="aspect-square relative overflow-hidden bg-gray-50">
+                        {item.images && item.images.length > 0 ? (
+                          <>
+                            <img 
+                              src={item.images[0]} 
+                              alt={item.name} 
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" 
+                            />
+                            {item.images.length > 1 && (
+                              <div className="absolute top-2 right-2 bg-[#4f0c1b] text-white text-xs w-6 h-6 rounded-full flex items-center justify-center font-medium">
+                                {item.images.length}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <svg className="w-12 h-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                        )}
+                        
+                        {/* Action Buttons Overlay */}
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 flex items-center justify-center">
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex gap-2">
+                            <button
+                              onClick={() => setSelectedItem(item)}
+                              className="bg-white text-[#4f0c1b] px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                            >
+                              View
+                            </button>
+                            <button
+                              onClick={() => handleEdit(item)}
+                              className="bg-[#4f0c1b] text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-[#3d0a15] transition-colors"
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Content Section */}
+                      <div className="p-4 space-y-2">
+                        {/* Name */}
+                        {galleryFields.has('name') && (
+                          <div>
+                            <h3 className="font-medium text-[#4f0c1b] text-sm truncate">{item.name}</h3>
+                            {needsReview && (
+                              <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
+                                Needs Review
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* SKU */}
+                        {galleryFields.has('sku') && (
+                          <div className="text-xs text-gray-600 font-mono">{item.sku}</div>
+                        )}
+
+                        {/* Category */}
+                        {galleryFields.has('category') && (
+                          <div className="text-xs text-gray-500">
+                            <span className="font-medium">Category:</span> {item.category}
+                          </div>
+                        )}
+
+                        {/* Line */}
+                        {galleryFields.has('line') && (
+                          <div className="text-xs text-gray-500">
+                            <span className="font-medium">Line:</span> {item.line}
+                          </div>
+                        )}
+
+                        {/* Stock Information */}
+                        {(galleryFields.has('ecuadorStock') || galleryFields.has('usaStock') || galleryFields.has('totalStock')) && (
+                          <div className="flex gap-2 text-xs">
+                            {galleryFields.has('ecuadorStock') && (
+                              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                                EC: {item.ecuadorStock}
+                              </span>
+                            )}
+                            {galleryFields.has('usaStock') && (
+                              <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full">
+                                US: {item.usaStock}
+                              </span>
+                            )}
+                            {galleryFields.has('totalStock') && (
+                              <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded-full font-medium">
+                                Total: {item.totalStock}
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Cost Information */}
+                        {(galleryFields.has('unitCost') || galleryFields.has('totalValue')) && (
+                          <div className="text-xs text-gray-500 space-y-1">
+                            {galleryFields.has('unitCost') && (
+                              <div>
+                                <span className="font-medium">Unit Cost:</span> ${item.unitCost?.toFixed(2) || '0.00'}
+                              </div>
+                            )}
+                            {galleryFields.has('totalValue') && (
+                              <div>
+                                <span className="font-medium">Total Value:</span> ${item.totalValue?.toFixed(2) || '0.00'}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Detail Panel */}
       {selectedItem && (
