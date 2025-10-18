@@ -28,6 +28,10 @@ export default function Inventory() {
   const [filterLine, setFilterLine] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
   
+  // Search dropdown state
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const searchDropdownRef = useRef<HTMLDivElement>(null);
+  
   // Column visibility state
   const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
   const [showColumnDropdown, setShowColumnDropdown] = useState(false);
@@ -107,11 +111,14 @@ export default function Inventory() {
       if (showGalleryFieldsDropdown && galleryFieldsDropdownRef.current && !galleryFieldsDropdownRef.current.contains(event.target as Node)) {
         setShowGalleryFieldsDropdown(false);
       }
+      if (showSearchDropdown && searchDropdownRef.current && !searchDropdownRef.current.contains(event.target as Node)) {
+        setShowSearchDropdown(false);
+      }
     };
     
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showColumnDropdown, showViewDropdown, showGalleryFieldsDropdown]);
+  }, [showColumnDropdown, showViewDropdown, showGalleryFieldsDropdown, showSearchDropdown]);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -404,7 +411,7 @@ export default function Inventory() {
         <div className="relative">
           <button
             onClick={() => setShowViewDropdown(!showViewDropdown)}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm"
           >
             <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               {viewMode === 'grid' ? (
@@ -416,9 +423,6 @@ export default function Inventory() {
             <span className="text-sm font-medium text-gray-700">
               {viewMode === 'grid' ? 'Grid View' : 'Gallery View'}
             </span>
-            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
           </button>
           
           {showViewDropdown && (
@@ -462,7 +466,7 @@ export default function Inventory() {
           <div className="relative">
             <button
               onClick={() => setShowGalleryFieldsDropdown(!showGalleryFieldsDropdown)}
-              className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+              className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm"
             >
               <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -513,25 +517,43 @@ export default function Inventory() {
           </div>
         )}
 
+        {/* Filter Button */}
+        <div className="relative">
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
+              showFilters ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            <span className="text-sm font-medium">Filters</span>
+            {(filterCategory !== 'all' || filterLine !== 'all') && (
+              <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
+                {[filterCategory !== 'all', filterLine !== 'all'].filter(Boolean).length}
+              </span>
+            )}
+          </button>
+        </div>
+
         {/* Column Visibility Control (only show in grid view) */}
         {viewMode === 'grid' && (
           <div className="relative">
             <button
               onClick={() => setShowColumnDropdown(!showColumnDropdown)}
-              className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+              className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm"
             >
               <svg className={`w-4 h-4 ${hiddenColumns.size > 0 ? 'text-gray-400' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
               </svg>
+              <span className="text-sm font-medium text-gray-700">Hide fields</span>
               {hiddenColumns.size > 0 && (
                 <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
                   {hiddenColumns.size}
                 </span>
               )}
-              <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
             </button>
             
             {showColumnDropdown && (
@@ -572,51 +594,43 @@ export default function Inventory() {
             )}
           </div>
         )}
-      </div>
 
-      {/* Compact Search and Filter Controls */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {/* Compact Search Bar - Always Visible */}
-        <div className="p-3 flex items-center gap-3">
-          <div className="flex-1 relative">
-            <input
-              type="text"
-              placeholder="Search inventory (Name, SKU, Description...)"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm"
-            />
-            <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        {/* Search Button */}
+        <div className="relative">
+          <button
+            onClick={() => setShowSearchDropdown(!showSearchDropdown)}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm"
+          >
+            <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
-          </div>
-          
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all text-sm font-medium ${
-              showFilters 
-                ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' 
-                : 'bg-white text-gray-700 border-gray-300 hover:border-[#4f0c1b]'
-            }`}
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-            </svg>
-            Filters
-            {(filterCategory !== 'all' || filterLine !== 'all') && (
-              <span className="bg-white text-[#4f0c1b] rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
-                {[filterCategory !== 'all', filterLine !== 'all'].filter(Boolean).length}
-              </span>
-            )}
           </button>
           
-          <span className="text-sm text-gray-600 whitespace-nowrap">
-            <span className="font-semibold text-gray-900">{filteredAndSortedInventory.length}</span> of {inventory.length}
-          </span>
+          {showSearchDropdown && (
+            <div ref={searchDropdownRef} className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
+              <div className="p-4">
+                <div className="text-sm font-medium text-gray-700 mb-3">Search</div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search inventory..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  />
+                  <svg className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-        
-        {/* Expandable Filters */}
-        {showFilters && (
+      </div>
+
+      {/* Expandable Filters */}
+      {showFilters && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mt-4">
           <div className="border-t border-gray-200 p-4 bg-gray-50">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* Category Filter */}
@@ -672,8 +686,8 @@ export default function Inventory() {
               </div>
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Warning Banner for Items Needing Review */}
       {inventory.some(item => item.category.includes('NEEDS REVIEW')) && (
@@ -1341,27 +1355,27 @@ export default function Inventory() {
                                 US: {item.usaStock}
                               </span>
                             )}
-                            {galleryFields.has('totalStock') && (
-                              <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded-full font-medium">
-                                Total: {item.totalStock}
-                              </span>
-                            )}
+                              {galleryFields.has('totalStock') && (
+                                <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded-full font-medium">
+                                  Total: {item.ecuadorStock + item.usaStock}
+                                </span>
+                              )}
                           </div>
                         )}
 
                         {/* Cost Information */}
                         {(galleryFields.has('unitCost') || galleryFields.has('totalValue')) && (
                           <div className="text-xs text-gray-500 space-y-1">
-                            {galleryFields.has('unitCost') && (
-                              <div>
-                                <span className="font-medium">Unit Cost:</span> ${item.unitCost?.toFixed(2) || '0.00'}
-                              </div>
-                            )}
-                            {galleryFields.has('totalValue') && (
-                              <div>
-                                <span className="font-medium">Total Value:</span> ${item.totalValue?.toFixed(2) || '0.00'}
-                              </div>
-                            )}
+                              {galleryFields.has('unitCost') && (
+                                <div>
+                                  <span className="font-medium">Unit Cost:</span> $0.00
+                                </div>
+                              )}
+                              {galleryFields.has('totalValue') && (
+                                <div>
+                                  <span className="font-medium">Total Value:</span> $0.00
+                                </div>
+                              )}
                           </div>
                         )}
                       </div>
