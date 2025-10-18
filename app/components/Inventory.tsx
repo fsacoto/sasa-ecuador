@@ -1399,7 +1399,11 @@ export default function Inventory() {
       {/* Catalog Modal */}
       {isCatalogModalOpen && (
         <ProductCatalogModal
-          inventory={inventory}
+          inventory={inventory.filter(item => {
+            // Only include items that have stock (items you currently hold)
+            const totalStock = item.ecuadorStock + item.usaStock;
+            return totalStock > 0;
+          })}
           onClose={() => setIsCatalogModalOpen(false)}
         />
       )}
