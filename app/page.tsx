@@ -6,8 +6,9 @@ import Dashboard from './components/Dashboard';
 import Suppliers from './components/Suppliers';
 import PurchaseOrders from './components/PurchaseOrders';
 import Inventory from './components/Inventory';
+import LandedCosts from './components/LandedCosts';
 
-type Tab = 'dashboard' | 'suppliers' | 'purchase-orders' | 'inventory';
+type Tab = 'dashboard' | 'suppliers' | 'purchase-orders' | 'inventory' | 'landed-costs';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -17,6 +18,7 @@ export default function Home() {
     { id: 'suppliers' as Tab, label: 'Suppliers' },
     { id: 'purchase-orders' as Tab, label: 'Purchase Orders' },
     { id: 'inventory' as Tab, label: 'Inventory' },
+    { id: 'landed-costs' as Tab, label: 'Landed Costs' },
   ];
 
   return (
@@ -78,6 +80,7 @@ export default function Home() {
         {activeTab === 'suppliers' && <Suppliers />}
         {activeTab === 'purchase-orders' && <PurchaseOrders />}
         {activeTab === 'inventory' && <Inventory />}
+        {activeTab === 'landed-costs' && <LandedCosts />}
       </main>
 
       {/* Footer */}

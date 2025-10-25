@@ -63,3 +63,34 @@ export interface InventoryItem {
   barcode?: string; // Base64 encoded barcode image
   createdAt: Date;
 }
+
+export type AdditionalCostType = 'Shipping' | 'Insurance' | 'Duties' | 'Import Fees' | 'Other';
+
+export interface AdditionalCost {
+  id: string;
+  invoiceNumber: string; // Links to PurchaseOrder.invoice
+  type: AdditionalCostType;
+  amount: number;
+  description: string;
+  date: Date;
+  createdAt: Date;
+}
+
+export interface LandedCostCalculation {
+  invoiceNumber: string;
+  baseItemTotal: number; // Sum of all items in the invoice
+  totalAdditionalCosts: number;
+  totalLandedCost: number;
+  items: {
+    purchaseOrderId: string;
+    sku: string;
+    description: string;
+    quantity: number;
+    baseCostPerUnit: number;
+    baseItemTotal: number;
+    proportionalShare: number; // Percentage of total additional costs
+    additionalCostAllocation: number; // Amount allocated to this item
+    finalCostPerUnit: number; // Base cost + allocated additional cost per unit
+    finalItemTotal: number; // Final total cost for this item
+  }[];
+}
