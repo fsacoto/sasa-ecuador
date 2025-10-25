@@ -74,7 +74,7 @@ export default function PurchaseOrders() {
       { key: 'quantity', label: 'Quantity' },
       { key: 'destination', label: 'Destination' },
       { key: 'status', label: 'Status' },
-      { key: 'landedCost', label: 'Landed Cost/Unit' }
+      { key: 'landedCost', label: 'Cost/Unit' }
     ];
     
     // Return all columns that can be toggled (excluding # and Actions which are always visible)
@@ -174,9 +174,6 @@ export default function PurchaseOrders() {
     costPerUnit: 0,
     discountPerUnit: 0,
     exchangeRate: 1,
-    shippingCost: 0,
-    tariffCost: 0,
-    otherFees: 0,
     purchaseDate: new Date().toISOString().split('T')[0],
     status: 'Ordered' as 'Ordered' | 'Shipped' | 'Received' | 'Verified',
   });
@@ -292,12 +289,12 @@ export default function PurchaseOrders() {
     const costInUSD = totalCostWithDiscount * formData.exchangeRate;
     
     // Additional costs in USD
-    const shippingCost = formData.shippingCost;
-    const tariffCost = formData.tariffCost;
-    const otherFees = formData.otherFees;
+    const shippingCost = 0;
+    const tariffCost = 0;
+    const otherFees = 0;
     
-    // Total landed cost = product cost + all fees
-    const totalLandedCost = costInUSD + shippingCost + tariffCost + otherFees;
+    // Total cost = product cost only
+    const totalLandedCost = costInUSD;
     
     // Landed cost per unit = total landed cost / quantity
     const landedCostPerUnit = formData.quantity > 0 ? totalLandedCost / formData.quantity : 0;
@@ -476,9 +473,6 @@ export default function PurchaseOrders() {
       costPerUnit: 0,
       discountPerUnit: 0,
       exchangeRate: 1,
-      shippingCost: 0,
-      tariffCost: 0,
-      otherFees: 0,
       purchaseDate: new Date().toISOString().split('T')[0],
       status: 'Ordered',
     });
@@ -639,9 +633,6 @@ export default function PurchaseOrders() {
       costPerUnit: order.costPerUnit,
       discountPerUnit: order.discountPerUnit,
       exchangeRate: order.exchangeRate,
-      shippingCost: order.shippingCost,
-      tariffCost: order.tariffCost,
-      otherFees: order.otherFees,
       purchaseDate: order.purchaseDate.toISOString().split('T')[0],
       status: order.status || 'Ordered',
     });
@@ -1617,48 +1608,6 @@ export default function PurchaseOrders() {
                 </div>
               </div>
 
-              {/* Additional Costs */}
-              <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
-                <h4 className="font-medium text-sm text-gray-900">Additional Costs (USD)</h4>
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1 text-gray-700">Shipping</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={formData.shippingCost}
-                      onChange={(e) => setFormData({ ...formData, shippingCost: parseFloat(e.target.value) || 0 })}
-                      placeholder="0.00"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1 text-gray-700">Tariffs/Duties</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={formData.tariffCost}
-                      onChange={(e) => setFormData({ ...formData, tariffCost: parseFloat(e.target.value) || 0 })}
-                      placeholder="0.00"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1 text-gray-700">Other Fees</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={formData.otherFees}
-                      onChange={(e) => setFormData({ ...formData, otherFees: parseFloat(e.target.value) || 0 })}
-                      placeholder="0.00"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
-                    />
-                  </div>
-                </div>
-              </div>
 
               {/* Cost Summary */}
               <div className="bg-white border-2 border-[#4f0c1b] rounded-lg p-4">
@@ -1672,28 +1621,16 @@ export default function PurchaseOrders() {
                     <span>Product Cost (USD):</span>
                     <span>${totals.costInUSD.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-gray-600">
-                    <span>Shipping:</span>
-                    <span>${totals.shippingCost.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-gray-600">
-                    <span>Tariffs/Duties:</span>
-                    <span>${totals.tariffCost.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-gray-600">
-                    <span>Other Fees:</span>
-                    <span>${totals.otherFees.toFixed(2)}</span>
-                  </div>
                   <div className="border-t-2 border-gray-200 pt-2 mt-2">
                     <div className="flex justify-between font-semibold text-gray-900 text-base">
-                      <span>Total Landed Cost:</span>
-                      <span>${totals.totalLandedCost.toFixed(2)}</span>
+                      <span>Total Cost:</span>
+                      <span>${totals.costInUSD.toFixed(2)}</span>
                     </div>
                   </div>
                   <div className="bg-[#4f0c1b] text-white rounded-lg p-3 mt-3">
                     <div className="flex justify-between font-semibold">
-                      <span>Landed Cost Per Unit:</span>
-                      <span>${totals.landedCostPerUnit.toFixed(2)}</span>
+                      <span>Cost Per Unit:</span>
+                      <span>${(totals.costInUSD / formData.quantity).toFixed(2)}</span>
                     </div>
                     <div className="text-xs mt-1 opacity-90">
                       vs Supplier Cost: {formData.currency} {totals.costPerUnitWithDiscount.toFixed(2)}
@@ -1794,9 +1731,9 @@ export default function PurchaseOrders() {
                   {!hiddenColumns.has('quantity') && (
                 <th 
                   onClick={() => handleSort('quantity')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 justify-end">
                     Quantity
                     <SortIcon field="quantity" />
                   </div>
@@ -1830,12 +1767,12 @@ export default function PurchaseOrders() {
                   className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-center gap-1 justify-end">
-                    Landed Cost/Unit
+                    Cost/Unit
                     <SortIcon field="landedCost" />
                   </div>
                 </th>
                   )}
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -1883,9 +1820,9 @@ export default function PurchaseOrders() {
                   {!hiddenColumns.has('quantity') && (
                     <th 
                       onClick={() => handleSort('quantity')}
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                      className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 justify-end">
                         Quantity
                         <SortIcon field="quantity" />
                       </div>
@@ -1919,12 +1856,12 @@ export default function PurchaseOrders() {
                       className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
                       <div className="flex items-center gap-1 justify-end">
-                        Landed Cost/Unit
+                        Cost/Unit
                         <SortIcon field="landedCost" />
                       </div>
                     </th>
                   )}
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
@@ -1954,7 +1891,7 @@ export default function PurchaseOrders() {
                           <span className="font-medium text-gray-900">{order.invoice}</span>
                           {needsReview && (
                             <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
-                              Needs Review
+                              ⚠️
                             </span>
                           )}
                         </div>
@@ -1981,8 +1918,8 @@ export default function PurchaseOrders() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.sku}</td>
                       )}
                       {!hiddenColumns.has('quantity') && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <div className="flex items-center gap-2">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                        <div className="flex items-center gap-2 justify-end">
                           <span className="text-gray-700">{order.quantity}</span>
                           {order.status === 'Verified' && order.quantityReceived !== undefined && order.quantityReceived !== order.quantity && (
                             <span className="text-amber-600 text-xs font-medium" title={`Actually received: ${order.quantityReceived}`}>
@@ -2027,25 +1964,37 @@ export default function PurchaseOrders() {
                         <div className="text-xs text-gray-500">Total: ${order.totalLandedCost.toFixed(2)}</div>
                       </td>
                       )}
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                        <button
-                          onClick={() => handleEdit(order)}
-                          className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium mr-4 transition-colors"
-                        >
-                          {needsReview ? 'Complete Info' : 'Edit'}
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm('Are you sure you want to delete this purchase order?')) {
-                              // Clean up orphaned inventory items
-                              cleanupInventoryAfterOrderDeletion([order.id], inventory, deleteInventoryItem);
-                              deletePurchaseOrder(order.id);
-                            }
-                          }}
-                          className="text-red-600 hover:text-red-700 font-medium transition-colors"
-                        >
-                          Delete
-                        </button>
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
+                        <div className="flex items-center gap-2 justify-center">
+                          <button
+                            onClick={() => handleEdit(order)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md ${
+                              needsReview 
+                                ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300' 
+                                : 'bg-[#4f0c1b] text-white hover:bg-[#3d0a15] shadow-sm'
+                            }`}
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                            {needsReview ? 'Complete Info' : 'Edit'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm('Are you sure you want to delete this purchase order?')) {
+                                // Clean up orphaned inventory items
+                                cleanupInventoryAfterOrderDeletion([order.id], inventory, deleteInventoryItem);
+                                deletePurchaseOrder(order.id);
+                              }
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 hover:text-red-800 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md border border-red-200"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -2114,7 +2063,7 @@ export default function PurchaseOrders() {
                                   )}
                                   {needsReview && (
                                     <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
-                                      Needs Review
+                                      ⚠️
                                     </span>
                                   )}
                                 </div>
@@ -2137,7 +2086,7 @@ export default function PurchaseOrders() {
                             
                             {/* Quantity */}
                             {!hiddenColumns.has('quantity') && (
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
                                 {order.quantity}
                                 {order.quantityReceived && order.quantityReceived !== order.quantity && (
                                   <span className="text-amber-600 ml-1">
@@ -2179,12 +2128,19 @@ export default function PurchaseOrders() {
                             )}
                             
                             {/* Actions */}
-                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                              <div className="flex items-center gap-2">
+                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
+                              <div className="flex items-center gap-2 justify-center">
                                 <button
                                   onClick={() => handleEdit(order)}
-                                  className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium mr-4 transition-colors"
+                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md ${
+                                    needsReview 
+                                      ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300' 
+                                      : 'bg-[#4f0c1b] text-white hover:bg-[#3d0a15] shadow-sm'
+                                  }`}
                                 >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
                                   {needsReview ? 'Complete Info' : 'Edit'}
                                 </button>
                                 <button
@@ -2195,8 +2151,11 @@ export default function PurchaseOrders() {
                                       deletePurchaseOrder(order.id);
                                     }
                                   }}
-                                  className="text-red-600 hover:text-red-700 font-medium transition-colors"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 hover:text-red-800 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md border border-red-200"
                                 >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
                                   Delete
                                 </button>
                               </div>
