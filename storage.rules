@@ -1,12 +1,37 @@
 rules_version = '2';
 
-// Craft rules based on data in your Firestore database
-// allow write: if firestore.get(
-//    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
 service firebase.storage {
   match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read, write: if false;
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Images storage
+    match /images/{allImages=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && 
+                   request.resource.size < 5 * 1024 * 1024; // 5MB max
+    }
+    
+    // Videos storage  
+    match /videos/{allVideos=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && 
+                   request.resource.size < 50 * 1024 * 1024; // 50MB max
+    }
+    
+    // Documents storage
+    match /documents/{allDocuments=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+    
+    // Public read-only access for published content
+    match /public/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuthenticated();
     }
   }
 }

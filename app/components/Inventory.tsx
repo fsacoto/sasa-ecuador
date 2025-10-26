@@ -218,9 +218,14 @@ export default function Inventory() {
       }
     }
 
-    // Convert to base64
-    const newImages = await handleMultipleImageUpload(files);
-    setFormData(prev => ({ ...prev, images: [...prev.images, ...newImages] }));
+    try {
+      // Upload to Firebase Storage
+      const newImages = await handleMultipleImageUpload(files, 'images/inventory/');
+      setFormData(prev => ({ ...prev, images: [...prev.images, ...newImages] }));
+    } catch (error) {
+      console.error('Error uploading images:', error);
+      alert('Failed to upload images. Please try again.');
+    }
     
     // Reset input
     e.target.value = '';

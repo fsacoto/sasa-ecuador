@@ -84,17 +84,15 @@ export default function CMSModuleNew() {
     setUploadedFiles(prev => [...prev, ...imageFiles]);
   };
 
-  // Convert files to base64 (mock implementation - would be cloud upload in production)
+  // Upload files to Firebase Storage
   const convertFilesToBase64 = async (files: File[]): Promise<string[]> => {
-    return Promise.all(
-      files.map(file => {
-        return new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target?.result as string);
-          reader.readAsDataURL(file);
-        });
-      })
-    );
+    try {
+      const { handleMultipleImageUpload } = await import('../utils/imageUpload');
+      return await handleMultipleImageUpload(files, 'images/cms/');
+    } catch (error) {
+      console.error('Error uploading files:', error);
+      throw error;
+    }
   };
 
   // Submit content
