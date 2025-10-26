@@ -30,10 +30,8 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const getUserDisplayName = (email: string): string => {
-  if (email === 'sacoto49@gmail.com') return 'Administrator';
-  if (email === 'admin@sasa.com') return 'Administrator';
-  if (email === 'marketing@sasa.com') return 'Marketing Team';
-  return email.split('@')[0]; // Use username part of email as fallback
+  // Extract username from email (everything before @)
+  return email.split('@')[0];
 };
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {

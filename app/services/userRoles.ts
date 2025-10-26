@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 
 export type UserRole = 'admin' | 'marketing';
@@ -82,11 +82,12 @@ export async function createUserDocument(userId: string, email: string, displayN
     const userDoc = await getDoc(doc(db, 'users', userId));
     
     if (!userDoc.exists()) {
-      // Assign role based on email (you can change this logic)
-      let role: UserRole = 'marketing';
-      if (email === 'sacoto49@gmail.com' || email === 'admin@sasa.com') {
-        role = 'admin';
-      }
+      // Check if this is the first user (first admin)
+      const usersCollection = collection(db, 'users');
+      const snapshot = await getDocs(usersCollection);
+      
+      // First user becomes admin, all others default to marketing
+      const role: UserRole = snapshot.empty ? 'admin' : 'marketing';
       
       await setDoc(doc(db, 'users', userId), {
         email,

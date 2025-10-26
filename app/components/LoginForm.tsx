@@ -93,14 +93,6 @@ export default function LoginForm() {
               )}
             </button>
           </div>
-
-          <div className="mt-6 bg-blue-50 border border-blue-200 rounded-md p-4">
-            <h3 className="text-sm font-medium text-blue-900 mb-2">Demo Accounts:</h3>
-            <div className="text-xs text-blue-700 space-y-1">
-              <div><strong>Admin:</strong> admin@sasa.com</div>
-              <div><strong>Marketing:</strong> marketing@sasa.com</div>
-            </div>
-          </div>
         </form>
       </div>
     </div>
