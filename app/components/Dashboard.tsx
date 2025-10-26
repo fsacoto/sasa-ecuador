@@ -1,9 +1,11 @@
 'use client';
 
 import { useInventory } from '../context/InventoryContext';
+import { useAuth } from '../context/AuthContext';
 
 export default function Dashboard() {
   const { suppliers, purchaseOrders, inventory } = useInventory();
+  const { hasPermission } = useAuth();
 
   const getInventoryValueByCountry = () => {
     let ecuadorValue = 0;
@@ -85,7 +87,10 @@ export default function Dashboard() {
     };
     
     purchaseOrders.forEach(order => {
-      statusCounts[order.status as keyof typeof statusCounts]++;
+      const status = order.status || 'Pending'; // Default to 'Pending' if status is undefined/null
+      if (status in statusCounts) {
+        statusCounts[status as keyof typeof statusCounts]++;
+      }
     });
     
     return statusCounts;
@@ -272,69 +277,71 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-              <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-              </svg>
-            </div>
-            <h3 className="text-base font-semibold text-gray-900">Inventory Value by Country</h3>
-          </div>
-          
-          <div className="space-y-4">
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-gray-700">🇪🇨 Ecuador</span>
-                </div>
-                <span className="text-sm font-semibold text-gray-900">
-                  ${getInventoryValueByCountry().ecuador.toFixed(2)}
-                </span>
+        {hasPermission('costs.view') && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                </svg>
               </div>
-              <div className="w-full bg-gray-100 rounded-full h-3">
-                <div
-                  className="bg-gradient-to-r from-[#4f0c1b] to-[#6b1426] h-3 rounded-full transition-all duration-500"
-                  style={{
-                    width: `${getInventoryValueByCountry().total > 0 
-                      ? (getInventoryValueByCountry().ecuador / getInventoryValueByCountry().total) * 100 
-                      : 0}%`
-                  }}
-                />
-              </div>
+              <h3 className="text-base font-semibold text-gray-900">Inventory Value by Country</h3>
             </div>
             
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-gray-700">🇺🇸 USA</span>
+            <div className="space-y-4">
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-700">🇪🇨 Ecuador</span>
+                  </div>
+                  <span className="text-sm font-semibold text-gray-900">
+                    ${getInventoryValueByCountry().ecuador.toFixed(2)}
+                  </span>
                 </div>
-                <span className="text-sm font-semibold text-gray-900">
-                  ${getInventoryValueByCountry().usa.toFixed(2)}
-                </span>
+                <div className="w-full bg-gray-100 rounded-full h-3">
+                  <div
+                    className="bg-gradient-to-r from-[#4f0c1b] to-[#6b1426] h-3 rounded-full transition-all duration-500"
+                    style={{
+                      width: `${getInventoryValueByCountry().total > 0 
+                        ? (getInventoryValueByCountry().ecuador / getInventoryValueByCountry().total) * 100 
+                        : 0}%`
+                    }}
+                  />
+                </div>
               </div>
-              <div className="w-full bg-gray-100 rounded-full h-3">
-                <div
-                  className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-500"
-                  style={{
-                    width: `${getInventoryValueByCountry().total > 0 
-                      ? (getInventoryValueByCountry().usa / getInventoryValueByCountry().total) * 100 
-                      : 0}%`
-                  }}
-                />
+              
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-700">🇺🇸 USA</span>
+                  </div>
+                  <span className="text-sm font-semibold text-gray-900">
+                    ${getInventoryValueByCountry().usa.toFixed(2)}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-100 rounded-full h-3">
+                  <div
+                    className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-500"
+                    style={{
+                      width: `${getInventoryValueByCountry().total > 0 
+                        ? (getInventoryValueByCountry().usa / getInventoryValueByCountry().total) * 100 
+                        : 0}%`
+                    }}
+                  />
+                </div>
               </div>
-            </div>
-            
-            <div className="pt-3 border-t border-gray-200">
-              <div className="flex justify-between items-center">
-                <span className="text-base font-semibold text-gray-900">Total Value</span>
-                <span className="text-lg font-bold text-[#4f0c1b]">
-                  ${getTotalInventoryValue().toFixed(2)}
-                </span>
+              
+              <div className="pt-3 border-t border-gray-200">
+                <div className="flex justify-between items-center">
+                  <span className="text-base font-semibold text-gray-900">Total Value</span>
+                  <span className="text-lg font-bold text-[#4f0c1b]">
+                    ${getTotalInventoryValue().toFixed(2)}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Low Stock Alert */}
@@ -391,12 +398,12 @@ export default function Dashboard() {
                 <div key={status}>
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-sm font-medium text-gray-700">{status}</span>
-                    <span className="text-sm font-semibold text-gray-900">{count}</span>
+                    <span className="text-sm font-semibold text-gray-900">{isNaN(count) ? 0 : count}</span>
                   </div>
                   <div className="w-full bg-gray-100 rounded-full h-2">
                     <div
                       className={`${colors[status as keyof typeof colors]} h-2 rounded-full transition-all duration-500`}
-                      style={{ width: `${percentage}%` }}
+                      style={{ width: `${isNaN(percentage) ? 0 : percentage}%` }}
                     />
                   </div>
                 </div>
@@ -425,12 +432,12 @@ export default function Dashboard() {
                 <div key={category}>
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-sm font-medium text-gray-700">{category}</span>
-                    <span className="text-sm font-semibold text-gray-900">{count}</span>
+                    <span className="text-sm font-semibold text-gray-900">{isNaN(count) ? 0 : count}</span>
                   </div>
                   <div className="w-full bg-gray-100 rounded-full h-2">
                     <div
                       className="bg-gradient-to-r from-[#4f0c1b] to-[#6b1426] h-2 rounded-full transition-all duration-500"
-                      style={{ width: `${percentage}%` }}
+                      style={{ width: `${isNaN(percentage) ? 0 : percentage}%` }}
                     />
                   </div>
                 </div>

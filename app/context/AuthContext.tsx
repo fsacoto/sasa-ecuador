@@ -63,6 +63,7 @@ const PERMISSIONS = {
     'users.manage'
   ],
   marketing: [
+    'inventory.view',
     'cms.view',
     'cms.edit',
     'inventory.view.availability',
