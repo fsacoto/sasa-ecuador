@@ -8,6 +8,7 @@ import {
   User as FirebaseUser
 } from 'firebase/auth';
 import { auth } from '../utils/firebase';
+import { getUserRole, getPermissionsForRole, createUserDocument } from '../services/userRoles';
 
 export type UserRole = 'admin' | 'marketing';
 
@@ -28,42 +29,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Role mapping - In production, you'd store this in Firestore or another database
-const ROLE_MAPPING: Record<string, UserRole> = {
-  'admin@sasa.com': 'admin',
-  'marketing@sasa.com': 'marketing',
-};
-
-// Role-based permissions
-const PERMISSIONS = {
-  admin: [
-    'inventory.view',
-    'inventory.edit',
-    'inventory.delete',
-    'purchase.view',
-    'purchase.edit',
-    'purchase.delete',
-    'suppliers.view',
-    'suppliers.edit',
-    'suppliers.delete',
-    'analytics.view',
-    'costs.view',
-    'costs.edit',
-    'cms.view',
-    'cms.edit',
-    'cms.delete',
-    'users.manage'
-  ],
-  marketing: [
-    'inventory.view',
-    'cms.view',
-    'cms.edit',
-    'inventory.view.availability',
-    'images.download',
-    'content.export'
-  ]
-};
-
 const getUserDisplayName = (email: string): string => {
   if (email === 'admin@sasa.com') return 'Administrator';
   if (email === 'marketing@sasa.com') return 'Marketing Team';
@@ -79,7 +44,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
         const email = firebaseUser.email || '';
-        const role = ROLE_MAPPING[email] || 'marketing'; // Default to marketing role
+        
+        // Create user document in Firestore if it doesn't exist
+        await createUserDocument(firebaseUser.uid, email, firebaseUser.displayName || undefined);
+        
+        // Get user role from Firestore
+        const role = await getUserRole(firebaseUser.uid);
         
         const userData: User = {
           id: firebaseUser.uid,
@@ -124,7 +94,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const hasPermission = (permission: string): boolean => {
     if (!user) return false;
-    return PERMISSIONS[user.role]?.includes(permission) || false;
+    const permissions = getPermissionsForRole(user.role);
+    return permissions.includes(permission);
   };
 
   return (
