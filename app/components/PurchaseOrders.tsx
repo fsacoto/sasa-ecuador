@@ -1823,49 +1823,49 @@ export default function PurchaseOrders() {
                       className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
                       <div className="flex items-center gap-1 justify-end">
-                        Quantity
-                        <SortIcon field="quantity" />
-                      </div>
-                    </th>
+                    Quantity
+                    <SortIcon field="quantity" />
+                  </div>
+                </th>
                   )}
                   {!hiddenColumns.has('destination') && (
-                    <th 
-                      onClick={() => handleSort('destination')}
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                    >
-                      <div className="flex items-center gap-1">
-                        Destination
-                        <SortIcon field="destination" />
-                      </div>
-                    </th>
+                <th 
+                  onClick={() => handleSort('destination')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    Destination
+                    <SortIcon field="destination" />
+                  </div>
+                </th>
                   )}
                   {!hiddenColumns.has('status') && (
-                    <th 
-                      onClick={() => handleSort('status')}
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                    >
-                      <div className="flex items-center gap-1">
-                        Status
-                        <SortIcon field="status" />
-                      </div>
-                    </th>
+                <th 
+                  onClick={() => handleSort('status')}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1">
+                    Status
+                    <SortIcon field="status" />
+                  </div>
+                </th>
                   )}
                   {!hiddenColumns.has('landedCost') && (
-                    <th 
-                      onClick={() => handleSort('landedCost')}
-                      className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                    >
-                      <div className="flex items-center gap-1 justify-end">
+                <th 
+                  onClick={() => handleSort('landedCost')}
+                  className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-1 justify-end">
                         Cost/Unit
-                        <SortIcon field="landedCost" />
-                      </div>
-                    </th>
+                    <SortIcon field="landedCost" />
+                  </div>
+                </th>
                   )}
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
+                  Actions
+                </th>
+              </tr>
+            </thead>
             )}
             <tbody className="divide-y divide-gray-100">
               {filteredAndSortedOrders.length === 0 ? (
@@ -1966,8 +1966,8 @@ export default function PurchaseOrders() {
                       )}
                       <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
                         <div className="flex items-center gap-2 justify-center">
-                          <button
-                            onClick={() => handleEdit(order)}
+                        <button
+                          onClick={() => handleEdit(order)}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md ${
                               needsReview 
                                 ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300' 
@@ -1977,23 +1977,23 @@ export default function PurchaseOrders() {
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                             </svg>
-                            {needsReview ? 'Complete Info' : 'Edit'}
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm('Are you sure you want to delete this purchase order?')) {
+                          {needsReview ? 'Complete Info' : 'Edit'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm('Are you sure you want to delete this purchase order?')) {
                                 // Clean up orphaned inventory items
                                 cleanupInventoryAfterOrderDeletion([order.id], inventory, deleteInventoryItem);
-                                deletePurchaseOrder(order.id);
-                              }
-                            }}
+                              deletePurchaseOrder(order.id);
+                            }
+                          }}
                             className="flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 hover:text-red-800 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md border border-red-200"
-                          >
+                        >
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
-                            Delete
-                          </button>
+                          Delete
+                        </button>
                         </div>
                       </td>
                     </tr>

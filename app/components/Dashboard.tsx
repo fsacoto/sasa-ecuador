@@ -124,25 +124,28 @@ export default function Dashboard() {
 
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-all duration-200">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-              <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-            </div>
-            <div>
-              <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Suppliers</div>
-              <div className="text-2xl font-bold text-gray-900">{suppliers.length}</div>
+        {hasPermission('suppliers.view') && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-all duration-200">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+              <div>
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Suppliers</div>
+                <div className="text-2xl font-bold text-gray-900">{suppliers.length}</div>
+              </div>
             </div>
           </div>
-        </div>
+        )}
         
-        <div className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-all duration-200">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-              <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        {hasPermission('purchase.view') && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-all duration-200">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </div>
             <div>
@@ -151,6 +154,7 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+        )}
         
         <div className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-all duration-200">
           <div className="flex items-center gap-3 mb-3">
@@ -345,7 +349,7 @@ export default function Dashboard() {
       </div>
 
       {/* Low Stock Alert */}
-      {getLowStockItems().length > 0 && (
+      {getLowStockItems().length > 0 && hasPermission('inventory.edit') && (
         <div className="bg-amber-50 rounded-xl border border-amber-200 p-6">
           <h3 className="text-base font-semibold text-amber-900 mb-4">Low Stock Alert</h3>
           <div className="space-y-2">
@@ -372,45 +376,47 @@ export default function Dashboard() {
       {/* Additional Analytics */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Order Status Distribution */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
-              <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
+        {hasPermission('purchase.view') && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+                <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              </div>
+              <h3 className="text-base font-semibold text-gray-900">Order Status Distribution</h3>
             </div>
-            <h3 className="text-base font-semibold text-gray-900">Order Status Distribution</h3>
-          </div>
-          
-          <div className="space-y-3">
-            {Object.entries(getOrderStatusDistribution()).map(([status, count]) => {
-              const total = purchaseOrders.length;
-              const percentage = total > 0 ? (count / total) * 100 : 0;
-              const colors = {
-                'Pending': 'bg-yellow-500',
-                'Verified': 'bg-green-500',
-                'Shipped': 'bg-blue-500',
-                'Delivered': 'bg-purple-500',
-                'Cancelled': 'bg-red-500'
-              };
-              
-              return (
-                <div key={status}>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-sm font-medium text-gray-700">{status}</span>
-                    <span className="text-sm font-semibold text-gray-900">{isNaN(count) ? 0 : count}</span>
+            
+            <div className="space-y-3">
+              {Object.entries(getOrderStatusDistribution()).map(([status, count]) => {
+                const total = purchaseOrders.length;
+                const percentage = total > 0 ? (count / total) * 100 : 0;
+                const colors = {
+                  'Pending': 'bg-yellow-500',
+                  'Verified': 'bg-green-500',
+                  'Shipped': 'bg-blue-500',
+                  'Delivered': 'bg-purple-500',
+                  'Cancelled': 'bg-red-500'
+                };
+                
+                return (
+                  <div key={status}>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-sm font-medium text-gray-700">{status}</span>
+                      <span className="text-sm font-semibold text-gray-900">{isNaN(count) ? 0 : count}</span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2">
+                      <div
+                        className={`${colors[status as keyof typeof colors]} h-2 rounded-full transition-all duration-500`}
+                        style={{ width: `${isNaN(percentage) ? 0 : percentage}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2">
-                    <div
-                      className={`${colors[status as keyof typeof colors]} h-2 rounded-full transition-all duration-500`}
-                      style={{ width: `${isNaN(percentage) ? 0 : percentage}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Category Distribution */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">

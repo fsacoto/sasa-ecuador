@@ -9,7 +9,7 @@ import Suppliers from './components/Suppliers';
 import PurchaseOrders from './components/PurchaseOrders';
 import Inventory from './components/Inventory';
 import LandedCosts from './components/LandedCosts';
-import CMSModule from './components/CMSModule';
+import CMSModule from './components/CMSModuleNew';
 
 type Tab = 'dashboard' | 'suppliers' | 'purchase-orders' | 'inventory' | 'landed-costs' | 'cms';
 

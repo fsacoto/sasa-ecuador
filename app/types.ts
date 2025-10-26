@@ -94,3 +94,38 @@ export interface LandedCostCalculation {
     finalItemTotal: number; // Final total cost for this item
   }[];
 }
+
+export type ContentType = 'product' | 'collection' | 'general';
+export type ContentStatus = 'draft' | 'submitted' | 'approved' | 'published' | 'archived';
+export type ContentLanguage = 'en' | 'es';
+
+export interface CMSContent {
+  id: string;
+  type: ContentType;
+  title: string;
+  description: string;
+  hashtags: string[];
+  status: ContentStatus;
+  statusHistory: {
+    status: ContentStatus;
+    timestamp: Date;
+    userId: string;
+    notes?: string;
+  }[];
+  images: string[];
+  videos: string[];
+  authorId: string;
+  authorName: string;
+  category: string;
+  tags: string[];
+  language: ContentLanguage;
+  linkedProductIds: string[]; // SKUs of linked inventory items
+  metadata: {
+    createdAt: Date;
+    updatedAt: Date;
+    publishedAt?: Date;
+    archivedAt?: Date;
+    reviewerId?: string;
+    reviewerNotes?: string;
+  };
+}
