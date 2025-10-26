@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 export default function LoginForm() {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const { login, isLoading } = useAuth();
@@ -13,9 +13,9 @@ export default function LoginForm() {
     e.preventDefault();
     setError('');
     
-    const success = await login(username, password);
+    const success = await login(email, password);
     if (!success) {
-      setError('Invalid username or password');
+      setError('Invalid email or password');
     }
   };
 
@@ -37,18 +37,18 @@ export default function LoginForm() {
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="rounded-md shadow-sm -space-y-px">
             <div>
-              <label htmlFor="username" className="sr-only">
-                Username
+              <label htmlFor="email" className="sr-only">
+                Email
               </label>
               <input
-                id="username"
-                name="username"
-                type="text"
+                id="email"
+                name="email"
+                type="email"
                 required
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-[#4f0c1b] focus:border-[#4f0c1b] focus:z-10 sm:text-sm"
-                placeholder="Username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
               />
             </div>
             <div>
@@ -97,8 +97,8 @@ export default function LoginForm() {
           <div className="mt-6 bg-blue-50 border border-blue-200 rounded-md p-4">
             <h3 className="text-sm font-medium text-blue-900 mb-2">Demo Accounts:</h3>
             <div className="text-xs text-blue-700 space-y-1">
-              <div><strong>Admin:</strong> username: admin, password: admin123</div>
-              <div><strong>Marketing:</strong> username: marketing, password: marketing123</div>
+              <div><strong>Admin:</strong> admin@sasa.com</div>
+              <div><strong>Marketing:</strong> marketing@sasa.com</div>
             </div>
           </div>
         </form>

@@ -1,20 +1,26 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { 
+  signInWithEmailAndPassword, 
+  signOut as firebaseSignOut,
+  onAuthStateChanged,
+  User as FirebaseUser
+} from 'firebase/auth';
+import { auth } from '../utils/firebase';
 
 export type UserRole = 'admin' | 'marketing';
 
 export interface User {
   id: string;
-  username: string;
+  email: string;
   role: UserRole;
   name: string;
-  email: string;
 }
 
 interface AuthContextType {
   user: User | null;
-  login: (username: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
   isLoading: boolean;
   hasPermission: (permission: string) => boolean;
@@ -22,25 +28,11 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Mock users database - In production, this would be replaced with real authentication
-const MOCK_USERS: User[] = [
-  {
-    id: '1',
-    username: 'admin',
-    password: 'admin123',
-    role: 'admin',
-    name: 'Administrator',
-    email: 'admin@sasa.com'
-  },
-  {
-    id: '2',
-    username: 'marketing',
-    password: 'marketing123',
-    role: 'marketing',
-    name: 'Marketing Team',
-    email: 'marketing@sasa.com'
-  }
-];
+// Role mapping - In production, you'd store this in Firestore or another database
+const ROLE_MAPPING: Record<string, UserRole> = {
+  'admin@sasa.com': 'admin',
+  'marketing@sasa.com': 'marketing',
+};
 
 // Role-based permissions
 const PERMISSIONS = {
@@ -72,54 +64,62 @@ const PERMISSIONS = {
   ]
 };
 
+const getUserDisplayName = (email: string): string => {
+  if (email === 'admin@sasa.com') return 'Administrator';
+  if (email === 'marketing@sasa.com') return 'Marketing Team';
+  return email.split('@')[0]; // Use username part of email as fallback
+};
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing session on app load
-    const savedUser = localStorage.getItem('sasa_user');
-    if (savedUser) {
-      try {
-        const userData = JSON.parse(savedUser);
+    // Listen for authentication state changes
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+      if (firebaseUser) {
+        const email = firebaseUser.email || '';
+        const role = ROLE_MAPPING[email] || 'marketing'; // Default to marketing role
+        
+        const userData: User = {
+          id: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          role: role,
+          name: firebaseUser.displayName || getUserDisplayName(email)
+        };
+        
         setUser(userData);
-      } catch (error) {
-        localStorage.removeItem('sasa_user');
+      } else {
+        setUser(null);
       }
-    }
-    setIsLoading(false);
+      setIsLoading(false);
+    });
+
+    // Cleanup subscription on unmount
+    return () => unsubscribe();
   }, []);
 
-  const login = async (username: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
     
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const foundUser = MOCK_USERS.find(u => u.username === username && u.password === password);
-    
-    if (foundUser) {
-      const userData: User = {
-        id: foundUser.id,
-        username: foundUser.username,
-        role: foundUser.role,
-        name: foundUser.name,
-        email: foundUser.email
-      };
-      
-      setUser(userData);
-      localStorage.setItem('sasa_user', JSON.stringify(userData));
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
       setIsLoading(false);
       return true;
+    } catch (error: any) {
+      console.error('Login error:', error);
+      setIsLoading(false);
+      return false;
     }
-    
-    setIsLoading(false);
-    return false;
   };
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('sasa_user');
+  const logout = async () => {
+    try {
+      await firebaseSignOut(auth);
+      setUser(null);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
   const hasPermission = (permission: string): boolean => {
