@@ -84,7 +84,7 @@ export async function createUserDocument(userId: string, email: string, displayN
     if (!userDoc.exists()) {
       // Assign role based on email (you can change this logic)
       let role: UserRole = 'marketing';
-      if (email === 'admin@sasa.com') {
+      if (email === 'sacoto49@gmail.com' || email === 'admin@sasa.com') {
         role = 'admin';
       }
       
