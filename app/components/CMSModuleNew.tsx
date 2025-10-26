@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { useCMS } from '../context/CMSContext';
-import { CMSContent, ContentType, ContentStatus } from '../types';
+import { ContentType, ContentStatus, InventoryItem } from '../types';
 
 type ViewMode = 'dashboard' | 'upload' | 'manage' | 'products';
 
@@ -14,7 +14,6 @@ export default function CMSModuleNew() {
   const { 
     content, 
     addContent, 
-    updateContent, 
     deleteContent, 
     updateContentStatus,
     getContentStats 
@@ -42,7 +41,7 @@ export default function CMSModuleNew() {
   const availableCategories = [...new Set(inventory.map(item => item.category))].filter(Boolean).sort();
   const availableLines = [...new Set(inventory.map(item => item.line))].filter(Boolean).sort();
   const [uploadedFiles, setUploadedFiles] = useState<(File | string)[]>([]);
-  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [selectedProduct, setSelectedProduct] = useState<InventoryItem | null>(null);
   
   const stats = getContentStats();
   
@@ -836,8 +835,8 @@ function ProductsView({
   inventory, 
   handleSelectProduct 
 }: { 
-  inventory: any[]; 
-  handleSelectProduct: (product: any) => void;
+  inventory: InventoryItem[]; 
+  handleSelectProduct?: (product: InventoryItem) => void;
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
@@ -845,7 +844,7 @@ function ProductsView({
   const [filterAvailability, setFilterAvailability] = useState('all');
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [isDownloading, setIsDownloading] = useState(false);
-  const [selectedProductDetail, setSelectedProductDetail] = useState<any>(null);
+  const [selectedProductDetail, setSelectedProductDetail] = useState<InventoryItem | null>(null);
 
   // Get unique categories and lines
   const categories = [...new Set(inventory.map(item => item.category))].filter(Boolean).sort();

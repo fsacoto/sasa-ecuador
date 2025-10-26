@@ -1,21 +1,26 @@
-import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy } from 'firebase/firestore';
+import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy, QueryDocumentSnapshot } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { AdditionalCost } from '../types';
 
 const COLLECTION_NAME = 'additionalCosts';
 
 // Helper to convert Firestore data to AdditionalCost
-const toAdditionalCost = (doc: any): AdditionalCost => ({
-  id: doc.id,
-  ...doc.data(),
-  date: doc.data().date?.toDate() || new Date(),
-  createdAt: doc.data().createdAt?.toDate() || new Date()
-});
+const toAdditionalCost = (doc: QueryDocumentSnapshot): AdditionalCost => {
+  const data = doc.data();
+  return {
+    id: doc.id,
+    invoiceNumber: data.invoiceNumber,
+    type: data.type,
+    amount: data.amount,
+    description: data.description,
+    date: data.date?.toDate() || new Date(),
+    createdAt: data.createdAt?.toDate() || new Date()
+  };
+};
 
 // Helper to convert AdditionalCost to Firestore data
 const toFirestore = (cost: Omit<AdditionalCost, 'id' | 'createdAt'> | Partial<AdditionalCost>) => {
-  const data: any = { ...cost };
-  return data;
+  return cost;
 };
 
 // Get all additional costs
@@ -74,7 +79,7 @@ export async function updateAdditionalCost(id: string, updates: Partial<Addition
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
     const { id: _, createdAt, ...updateData } = updates;
-    await updateDoc(docRef, toFirestore(updateData));
+    await updateDoc(docRef, updateData);
   } catch (error) {
     console.error('Error updating additional cost:', error);
     throw error;

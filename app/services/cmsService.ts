@@ -1,30 +1,33 @@
-import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy } from 'firebase/firestore';
+import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy, QueryDocumentSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { CMSContent, ContentStatus } from '../types';
+import type * as FirebaseFirestore from 'firebase/firestore';
 
 const COLLECTION_NAME = 'cmsContent';
 
 // Helper to convert Firestore data to CMSContent
-const toCMSContent = (doc: any): CMSContent => ({
-  id: doc.id,
-  ...doc.data(),
-  statusHistory: doc.data().statusHistory?.map((h: any) => ({
-    ...h,
-    timestamp: h.timestamp?.toDate() || new Date()
-  })) || [],
-  metadata: {
-    ...doc.data().metadata,
-    createdAt: doc.data().metadata?.createdAt?.toDate() || new Date(),
-    updatedAt: doc.data().metadata?.updatedAt?.toDate() || new Date(),
-    publishedAt: doc.data().metadata?.publishedAt?.toDate(),
-    archivedAt: doc.data().metadata?.archivedAt?.toDate()
-  }
-});
+const toCMSContent = (doc: QueryDocumentSnapshot): CMSContent => {
+  const data = doc.data();
+  return {
+    id: doc.id,
+    ...(data as Omit<CMSContent, 'id'>),
+    statusHistory: data.statusHistory?.map((h: Record<string, unknown>) => ({
+      ...h,
+      timestamp: (h.timestamp as Timestamp)?.toDate() || new Date()
+    })) || [],
+    metadata: {
+      ...data.metadata,
+      createdAt: (data.metadata?.createdAt as Timestamp)?.toDate() || new Date(),
+      updatedAt: (data.metadata?.updatedAt as Timestamp)?.toDate() || new Date(),
+      publishedAt: (data.metadata?.publishedAt as Timestamp)?.toDate(),
+      archivedAt: (data.metadata?.archivedAt as Timestamp)?.toDate()
+    }
+  };
+};
 
 // Helper to convert CMSContent to Firestore data
 const toFirestore = (content: Omit<CMSContent, 'id' | 'metadata'> | Partial<CMSContent>) => {
-  const data: any = { ...content };
-  return data;
+  return content;
 };
 
 // Get all CMS content
@@ -121,7 +124,7 @@ export async function updateCMSContent(id: string, updates: Partial<CMSContent>)
     
     // Ensure metadata.updatedAt is always updated
     await updateDoc(docRef, {
-      ...toFirestore(updateData),
+      ...updateData,
       'metadata.updatedAt': new Date()
     });
   } catch (error) {

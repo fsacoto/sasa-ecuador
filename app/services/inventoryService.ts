@@ -1,20 +1,22 @@
-import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy, limit } from 'firebase/firestore';
+import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy, limit, QueryDocumentSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { InventoryItem } from '../types';
 
 const COLLECTION_NAME = 'inventory';
 
 // Helper to convert Firestore data to InventoryItem
-const toInventoryItem = (doc: any): InventoryItem => ({
-  id: doc.id,
-  ...doc.data(),
-  createdAt: doc.data().createdAt?.toDate() || new Date()
-});
+const toInventoryItem = (doc: QueryDocumentSnapshot): InventoryItem => {
+  const data = doc.data();
+  return {
+    id: doc.id,
+    ...(data as Omit<InventoryItem, 'id'>),
+    createdAt: (data.createdAt as Timestamp)?.toDate() || new Date()
+  };
+};
 
 // Helper to convert InventoryItem to Firestore data
 const toFirestore = (item: Omit<InventoryItem, 'id' | 'createdAt'> | Partial<InventoryItem>) => {
-  const data: any = { ...item };
-  return data;
+  return item;
 };
 
 // Get all inventory items
@@ -88,7 +90,7 @@ export async function updateInventoryItem(id: string, updates: Partial<Inventory
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
     const { id: _, createdAt, ...updateData } = updates;
-    await updateDoc(docRef, toFirestore(updateData));
+    await updateDoc(docRef, updateData);
   } catch (error) {
     console.error('Error updating inventory item:', error);
     throw error;

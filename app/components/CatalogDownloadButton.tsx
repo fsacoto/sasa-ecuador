@@ -22,8 +22,10 @@ export default function CatalogDownloadButton({
   fileName,
 }: CatalogDownloadButtonProps) {
   const [isClient, setIsClient] = useState(false);
-  const [PDFDownloadLink, setPDFDownloadLink] = useState<React.ComponentType<any> | null>(null);
-  const [ProductCatalogPDF, setProductCatalogPDF] = useState<React.ComponentType<any> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [PDFDownloadLink, setPDFDownloadLink] = useState<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [ProductCatalogPDF, setProductCatalogPDF] = useState<any>(null);
   const [convertedProducts, setConvertedProducts] = useState<InventoryItem[]>([]);
   const [isConverting, setIsConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,8 +41,8 @@ export default function CatalogDownloadButton({
         ]);
         
         if (pdfRenderer.PDFDownloadLink && productCatalogPDF.default) {
-          setPDFDownloadLink(() => pdfRenderer.PDFDownloadLink);
-          setProductCatalogPDF(() => productCatalogPDF.default);
+          setPDFDownloadLink(pdfRenderer.PDFDownloadLink);
+          setProductCatalogPDF(productCatalogPDF.default);
         } else {
           throw new Error('PDF components not properly loaded');
         }

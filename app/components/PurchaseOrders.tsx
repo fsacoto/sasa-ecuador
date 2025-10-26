@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import React from 'react';
 import { useInventory } from '../context/InventoryContext';
-import { PurchaseOrder, Supplier } from '../types';
+import { PurchaseOrder, Supplier, InventoryItem, PurchaseOrderStatus } from '../types';
 import SupplierDetailPanel from './SupplierDetailPanel';
 import { generateUniqueSKU } from '../utils/skuGenerator';
-import { getExchangeRates, getExchangeRate, formatLastUpdate } from '../utils/currencyApi';
+import { getExchangeRates, getExchangeRate, formatLastUpdate, type ExchangeRateResponse } from '../utils/currencyApi';
 import BulkImportModal from './BulkImportModal';
 import BulkDeleteModal from './BulkDeleteModal';
 import { syncPurchaseOrderToInventory, cleanupInventoryAfterOrderDeletion } from '../utils/syncUpdates';
@@ -20,7 +20,7 @@ export default function PurchaseOrders() {
   const [editingOrder, setEditingOrder] = useState<PurchaseOrder | null>(null);
   const [selectedInventoryId, setSelectedInventoryId] = useState<string>('');
   const [isCreatingNewItem, setIsCreatingNewItem] = useState(false);
-  const [exchangeRates, setExchangeRates] = useState<any>(null);
+  const [exchangeRates, setExchangeRates] = useState<ExchangeRateResponse | null>(null);
   const [isLoadingRates, setIsLoadingRates] = useState(false);
   const [lastRateUpdate, setLastRateUpdate] = useState<string>('');
   const [categoryMode, setCategoryMode] = useState<'select' | 'new'>('select');
@@ -100,18 +100,19 @@ export default function PurchaseOrders() {
     return allColumns.filter(key => !hiddenColumns.has(key));
   };
   
-  // Toggle column visibility
-  const toggleColumnVisibility = (columnKey: string) => {
-    setHiddenColumns(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(columnKey)) {
-        newSet.delete(columnKey);
-      } else {
-        newSet.add(columnKey);
-      }
-      return newSet;
-    });
-  };
+  // Note: toggleColumnVisibility is defined but not currently used
+  // This will be used when column visibility UI is implemented
+  // const toggleColumnVisibility = (columnKey: string) => {
+  //   setHiddenColumns(prev => {
+  //     const newSet = new Set(prev);
+  //     if (newSet.has(columnKey)) {
+  //       newSet.delete(columnKey);
+  //     } else {
+  //       newSet.add(columnKey);
+  //     }
+  //     return newSet;
+  //   });
+  // };
   
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -209,7 +210,7 @@ export default function PurchaseOrders() {
         }
       }
     }
-  }, [formData.category, formData.line, isCreatingNewItem, editingOrder, inventory, skuManuallyEdited]);
+  }, [formData.category, formData.line, formData.sku, isCreatingNewItem, editingOrder, inventory, skuManuallyEdited]);
 
   // When selecting an existing inventory item, auto-fill fields
   useEffect(() => {
@@ -244,23 +245,7 @@ export default function PurchaseOrders() {
   }, [selectedInventoryId, inventory, editingOrder]);
 
   // Fetch exchange rates when form opens
-  useEffect(() => {
-    if (isFormOpen && !exchangeRates) {
-      fetchExchangeRates();
-    }
-  }, [isFormOpen]);
-
-  // Auto-update exchange rate when currency changes
-  useEffect(() => {
-    if (exchangeRates && formData.currency !== 'USD') {
-      const rate = getExchangeRate(formData.currency, 'USD', exchangeRates);
-      if (rate !== formData.exchangeRate) {
-        setFormData(prev => ({ ...prev, exchangeRate: rate }));
-      }
-    }
-  }, [formData.currency, exchangeRates]);
-
-  const fetchExchangeRates = async () => {
+  const fetchExchangeRates = useCallback(async () => {
     setIsLoadingRates(true);
     try {
       const rates = await getExchangeRates('USD');
@@ -279,7 +264,23 @@ export default function PurchaseOrders() {
     } finally {
       setIsLoadingRates(false);
     }
-  };
+  }, [formData.currency]);
+
+  useEffect(() => {
+    if (isFormOpen && !exchangeRates) {
+      fetchExchangeRates();
+    }
+  }, [isFormOpen, exchangeRates, fetchExchangeRates]);
+
+  // Auto-update exchange rate when currency changes
+  useEffect(() => {
+    if (exchangeRates && formData.currency !== 'USD') {
+      const rate = getExchangeRate(formData.currency, 'USD', exchangeRates);
+      if (rate !== formData.exchangeRate) {
+        setFormData(prev => ({ ...prev, exchangeRate: rate }));
+      }
+    }
+  }, [formData.currency, formData.exchangeRate, exchangeRates]);
 
   const calculateTotals = () => {
     const totalCost = formData.quantity * formData.costPerUnit;
@@ -318,7 +319,7 @@ export default function PurchaseOrders() {
     const totals = calculateTotals();
     
     // Prepare dates based on status
-    const statusDates: any = {};
+    const statusDates: Partial<PurchaseOrder> = {};
     if (formData.status === 'Received' || formData.status === 'Verified') {
       statusDates.receivedDate = editingOrder?.receivedDate || new Date();
     }
@@ -356,7 +357,7 @@ export default function PurchaseOrders() {
         
         const inventoryItem = inventory.find(item => item.sku === updatedOrder.sku);
         if (inventoryItem) {
-          const stockUpdate: any = {};
+          const stockUpdate: Partial<InventoryItem> = {};
           if (updatedOrder.destinationStock === 'Ecuador') {
             stockUpdate.ecuadorStock = Math.max(0, inventoryItem.ecuadorStock - quantityToRemove);
           } else {
@@ -413,7 +414,7 @@ export default function PurchaseOrders() {
         // Add to inventory using actual quantity
         const inventoryItem = inventory.find(item => item.sku === updatedOrder.sku);
         if (inventoryItem) {
-          const stockUpdate: any = {};
+          const stockUpdate: Partial<InventoryItem> = {};
           if (updatedOrder.destinationStock === 'Ecuador') {
             stockUpdate.ecuadorStock = inventoryItem.ecuadorStock + actualQuantity;
           } else {
@@ -521,7 +522,7 @@ export default function PurchaseOrders() {
       // Remove inventory that was previously added
       const inventoryItem = inventory.find(item => item.sku === order.sku);
       if (inventoryItem) {
-        const stockUpdate: any = {};
+        const stockUpdate: Partial<InventoryItem> = {};
         if (order.destinationStock === 'Ecuador') {
           stockUpdate.ecuadorStock = Math.max(0, inventoryItem.ecuadorStock - quantityToRemove);
         } else {
@@ -531,7 +532,7 @@ export default function PurchaseOrders() {
       }
     }
     
-    const statusUpdate: any = { status: newStatus };
+    const statusUpdate: Partial<PurchaseOrder> = { status: newStatus };
     
     // Add timestamp dates
     if (newStatus === 'Received' || newStatus === 'Verified') {
@@ -595,7 +596,7 @@ export default function PurchaseOrders() {
       // Add to inventory using actual quantity
       const inventoryItem = inventory.find(item => item.sku === order.sku);
       if (inventoryItem) {
-        const stockUpdate: any = {};
+        const stockUpdate: Partial<InventoryItem> = {};
         if (order.destinationStock === 'Ecuador') {
           stockUpdate.ecuadorStock = inventoryItem.ecuadorStock + actualQuantity;
         } else {
@@ -697,8 +698,8 @@ export default function PurchaseOrders() {
       return true;
     })
     .sort((a, b) => {
-      let aValue: any;
-      let bValue: any;
+      let aValue: string | number | Date;
+      let bValue: string | number | Date;
       
       switch (sortField) {
         case 'invoice':
@@ -777,7 +778,7 @@ export default function PurchaseOrders() {
           groupKey = order.line || 'No Line';
           break;
         case 'destination':
-          groupKey = order.destination;
+          groupKey = order.destinationStock;
           break;
         case 'status':
           groupKey = order.status;
@@ -1937,7 +1938,7 @@ export default function PurchaseOrders() {
                         <div className="flex items-center gap-2">
                           <select
                             value={order.status || 'Ordered'}
-                            onChange={(e) => handleStatusChange(order, e.target.value as any)}
+                            onChange={(e) => handleStatusChange(order, e.target.value as PurchaseOrderStatus)}
                             className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:ring-2 focus:ring-[#4f0c1b] ${
                               order.status === 'Verified' ? 'bg-green-100 text-green-800 font-bold' :
                               order.status === 'Received' ? 'bg-blue-100 text-blue-800' :
@@ -2004,7 +2005,6 @@ export default function PurchaseOrders() {
                 Object.entries(groupedOrders).map(([groupKey, orders]) => {
                   const totalOrders = orders.length;
                   const totalValue = orders.reduce((sum, order) => sum + order.totalCostWithDiscount, 0);
-                  const supplier = suppliers.find(s => s.id === orders[0].supplierId);
                   const hasNeedsReview = orders.some(order => order.category.includes('NEEDS REVIEW') || !order.supplierId);
                   
                   return (

@@ -192,13 +192,13 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
     
     // Check if invoice numbers are provided in CSV
     parsedData.forEach((row) => {
-      const mappedData: any = {};
+      const mappedData: Record<string, string | number> = {};
       Object.entries(columnMapping).forEach(([csvColumn, dbField]) => {
         mappedData[dbField] = row[csvColumn];
       });
       
       if (mappedData.invoice) {
-        invoicesFromCSV.push(mappedData.invoice);
+        invoicesFromCSV.push(String(mappedData.invoice));
       }
     });
 
@@ -219,20 +219,19 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
 
     parsedData.forEach((row, index) => {
       // Extract mapped fields
-      const mappedData: any = {};
+      const mappedData: Record<string, string | number> = {};
       Object.entries(columnMapping).forEach(([csvColumn, dbField]) => {
         mappedData[dbField] = row[csvColumn];
       });
 
-      const invoice = mappedData.invoice || '';
-      const sku = mappedData.sku || '';
-      const description = mappedData.description || 'Imported Item';
-      const quantity = cleanNumericValue(mappedData.quantity || 1);
-      const costPerUnit = cleanNumericValue(mappedData.costPerUnit || 0);
-      const supplierSKU = mappedData.supplierSKU || '';
-      const rawCategory = mappedData.category || '';
-      const rawLine = mappedData.line || '';
-      const rawSupplier = mappedData.supplier || '';
+      const sku = (mappedData.sku as string) || '';
+      const description = String(mappedData.description || 'Imported Item');
+      const quantity = cleanNumericValue(String(mappedData.quantity || 1));
+      const costPerUnit = cleanNumericValue(String(mappedData.costPerUnit || 0));
+      const supplierSKU = (mappedData.supplierSKU as string) || '';
+      const rawCategory = (mappedData.category as string) || '';
+      const rawLine = (mappedData.line as string) || '';
+      const rawSupplier = (mappedData.supplier as string) || '';
       
       // Match values with database
       const matchedSupplier = findMatchingSupplier(rawSupplier);
@@ -367,7 +366,6 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
     setStep('complete');
   };
 
-  const requiredFields = ['sku', 'description', 'quantity', 'costPerUnit'];
 
   return (
     <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 animate-in fade-in duration-200">
@@ -603,7 +601,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                 )}
                 {importResults.warnings > 0 && (
                   <p className="text-amber-600">
-                    ⚠️ {importResults.warnings} items need review (marked with "⚠️ NEEDS REVIEW")
+                    ⚠️ {importResults.warnings} items need review (marked with &quot;⚠️ NEEDS REVIEW&quot;)
                   </p>
                 )}
               </div>

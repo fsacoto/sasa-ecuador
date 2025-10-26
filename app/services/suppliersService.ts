@@ -1,21 +1,22 @@
-import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy, Timestamp } from 'firebase/firestore';
+import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, orderBy, QueryDocumentSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { Supplier } from '../types';
 
 const COLLECTION_NAME = 'suppliers';
 
 // Helper to convert Firestore data to Supplier
-const toSupplier = (doc: any): Supplier => ({
-  id: doc.id,
-  ...doc.data(),
-  createdAt: doc.data().createdAt?.toDate() || new Date()
-});
+const toSupplier = (doc: QueryDocumentSnapshot): Supplier => {
+  const data = doc.data();
+  return {
+    id: doc.id,
+    ...(data as Omit<Supplier, 'id'>),
+    createdAt: (data.createdAt as Timestamp)?.toDate() || new Date()
+  };
+};
 
 // Helper to convert Supplier to Firestore data
 const toFirestore = (supplier: Omit<Supplier, 'id' | 'createdAt'> | Partial<Supplier>) => {
-  const data: any = { ...supplier };
-  // Firestore handles Date conversion automatically with Timestamp
-  return data;
+  return supplier;
 };
 
 // Get all suppliers
@@ -63,7 +64,7 @@ export async function updateSupplier(id: string, updates: Partial<Supplier>): Pr
     const docRef = doc(db, COLLECTION_NAME, id);
     // Remove id from updates if present (it shouldn't be there)
     const { id: _, createdAt, ...updateData } = updates;
-    await updateDoc(docRef, toFirestore(updateData));
+    await updateDoc(docRef, updateData);
   } catch (error) {
     console.error('Error updating supplier:', error);
     throw error;

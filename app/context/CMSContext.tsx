@@ -19,6 +19,7 @@ interface CMSContextType {
     submitted: number;
     approved: number;
     published: number;
+    archived: number;
   };
 }
 
@@ -146,6 +147,7 @@ export function CMSProvider({ children }: { children: ReactNode }) {
       submitted: content.filter((item) => item.status === 'submitted').length,
       approved: content.filter((item) => item.status === 'approved').length,
       published: content.filter((item) => item.status === 'published').length,
+      archived: content.filter((item) => item.status === 'archived').length,
     };
   };
 

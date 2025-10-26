@@ -1,23 +1,25 @@
-import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy } from 'firebase/firestore';
+import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy, QueryDocumentSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { PurchaseOrder, PurchaseOrderStatus } from '../types';
 
 const COLLECTION_NAME = 'purchaseOrders';
 
 // Helper to convert Firestore data to PurchaseOrder
-const toPurchaseOrder = (doc: any): PurchaseOrder => ({
-  id: doc.id,
-  ...doc.data(),
-  purchaseDate: doc.data().purchaseDate?.toDate() || new Date(),
-  receivedDate: doc.data().receivedDate?.toDate(),
-  verifiedDate: doc.data().verifiedDate?.toDate(),
-  createdAt: doc.data().createdAt?.toDate() || new Date()
-});
+const toPurchaseOrder = (doc: QueryDocumentSnapshot): PurchaseOrder => {
+  const data = doc.data();
+  return {
+    id: doc.id,
+    ...(data as Omit<PurchaseOrder, 'id'>),
+    purchaseDate: (data.purchaseDate as Timestamp)?.toDate() || new Date(),
+    receivedDate: (data.receivedDate as Timestamp)?.toDate(),
+    verifiedDate: (data.verifiedDate as Timestamp)?.toDate(),
+    createdAt: (data.createdAt as Timestamp)?.toDate() || new Date()
+  };
+};
 
 // Helper to convert PurchaseOrder to Firestore data
 const toFirestore = (order: Omit<PurchaseOrder, 'id' | 'createdAt'> | Partial<PurchaseOrder>) => {
-  const data: any = { ...order };
-  return data;
+  return order;
 };
 
 // Get all purchase orders
@@ -112,7 +114,7 @@ export async function updatePurchaseOrder(id: string, updates: Partial<PurchaseO
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
     const { id: _, createdAt, ...updateData } = updates;
-    await updateDoc(docRef, toFirestore(updateData));
+    await updateDoc(docRef, updateData);
   } catch (error) {
     console.error('Error updating purchase order:', error);
     throw error;
