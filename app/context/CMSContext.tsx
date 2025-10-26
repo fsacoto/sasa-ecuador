@@ -2,13 +2,15 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { CMSContent, ContentStatus } from '../types';
+import * as cmsService from '../services/cmsService';
 
 interface CMSContextType {
   content: CMSContent[];
-  addContent: (content: Omit<CMSContent, 'id' | 'metadata'>) => void;
-  updateContent: (id: string, updates: Partial<CMSContent>) => void;
-  deleteContent: (id: string) => void;
-  updateContentStatus: (id: string, status: ContentStatus, userId: string, notes?: string) => void;
+  isLoading: boolean;
+  addContent: (content: Omit<CMSContent, 'id' | 'metadata'>) => Promise<void>;
+  updateContent: (id: string, updates: Partial<CMSContent>) => Promise<void>;
+  deleteContent: (id: string) => Promise<void>;
+  updateContentStatus: (id: string, status: ContentStatus, userId: string, notes?: string) => Promise<void>;
   getContentByStatus: (status: ContentStatus) => CMSContent[];
   getContentBySKU: (sku: string) => CMSContent[];
   getContentStats: () => {
@@ -24,101 +26,109 @@ const CMSContext = createContext<CMSContextType | undefined>(undefined);
 
 export function CMSProvider({ children }: { children: ReactNode }) {
   const [content, setContent] = useState<CMSContent[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Load content from localStorage on mount
+  // Load content from Firestore on mount
   useEffect(() => {
-    const saved = localStorage.getItem('cms-content');
-    if (saved) {
-      const parsedContent = JSON.parse(saved);
-      // Convert dates back to Date objects
-      const contentWithDates = parsedContent.map((item: any) => ({
-        ...item,
-        statusHistory: item.statusHistory.map((h: any) => ({
-          ...h,
-          timestamp: new Date(h.timestamp),
-        })),
-        metadata: {
-          ...item.metadata,
-          createdAt: new Date(item.metadata.createdAt),
-          updatedAt: new Date(item.metadata.updatedAt),
-          publishedAt: item.metadata.publishedAt ? new Date(item.metadata.publishedAt) : undefined,
-          archivedAt: item.metadata.archivedAt ? new Date(item.metadata.archivedAt) : undefined,
-        },
-      }));
-      setContent(contentWithDates);
-    }
+    loadContent();
   }, []);
 
-  // Save content to localStorage whenever it changes
-  useEffect(() => {
-    if (content.length > 0) {
-      localStorage.setItem('cms-content', JSON.stringify(content));
+  const loadContent = async () => {
+    try {
+      setIsLoading(true);
+      const data = await cmsService.getCMSContent();
+      setContent(data);
+    } catch (error) {
+      console.error('Error loading CMS content:', error);
+    } finally {
+      setIsLoading(false);
     }
-  }, [content]);
-
-  const addContent = (contentData: Omit<CMSContent, 'id' | 'metadata'>) => {
-    const newContent: CMSContent = {
-      ...contentData,
-      id: `cms-${Date.now()}`,
-      metadata: {
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    };
-    setContent((prev) => [...prev, newContent]);
   };
 
-  const updateContent = (id: string, updates: Partial<CMSContent>) => {
-    setContent((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? {
+  const addContent = async (contentData: Omit<CMSContent, 'id' | 'metadata'>) => {
+    try {
+      const newId = await cmsService.addCMSContent(contentData);
+      const newContent: CMSContent = {
+        ...contentData,
+        id: newId,
+        metadata: {
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      };
+      setContent((prev) => [...prev, newContent]);
+    } catch (error) {
+      console.error('Error adding CMS content:', error);
+      throw error;
+    }
+  };
+
+  const updateContent = async (id: string, updates: Partial<CMSContent>) => {
+    try {
+      await cmsService.updateCMSContent(id, updates);
+      setContent((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                ...updates,
+                metadata: {
+                  ...item.metadata,
+                  updatedAt: new Date(),
+                },
+              }
+            : item
+        )
+      );
+    } catch (error) {
+      console.error('Error updating CMS content:', error);
+      throw error;
+    }
+  };
+
+  const deleteContent = async (id: string) => {
+    try {
+      await cmsService.deleteCMSContent(id);
+      setContent((prev) => prev.filter((item) => item.id !== id));
+    } catch (error) {
+      console.error('Error deleting CMS content:', error);
+      throw error;
+    }
+  };
+
+  const updateContentStatus = async (id: string, status: ContentStatus, userId: string, notes?: string) => {
+    try {
+      await cmsService.updateCMSContentStatus(id, status, userId, notes);
+      setContent((prev) =>
+        prev.map((item) => {
+          if (item.id === id) {
+            return {
               ...item,
-              ...updates,
+              status,
+              statusHistory: [
+                ...item.statusHistory,
+                {
+                  status,
+                  timestamp: new Date(),
+                  userId,
+                  notes,
+                },
+              ],
               metadata: {
                 ...item.metadata,
                 updatedAt: new Date(),
+                ...(status === 'published' && { publishedAt: new Date() }),
+                ...(status === 'archived' && { archivedAt: new Date() }),
               },
-            }
-          : item
-      )
-    );
-  };
-
-  const deleteContent = (id: string) => {
-    setContent((prev) => prev.filter((item) => item.id !== id));
-    // Also update localStorage
-    const current = [...content].filter((item) => item.id !== id);
-    localStorage.setItem('cms-content', JSON.stringify(current));
-  };
-
-  const updateContentStatus = (id: string, status: ContentStatus, userId: string, notes?: string) => {
-    setContent((prev) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          return {
-            ...item,
-            status,
-            statusHistory: [
-              ...item.statusHistory,
-              {
-                status,
-                timestamp: new Date(),
-                userId,
-                notes,
-              },
-            ],
-            metadata: {
-              ...item.metadata,
-              updatedAt: new Date(),
-              ...(status === 'published' && { publishedAt: new Date() }),
-              ...(status === 'archived' && { archivedAt: new Date() }),
-            },
-          };
-        }
-        return item;
-      })
-    );
+            };
+          }
+          return item;
+        })
+      );
+    } catch (error) {
+      console.error('Error updating CMS content status:', error);
+      throw error;
+    }
   };
 
   const getContentByStatus = (status: ContentStatus) => {
@@ -143,6 +153,7 @@ export function CMSProvider({ children }: { children: ReactNode }) {
     <CMSContext.Provider
       value={{
         content,
+        isLoading,
         addContent,
         updateContent,
         deleteContent,
