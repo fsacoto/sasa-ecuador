@@ -63,3 +63,69 @@ export interface InventoryItem {
   barcode?: string; // Base64 encoded barcode image
   createdAt: Date;
 }
+
+export type AdditionalCostType = 'Shipping' | 'Insurance' | 'Duties' | 'Import Fees' | 'Other';
+
+export interface AdditionalCost {
+  id: string;
+  invoiceNumber: string; // Links to PurchaseOrder.invoice
+  type: AdditionalCostType;
+  amount: number;
+  description: string;
+  date: Date;
+  createdAt: Date;
+}
+
+export interface LandedCostCalculation {
+  invoiceNumber: string;
+  baseItemTotal: number; // Sum of all items in the invoice
+  totalAdditionalCosts: number;
+  totalLandedCost: number;
+  items: {
+    purchaseOrderId: string;
+    sku: string;
+    description: string;
+    quantity: number;
+    baseCostPerUnit: number;
+    baseItemTotal: number;
+    proportionalShare: number; // Percentage of total additional costs
+    additionalCostAllocation: number; // Amount allocated to this item
+    finalCostPerUnit: number; // Base cost + allocated additional cost per unit
+    finalItemTotal: number; // Final total cost for this item
+  }[];
+}
+
+export type ContentType = 'product' | 'collection' | 'general';
+export type ContentStatus = 'draft' | 'submitted' | 'approved' | 'published' | 'archived';
+export type ContentLanguage = 'en' | 'es';
+
+export interface CMSContent {
+  id: string;
+  type: ContentType;
+  title: string;
+  description: string;
+  hashtags: string[];
+  status: ContentStatus;
+  statusHistory: {
+    status: ContentStatus;
+    timestamp: Date;
+    userId: string;
+    notes?: string;
+  }[];
+  images: string[];
+  videos: string[];
+  authorId: string;
+  authorName: string;
+  category: string;
+  tags: string[];
+  language: ContentLanguage;
+  linkedProductIds: string[]; // SKUs of linked inventory items
+  metadata: {
+    createdAt: Date;
+    updatedAt: Date;
+    publishedAt?: Date;
+    archivedAt?: Date;
+    reviewerId?: string;
+    reviewerNotes?: string;
+  };
+}

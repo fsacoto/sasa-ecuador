@@ -25,6 +25,107 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
   const [purchaseDate, setPurchaseDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [importResults, setImportResults] = useState<{ success: number; warnings: number; autoLinked?: number }>({ success: 0, warnings: 0, autoLinked: 0 });
 
+  // Predefined categories and lines for matching
+  const predefinedCategories = ['Necklace', 'Ring', 'Bracelet', 'Set', 'Anklet', 'Earring'];
+  const predefinedLines = ['Gold Plated', 'Gold Filled', 'Sterling Silver'];
+
+  // Helper functions to match values with database
+  const findMatchingSupplier = (supplierName: string): string => {
+    if (!supplierName) return defaultSupplier;
+    
+    // Try exact match first
+    const exactMatch = suppliers.find(s => s.name.toLowerCase() === supplierName.toLowerCase());
+    if (exactMatch) return exactMatch.id;
+    
+    // Try partial match
+    const partialMatch = suppliers.find(s => 
+      s.name.toLowerCase().includes(supplierName.toLowerCase()) ||
+      supplierName.toLowerCase().includes(s.name.toLowerCase())
+    );
+    if (partialMatch) return partialMatch.id;
+    
+    // Return default if no match found
+    return defaultSupplier;
+  };
+
+  const findMatchingCategory = (categoryName: string): string => {
+    if (!categoryName) return '';
+    
+    console.log('Matching category:', categoryName, 'against predefined:', predefinedCategories);
+    
+    // Try exact match with predefined categories
+    const exactMatch = predefinedCategories.find(cat => 
+      cat.toLowerCase() === categoryName.toLowerCase()
+    );
+    if (exactMatch) {
+      console.log('Exact match found:', exactMatch);
+      return exactMatch;
+    }
+    
+    // Try partial match
+    const partialMatch = predefinedCategories.find(cat => 
+      cat.toLowerCase().includes(categoryName.toLowerCase()) ||
+      categoryName.toLowerCase().includes(cat.toLowerCase())
+    );
+    if (partialMatch) {
+      console.log('Partial match found:', partialMatch);
+      return partialMatch;
+    }
+    
+    // Try existing categories from inventory
+    const existingCategories = [...new Set(inventory.map(item => item.category))];
+    const existingMatch = existingCategories.find(cat => 
+      cat.toLowerCase() === categoryName.toLowerCase()
+    );
+    if (existingMatch) {
+      console.log('Existing match found:', existingMatch);
+      return existingMatch;
+    }
+    
+    console.log('No match found, returning original:', categoryName);
+    // Return original if no match found (will be flagged for review)
+    return categoryName;
+  };
+
+  const findMatchingLine = (lineName: string): string => {
+    if (!lineName) return '';
+    
+    console.log('Matching line:', lineName, 'against predefined:', predefinedLines);
+    
+    // Try exact match with predefined lines
+    const exactMatch = predefinedLines.find(line => 
+      line.toLowerCase() === lineName.toLowerCase()
+    );
+    if (exactMatch) {
+      console.log('Exact match found:', exactMatch);
+      return exactMatch;
+    }
+    
+    // Try partial match
+    const partialMatch = predefinedLines.find(line => 
+      line.toLowerCase().includes(lineName.toLowerCase()) ||
+      lineName.toLowerCase().includes(line.toLowerCase())
+    );
+    if (partialMatch) {
+      console.log('Partial match found:', partialMatch);
+      return partialMatch;
+    }
+    
+    // Try existing lines from inventory
+    const existingLines = [...new Set(inventory.map(item => item.line))];
+    const existingMatch = existingLines.find(line => 
+      line.toLowerCase() === lineName.toLowerCase()
+    );
+    if (existingMatch) {
+      console.log('Existing match found:', existingMatch);
+      return existingMatch;
+    }
+    
+    console.log('No match found, returning original:', lineName);
+    // Return original if no match found (will be flagged for review)
+    return lineName;
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -56,6 +157,11 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
         
         // Auto-detect column mapping
         const detectedMapping = detectColumnMapping(fileHeaders);
+        
+        // Debug logging for headers and mapping
+        console.log('CSV Headers detected:', fileHeaders);
+        console.log('Auto-detected mapping:', detectedMapping);
+        
         setColumnMapping(detectedMapping);
         
         setStep('mapping');
@@ -80,21 +186,57 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
     const itemsToAdd: Omit<InventoryItem, 'id' | 'createdAt'>[] = [];
     const existingSkuSet = new Set(existingSkus);
 
+    // First, determine the invoice number for the entire batch
+    let batchInvoiceNumber = '';
+    const invoicesFromCSV: string[] = [];
+    
+    // Check if invoice numbers are provided in CSV
+    parsedData.forEach((row) => {
+      const mappedData: Record<string, string | number> = {};
+      Object.entries(columnMapping).forEach(([csvColumn, dbField]) => {
+        mappedData[dbField] = row[csvColumn];
+      });
+      
+      if (mappedData.invoice) {
+        invoicesFromCSV.push(String(mappedData.invoice));
+      }
+    });
+
+    if (invoicesFromCSV.length > 0) {
+      // Validate that all invoice numbers are the same
+      const uniqueInvoices = [...new Set(invoicesFromCSV)];
+      if (uniqueInvoices.length > 1) {
+        alert(`❌ ERROR: All items in the CSV must have the same invoice number!\n\nFound different invoice numbers: ${uniqueInvoices.join(', ')}\n\nPlease fix your CSV file and try again.`);
+        return;
+      }
+      batchInvoiceNumber = uniqueInvoices[0];
+    } else {
+      // Generate one invoice number for the entire batch
+      batchInvoiceNumber = invoicePrefix 
+        ? `${invoicePrefix}-${timestamp}`
+        : `IMPORT-${timestamp}`;
+    }
+
     parsedData.forEach((row, index) => {
       // Extract mapped fields
-      const mappedData: any = {};
+      const mappedData: Record<string, string | number> = {};
       Object.entries(columnMapping).forEach(([csvColumn, dbField]) => {
         mappedData[dbField] = row[csvColumn];
       });
 
-      const invoice = mappedData.invoice || '';
-      const sku = mappedData.sku || '';
-      const description = mappedData.description || 'Imported Item';
-      const quantity = cleanNumericValue(mappedData.quantity || 1);
-      const costPerUnit = cleanNumericValue(mappedData.costPerUnit || 0);
-      const supplierSKU = mappedData.supplierSKU || '';
-      const category = mappedData.category || '';
-      const line = mappedData.line || '';
+      const sku = (mappedData.sku as string) || '';
+      const description = String(mappedData.description || 'Imported Item');
+      const quantity = cleanNumericValue(String(mappedData.quantity || 1));
+      const costPerUnit = cleanNumericValue(String(mappedData.costPerUnit || 0));
+      const supplierSKU = (mappedData.supplierSKU as string) || '';
+      const rawCategory = (mappedData.category as string) || '';
+      const rawLine = (mappedData.line as string) || '';
+      const rawSupplier = (mappedData.supplier as string) || '';
+      
+      // Match values with database
+      const matchedSupplier = findMatchingSupplier(rawSupplier);
+      const matchedCategory = findMatchingCategory(rawCategory);
+      const matchedLine = findMatchingLine(rawLine);
 
       // SMART LINKING: Try to find existing inventory item by supplier SKU
       let matchedInventoryItem: InventoryItem | undefined;
@@ -104,8 +246,8 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
         );
       }
 
-      // Use SKU as-is from CSV (supplier's SKU system)
-      let internalSku = sku;
+      // Generate proper internal SKU based on category and line
+      let internalSku = sku; // Start with CSV SKU as fallback
       let autoLinked = false;
       
       if (matchedInventoryItem) {
@@ -113,32 +255,58 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
         internalSku = matchedInventoryItem.sku;
         autoLinked = true;
         autoLinkedCount++;
+      } else if (matchedCategory && matchedLine) {
+        // Generate proper internal SKU based on matched category and line
+        const existingSkus = inventory.map(item => item.sku);
+        internalSku = generateUniqueSKU(matchedCategory, matchedLine, existingSkus);
       } else if (!sku) {
-        // Generate a placeholder SKU if missing and no match found
+        // Generate a placeholder SKU if missing category/line and no CSV SKU
         internalSku = `IMP${timestamp.toString().slice(-5)}${String(index).padStart(3, '0')}`;
       }
+      // If we have a CSV SKU but no category/line, keep the CSV SKU
 
       // Determine if this order needs review
-      // Auto-linked items don't need review if they have all required info
+      // Only flag for review if critical fields are missing, not category/line
       const needsReview = !autoLinked && (!defaultSupplier || !sku || !description || costPerUnit === 0);
+      
+      // Determine if category/line need review (separate from order review)
+      const categoryNeedsReview = !autoLinked && !matchedCategory && rawCategory;
+      const lineNeedsReview = !autoLinked && !matchedLine && rawLine;
+      
+      // Debug logging
+      if (rawCategory || rawLine) {
+        console.log(`Row ${index + 1}:`, {
+          rawCategory,
+          matchedCategory,
+          rawLine,
+          matchedLine,
+          columnMapping,
+          needsReview,
+          categoryNeedsReview,
+          lineNeedsReview,
+          autoLinked,
+          originalSku: sku,
+          generatedSku: internalSku,
+          finalCategory: autoLinked && matchedInventoryItem ? matchedInventoryItem.category : (categoryNeedsReview ? '⚠️ NEEDS REVIEW' : matchedCategory),
+          finalLine: autoLinked && matchedInventoryItem ? matchedInventoryItem.line : (lineNeedsReview ? '⚠️ NEEDS REVIEW' : matchedLine)
+        });
+      }
 
       // Each row is a SEPARATE purchase order
-      // Use invoice from CSV if provided, otherwise auto-generate
-      const invoiceNumber = invoice || (invoicePrefix 
-        ? `${invoicePrefix}-${String(index + 1).padStart(3, '0')}`
-        : `IMPORT-${timestamp}-${String(index + 1).padStart(3, '0')}`);
+      // Use the batch invoice number for all items
+      const invoiceNumber = batchInvoiceNumber;
 
       // Create individual purchase order
       // Use existing item's info if auto-linked
       const orderData = {
         invoice: invoiceNumber,
         invoiceLink: '',
-        supplierId: defaultSupplier || '',
+        supplierId: matchedSupplier || defaultSupplier || '',
         supplierSKU: supplierSKU,
         description: autoLinked && matchedInventoryItem ? matchedInventoryItem.name : description,
         sku: internalSku,
-        category: autoLinked && matchedInventoryItem ? matchedInventoryItem.category : (needsReview ? '⚠️ NEEDS REVIEW' : category),
-        line: autoLinked && matchedInventoryItem ? matchedInventoryItem.line : line,
+        category: autoLinked && matchedInventoryItem ? matchedInventoryItem.category : (categoryNeedsReview ? '⚠️ NEEDS REVIEW' : matchedCategory),
+        line: autoLinked && matchedInventoryItem ? matchedInventoryItem.line : (lineNeedsReview ? '⚠️ NEEDS REVIEW' : matchedLine),
         images: autoLinked && matchedInventoryItem ? matchedInventoryItem.images : [],
         quantity: quantity,
         destinationStock: defaultDestination,
@@ -170,8 +338,8 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
           name: description,
           sku: internalSku,
           supplierSKU: supplierSKU,
-          category: needsReview ? '⚠️ NEEDS REVIEW' : category,
-          line: line,
+          category: categoryNeedsReview ? '⚠️ NEEDS REVIEW' : matchedCategory,
+          line: lineNeedsReview ? '⚠️ NEEDS REVIEW' : matchedLine,
           description: description,
           images: [],
           ecuadorStock: 0, // Start with 0 - will update when order is verified
@@ -198,7 +366,6 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
     setStep('complete');
   };
 
-  const requiredFields = ['sku', 'description', 'quantity', 'costPerUnit'];
 
   return (
     <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 animate-in fade-in duration-200">
@@ -293,8 +460,8 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                     />
                     <p className="text-xs text-gray-500 mt-1">
                       {Object.values(columnMapping).includes('invoice') 
-                        ? 'Using invoice numbers from CSV' 
-                        : `Auto-generated: ${invoicePrefix || 'IMPORT-###'}-001, -002, etc.`}
+                        ? 'Using invoice number from CSV (must be same for all rows)' 
+                        : `Auto-generated: ${invoicePrefix || 'IMPORT-###'}-${Date.now().toString().slice(-6)}`}
                     </p>
                   </div>
                   <div>
@@ -373,6 +540,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                         <option value="invoice">Invoice Number</option>
                         <option value="sku">SKU (Internal)</option>
                         <option value="supplierSKU">Supplier SKU</option>
+                        <option value="supplier">Supplier Name</option>
                         <option value="description">Description/Name</option>
                         <option value="quantity">Quantity</option>
                         <option value="costPerUnit">Cost Per Unit</option>
@@ -433,7 +601,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                 )}
                 {importResults.warnings > 0 && (
                   <p className="text-amber-600">
-                    ⚠️ {importResults.warnings} items need review (marked with "⚠️ NEEDS REVIEW")
+                    ⚠️ {importResults.warnings} items need review (marked with &quot;⚠️ NEEDS REVIEW&quot;)
                   </p>
                 )}
               </div>

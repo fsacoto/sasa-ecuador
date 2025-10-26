@@ -9,45 +9,54 @@ import { InventoryItem } from '../types';
 const styles = StyleSheet.create({
   page: {
     backgroundColor: '#FAFAF8',
-    padding: 45,
-    paddingTop: 35,
+    padding: 40,
+    paddingTop: 30,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 30,
-    paddingBottom: 18,
+    marginBottom: 25,
+    paddingBottom: 15,
     borderBottom: '0.5pt solid #D4C5B5',
   },
   titleContainer: {
     flexDirection: 'column',
     alignItems: 'center',
+    maxWidth: '100%',
+    paddingHorizontal: 20,
   },
   title: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#2B1810',
-    letterSpacing: 2.5,
+    letterSpacing: 1.5,
+    textAlign: 'center',
+    maxWidth: '100%',
+    flexWrap: 'wrap',
   },
   catalogSubtext: {
     fontSize: 8,
     color: '#9A8774',
     letterSpacing: 2.5,
     marginTop: 4,
+    textAlign: 'center',
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 16,
+    gap: 12,
   },
   productCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 2,
     padding: 0,
-    marginBottom: 16,
+    marginBottom: 12,
     border: '0.5pt solid #E8E3DC',
     boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+  },
+  productCard2: {
+    width: '48%',
   },
   productCard4: {
     width: '23%',
@@ -63,7 +72,13 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     width: '100%',
-    height: 145,
+    height: 200,
+    backgroundColor: '#FCFBF9',
+    position: 'relative',
+  },
+  imageContainer2: {
+    width: '100%',
+    height: 300,
     backgroundColor: '#FCFBF9',
     position: 'relative',
   },
@@ -87,8 +102,8 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
   infoContainer: {
-    padding: 14,
-    paddingTop: 12,
+    padding: 10,
+    paddingTop: 8,
   },
   badge: {
     position: 'absolute',
@@ -106,29 +121,29 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
   productName: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 'bold',
     color: '#1A120E',
-    marginBottom: 4,
-    lineHeight: 1.35,
+    marginBottom: 3,
+    lineHeight: 1.3,
   },
   sku: {
-    fontSize: 7.5,
+    fontSize: 7,
     color: '#9A8774',
-    marginBottom: 6,
+    marginBottom: 4,
     letterSpacing: 0.8,
   },
   description: {
-    fontSize: 7.5,
+    fontSize: 7,
     color: '#706659',
-    lineHeight: 1.45,
-    marginTop: 5,
+    lineHeight: 1.4,
+    marginTop: 4,
   },
   stockInfo: {
-    fontSize: 6.5,
+    fontSize: 6,
     color: '#A89B8C',
-    marginTop: 8,
-    paddingTop: 7,
+    marginTop: 6,
+    paddingTop: 5,
     borderTop: '0.5pt solid #EDE8DF',
   },
   footer: {
@@ -152,6 +167,7 @@ interface ProductCatalogPDFProps {
   catalogTitle: string;
   includeStock: boolean;
   itemsPerPage: number;
+  orientation: 'landscape' | 'portrait';
 }
 
 export default function ProductCatalogPDF({
@@ -159,7 +175,22 @@ export default function ProductCatalogPDF({
   catalogTitle,
   includeStock,
   itemsPerPage,
+  orientation,
 }: ProductCatalogPDFProps) {
+  // Truncate title if too long to fit on page
+  const getDisplayTitle = (title: string) => {
+    if (title.length > 25) {
+      // Try to break at word boundary
+      const truncated = title.substring(0, 25);
+      const lastSpace = truncated.lastIndexOf(' ');
+      if (lastSpace > 15) {
+        return title.substring(0, lastSpace) + '...';
+      }
+      return truncated + '...';
+    }
+    return title;
+  };
+
   // Split products into pages
   const pages: InventoryItem[][] = [];
   for (let i = 0; i < products.length; i += itemsPerPage) {
@@ -169,6 +200,8 @@ export default function ProductCatalogPDF({
   // Determine card style based on items per page
   const getCardStyle = () => {
     switch (itemsPerPage) {
+      case 2:
+        return styles.productCard2;
       case 4:
         return styles.productCard4;
       case 6:
@@ -182,16 +215,27 @@ export default function ProductCatalogPDF({
     }
   };
 
+  // Determine image container style based on items per page
+  const getImageContainerStyle = () => {
+    switch (itemsPerPage) {
+      case 2:
+        return styles.imageContainer2;
+      default:
+        return styles.imageContainer;
+    }
+  };
+
   const cardStyle = getCardStyle();
+  const imageContainerStyle = getImageContainerStyle();
 
   return (
     <Document>
       {pages.map((pageProducts, pageIndex) => (
-        <Page key={pageIndex} size="A4" orientation="landscape" style={styles.page}>
+        <Page key={pageIndex} size="A4" orientation={orientation} style={styles.page}>
           {/* Elegant Header */}
           <View style={styles.header}>
             <View style={styles.titleContainer}>
-              <Text style={styles.title}>{catalogTitle.toUpperCase()}</Text>
+              <Text style={styles.title}>{getDisplayTitle(catalogTitle).toUpperCase()}</Text>
               <Text style={styles.catalogSubtext}>FINE JEWELRY COLLECTION</Text>
             </View>
           </View>
@@ -201,7 +245,7 @@ export default function ProductCatalogPDF({
             {pageProducts.map((product) => (
               <View key={product.id} style={[styles.productCard, cardStyle]}>
                 {/* Product Image */}
-                <View style={styles.imageContainer}>
+                <View style={imageContainerStyle}>
                   {product.images && product.images.length > 0 && product.images[0] ? (
                     <Image
                       src={product.images[0]}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { InventoryItem } from '../types';
 import InventoryDetailPanel from './InventoryDetailPanel';
@@ -28,16 +28,99 @@ export default function Inventory() {
   const [filterLine, setFilterLine] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
   
-  // Get unique categories and lines from existing inventory
+  // Search dropdown state
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const searchDropdownRef = useRef<HTMLDivElement>(null);
+  
+  // Column visibility state
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
+  const [showColumnDropdown, setShowColumnDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  
+  // View mode state
+  const [viewMode, setViewMode] = useState<'grid' | 'gallery'>('grid');
+  const [showViewDropdown, setShowViewDropdown] = useState(false);
+  const viewDropdownRef = useRef<HTMLDivElement>(null);
+  
+  // Gallery view state
+  const [galleryFields, setGalleryFields] = useState<Set<string>>(new Set(['name', 'sku', 'category', 'line']));
+  const [showGalleryFieldsDropdown, setShowGalleryFieldsDropdown] = useState(false);
+  const galleryFieldsDropdownRef = useRef<HTMLDivElement>(null);
+  
+  
+  // Ref to track if we're currently editing an item (prevents SKU auto-generation)
+  const isEditingRef = useRef(false);
+  
+  // Predefined category options
+  const predefinedCategories = ['Necklace', 'Ring', 'Bracelet', 'Set', 'Anklet', 'Earring'];
+  
+  // Predefined line options
+  const predefinedLines = ['Gold Plated', 'Gold Filled', 'Sterling Silver'];
+  
+  // Get unique categories and lines from existing inventory (excluding predefined ones)
   const existingCategories = [...new Set(inventory
     .map(item => item.category)
-    .filter(cat => cat && !cat.includes('NEEDS REVIEW'))
+    .filter(cat => cat && !cat.includes('NEEDS REVIEW') && !predefinedCategories.includes(cat))
   )].sort();
   
   const existingLines = [...new Set(inventory
     .map(item => item.line)
-    .filter(line => line && line.trim() !== '')
+    .filter(line => line && line.trim() !== '' && !predefinedLines.includes(line))
   )].sort();
+
+  // Get visible columns for inventory table
+  const getVisibleColumns = () => {
+    const allColumns = [
+      { key: 'name', label: 'Name' },
+      { key: 'sku', label: 'SKU' },
+      { key: 'barcode', label: 'Barcode' },
+      { key: 'category', label: 'Category' },
+      { key: 'line', label: 'Line' },
+      { key: 'ecuadorStock', label: 'Ecuador' },
+      { key: 'usaStock', label: 'USA' },
+      { key: 'totalStock', label: 'Total' },
+      { key: 'actions', label: 'Actions' }
+    ];
+    return allColumns;
+  };
+
+  // Get available fields for gallery view
+  const getGalleryFields = () => {
+    const allFields = [
+      { key: 'name', label: 'Name' },
+      { key: 'sku', label: 'SKU' },
+      { key: 'category', label: 'Category' },
+      { key: 'line', label: 'Line' },
+      { key: 'ecuadorStock', label: 'Ecuador Stock' },
+      { key: 'usaStock', label: 'USA Stock' },
+      { key: 'totalStock', label: 'Total Stock' },
+      { key: 'unitCost', label: 'Unit Cost' },
+      { key: 'totalValue', label: 'Total Value' }
+    ];
+    return allFields;
+  };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showColumnDropdown && dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowColumnDropdown(false);
+      }
+      if (showViewDropdown && viewDropdownRef.current && !viewDropdownRef.current.contains(event.target as Node)) {
+        setShowViewDropdown(false);
+      }
+      if (showGalleryFieldsDropdown && galleryFieldsDropdownRef.current && !galleryFieldsDropdownRef.current.contains(event.target as Node)) {
+        setShowGalleryFieldsDropdown(false);
+      }
+      if (showSearchDropdown && searchDropdownRef.current && !searchDropdownRef.current.contains(event.target as Node)) {
+        setShowSearchDropdown(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showColumnDropdown, showViewDropdown, showGalleryFieldsDropdown, showSearchDropdown]);
+
   const [formData, setFormData] = useState({
     name: '',
     supplierSKU: '',
@@ -51,14 +134,15 @@ export default function Inventory() {
     images: [] as string[],
   });
 
-  // Auto-generate SKU when category or line changes (unless manually edited)
-  useEffect(() => {
-    if (!editingItem && !skuManuallyEdited && formData.category && formData.line) {
+  // Manual SKU generation function - only called when explicitly needed
+  const generateSkuIfNeeded = () => {
+    // Only generate SKU for new items (not editing existing ones)
+    if (!editingItem && !skuManuallyEdited && formData.category && formData.line && (!formData.sku || formData.sku.trim() === '')) {
       const existingSkus = inventory.map(item => item.sku);
       const newSku = generateUniqueSKU(formData.category, formData.line, existingSkus);
       setFormData(prev => ({ ...prev, sku: newSku }));
     }
-  }, [formData.category, formData.line, editingItem, skuManuallyEdited, inventory]);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,10 +177,18 @@ export default function Inventory() {
     setSkuManuallyEdited(false);
     setCategoryMode('select');
     setLineMode('select');
+    // Reset editing ref
+    isEditingRef.current = false;
   };
 
   const handleEdit = (item: InventoryItem) => {
+    // Set editing ref IMMEDIATELY to prevent auto-generation
+    isEditingRef.current = true;
+    
+    // Set editing state first to prevent auto-generation
     setEditingItem(item);
+    setSkuManuallyEdited(true); // Don't auto-generate when editing
+    
     setFormData({
       name: item.name,
       supplierSKU: item.supplierSKU,
@@ -109,7 +201,7 @@ export default function Inventory() {
       usaStock: item.usaStock,
       images: item.images || [],
     });
-    setSkuManuallyEdited(true); // Don't auto-generate when editing
+    
     setIsFormOpen(true);
   };
 
@@ -126,9 +218,14 @@ export default function Inventory() {
       }
     }
 
-    // Convert to base64
-    const newImages = await handleMultipleImageUpload(files);
-    setFormData(prev => ({ ...prev, images: [...prev.images, ...newImages] }));
+    try {
+      // Upload to Firebase Storage
+      const newImages = await handleMultipleImageUpload(files, 'images/inventory/');
+      setFormData(prev => ({ ...prev, images: [...prev.images, ...newImages] }));
+    } catch (error) {
+      console.error('Error uploading images:', error);
+      alert('Failed to upload images. Please try again.');
+    }
     
     // Reset input
     e.target.value = '';
@@ -193,6 +290,14 @@ export default function Inventory() {
 
   const filteredAndSortedInventory = inventory
     .filter(item => {
+      // Only show items that have at least one verified purchase order
+      const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
+        const order = purchaseOrders.find(o => o.id === orderId);
+        return order && order.status === 'Verified';
+      });
+      
+      if (!hasVerifiedOrder) return false;
+      
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -217,8 +322,8 @@ export default function Inventory() {
       return true;
     })
     .sort((a, b) => {
-      let aValue: any;
-      let bValue: any;
+      let aValue: string | number;
+      let bValue: string | number;
       
       switch (sortField) {
         case 'name':
@@ -284,71 +389,258 @@ export default function Inventory() {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-semibold text-gray-900">Inventory</h2>
-          <p className="text-sm text-gray-500 mt-1">Manage your jewelry inventory</p>
+          <p className="text-sm text-gray-500 mt-1">View stock levels and create product catalogs</p>
         </div>
         <div className="flex gap-3">
           <button
             onClick={() => setIsCatalogModalOpen(true)}
             disabled={inventory.length === 0}
-            className="bg-white border-2 border-[#4f0c1b] text-[#4f0c1b] hover:bg-[#4f0c1b] hover:text-white px-5 py-2.5 rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-            Create Catalog
+            <span className="text-sm font-medium text-gray-700">Create Catalog</span>
           </button>
+          
           <button
             onClick={() => setIsFormOpen(true)}
-            className="bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-5 py-2.5 rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow active:scale-95"
+            className="flex items-center gap-2 px-3 py-2 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white rounded-lg hover:shadow-md transition-all duration-200 text-sm shadow-sm"
           >
-            Add Inventory Item
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            <span className="text-sm font-medium text-white">Add Item</span>
           </button>
         </div>
       </div>
 
-      {/* Compact Search and Filter Controls */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {/* Compact Search Bar - Always Visible */}
-        <div className="p-3 flex items-center gap-3">
-          <div className="flex-1 relative">
-            <input
-              type="text"
-              placeholder="Search inventory (Name, SKU, Description...)"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm"
-            />
-            <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      {/* View Controls */}
+      <div className="flex items-center justify-end gap-3">
+        {/* View Mode Toggle */}
+        <div className="relative">
+          <button
+            onClick={() => setShowViewDropdown(!showViewDropdown)}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm"
+          >
+            <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              {viewMode === 'grid' ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+              )}
             </svg>
-          </div>
+            <span className="text-sm font-medium text-gray-700">
+              {viewMode === 'grid' ? 'Grid View' : 'Gallery View'}
+            </span>
+          </button>
           
+          {showViewDropdown && (
+            <div ref={viewDropdownRef} className="absolute top-full right-0 mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
+              <div className="p-2">
+                <button
+                  onClick={() => {
+                    setViewMode('grid');
+                    setShowViewDropdown(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                    viewMode === 'grid' ? 'bg-[#4f0c1b] text-white' : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                  </svg>
+                  Grid View
+                </button>
+                <button
+                  onClick={() => {
+                    setViewMode('gallery');
+                    setShowViewDropdown(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                    viewMode === 'gallery' ? 'bg-[#4f0c1b] text-white' : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                  </svg>
+                  Gallery View
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Gallery Fields Selection (only show in gallery view) */}
+        {viewMode === 'gallery' && (
+          <div className="relative">
+            <button
+              onClick={() => setShowGalleryFieldsDropdown(!showGalleryFieldsDropdown)}
+              className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm"
+            >
+              <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span className="text-sm font-medium text-gray-700">Fields</span>
+              <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            
+            {showGalleryFieldsDropdown && (
+              <div ref={galleryFieldsDropdownRef} className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
+                <div className="p-4">
+                  <div className="text-sm font-medium text-gray-700 mb-3">Gallery Fields</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {getGalleryFields().map(field => (
+                      <div key={field.key} className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">{field.label}</span>
+                        <button
+                          onClick={() => {
+                            if (galleryFields.has(field.key)) {
+                              setGalleryFields(prev => {
+                                const newSet = new Set(prev);
+                                newSet.delete(field.key);
+                                return newSet;
+                              });
+                            } else {
+                              setGalleryFields(prev => new Set([...prev, field.key]));
+                            }
+                          }}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:ring-offset-2 ${
+                            galleryFields.has(field.key) ? 'bg-[#4f0c1b]' : 'bg-gray-300'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                              galleryFields.has(field.key) ? 'translate-x-6' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Filter Button */}
+        <div className="relative">
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all text-sm font-medium ${
-              showFilters 
-                ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' 
-                : 'bg-white text-gray-700 border-gray-300 hover:border-[#4f0c1b]'
+            className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
+              showFilters ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
             }`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
-            Filters
+            <span className="text-sm font-medium">Filters</span>
             {(filterCategory !== 'all' || filterLine !== 'all') && (
-              <span className="bg-white text-[#4f0c1b] rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+              <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
                 {[filterCategory !== 'all', filterLine !== 'all'].filter(Boolean).length}
               </span>
             )}
           </button>
-          
-          <span className="text-sm text-gray-600 whitespace-nowrap">
-            <span className="font-semibold text-gray-900">{filteredAndSortedInventory.length}</span> of {inventory.length}
-          </span>
         </div>
-        
-        {/* Expandable Filters */}
-        {showFilters && (
+
+        {/* Column Visibility Control (only show in grid view) */}
+        {viewMode === 'grid' && (
+          <div className="relative">
+            <button
+              onClick={() => setShowColumnDropdown(!showColumnDropdown)}
+              className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm"
+            >
+              <svg className={`w-4 h-4 ${hiddenColumns.size > 0 ? 'text-gray-400' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+              <span className="text-sm font-medium text-gray-700">Hide fields</span>
+              {hiddenColumns.size > 0 && (
+                <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
+                  {hiddenColumns.size}
+                </span>
+              )}
+            </button>
+            
+            {showColumnDropdown && (
+              <div ref={dropdownRef} className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
+                <div className="p-4">
+                  <div className="text-sm font-medium text-gray-700 mb-3">Column Visibility</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {getVisibleColumns().map(column => (
+                      <div key={column.key} className="flex items-center justify-between">
+                        <span className="text-sm text-gray-700">{column.label}</span>
+                        <button
+                          onClick={() => {
+                            if (hiddenColumns.has(column.key)) {
+                              setHiddenColumns(prev => {
+                                const newSet = new Set(prev);
+                                newSet.delete(column.key);
+                                return newSet;
+                              });
+                            } else {
+                              setHiddenColumns(prev => new Set([...prev, column.key]));
+                            }
+                          }}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:ring-offset-2 ${
+                            hiddenColumns.has(column.key) ? 'bg-gray-300' : 'bg-[#4f0c1b]'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                              hiddenColumns.has(column.key) ? 'translate-x-1' : 'translate-x-6'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Search Button */}
+        <div className="relative">
+          <button
+            onClick={() => setShowSearchDropdown(!showSearchDropdown)}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm"
+          >
+            <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </button>
+          
+          {showSearchDropdown && (
+            <div ref={searchDropdownRef} className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
+              <div className="p-4">
+                <div className="text-sm font-medium text-gray-700 mb-3">Search</div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search inventory..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  />
+                  <svg className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Expandable Filters */}
+      {showFilters && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mt-4">
           <div className="border-t border-gray-200 p-4 bg-gray-50">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* Category Filter */}
@@ -360,6 +652,9 @@ export default function Inventory() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">All Categories</option>
+                  {predefinedCategories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
                   {existingCategories.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
@@ -375,6 +670,9 @@ export default function Inventory() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">All Lines</option>
+                  {predefinedLines.map(line => (
+                    <option key={line} value={line}>{line}</option>
+                  ))}
                   {existingLines.map(line => (
                     <option key={line} value={line}>{line}</option>
                   ))}
@@ -398,8 +696,8 @@ export default function Inventory() {
               </div>
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Warning Banner for Items Needing Review */}
       {inventory.some(item => item.category.includes('NEEDS REVIEW')) && (
@@ -468,14 +766,25 @@ export default function Inventory() {
                             setFormData({ ...formData, category: '' });
                           } else {
                             setFormData({ ...formData, category: e.target.value });
+                            // Generate SKU after category change (only for new items)
+                            setTimeout(() => generateSkuIfNeeded(), 0);
                           }
                         }}
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                       >
                         <option value="">Select category...</option>
-                        {existingCategories.map(cat => (
+                        {predefinedCategories.map(cat => (
                           <option key={cat} value={cat}>{cat}</option>
                         ))}
+                        {existingCategories.length > 0 && (
+                          <>
+                            <optgroup label="Other Categories">
+                              {existingCategories.map(cat => (
+                                <option key={cat} value={cat}>{cat}</option>
+                              ))}
+                            </optgroup>
+                          </>
+                        )}
                         <option value="__new__">+ Add New Category</option>
                       </select>
                     </div>
@@ -485,7 +794,11 @@ export default function Inventory() {
                         type="text"
                         required
                         value={formData.category}
-                        onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                        onChange={(e) => {
+                          setFormData({ ...formData, category: e.target.value });
+                          // Generate SKU after category change (only for new items)
+                          setTimeout(() => generateSkuIfNeeded(), 0);
+                        }}
                         placeholder="Enter new category"
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                         autoFocus
@@ -513,14 +826,25 @@ export default function Inventory() {
                             setFormData({ ...formData, line: '' });
                           } else {
                             setFormData({ ...formData, line: e.target.value });
+                            // Generate SKU after line change (only for new items)
+                            setTimeout(() => generateSkuIfNeeded(), 0);
                           }
                         }}
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                       >
                         <option value="">Select line...</option>
-                        {existingLines.map(line => (
+                        {predefinedLines.map(line => (
                           <option key={line} value={line}>{line}</option>
                         ))}
+                        {existingLines.length > 0 && (
+                          <>
+                            <optgroup label="Other Lines">
+                              {existingLines.map(line => (
+                                <option key={line} value={line}>{line}</option>
+                              ))}
+                            </optgroup>
+                          </>
+                        )}
                         <option value="__new__">+ Add New Line</option>
                       </select>
                     </div>
@@ -530,7 +854,11 @@ export default function Inventory() {
                         type="text"
                         required
                         value={formData.line}
-                        onChange={(e) => setFormData({ ...formData, line: e.target.value })}
+                        onChange={(e) => {
+                          setFormData({ ...formData, line: e.target.value });
+                          // Generate SKU after line change (only for new items)
+                          setTimeout(() => generateSkuIfNeeded(), 0);
+                        }}
                         placeholder="Enter new line"
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                         autoFocus
@@ -557,11 +885,12 @@ export default function Inventory() {
                     onChange={(e) => handleSkuChange(e.target.value)}
                     placeholder="Auto-generated from category & line"
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent bg-white font-mono"
+                    readOnly={!!editingItem}
                   />
                   <button
                     type="button"
                     onClick={handleRegenerateSku}
-                    disabled={!formData.category || !formData.line}
+                    disabled={!!editingItem || !formData.category || !formData.line}
                     className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-white hover:border-[#4f0c1b] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                     title="Regenerate SKU"
                   >
@@ -572,7 +901,15 @@ export default function Inventory() {
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
                   Format: {formData.category ? formData.category.substring(0, 2).toUpperCase() : 'XX'}
-                  {formData.line ? formData.line.substring(0, 2).toUpperCase() : 'XX'}-#####
+                  {formData.line ? (() => {
+                    const words = formData.line.trim().split(/\s+/);
+                    if (words.length >= 2) {
+                      return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase();
+                    } else if (words.length === 1) {
+                      return words[0].substring(0, 2).toUpperCase();
+                    }
+                    return 'XX';
+                  })() : 'XX'}-#####
                   {!editingItem && ' (auto-generates when you enter category & line)'}
                 </p>
               </div>
@@ -711,86 +1048,106 @@ export default function Inventory() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
+      {/* Grid View */}
+      {viewMode === 'grid' && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th 
-                  onClick={() => handleSort('name')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    Name
-                    <SortIcon field="name" />
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('sku')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    SKU
-                    <SortIcon field="sku" />
-                  </div>
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Barcode
-                </th>
-                <th 
-                  onClick={() => handleSort('category')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    Category
-                    <SortIcon field="category" />
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('line')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    Line
-                    <SortIcon field="line" />
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('ecuadorStock')}
-                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1 justify-center">
-                    Ecuador
-                    <SortIcon field="ecuadorStock" />
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('usaStock')}
-                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1 justify-center">
-                    USA
-                    <SortIcon field="usaStock" />
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('totalStock')}
-                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1 justify-center">
-                    Total
-                    <SortIcon field="totalStock" />
-                  </div>
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
+                {!hiddenColumns.has('name') && (
+                  <th 
+                    onClick={() => handleSort('name')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-1">
+                      Name
+                      <SortIcon field="name" />
+                    </div>
+                  </th>
+                )}
+                {!hiddenColumns.has('sku') && (
+                  <th 
+                    onClick={() => handleSort('sku')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-1">
+                      SKU
+                      <SortIcon field="sku" />
+                    </div>
+                  </th>
+                )}
+                {!hiddenColumns.has('barcode') && (
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Barcode
+                  </th>
+                )}
+                {!hiddenColumns.has('category') && (
+                  <th 
+                    onClick={() => handleSort('category')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-1">
+                      Category
+                      <SortIcon field="category" />
+                    </div>
+                  </th>
+                )}
+                {!hiddenColumns.has('line') && (
+                  <th 
+                    onClick={() => handleSort('line')}
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-1">
+                      Line
+                      <SortIcon field="line" />
+                    </div>
+                  </th>
+                )}
+                {!hiddenColumns.has('ecuadorStock') && (
+                  <th 
+                    onClick={() => handleSort('ecuadorStock')}
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-1 justify-center">
+                      Ecuador
+                      <SortIcon field="ecuadorStock" />
+                    </div>
+                  </th>
+                )}
+                {!hiddenColumns.has('usaStock') && (
+                  <th 
+                    onClick={() => handleSort('usaStock')}
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-1 justify-center">
+                      USA
+                      <SortIcon field="usaStock" />
+                    </div>
+                  </th>
+                )}
+                {!hiddenColumns.has('totalStock') && (
+                  <th 
+                    onClick={() => handleSort('totalStock')}
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-1 justify-center">
+                      Total
+                      <SortIcon field="totalStock" />
+                    </div>
+                  </th>
+                )}
+                {!hiddenColumns.has('actions') && (
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredAndSortedInventory.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-12 text-center text-sm text-gray-500">
+                  <td colSpan={getVisibleColumns().length} className="px-6 py-12 text-center text-sm text-gray-500">
                     {inventory.length === 0 
                       ? 'No inventory items yet. Add your first item to get started.'
                       : 'No items match your filters. Try adjusting your search or filters.'}
@@ -900,6 +1257,146 @@ export default function Inventory() {
           </table>
         </div>
       </div>
+      )}
+
+      {/* Gallery View */}
+      {viewMode === 'gallery' && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="p-6">
+            {filteredAndSortedInventory.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="text-sm text-gray-500">
+                  {inventory.length === 0 
+                    ? 'No inventory items yet. Add your first item to get started.'
+                    : 'No items match your filters. Try adjusting your search or filters.'}
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                {filteredAndSortedInventory.map((item) => {
+                  const needsReview = item.category.includes('NEEDS REVIEW');
+                  return (
+                    <div key={item.id} className={`group relative bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-lg transition-all duration-200 hover:border-[#4f0c1b] ${needsReview ? 'ring-2 ring-amber-200' : ''}`}>
+                      {/* Image Section */}
+                      <div className="aspect-square relative overflow-hidden bg-gray-50">
+                        {item.images && item.images.length > 0 ? (
+                          <>
+                            <img 
+                              src={item.images[0]} 
+                              alt={item.name} 
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" 
+                            />
+                            {item.images.length > 1 && (
+                              <div className="absolute top-2 right-2 bg-[#4f0c1b] text-white text-xs w-6 h-6 rounded-full flex items-center justify-center font-medium">
+                                {item.images.length}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <svg className="w-12 h-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                        )}
+                        
+                        {/* Action Buttons Overlay */}
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 flex items-center justify-center">
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex gap-2">
+                            <button
+                              onClick={() => setSelectedItem(item)}
+                              className="bg-white text-[#4f0c1b] px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                            >
+                              View
+                            </button>
+                            <button
+                              onClick={() => handleEdit(item)}
+                              className="bg-[#4f0c1b] text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-[#3d0a15] transition-colors"
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Content Section */}
+                      <div className="p-4 space-y-2">
+                        {/* Name */}
+                        {galleryFields.has('name') && (
+                          <div>
+                            <h3 className="font-medium text-[#4f0c1b] text-sm truncate">{item.name}</h3>
+                            {needsReview && (
+                              <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
+                                Needs Review
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* SKU */}
+                        {galleryFields.has('sku') && (
+                          <div className="text-xs text-gray-600 font-mono">{item.sku}</div>
+                        )}
+
+                        {/* Category */}
+                        {galleryFields.has('category') && (
+                          <div className="text-xs text-gray-500">
+                            <span className="font-medium">Category:</span> {item.category}
+                          </div>
+                        )}
+
+                        {/* Line */}
+                        {galleryFields.has('line') && (
+                          <div className="text-xs text-gray-500">
+                            <span className="font-medium">Line:</span> {item.line}
+                          </div>
+                        )}
+
+                        {/* Stock Information */}
+                        {(galleryFields.has('ecuadorStock') || galleryFields.has('usaStock') || galleryFields.has('totalStock')) && (
+                          <div className="flex gap-2 text-xs">
+                            {galleryFields.has('ecuadorStock') && (
+                              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                                EC: {item.ecuadorStock}
+                              </span>
+                            )}
+                            {galleryFields.has('usaStock') && (
+                              <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full">
+                                US: {item.usaStock}
+                              </span>
+                            )}
+                              {galleryFields.has('totalStock') && (
+                                <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded-full font-medium">
+                                  Total: {item.ecuadorStock + item.usaStock}
+                                </span>
+                              )}
+                          </div>
+                        )}
+
+                        {/* Cost Information */}
+                        {(galleryFields.has('unitCost') || galleryFields.has('totalValue')) && (
+                          <div className="text-xs text-gray-500 space-y-1">
+                              {galleryFields.has('unitCost') && (
+                                <div>
+                                  <span className="font-medium">Unit Cost:</span> $0.00
+                                </div>
+                              )}
+                              {galleryFields.has('totalValue') && (
+                                <div>
+                                  <span className="font-medium">Total Value:</span> $0.00
+                                </div>
+                              )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Detail Panel */}
       {selectedItem && (
@@ -912,7 +1409,11 @@ export default function Inventory() {
       {/* Catalog Modal */}
       {isCatalogModalOpen && (
         <ProductCatalogModal
-          inventory={inventory}
+          inventory={inventory.filter(item => {
+            // Only include items that have stock (items you currently hold)
+            const totalStock = item.ecuadorStock + item.usaStock;
+            return totalStock > 0;
+          })}
           onClose={() => setIsCatalogModalOpen(false)}
         />
       )}

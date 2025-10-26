@@ -76,6 +76,9 @@ export function detectColumnMapping(headers: string[]): {
     costPerUnit: ['price', 'price per unit', 'unit price', 'cost', 'cost per unit', 'unit cost'],
     totalCost: ['total', 'total price', 'total cost', 'amount'],
     supplierSKU: ['supplier sku', 'vendor sku', 'supplier code'],
+    supplier: ['supplier', 'vendor', 'supplier name', 'vendor name'],
+    category: ['category', 'cat', 'type', 'product type', 'item type'],
+    line: ['line', 'collection', 'series', 'product line', 'style'],
   };
 
   headers.forEach((header) => {

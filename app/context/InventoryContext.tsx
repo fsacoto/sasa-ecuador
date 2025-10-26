@@ -1,28 +1,41 @@
 'use client';
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { Supplier, PurchaseOrder, InventoryItem } from '../types';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { Supplier, PurchaseOrder, InventoryItem, AdditionalCost, LandedCostCalculation } from '../types';
+import * as suppliersService from '../services/suppliersService';
+import * as purchaseOrdersService from '../services/purchaseOrdersService';
+import * as inventoryService from '../services/inventoryService';
+import * as additionalCostsService from '../services/additionalCostsService';
 
 interface InventoryContextType {
   // Suppliers
   suppliers: Supplier[];
-  addSupplier: (supplier: Omit<Supplier, 'id' | 'createdAt'>) => void;
-  updateSupplier: (id: string, supplier: Partial<Supplier>) => void;
-  deleteSupplier: (id: string) => void;
+  isLoading: boolean;
+  addSupplier: (supplier: Omit<Supplier, 'id' | 'createdAt'>) => Promise<void>;
+  updateSupplier: (id: string, supplier: Partial<Supplier>) => Promise<void>;
+  deleteSupplier: (id: string) => Promise<void>;
   
   // Purchase Orders
   purchaseOrders: PurchaseOrder[];
-  addPurchaseOrder: (order: Omit<PurchaseOrder, 'id' | 'createdAt'>) => void;
-  addPurchaseOrdersBulk: (orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]) => void;
-  updatePurchaseOrder: (id: string, order: Partial<PurchaseOrder>) => void;
-  deletePurchaseOrder: (id: string) => void;
+  addPurchaseOrder: (order: Omit<PurchaseOrder, 'id' | 'createdAt'>) => Promise<void>;
+  addPurchaseOrdersBulk: (orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]) => Promise<void>;
+  updatePurchaseOrder: (id: string, order: Partial<PurchaseOrder>) => Promise<void>;
+  deletePurchaseOrder: (id: string) => Promise<void>;
   
   // Inventory
   inventory: InventoryItem[];
-  addInventoryItem: (item: Omit<InventoryItem, 'id' | 'createdAt'>) => void;
-  addInventoryItemsBulk: (items: Omit<InventoryItem, 'id' | 'createdAt'>[]) => void;
-  updateInventoryItem: (id: string, item: Partial<InventoryItem>) => void;
-  deleteInventoryItem: (id: string) => void;
+  addInventoryItem: (item: Omit<InventoryItem, 'id' | 'createdAt'>) => Promise<void>;
+  addInventoryItemsBulk: (items: Omit<InventoryItem, 'id' | 'createdAt'>[]) => Promise<void>;
+  updateInventoryItem: (id: string, item: Partial<InventoryItem>) => Promise<void>;
+  deleteInventoryItem: (id: string) => Promise<void>;
+  
+  // Additional Costs
+  additionalCosts: AdditionalCost[];
+  addAdditionalCost: (cost: Omit<AdditionalCost, 'id' | 'createdAt'>) => Promise<void>;
+  updateAdditionalCost: (id: string, cost: Partial<AdditionalCost>) => Promise<void>;
+  deleteAdditionalCost: (id: string) => Promise<void>;
+  getAdditionalCostsByInvoice: (invoiceNumber: string) => AdditionalCost[];
+  calculateLandedCosts: (invoiceNumber: string) => LandedCostCalculation | null;
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
@@ -31,85 +44,262 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [additionalCosts, setAdditionalCosts] = useState<AdditionalCost[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load all data on mount
+  useEffect(() => {
+    loadAllData();
+  }, []);
+
+  const loadAllData = async () => {
+    try {
+      setIsLoading(true);
+      const [suppliersData, ordersData, inventoryData, costsData] = await Promise.all([
+        suppliersService.getSuppliers(),
+        purchaseOrdersService.getPurchaseOrders(),
+        inventoryService.getInventoryItems(),
+        additionalCostsService.getAdditionalCosts()
+      ]);
+      
+      setSuppliers(suppliersData);
+      setPurchaseOrders(ordersData);
+      setInventory(inventoryData);
+      setAdditionalCosts(costsData);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Supplier operations
-  const addSupplier = (supplier: Omit<Supplier, 'id' | 'createdAt'>) => {
-    const newSupplier: Supplier = {
-      ...supplier,
-      id: Date.now().toString(),
-      createdAt: new Date(),
-    };
-    setSuppliers([...suppliers, newSupplier]);
+  const addSupplier = async (supplier: Omit<Supplier, 'id' | 'createdAt'>) => {
+    try {
+      const newId = await suppliersService.addSupplier(supplier);
+      const newSupplier: Supplier = {
+        ...supplier,
+        id: newId,
+        createdAt: new Date(),
+      };
+      setSuppliers([...suppliers, newSupplier]);
+    } catch (error) {
+      console.error('Error adding supplier:', error);
+      throw error;
+    }
   };
 
-  const updateSupplier = (id: string, supplierUpdate: Partial<Supplier>) => {
-    setSuppliers(suppliers.map(s => s.id === id ? { ...s, ...supplierUpdate } : s));
+  const updateSupplier = async (id: string, supplierUpdate: Partial<Supplier>) => {
+    try {
+      await suppliersService.updateSupplier(id, supplierUpdate);
+      setSuppliers(suppliers.map(s => s.id === id ? { ...s, ...supplierUpdate } : s));
+    } catch (error) {
+      console.error('Error updating supplier:', error);
+      throw error;
+    }
   };
 
-  const deleteSupplier = (id: string) => {
-    setSuppliers(suppliers.filter(s => s.id !== id));
+  const deleteSupplier = async (id: string) => {
+    try {
+      await suppliersService.deleteSupplier(id);
+      setSuppliers(prev => prev.filter(s => s.id !== id));
+    } catch (error) {
+      console.error('Error deleting supplier:', error);
+      throw error;
+    }
   };
 
   // Purchase Order operations
-  const addPurchaseOrder = (order: Omit<PurchaseOrder, 'id' | 'createdAt'>) => {
-    const newOrder: PurchaseOrder = {
-      ...order,
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      createdAt: new Date(),
-    };
-    setPurchaseOrders(prev => [...prev, newOrder]);
+  const addPurchaseOrder = async (order: Omit<PurchaseOrder, 'id' | 'createdAt'>) => {
+    try {
+      const newId = await purchaseOrdersService.addPurchaseOrder(order);
+      const newOrder: PurchaseOrder = {
+        ...order,
+        id: newId,
+        createdAt: new Date(),
+      };
+      setPurchaseOrders(prev => [...prev, newOrder]);
+    } catch (error) {
+      console.error('Error adding purchase order:', error);
+      throw error;
+    }
   };
 
   // Bulk add multiple purchase orders
-  const addPurchaseOrdersBulk = (orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]) => {
-    const newOrders: PurchaseOrder[] = orders.map((order, index) => ({
-      ...order,
-      id: `${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
-      createdAt: new Date(),
-    }));
-    setPurchaseOrders(prev => [...prev, ...newOrders]);
+  const addPurchaseOrdersBulk = async (orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]) => {
+    try {
+      const newIds = await purchaseOrdersService.addPurchaseOrdersBulk(orders);
+      const newOrders: PurchaseOrder[] = orders.map((order, index) => ({
+        ...order,
+        id: newIds[index],
+        createdAt: new Date(),
+      }));
+      setPurchaseOrders(prev => [...prev, ...newOrders]);
+    } catch (error) {
+      console.error('Error adding purchase orders in bulk:', error);
+      throw error;
+    }
   };
 
-  const updatePurchaseOrder = (id: string, orderUpdate: Partial<PurchaseOrder>) => {
-    setPurchaseOrders(prev => prev.map(o => o.id === id ? { ...o, ...orderUpdate } : o));
+  const updatePurchaseOrder = async (id: string, orderUpdate: Partial<PurchaseOrder>) => {
+    try {
+      await purchaseOrdersService.updatePurchaseOrder(id, orderUpdate);
+      setPurchaseOrders(prev => prev.map(o => o.id === id ? { ...o, ...orderUpdate } : o));
+    } catch (error) {
+      console.error('Error updating purchase order:', error);
+      throw error;
+    }
   };
 
-  const deletePurchaseOrder = (id: string) => {
-    setPurchaseOrders(purchaseOrders.filter(o => o.id !== id));
+  const deletePurchaseOrder = async (id: string) => {
+    try {
+      await purchaseOrdersService.deletePurchaseOrder(id);
+      setPurchaseOrders(prev => prev.filter(o => o.id !== id));
+    } catch (error) {
+      console.error('Error deleting purchase order:', error);
+      throw error;
+    }
   };
 
   // Inventory operations
-  const addInventoryItem = (item: Omit<InventoryItem, 'id' | 'createdAt'>) => {
-    const newItem: InventoryItem = {
-      ...item,
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      createdAt: new Date(),
-    };
-    setInventory(prev => [...prev, newItem]);
+  const addInventoryItem = async (item: Omit<InventoryItem, 'id' | 'createdAt'>) => {
+    try {
+      const newId = await inventoryService.addInventoryItem(item);
+      const newItem: InventoryItem = {
+        ...item,
+        id: newId,
+        createdAt: new Date(),
+      };
+      setInventory(prev => [...prev, newItem]);
+    } catch (error) {
+      console.error('Error adding inventory item:', error);
+      throw error;
+    }
   };
 
   // Bulk add multiple inventory items
-  const addInventoryItemsBulk = (items: Omit<InventoryItem, 'id' | 'createdAt'>[]) => {
-    const newItems: InventoryItem[] = items.map((item, index) => ({
-      ...item,
-      id: `${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
-      createdAt: new Date(),
-    }));
-    setInventory(prev => [...prev, ...newItems]);
+  const addInventoryItemsBulk = async (items: Omit<InventoryItem, 'id' | 'createdAt'>[]) => {
+    try {
+      const newIds = await inventoryService.addInventoryItemsBulk(items);
+      const newItems: InventoryItem[] = items.map((item, index) => ({
+        ...item,
+        id: newIds[index],
+        createdAt: new Date(),
+      }));
+      setInventory(prev => [...prev, ...newItems]);
+    } catch (error) {
+      console.error('Error adding inventory items in bulk:', error);
+      throw error;
+    }
   };
 
-  const updateInventoryItem = (id: string, itemUpdate: Partial<InventoryItem>) => {
-    setInventory(prev => prev.map(i => i.id === id ? { ...i, ...itemUpdate } : i));
+  const updateInventoryItem = async (id: string, itemUpdate: Partial<InventoryItem>) => {
+    try {
+      await inventoryService.updateInventoryItem(id, itemUpdate);
+      setInventory(prev => prev.map(i => i.id === id ? { ...i, ...itemUpdate } : i));
+    } catch (error) {
+      console.error('Error updating inventory item:', error);
+      throw error;
+    }
   };
 
-  const deleteInventoryItem = (id: string) => {
-    setInventory(inventory.filter(i => i.id !== id));
+  const deleteInventoryItem = async (id: string) => {
+    try {
+      await inventoryService.deleteInventoryItem(id);
+      setInventory(prev => prev.filter(i => i.id !== id));
+    } catch (error) {
+      console.error('Error deleting inventory item:', error);
+      throw error;
+    }
+  };
+
+  // Additional Costs operations
+  const addAdditionalCost = async (cost: Omit<AdditionalCost, 'id' | 'createdAt'>) => {
+    try {
+      const newId = await additionalCostsService.addAdditionalCost(cost);
+      const newCost: AdditionalCost = {
+        ...cost,
+        id: newId,
+        createdAt: new Date(),
+      };
+      setAdditionalCosts(prev => [...prev, newCost]);
+    } catch (error) {
+      console.error('Error adding additional cost:', error);
+      throw error;
+    }
+  };
+
+  const updateAdditionalCost = async (id: string, costUpdate: Partial<AdditionalCost>) => {
+    try {
+      await additionalCostsService.updateAdditionalCost(id, costUpdate);
+      setAdditionalCosts(prev => prev.map(c => c.id === id ? { ...c, ...costUpdate } : c));
+    } catch (error) {
+      console.error('Error updating additional cost:', error);
+      throw error;
+    }
+  };
+
+  const deleteAdditionalCost = async (id: string) => {
+    try {
+      await additionalCostsService.deleteAdditionalCost(id);
+      setAdditionalCosts(prev => prev.filter(c => c.id !== id));
+    } catch (error) {
+      console.error('Error deleting additional cost:', error);
+      throw error;
+    }
+  };
+
+  const getAdditionalCostsByInvoice = (invoiceNumber: string) => {
+    return additionalCosts.filter(cost => cost.invoiceNumber === invoiceNumber);
+  };
+
+  const calculateLandedCosts = (invoiceNumber: string): LandedCostCalculation | null => {
+    // Get all purchase orders for this invoice
+    const invoiceOrders = purchaseOrders.filter(order => order.invoice === invoiceNumber);
+    if (invoiceOrders.length === 0) return null;
+
+    // Get all additional costs for this invoice
+    const costs = getAdditionalCostsByInvoice(invoiceNumber);
+    const totalAdditionalCosts = costs.reduce((sum, cost) => sum + cost.amount, 0);
+
+    // Calculate base item total (sum of all item totals)
+    const baseItemTotal = invoiceOrders.reduce((sum, order) => sum + order.costInUSD, 0);
+
+    // Calculate proportional allocation for each item
+    const items = invoiceOrders.map(order => {
+      const proportionalShare = baseItemTotal > 0 ? (order.costInUSD / baseItemTotal) : 0;
+      const additionalCostAllocation = totalAdditionalCosts * proportionalShare;
+      const finalCostPerUnit = order.costInUSD / order.quantity + (additionalCostAllocation / order.quantity);
+      const finalItemTotal = order.costInUSD + additionalCostAllocation;
+
+      return {
+        purchaseOrderId: order.id,
+        sku: order.sku,
+        description: order.description,
+        quantity: order.quantity,
+        baseCostPerUnit: order.costInUSD / order.quantity,
+        baseItemTotal: order.costInUSD,
+        proportionalShare: proportionalShare * 100, // Convert to percentage
+        additionalCostAllocation,
+        finalCostPerUnit,
+        finalItemTotal,
+      };
+    });
+
+    return {
+      invoiceNumber,
+      baseItemTotal,
+      totalAdditionalCosts,
+      totalLandedCost: baseItemTotal + totalAdditionalCosts,
+      items,
+    };
   };
 
   return (
     <InventoryContext.Provider
       value={{
         suppliers,
+        isLoading,
         addSupplier,
         updateSupplier,
         deleteSupplier,
@@ -123,6 +313,12 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         addInventoryItemsBulk,
         updateInventoryItem,
         deleteInventoryItem,
+        additionalCosts,
+        addAdditionalCost,
+        updateAdditionalCost,
+        deleteAdditionalCost,
+        getAdditionalCostsByInvoice,
+        calculateLandedCosts,
       }}
     >
       {children}

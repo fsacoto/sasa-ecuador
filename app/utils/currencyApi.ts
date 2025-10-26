@@ -1,7 +1,7 @@
 // Currency Exchange Rate API Integration
 // Using ExchangeRate-API Free Open Access Endpoint
 
-interface ExchangeRateResponse {
+export interface ExchangeRateResponse {
   result: string;
   base_code: string;
   rates: {
