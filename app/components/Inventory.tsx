@@ -8,7 +8,8 @@ import ProductCatalogModal from './ProductCatalogModal';
 import { generateUniqueSKU } from '../utils/skuGenerator';
 import { syncInventoryToOrders } from '../utils/syncUpdates';
 import { handleMultipleImageUpload, validateImageFile } from '../utils/imageUpload';
-import { generateBarcodeFromSKU, isValidBarcodeInput } from '../utils/barcodeGenerator';
+import { generateBarcodeFromSKU, generateBarcodeAsFile, isValidBarcodeInput, isBase64Barcode } from '../utils/barcodeGenerator';
+import { uploadImage } from '../services/storageService';
 
 export default function Inventory() {
   const { inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, purchaseOrders, updatePurchaseOrder } = useInventory();
@@ -263,17 +264,47 @@ export default function Inventory() {
     return item.ecuadorStock + item.usaStock;
   };
 
-  const handleGenerateBarcode = (item: InventoryItem) => {
+  const handleGenerateBarcode = async (item: InventoryItem) => {
     if (!isValidBarcodeInput(item.sku)) {
       alert('Invalid SKU format for barcode generation');
       return;
     }
     
     try {
-      const barcodeImage = generateBarcodeFromSKU(item.sku);
-      updateInventoryItem(item.id, { barcode: barcodeImage });
+      // Check authentication state
+      const { auth } = await import('../utils/firebase');
+      console.log('Current auth user:', auth.currentUser);
+      
+      if (!auth.currentUser) {
+        alert('You must be logged in to generate barcodes. Please refresh the page and try again.');
+        return;
+      }
+      
+      // Check if we need to migrate from base64 to Firebase Storage
+      const needsMigration = item.barcode && isBase64Barcode(item.barcode);
+      
+      if (needsMigration) {
+        console.log(`Migrating barcode for SKU ${item.sku} from base64 to Firebase Storage`);
+      }
+      
+      // Generate barcode as File
+      const barcodeFile = await generateBarcodeAsFile(item.sku);
+      
+      // Upload barcode to Firebase Storage
+      const sanitizedSku = item.sku.replace(/[^a-zA-Z0-9-]/g, '_');
+      const storagePath = `barcodes/${sanitizedSku}.png`;
+      console.log('Uploading barcode to path:', storagePath);
+      const barcodeUrl = await uploadImage(barcodeFile, storagePath);
+      console.log('Barcode uploaded successfully:', barcodeUrl);
+      
+      // Update inventory with the Firebase Storage URL
+      updateInventoryItem(item.id, { barcode: barcodeUrl });
+      
+      if (needsMigration) {
+        console.log(`Barcode migrated successfully for SKU ${item.sku}`);
+      }
     } catch (error) {
-      alert('Failed to generate barcode. Please try again.');
+      alert('Failed to generate and upload barcode. Please try again.');
       console.error('Barcode generation error:', error);
     }
   };
