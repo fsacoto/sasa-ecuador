@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useInventory } from '../context/InventoryContext';
+import { useAuth } from '../context/AuthContext';
 import { InventoryItem } from '../types';
 import InventoryDetailPanel from './InventoryDetailPanel';
 import ProductCatalogModal from './ProductCatalogModal';
@@ -13,6 +14,16 @@ import { uploadImage } from '../services/storageService';
 
 export default function Inventory() {
   const { inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, purchaseOrders, updatePurchaseOrder } = useInventory();
+  const { user, hasPermission } = useAuth();
+  
+  // For sales role, only show Ecuador inventory in read-only mode
+  const isSalesRole = user?.role === 'sales';
+  const isReadOnly = isSalesRole || hasPermission('inventory.view.readonly');
+  
+  // Filter inventory for sales role to show only Ecuador stock
+  const filteredInventory = isSalesRole 
+    ? inventory.filter(item => item.ecuadorStock > 0) 
+    : inventory;
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
@@ -319,7 +330,7 @@ export default function Inventory() {
     }
   };
 
-  const filteredAndSortedInventory = inventory
+  const filteredAndSortedInventory = filteredInventory
     .filter(item => {
       // Only show items that have at least one verified purchase order
       const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
@@ -434,15 +445,17 @@ export default function Inventory() {
             <span className="text-sm font-medium text-gray-700">Create Catalog</span>
           </button>
           
-          <button
-            onClick={() => setIsFormOpen(true)}
-            className="flex items-center gap-2 px-3 py-2 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white rounded-lg hover:shadow-md transition-all duration-200 text-sm shadow-sm"
-          >
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-            <span className="text-sm font-medium text-white">Add Item</span>
-          </button>
+          {!isReadOnly && (
+            <button
+              onClick={() => setIsFormOpen(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white rounded-lg hover:shadow-md transition-all duration-200 text-sm shadow-sm"
+            >
+              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              <span className="text-sm font-medium text-white">Add Item</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1179,7 +1192,7 @@ export default function Inventory() {
               {filteredAndSortedInventory.length === 0 ? (
                 <tr>
                   <td colSpan={getVisibleColumns().length} className="px-6 py-12 text-center text-sm text-gray-500">
-                    {inventory.length === 0 
+                    {filteredInventory.length === 0 
                       ? 'No inventory items yet. Add your first item to get started.'
                       : 'No items match your filters. Try adjusting your search or filters.'}
                   </td>
@@ -1263,22 +1276,26 @@ export default function Inventory() {
                       <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-700">{item.usaStock}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-center font-semibold text-gray-900">{getTotalStock(item)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                        <button
-                          onClick={() => handleEdit(item)}
-                          className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium mr-4 transition-colors"
-                        >
-                          {needsReview ? 'Complete Info' : 'Edit'}
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm('Are you sure you want to delete this inventory item?')) {
-                              deleteInventoryItem(item.id);
-                            }
-                          }}
-                          className="text-red-600 hover:text-red-700 font-medium transition-colors"
-                        >
-                          Delete
-                        </button>
+                        {!isReadOnly && (
+                          <>
+                            <button
+                              onClick={() => handleEdit(item)}
+                              className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium mr-4 transition-colors"
+                            >
+                              {needsReview ? 'Complete Info' : 'Edit'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm('Are you sure you want to delete this inventory item?')) {
+                                  deleteInventoryItem(item.id);
+                                }
+                              }}
+                              className="text-red-600 hover:text-red-700 font-medium transition-colors"
+                            >
+                              Delete
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   );

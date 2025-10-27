@@ -129,3 +129,55 @@ export interface CMSContent {
     reviewerNotes?: string;
   };
 }
+
+export interface Client {
+  id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  address: string;
+  city: string;
+  country: 'Ecuador' | 'USA';
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface SalesInvoiceLine {
+  sku: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  line?: string;
+  category?: string;
+}
+
+export interface SalesInvoice {
+  id: string;
+  invoiceNumber: string;
+  clientId: string;
+  clientName: string;
+  clientAddress: string;
+  items: SalesInvoiceLine[];
+  subtotal: number;
+  discountType?: 'percentage' | 'flat';
+  discountValue: number;
+  discountTotal: number;
+  grandTotal: number;
+  date: Date;
+  notes?: string;
+  createdAt: Date;
+  // New tracking fields
+  salesAgent?: string;
+  currency: 'USD' | 'Local';
+  deliveryStatus: 'Pending' | 'Partially Delivered' | 'Delivered' | 'Canceled';
+  deliveryDate?: Date;
+  deliveryNotes?: string;
+  paymentStatus: 'Unpaid' | 'Partially Paid' | 'Paid';
+  amountPaid: number;
+  remainingBalance: number;
+  paymentDate?: Date;
+  paymentMethod?: string;
+  paymentComment?: string;
+}

@@ -1,7 +1,7 @@
 import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 
-export type UserRole = 'admin' | 'marketing';
+export type UserRole = 'admin' | 'marketing' | 'sales';
 
 export interface UserPermissions {
   role: UserRole;
@@ -26,7 +26,12 @@ export const PERMISSIONS = {
     'cms.view',
     'cms.edit',
     'cms.delete',
-    'users.manage'
+    'users.manage',
+    'clients.view',
+    'clients.edit',
+    'sales.view',
+    'sales.create',
+    'sales.invoice.create'
   ],
   marketing: [
     'inventory.view',
@@ -35,6 +40,18 @@ export const PERMISSIONS = {
     'inventory.view.availability',
     'images.download',
     'content.export'
+  ],
+  sales: [
+    'inventory.view.ecuador',
+    'inventory.view.readonly',
+    'clients.view.ecuador',
+    'clients.edit.ecuador',
+    'clients.create.ecuador',
+    'sales.view',
+    'sales.create',
+    'sales.invoice.create',
+    'sales.invoice.pdf',
+    'sales.discount.apply'
   ]
 };
 

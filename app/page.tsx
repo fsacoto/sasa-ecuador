@@ -10,8 +10,11 @@ import PurchaseOrders from './components/PurchaseOrders';
 import Inventory from './components/Inventory';
 import LandedCosts from './components/LandedCosts';
 import CMSModule from './components/CMSModuleNew';
+import Clients from './components/Clients';
+import Sales from './components/Sales';
+import InvoiceTracking from './components/InvoiceTracking';
 
-type Tab = 'dashboard' | 'suppliers' | 'purchase-orders' | 'inventory' | 'landed-costs' | 'cms';
+type Tab = 'dashboard' | 'suppliers' | 'purchase-orders' | 'inventory' | 'landed-costs' | 'cms' | 'clients' | 'sales' | 'invoice-tracking';
 
 function AppContent() {
   const { user, logout, hasPermission, isLoading } = useAuth();
@@ -38,16 +41,43 @@ function AppContent() {
   const getTabs = () => {
     const baseTabs = [
       { id: 'dashboard' as Tab, label: 'Dashboard', permission: 'inventory.view' },
-      { id: 'cms' as Tab, label: 'CMS', permission: 'cms.view' },
     ];
 
-    if (hasPermission('inventory.view')) {
+    // Sales role specific tabs
+    if (user?.role === 'sales') {
       baseTabs.push(
-        { id: 'suppliers' as Tab, label: 'Suppliers', permission: 'suppliers.view' },
-        { id: 'purchase-orders' as Tab, label: 'Purchase Orders', permission: 'purchase.view' },
-        { id: 'inventory' as Tab, label: 'Inventory', permission: 'inventory.view' },
-        { id: 'landed-costs' as Tab, label: 'Landed Costs', permission: 'costs.view' }
+        { id: 'inventory' as Tab, label: 'Inventory (EC)', permission: 'inventory.view.ecuador' },
+        { id: 'clients' as Tab, label: 'Clients', permission: 'clients.view.ecuador' },
+        { id: 'sales' as Tab, label: 'Sales / Invoice', permission: 'sales.view' },
+        { id: 'invoice-tracking' as Tab, label: 'Invoice Tracking', permission: 'sales.view' }
       );
+    } else {
+      // Admin and marketing roles
+      if (hasPermission('cms.view')) {
+        baseTabs.push({ id: 'cms' as Tab, label: 'CMS', permission: 'cms.view' });
+      }
+      
+      if (hasPermission('inventory.view')) {
+        baseTabs.push(
+          { id: 'suppliers' as Tab, label: 'Suppliers', permission: 'suppliers.view' },
+          { id: 'purchase-orders' as Tab, label: 'Purchase Orders', permission: 'purchase.view' },
+          { id: 'inventory' as Tab, label: 'Inventory', permission: 'inventory.view' },
+          { id: 'landed-costs' as Tab, label: 'Landed Costs', permission: 'costs.view' }
+        );
+      }
+
+      // Add clients and sales for admin role
+      if (hasPermission('clients.view')) {
+        baseTabs.push({ id: 'clients' as Tab, label: 'Clients', permission: 'clients.view' });
+      }
+      if (hasPermission('sales.view')) {
+        baseTabs.push({ id: 'sales' as Tab, label: 'Sales / Invoice', permission: 'sales.view' });
+      }
+      
+      // Add Invoice Tracking for admin only
+      if (hasPermission('sales.view')) {
+        baseTabs.push({ id: 'invoice-tracking' as Tab, label: 'Invoice Tracking', permission: 'sales.view' });
+      }
     }
 
     return baseTabs.filter(tab => hasPermission(tab.permission));
@@ -121,9 +151,12 @@ function AppContent() {
         {activeTab === 'dashboard' && <Dashboard />}
         {activeTab === 'suppliers' && hasPermission('suppliers.view') && <Suppliers />}
         {activeTab === 'purchase-orders' && hasPermission('purchase.view') && <PurchaseOrders />}
-        {activeTab === 'inventory' && hasPermission('inventory.view') && <Inventory />}
+        {activeTab === 'inventory' && (hasPermission('inventory.view') || hasPermission('inventory.view.ecuador')) && <Inventory />}
         {activeTab === 'landed-costs' && hasPermission('costs.view') && <LandedCosts />}
         {activeTab === 'cms' && hasPermission('cms.view') && <CMSModule />}
+        {activeTab === 'clients' && (hasPermission('clients.view') || hasPermission('clients.view.ecuador')) && <Clients />}
+        {activeTab === 'sales' && hasPermission('sales.view') && <Sales />}
+        {activeTab === 'invoice-tracking' && hasPermission('sales.view') && <InvoiceTracking />}
       </main>
 
       {/* Footer */}
