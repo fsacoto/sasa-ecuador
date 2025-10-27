@@ -14,11 +14,13 @@ import Clients from './components/Clients';
 import Sales from './components/Sales';
 import InvoiceTracking from './components/InvoiceTracking';
 
-type Tab = 'dashboard' | 'suppliers' | 'purchase-orders' | 'inventory' | 'landed-costs' | 'cms' | 'clients' | 'sales' | 'invoice-tracking';
+type Tab = 'dashboard' | 'inventory-suite' | 'suppliers' | 'purchase-orders' | 'inventory' | 'landed-costs' | 'cms' | 'sales-suite' | 'clients' | 'sales' | 'invoice-tracking';
 
 function AppContent() {
   const { user, logout, hasPermission, isLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [showSalesDropdown, setShowSalesDropdown] = useState(false);
+  const [showInventoryDropdown, setShowInventoryDropdown] = useState(false);
 
   // Show loading spinner while checking authentication
   if (isLoading) {
@@ -57,26 +59,14 @@ function AppContent() {
         baseTabs.push({ id: 'cms' as Tab, label: 'CMS', permission: 'cms.view' });
       }
       
-      if (hasPermission('inventory.view')) {
-        baseTabs.push(
-          { id: 'suppliers' as Tab, label: 'Suppliers', permission: 'suppliers.view' },
-          { id: 'purchase-orders' as Tab, label: 'Purchase Orders', permission: 'purchase.view' },
-          { id: 'inventory' as Tab, label: 'Inventory', permission: 'inventory.view' },
-          { id: 'landed-costs' as Tab, label: 'Landed Costs', permission: 'costs.view' }
-        );
+      // Add Inventory & Supply group for admin role
+      if (hasPermission('inventory.view') || hasPermission('suppliers.view') || hasPermission('purchase.view') || hasPermission('costs.view')) {
+        baseTabs.push({ id: 'inventory-suite' as Tab, label: 'Inventory & Supply', permission: 'inventory.view' });
       }
 
-      // Add clients and sales for admin role
-      if (hasPermission('clients.view')) {
-        baseTabs.push({ id: 'clients' as Tab, label: 'Clients', permission: 'clients.view' });
-      }
-      if (hasPermission('sales.view')) {
-        baseTabs.push({ id: 'sales' as Tab, label: 'Sales / Invoice', permission: 'sales.view' });
-      }
-      
-      // Add Invoice Tracking for admin only
-      if (hasPermission('sales.view')) {
-        baseTabs.push({ id: 'invoice-tracking' as Tab, label: 'Invoice Tracking', permission: 'sales.view' });
+      // Add Sales & Invoicing group for admin role
+      if (hasPermission('clients.view') || hasPermission('sales.view')) {
+        baseTabs.push({ id: 'sales-suite' as Tab, label: 'Sales & Invoicing', permission: 'sales.view' });
       }
     }
 
@@ -127,20 +117,143 @@ function AppContent() {
         <div className="max-w-7xl mx-auto px-6 lg:px-8">
           <div className="flex space-x-8">
             {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`relative px-1 py-4 text-sm font-medium transition-colors ${
-                  activeTab === tab.id
-                    ? 'text-[#4f0c1b]'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                {tab.label}
-                {activeTab === tab.id && (
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#4f0c1b]" />
-                )}
-              </button>
+              tab.id === 'inventory-suite' ? (
+                <div key={tab.id} className="relative" onMouseEnter={() => setShowInventoryDropdown(true)} onMouseLeave={() => setShowInventoryDropdown(false)}>
+                  <button
+                    onClick={() => {/* Keep dropdown open on click */}}
+                    className={`relative px-1 py-4 text-sm font-medium transition-colors ${
+                      (activeTab === 'suppliers' || activeTab === 'purchase-orders' || activeTab === 'inventory' || activeTab === 'landed-costs')
+                        ? 'text-[#4f0c1b]'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    {tab.label}
+                    {(activeTab === 'suppliers' || activeTab === 'purchase-orders' || activeTab === 'inventory' || activeTab === 'landed-costs') && (
+                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#4f0c1b]" />
+                    )}
+                  </button>
+                  
+                  {/* Dropdown Menu */}
+                  {showInventoryDropdown && (
+                    <div className="absolute top-full left-0 mt-0 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 min-w-[200px]">
+                      {hasPermission('suppliers.view') && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('suppliers' as Tab);
+                            setShowInventoryDropdown(false);
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                        >
+                          Suppliers
+                        </button>
+                      )}
+                      {hasPermission('purchase.view') && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('purchase-orders' as Tab);
+                            setShowInventoryDropdown(false);
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                        >
+                          Purchase Orders
+                        </button>
+                      )}
+                      {hasPermission('inventory.view') && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('inventory' as Tab);
+                            setShowInventoryDropdown(false);
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                        >
+                          Inventory
+                        </button>
+                      )}
+                      {hasPermission('costs.view') && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('landed-costs' as Tab);
+                            setShowInventoryDropdown(false);
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                        >
+                          Landed Costs
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : tab.id === 'sales-suite' ? (
+                <div key={tab.id} className="relative" onMouseEnter={() => setShowSalesDropdown(true)} onMouseLeave={() => setShowSalesDropdown(false)}>
+                  <button
+                    onClick={() => {/* Keep dropdown open on click */}}
+                    className={`relative px-1 py-4 text-sm font-medium transition-colors ${
+                      (activeTab === 'clients' || activeTab === 'sales' || activeTab === 'invoice-tracking')
+                        ? 'text-[#4f0c1b]'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    {tab.label}
+                    {(activeTab === 'clients' || activeTab === 'sales' || activeTab === 'invoice-tracking') && (
+                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#4f0c1b]" />
+                    )}
+                  </button>
+                  
+                  {/* Dropdown Menu */}
+                  {showSalesDropdown && (
+                    <div className="absolute top-full left-0 mt-0 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 min-w-[200px]">
+                      {(hasPermission('clients.view') || hasPermission('clients.view.ecuador')) && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('clients' as Tab);
+                            setShowSalesDropdown(false);
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                        >
+                          Clients
+                        </button>
+                      )}
+                      {(hasPermission('sales.view') || hasPermission('sales.create')) && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('sales' as Tab);
+                            setShowSalesDropdown(false);
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                        >
+                          Sales / Invoice
+                        </button>
+                      )}
+                      {(hasPermission('sales.view') || hasPermission('sales.invoice.create')) && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('invoice-tracking' as Tab);
+                            setShowSalesDropdown(false);
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                        >
+                          Invoice Tracking
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`relative px-1 py-4 text-sm font-medium transition-colors ${
+                    activeTab === tab.id
+                      ? 'text-[#4f0c1b]'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  {tab.label}
+                  {activeTab === tab.id && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#4f0c1b]" />
+                  )}
+                </button>
+              )
             ))}
           </div>
         </div>

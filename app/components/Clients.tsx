@@ -27,6 +27,7 @@ export default function Clients() {
   });
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCountry, setFilterCountry] = useState<'Ecuador' | 'USA' | 'All'>('All');
+  const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc' | 'desc'}>({key: 'name', direction: 'asc'});
 
   useEffect(() => {
     loadClients();
@@ -136,6 +137,34 @@ export default function Clients() {
     return hasPermission('clients.edit') || hasPermission('clients.edit.ecuador');
   };
 
+  const handleSort = (key: string) => {
+    setSortConfig(current => {
+      if (current.key === key) {
+        return { key, direction: current.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const SortIcon = ({ columnKey }: { columnKey: string }) => {
+    if (sortConfig.key !== columnKey) return <span className="text-gray-400">↕</span>;
+    return sortConfig.direction === 'asc' ? <span>↑</span> : <span>↓</span>;
+  };
+
+  const sortedClients = [...filteredClients].sort((a, b) => {
+    let aVal: any = a[sortConfig.key as keyof Client];
+    let bVal: any = b[sortConfig.key as keyof Client];
+
+    if (typeof aVal === 'string') {
+      aVal = aVal.toLowerCase();
+      bVal = (bVal as string).toLowerCase();
+    }
+
+    if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+    if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+    return 0;
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -185,48 +214,116 @@ export default function Clients() {
           <p className="text-gray-500">No clients found</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4">
-          {filteredClients.map((client) => (
-            <div
-              key={client.id}
-              className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-md transition-all"
-            >
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-gray-900">{client.name}</h3>
-                  <div className="mt-2 space-y-1 text-sm text-gray-600">
-                    {client.email && <div>📧 {client.email}</div>}
-                    {client.phone && <div>📞 {client.phone}</div>}
-                    <div>📍 {client.address}, {client.city}</div>
-                    <div className="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-xs font-medium mt-1">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b-2 border-gray-200">
+              <tr>
+                <th
+                  className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('name')}
+                >
+                  <div className="flex items-center gap-2">
+                    Name
+                    <SortIcon columnKey="name" />
+                  </div>
+                </th>
+                <th
+                  className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('email')}
+                >
+                  <div className="flex items-center gap-2">
+                    Email
+                    <SortIcon columnKey="email" />
+                  </div>
+                </th>
+                <th
+                  className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('phone')}
+                >
+                  <div className="flex items-center gap-2">
+                    Phone
+                    <SortIcon columnKey="phone" />
+                  </div>
+                </th>
+                <th
+                  className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('address')}
+                >
+                  <div className="flex items-center gap-2">
+                    Address
+                    <SortIcon columnKey="address" />
+                  </div>
+                </th>
+                <th
+                  className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('city')}
+                >
+                  <div className="flex items-center gap-2">
+                    City
+                    <SortIcon columnKey="city" />
+                  </div>
+                </th>
+                <th
+                  className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  onClick={() => handleSort('country')}
+                >
+                  <div className="flex items-center gap-2">
+                    Country
+                    <SortIcon columnKey="country" />
+                  </div>
+                </th>
+                <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {sortedClients.map((client) => (
+                <tr key={client.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4">
+                    <div className="font-medium text-gray-900">{client.name}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-gray-700">{client.email || '-'}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-gray-700">{client.phone || '-'}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-gray-700">{client.address}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-sm text-gray-700">{client.city}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-xs font-medium">
                       {client.country === 'Ecuador' ? '🇪🇨 Ecuador' : '🇺🇸 USA'}
                     </div>
-                  </div>
-                  {client.notes && (
-                    <p className="mt-2 text-sm text-gray-500">{client.notes}</p>
-                  )}
-                </div>
-                <div className="flex gap-2 ml-4">
-                  {canEdit(client) && (
-                    <button
-                      onClick={() => openModal(client)}
-                      className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-                    >
-                      Edit
-                    </button>
-                  )}
-                  {canDelete(client) && (
-                    <button
-                      onClick={() => handleDelete(client)}
-                      className="px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
-                    >
-                      Delete
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <div className="flex gap-2 justify-center">
+                      {canEdit(client) && (
+                        <button
+                          onClick={() => openModal(client)}
+                          className="px-3 py-1.5 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200 transition-colors"
+                          title="Edit"
+                        >
+                          ✏️
+                        </button>
+                      )}
+                      {canDelete(client) && (
+                        <button
+                          onClick={() => handleDelete(client)}
+                          className="px-3 py-1.5 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+                          title="Delete"
+                        >
+                          🗑️
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

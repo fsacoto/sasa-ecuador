@@ -522,7 +522,8 @@ export default function InvoiceTracking() {
       return;
     }
 
-    if (payment > paymentInvoice.remainingBalance) {
+    // Allow payment slightly over remaining balance (tolerance for rounding)
+    if (payment > paymentInvoice.remainingBalance + 0.01) {
       alert(`Payment amount cannot exceed remaining balance of $${paymentInvoice.remainingBalance.toFixed(2)}`);
       return;
     }
@@ -538,15 +539,17 @@ export default function InvoiceTracking() {
       const remainingBalance = paymentInvoice.grandTotal - totalPaid;
       
       // Determine status based on payment - automatically change to Paid when fully covered
+      // Use a tolerance of 0.01 for floating point precision issues
       let newStatus: 'Unpaid' | 'Partially Paid' | 'Paid' = 'Partially Paid';
-      if (totalPaid >= paymentInvoice.grandTotal || remainingBalance <= 0.01) {
+      if (totalPaid >= paymentInvoice.grandTotal - 0.01 || remainingBalance <= 0.01) {
         newStatus = 'Paid';
       }
 
+      // Round to 2 decimal places to avoid floating point issues
       const updateData: any = {
         paymentStatus: newStatus,
-        amountPaid: totalPaid,
-        remainingBalance: Math.max(0, remainingBalance),
+        amountPaid: Math.round(totalPaid * 100) / 100,
+        remainingBalance: Math.max(0, Math.round(remainingBalance * 100) / 100),
         paymentHistory: [...newPaymentHistory, newPayment]
       };
 
@@ -1213,6 +1216,13 @@ ${'='.repeat(80)}
                   placeholder={`Max: $${paymentInvoice.remainingBalance.toFixed(2)}`}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                 />
+                <button
+                  type="button"
+                  onClick={() => setPaymentAmount(paymentInvoice.remainingBalance.toFixed(2))}
+                  className="mt-2 text-xs text-blue-600 hover:text-blue-800 underline"
+                >
+                  Pay Full Balance (${paymentInvoice.remainingBalance.toFixed(2)})
+                </button>
               </div>
               
               <div>
