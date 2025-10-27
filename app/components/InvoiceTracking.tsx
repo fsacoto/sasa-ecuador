@@ -55,6 +55,12 @@ export default function InvoiceTracking() {
   const [showInvoiceDetailsModal, setShowInvoiceDetailsModal] = useState(false);
   const [detailsInvoice, setDetailsInvoice] = useState<SalesInvoice | null>(null);
 
+  // Warning modal state
+  const [showWarningModal, setShowWarningModal] = useState(false);
+  const [warningMessage, setWarningMessage] = useState('');
+  const [warningItems, setWarningItems] = useState<Array<{description: string, quantity: number, currentStock: number, remainingStock: number}>>([]);
+  const [warningCallback, setWarningCallback] = useState<(() => void) | null>(null);
+
   useEffect(() => {
     loadInvoices();
   }, []);
@@ -268,6 +274,29 @@ export default function InvoiceTracking() {
       return;
     }
 
+    const newGrandTotal = calculateEditGrandTotal();
+    const currentAmountPaid = editingInvoice.amountPaid || 0;
+    const newRemainingBalance = Math.max(0, newGrandTotal - currentAmountPaid);
+
+    // Recalculate payment status based on new total and current payments
+    let newPaymentStatus: 'Unpaid' | 'Partially Paid' | 'Paid' = editingInvoice.paymentStatus;
+    
+    if (currentAmountPaid === 0) {
+      newPaymentStatus = 'Unpaid';
+    } else if (currentAmountPaid >= newGrandTotal || newRemainingBalance <= 0.01) {
+      newPaymentStatus = 'Paid';
+    } else {
+      newPaymentStatus = 'Partially Paid';
+    }
+
+    // Recalculate delivery status
+    // If new items are added to a fully delivered invoice, it should become Partially Delivered
+    let newDeliveryStatus = editingInvoice.deliveryStatus;
+    
+    if (editingInvoice.deliveryStatus === 'Delivered' && editItems.length > editingInvoice.items.length) {
+      newDeliveryStatus = 'Partially Delivered';
+    }
+
     try {
       const updatedInvoice: any = {
         items: editItems,
@@ -275,8 +304,10 @@ export default function InvoiceTracking() {
         discountType: editDiscountType,
         discountValue: editDiscountValue,
         discountTotal: calculateEditDiscount(),
-        grandTotal: calculateEditGrandTotal(),
-        remainingBalance: editingInvoice.paymentStatus === 'Paid' ? 0 : (calculateEditGrandTotal() - (editingInvoice.amountPaid || 0))
+        grandTotal: newGrandTotal,
+        remainingBalance: newRemainingBalance,
+        paymentStatus: newPaymentStatus,
+        deliveryStatus: newDeliveryStatus
       };
 
       if (editPaymentMethod) {
@@ -287,7 +318,17 @@ export default function InvoiceTracking() {
       }
 
       await updateInvoice(editingInvoice.id, updatedInvoice);
-      alert('Invoice updated successfully');
+      
+      // Notify user if statuses changed
+      let statusChangedMsg = 'Invoice updated successfully';
+      if (newPaymentStatus !== editingInvoice.paymentStatus) {
+        statusChangedMsg += `\nPayment status changed to: ${newPaymentStatus}`;
+      }
+      if (newDeliveryStatus !== editingInvoice.deliveryStatus) {
+        statusChangedMsg += `\nDelivery status changed to: ${newDeliveryStatus}`;
+      }
+      alert(statusChangedMsg);
+      
       closeEditModal();
       loadInvoices();
     } catch (error) {
@@ -341,6 +382,23 @@ export default function InvoiceTracking() {
       return;
     }
 
+    // Show warning about inventory subtraction with current and remaining stock
+    const itemsToSubtract = deliveryInvoice.items
+      .filter((item, index) => deliveryItems[index] > 0)
+      .map((item, index) => {
+        const inventoryItem = inventory.find(inv => inv.sku === item.sku);
+        const currentStock = inventoryItem?.ecuadorStock || 0;
+        const remainingStock = Math.max(0, currentStock - deliveryItems[index]);
+        return `- ${item.description}: ${deliveryItems[index]} units (Ecuador stock: ${currentStock} → ${remainingStock})`;
+      })
+      .join('\n');
+
+    const warningMessage = `⚠️ WARNING: This will subtract items from Ecuador inventory!\n\n` +
+      `Items to be subtracted from Ecuador stock:\n${itemsToSubtract}\n\n` +
+      `Stock levels for Ecuador will be reduced. Continue?`;
+
+    if (!confirm(warningMessage)) return;
+
     try {
       const updateData: any = {
         deliveryStatus: 'Partially Delivered',
@@ -381,9 +439,41 @@ export default function InvoiceTracking() {
       return;
     }
 
-    // For full delivery or cancel, use simple confirmation
-    if (!confirm(`Change delivery status to ${status}?`)) return;
+    // Show warning for delivery changes that will affect inventory
+    let confirmed = false;
+    
+    if (status === 'Delivered' && (invoice.deliveryStatus === 'Pending' || invoice.deliveryStatus === 'Partially Delivered')) {
+      // Create warning message with stock information
+      const itemsList = invoice.items.map(item => {
+        const inventoryItem = inventory.find(inv => inv.sku === item.sku);
+        const currentStock = inventoryItem?.ecuadorStock || 0;
+        const remainingStock = Math.max(0, currentStock - item.quantity);
+        return {
+          description: item.description,
+          quantity: item.quantity,
+          currentStock,
+          remainingStock
+        };
+      });
+      
+      setWarningItems(itemsList);
+      setWarningMessage('Changing status will affect Ecuador inventory');
+      setWarningCallback(() => async () => {
+        setShowWarningModal(false);
+        await processDeliveryUpdate(invoice, status);
+      });
+      setShowWarningModal(true);
+      return;
+    } else {
+      // For other status changes, use simple confirmation
+      confirmed = confirm(`Change delivery status to ${status}?`);
+      if (!confirmed) return;
+    }
+    
+    await processDeliveryUpdate(invoice, status);
+  };
 
+  const processDeliveryUpdate = async (invoice: SalesInvoice, status: string) => {
     try {
       const updateData: any = {
         deliveryStatus: status,
@@ -505,6 +595,7 @@ export default function InvoiceTracking() {
     return {
       totalInvoices: invoices.length,
       unpaidInvoices: invoices.filter(inv => inv.paymentStatus === 'Unpaid').length,
+      partiallyPaidInvoices: invoices.filter(inv => inv.paymentStatus === 'Partially Paid').length,
       totalCollected: invoices.reduce((sum, inv) => sum + inv.amountPaid, 0),
       totalPending: invoices.reduce((sum, inv) => sum + inv.remainingBalance, 0)
     };
@@ -642,7 +733,7 @@ ${'='.repeat(80)}
       </div>
 
       {/* Summary Dashboard */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Invoices</div>
           <div className="text-2xl font-bold text-gray-900 mt-2">{metrics.totalInvoices}</div>
@@ -650,6 +741,10 @@ ${'='.repeat(80)}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Unpaid Invoices</div>
           <div className="text-2xl font-bold text-red-600 mt-2">{metrics.unpaidInvoices}</div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Partially Paid</div>
+          <div className="text-2xl font-bold text-yellow-600 mt-2">{metrics.partiallyPaidInvoices}</div>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Collected</div>
@@ -1448,6 +1543,73 @@ ${'='.repeat(80)}
                 className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Warning Modal */}
+      {showWarningModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="text-4xl">⚠️</div>
+              <h3 className="text-xl font-bold text-orange-600">Inventory Impact Warning</h3>
+            </div>
+            
+            <p className="text-gray-700 mb-4">
+              {warningMessage}
+            </p>
+            
+            {warningItems.length > 0 && (
+              <div className="bg-orange-50 rounded-lg p-4 mb-4">
+                <h4 className="font-semibold text-gray-900 mb-3">Ecuador Stock Impact:</h4>
+                <div className="space-y-2">
+                  {warningItems.map((item, index) => (
+                    <div key={index} className="flex justify-between items-center bg-white rounded p-2">
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">{item.description}</div>
+                        <div className="text-sm text-gray-600">Delivering: {item.quantity} units</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm text-gray-600">Ecuador Stock</div>
+                        <div className="font-semibold text-orange-600">
+                          {item.currentStock} → {item.remainingStock}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            <div className="bg-blue-50 rounded-lg p-3 mb-4">
+              <p className="text-sm text-blue-800">
+                <strong>Note:</strong> Stock levels for Ecuador will be reduced after confirmation.
+              </p>
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowWarningModal(false);
+                  setWarningItems([]);
+                  setWarningCallback(null);
+                }}
+                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (warningCallback) {
+                    warningCallback();
+                  }
+                }}
+                className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium"
+              >
+                Confirm & Update
               </button>
             </div>
           </div>
