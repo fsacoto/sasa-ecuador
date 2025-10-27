@@ -23,10 +23,16 @@ export async function getAllInvoices(filters?: {
   dateTo?: Date;
 }): Promise<SalesInvoice[]> {
   try {
-    let q = query(collection(db, INVOICES_COLLECTION), orderBy('date', 'desc'));
+    // Start with base query - no ordering yet to avoid index issues
+    let q = query(collection(db, INVOICES_COLLECTION));
     
     if (filters?.clientId) {
-      q = query(q, where('clientId', '==', filters.clientId));
+      // Handle walk-in customer filter
+      if (filters.clientId === 'walk-in') {
+        q = query(q, where('clientId', '==', ''));
+      } else {
+        q = query(q, where('clientId', '==', filters.clientId));
+      }
     }
     if (filters?.paymentStatus) {
       q = query(q, where('paymentStatus', '==', filters.paymentStatus));
@@ -36,14 +42,35 @@ export async function getAllInvoices(filters?: {
     }
 
     const snapshot = await getDocs(q);
-    let invoices = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      date: doc.data().date?.toDate() || new Date(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-      deliveryDate: doc.data().deliveryDate?.toDate(),
-      paymentDate: doc.data().paymentDate?.toDate(),
-    })) as SalesInvoice[];
+    let invoices = snapshot.docs.map(doc => {
+      const data = doc.data();
+      
+      // Safely convert dates
+      let invoiceDate: Date;
+      let createdDate: Date;
+      
+      try {
+        invoiceDate = data.date?.toDate() || new Date();
+        createdDate = data.createdAt?.toDate() || new Date();
+      } catch (e) {
+        console.error('Date conversion error:', e);
+        invoiceDate = new Date();
+        createdDate = new Date();
+      }
+      
+      return {
+        id: doc.id,
+        ...data,
+        date: invoiceDate,
+        createdAt: createdDate,
+        deliveryDate: data.deliveryDate?.toDate?.() || undefined,
+        paymentDate: data.paymentDate?.toDate?.() || undefined,
+        paymentHistory: (data.paymentHistory || []).map((p: any) => ({
+          ...p, 
+          date: p.date?.toDate?.() || new Date()
+        }))
+      };
+    }) as SalesInvoice[];
 
     // Apply date filters if provided
     if (filters?.dateFrom) {
@@ -52,6 +79,13 @@ export async function getAllInvoices(filters?: {
     if (filters?.dateTo) {
       invoices = invoices.filter(inv => inv.date <= filters.dateTo!);
     }
+
+    // Sort by createdAt descending (in-memory sort)
+    invoices.sort((a, b) => {
+      const aTime = a.createdAt.getTime();
+      const bTime = b.createdAt.getTime();
+      return bTime - aTime;
+    });
 
     return invoices;
   } catch (error) {
@@ -75,6 +109,7 @@ export async function getInvoice(invoiceId: string): Promise<SalesInvoice | null
         createdAt: data.createdAt?.toDate() || new Date(),
         deliveryDate: data.deliveryDate?.toDate(),
         paymentDate: data.paymentDate?.toDate(),
+        paymentHistory: data.paymentHistory?.map((p: any) => ({...p, date: p.date?.toDate() || new Date()})) || []
       } as SalesInvoice;
     }
     return null;
@@ -84,14 +119,54 @@ export async function getInvoice(invoiceId: string): Promise<SalesInvoice | null
   }
 }
 
+// Generate next sequential invoice number
+export async function getNextInvoiceNumber(): Promise<string> {
+  try {
+    const q = query(collection(db, INVOICES_COLLECTION));
+    const snapshot = await getDocs(q);
+    
+    if (snapshot.empty) {
+      // First invoice
+      return 'FAC-00001';
+    }
+    
+    // Get the last invoice number
+    let lastNumber = 0;
+    snapshot.docs.forEach(doc => {
+      const invoiceNumber = doc.data().invoiceNumber;
+      if (invoiceNumber && invoiceNumber.startsWith('FAC-')) {
+        const numberPart = parseInt(invoiceNumber.replace('FAC-', ''));
+        if (!isNaN(numberPart) && numberPart > lastNumber) {
+          lastNumber = numberPart;
+        }
+      }
+    });
+    
+    // Generate next number
+    const nextNumber = lastNumber + 1;
+    return `FAC-${String(nextNumber).padStart(5, '0')}`;
+  } catch (error) {
+    console.error('Error generating invoice number:', error);
+    // Fallback to timestamp if error
+    return `FAC-${Date.now().toString().slice(-5)}`;
+  }
+}
+
 // Create a new invoice
 export async function createInvoice(invoice: Omit<SalesInvoice, 'id' | 'createdAt'>): Promise<SalesInvoice> {
   try {
     const docRef = doc(collection(db, INVOICES_COLLECTION));
     
+    // Generate invoice number if not provided or if it's the old format
+    let invoiceNumber = invoice.invoiceNumber;
+    if (!invoiceNumber || !invoiceNumber.startsWith('FAC-')) {
+      invoiceNumber = await getNextInvoiceNumber();
+    }
+    
     // Filter out undefined values
     const newInvoice: any = {
       ...invoice,
+      invoiceNumber: invoiceNumber,
       createdAt: new Date(),
     };
 

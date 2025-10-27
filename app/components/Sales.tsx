@@ -29,6 +29,7 @@ export default function Sales() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash' | 'transfer' | ''>('');
   const [paymentComment, setPaymentComment] = useState('');
+  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
 
   useEffect(() => {
     loadClients();
@@ -162,8 +163,9 @@ export default function Sales() {
     }
 
     try {
+      // Invoice number will be auto-generated in createInvoice
       const newInvoice: any = {
-        invoiceNumber: `INV-${Date.now()}`,
+        invoiceNumber: 'TEMP', // Will be replaced with sequential number
         clientId: selectedClient?.id || '',
         clientName: selectedClient?.name || 'Walk-in Customer',
         clientAddress: selectedClient ? `${selectedClient.address}, ${selectedClient.city}, ${selectedClient.country}` : '',
@@ -173,14 +175,14 @@ export default function Sales() {
         discountValue: discountValue,
         discountTotal: calculateDiscount(),
         grandTotal: calculateGrandTotal(),
-        date: new Date(),
+        date: new Date(invoiceDate),
         notes: '',
         salesAgent: user?.name || user?.email || '',
         currency: 'USD',
         deliveryStatus: 'Pending',
-        paymentStatus: paymentMethod ? 'Paid' : 'Unpaid',
-        amountPaid: paymentMethod ? calculateGrandTotal() : 0,
-        remainingBalance: paymentMethod ? 0 : calculateGrandTotal()
+        paymentStatus: 'Unpaid',
+        amountPaid: 0,
+        remainingBalance: calculateGrandTotal()
       };
 
       // Only add optional fields if they have values
@@ -200,6 +202,7 @@ export default function Sales() {
       setSelectedClient(null);
       setPaymentMethod('');
       setPaymentComment('');
+      setInvoiceDate(new Date().toISOString().split('T')[0]);
     } catch (error) {
       console.error('Error submitting invoice:', error);
       alert('Error submitting invoice');
@@ -219,7 +222,18 @@ export default function Sales() {
 
       {/* Client Selection */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Client Information (Optional)</h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">Client Information (Optional)</h3>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700">Date:</label>
+            <input
+              type="date"
+              value={invoiceDate}
+              onChange={(e) => setInvoiceDate(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+            />
+          </div>
+        </div>
         {selectedClient ? (
           <div className="space-y-4">
             <div className="flex justify-between items-start">

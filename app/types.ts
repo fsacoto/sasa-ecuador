@@ -153,6 +153,13 @@ export interface SalesInvoiceLine {
   category?: string;
 }
 
+export interface PaymentRecord {
+  date: Date;
+  amount: number;
+  method?: string;
+  comment?: string;
+}
+
 export interface SalesInvoice {
   id: string;
   invoiceNumber: string;
@@ -180,4 +187,5 @@ export interface SalesInvoice {
   paymentDate?: Date;
   paymentMethod?: string;
   paymentComment?: string;
+  paymentHistory?: PaymentRecord[];
 }
