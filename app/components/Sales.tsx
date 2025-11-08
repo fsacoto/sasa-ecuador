@@ -6,6 +6,7 @@ import { getAllClients } from '../services/clientsService';
 import { createInvoice } from '../services/invoicesService';
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
+import { useTranslation } from '../context/TranslationContext';
 
 interface InvoiceLineWithDetails extends SalesInvoiceLine {
   line?: string;
@@ -17,6 +18,7 @@ interface InvoiceLineWithDetails extends SalesInvoiceLine {
 export default function Sales() {
   const { user, hasPermission } = useAuth();
   const { inventory, purchaseOrders } = useInventory();
+  const { t } = useTranslation();
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [invoiceItems, setInvoiceItems] = useState<InvoiceLineWithDetails[]>([]);
@@ -123,9 +125,9 @@ export default function Sales() {
     updatedItems[index].totalPrice = updatedItems[index].unitPrice * validQuantity;
     setInvoiceItems(updatedItems);
     
-    // Show warning if trying to exceed available stock
+      // Show warning if trying to exceed available stock
     if (quantity > item.maxQuantity) {
-      alert(`Cannot exceed available stock. Maximum quantity is ${item.maxQuantity}`);
+      alert(`${t('sales.cannotExceedStock')} ${item.maxQuantity}`);
     }
   };
 
@@ -158,7 +160,7 @@ export default function Sales() {
 
   const submitInvoice = async () => {
     if (invoiceItems.length === 0) {
-      alert('Please add products to the invoice');
+      alert(t('sales.pleaseAddProducts'));
       return;
     }
 
@@ -195,7 +197,7 @@ export default function Sales() {
 
       await createInvoice(newInvoice);
       
-      alert('Invoice submitted successfully! View it in Invoice Tracking to generate PDF.');
+      alert(t('sales.invoiceSubmitted'));
       
       // Reset form
       setInvoiceItems([]);
@@ -205,7 +207,7 @@ export default function Sales() {
       setInvoiceDate(new Date().toISOString().split('T')[0]);
     } catch (error) {
       console.error('Error submitting invoice:', error);
-      alert('Error submitting invoice');
+      alert(t('sales.errorSubmitting'));
     }
   };
 
@@ -215,17 +217,17 @@ export default function Sales() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Sales / Invoice</h2>
-          <p className="text-sm text-gray-500 mt-1">Create sales notes and invoices</p>
+          <h2 className="text-2xl font-semibold text-gray-900">{t('sales.title')}</h2>
+          <p className="text-sm text-gray-500 mt-1">{t('sales.subtitle')}</p>
         </div>
       </div>
 
       {/* Client Selection */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Client Information (Optional)</h3>
+          <h3 className="text-lg font-semibold text-gray-900">{t('sales.clientInformation')}</h3>
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-700">Date:</label>
+            <label className="text-sm font-medium text-gray-700">{t('sales.date')}:</label>
             <input
               type="date"
               value={invoiceDate}
@@ -239,30 +241,30 @@ export default function Sales() {
             <div className="flex justify-between items-start">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
                 <div>
-                  <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Client Name</div>
+                  <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('sales.clientName')}</div>
                   <div className="font-semibold text-gray-900">{selectedClient.name}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Country</div>
+                  <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('sales.country')}</div>
                   <div className="font-medium text-gray-900">{selectedClient.country === 'Ecuador' ? '🇪🇨 Ecuador' : '🇺🇸 USA'}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Address</div>
+                  <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('sales.address')}</div>
                   <div className="text-gray-700">{selectedClient.address}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">City</div>
+                  <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('sales.city')}</div>
                   <div className="text-gray-700">{selectedClient.city}</div>
                 </div>
                 {selectedClient.email && (
                   <div>
-                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Email</div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('sales.email')}</div>
                     <div className="text-gray-700">{selectedClient.email}</div>
                   </div>
                 )}
                 {selectedClient.phone && (
                   <div>
-                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Phone</div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('sales.phone')}</div>
                     <div className="text-gray-700">{selectedClient.phone}</div>
                   </div>
                 )}
@@ -272,25 +274,25 @@ export default function Sales() {
                   onClick={() => setShowClientModal(true)}
                   className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
                 >
-                  Change Client
+                  {t('sales.changeClient')}
                 </button>
                 <button
                   onClick={() => setSelectedClient(null)}
                   className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
                 >
-                  Clear
+                  {t('sales.clear')}
                 </button>
               </div>
             </div>
           </div>
         ) : (
           <div className="flex items-center gap-4">
-            <span className="text-gray-500 italic">Walk-in Customer</span>
+            <span className="text-gray-500 italic">{t('sales.walkInCustomer')}</span>
             <button
               onClick={() => setShowClientModal(true)}
               className="px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors"
             >
-              Select Client
+              {t('sales.selectClient')}
             </button>
           </div>
         )}
@@ -298,14 +300,14 @@ export default function Sales() {
 
       {/* Products Table */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Invoice Items</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('sales.invoiceItems')}</h3>
           
           <div className="mb-4 relative" ref={dropdownRef}>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Search SKU</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{t('sales.searchSku')}</label>
             <input
               ref={searchInputRef}
               type="text"
-              placeholder="Type SKU or product name to search..."
+              placeholder={t('sales.searchSkuPlaceholder')}
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
@@ -325,7 +327,7 @@ export default function Sales() {
                   >
                     <div className="font-mono text-sm font-semibold text-[#4f0c1b]">{product.sku}</div>
                     <div className="text-sm text-gray-600">{product.name}</div>
-                    <div className="text-xs text-gray-500">Stock: {product.ecuadorStock} | {product.category} - {product.line}</div>
+                    <div className="text-xs text-gray-500">{t('sales.stock')}: {product.ecuadorStock} | {product.category} - {product.line}</div>
                   </div>
                 ))}
               </div>
@@ -337,14 +339,14 @@ export default function Sales() {
               <table className="w-full">
                 <thead className="bg-gray-50 border-b-2 border-gray-200">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Line</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Unit Price</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Price</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.sku')}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.description')}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.line')}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.category')}</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.quantity')}</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.unitPrice')}</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.totalPrice')}</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.actions')}</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -373,7 +375,7 @@ export default function Sales() {
                             className="w-20 px-2 py-1 border border-gray-300 rounded text-center"
                           />
                           <div className="text-xs text-gray-500">
-                            Max: {item.availableStock}
+                            {t('sales.max')}: {item.availableStock}
                           </div>
                         </div>
                       </td>
@@ -395,7 +397,7 @@ export default function Sales() {
                           onClick={() => removeItem(index)}
                           className="text-red-600 hover:text-red-700 text-sm font-medium"
                         >
-                          Remove
+                          {t('sales.remove')}
                         </button>
                       </td>
                     </tr>
@@ -405,7 +407,7 @@ export default function Sales() {
             </div>
           ) : (
             <div className="text-center py-12 text-gray-500">
-              No items added yet. Search for a SKU above to add products.
+              {t('sales.noItemsAdded')}
             </div>
           )}
         </div>
@@ -413,23 +415,23 @@ export default function Sales() {
       {/* Totals */}
       {invoiceItems.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Invoice Summary</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('sales.invoiceSummary')}</h3>
           
           <div className="space-y-3 mb-4">
             <div className="flex justify-between text-gray-700">
-              <span>Subtotal:</span>
+              <span>{t('sales.subtotal')}:</span>
               <span className="font-semibold">${calculateSubtotal().toFixed(2)}</span>
             </div>
             
             <div className="flex items-center gap-4 pt-3 border-t border-gray-200">
-              <label className="text-sm font-medium text-gray-700">Discount:</label>
+              <label className="text-sm font-medium text-gray-700">{t('sales.discount')}:</label>
               <select
                 value={discountType}
                 onChange={(e) => setDiscountType(e.target.value as 'percentage' | 'flat')}
                 className="px-3 py-2 border border-gray-300 rounded-lg"
               >
-                <option value="percentage">Percentage (%)</option>
-                <option value="flat">Flat Amount</option>
+                <option value="percentage">{t('sales.percentage')} (%)</option>
+                <option value="flat">{t('sales.flatAmount')}</option>
               </select>
               <input
                 type="number"
@@ -446,7 +448,7 @@ export default function Sales() {
             </div>
             
             <div className="flex justify-between font-bold text-xl text-[#4f0c1b] pt-3 border-t-2 border-gray-300">
-              <span>Grand Total:</span>
+              <span>{t('sales.grandTotal')}:</span>
               <span>${calculateGrandTotal().toFixed(2)}</span>
             </div>
           </div>
@@ -456,29 +458,29 @@ export default function Sales() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Payment Method (Optional)
+                  {t('sales.paymentMethodOptional')}
                 </label>
                 <select
                   value={paymentMethod}
                   onChange={(e) => setPaymentMethod(e.target.value as 'card' | 'cash' | 'transfer' | '')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                 >
-                  <option value="">Select payment method...</option>
-                  <option value="card">💳 Card</option>
-                  <option value="cash">💵 Cash</option>
-                  <option value="transfer">🏦 Wire Transfer</option>
+                  <option value="">{t('sales.selectPaymentMethod')}</option>
+                  <option value="card">{t('sales.card')}</option>
+                  <option value="cash">{t('sales.cash')}</option>
+                  <option value="transfer">{t('sales.transfer')}</option>
                 </select>
               </div>
               
               {paymentMethod && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Payment Details / Notes
+                    {t('sales.paymentDetails')}
                   </label>
                   <textarea
                     value={paymentComment}
                     onChange={(e) => setPaymentComment(e.target.value)}
-                    placeholder="Add any payment details, reference numbers, or notes..."
+                    placeholder={t('sales.paymentDetailsPlaceholder')}
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                   />
@@ -491,7 +493,7 @@ export default function Sales() {
             onClick={submitInvoice}
             className="w-full px-6 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium mt-4"
           >
-            Submit Invoice
+            {t('sales.submitInvoice')}
           </button>
         </div>
       )}
@@ -500,7 +502,7 @@ export default function Sales() {
       {showClientModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-            <h3 className="text-xl font-semibold mb-4">Select Client</h3>
+            <h3 className="text-xl font-semibold mb-4">{t('sales.selectClient')}</h3>
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {clients.map((client) => (
                 <div
@@ -527,7 +529,7 @@ export default function Sales() {
               onClick={() => setShowClientModal(false)}
               className="mt-4 w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
           </div>
         </div>

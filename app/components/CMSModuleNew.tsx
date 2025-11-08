@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { useCMS } from '../context/CMSContext';
+import { useTranslation } from '../context/TranslationContext';
 import { ContentType, ContentStatus, InventoryItem, CMSContent } from '../types';
 import JSZip from 'jszip';
 
@@ -12,6 +13,7 @@ type ViewMode = 'dashboard' | 'upload' | 'manage' | 'products';
 export default function CMSModuleNew() {
   const { user, hasPermission } = useAuth();
   const { inventory } = useInventory();
+  const { t } = useTranslation();
   const { 
     content, 
     addContent, 
@@ -535,12 +537,12 @@ export default function CMSModuleNew() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Content Management System</h2>
-            <p className="text-gray-600 mt-1">Upload and manage marketing content</p>
+            <h2 className="text-2xl font-bold text-gray-900">{t('cms.title')}</h2>
+            <p className="text-gray-600 mt-1">{t('cms.subtitle')}</p>
           </div>
           <div className="flex items-center gap-3">
             <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
-              {hasPermission('cms.edit') ? 'Full Access' : 'View Only'}
+              {hasPermission('cms.edit') ? t('cms.fullAccess') : 'View Only'}
             </span>
           </div>
         </div>
@@ -557,7 +559,7 @@ export default function CMSModuleNew() {
                 : 'text-gray-700 hover:bg-gray-100'
             }`}
           >
-            Dashboard
+            {t('cms.dashboard')}
           </button>
           <button
             onClick={() => setViewMode('products')}
@@ -567,7 +569,7 @@ export default function CMSModuleNew() {
                 : 'text-gray-700 hover:bg-gray-100'
             }`}
           >
-            Content
+            {t('cms.content')}
           </button>
           <button
             onClick={() => setViewMode('upload')}
@@ -577,7 +579,7 @@ export default function CMSModuleNew() {
                 : 'text-gray-700 hover:bg-gray-100'
             }`}
           >
-            Upload Content
+            {t('cms.uploadContent')}
           </button>
           <button
             onClick={() => setViewMode('manage')}
@@ -587,7 +589,7 @@ export default function CMSModuleNew() {
                 : 'text-gray-700 hover:bg-gray-100'
             }`}
           >
-            Manage Content
+            {t('cms.manageContent')}
           </button>
         </div>
       </div>
@@ -604,19 +606,19 @@ export default function CMSModuleNew() {
                 </svg>
               </div>
               <div>
-                <h3 className="text-lg font-bold text-gray-900">Content Overview</h3>
-                <p className="text-sm text-gray-500">Total content items in the system</p>
+                <h3 className="text-lg font-bold text-gray-900">{t('cms.contentOverview')}</h3>
+                <p className="text-sm text-gray-500">{t('cms.totalContentItems')}</p>
               </div>
               <div className="ml-auto">
                 <div className="text-3xl font-bold text-[#4f0c1b]">{stats.total}</div>
-                <div className="text-xs text-gray-500 mt-1">Total Items</div>
+                <div className="text-xs text-gray-500 mt-1">{t('cms.totalItems')}</div>
               </div>
             </div>
           </div>
 
           {/* Status Cards */}
           <div>
-            <h3 className="text-base font-semibold text-gray-900 mb-4">Content Status Distribution</h3>
+            <h3 className="text-base font-semibold text-gray-900 mb-4">{t('cms.contentStatusDistribution')}</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {/* Draft */}
               <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
@@ -628,8 +630,8 @@ export default function CMSModuleNew() {
                       </svg>
                     </div>
                     <div>
-                      <div className="text-sm font-semibold text-gray-900">Drafts</div>
-                      <div className="text-xs text-gray-500">In progress</div>
+                      <div className="text-sm font-semibold text-gray-900">{t('cms.drafts')}</div>
+                      <div className="text-xs text-gray-500">{t('cms.inProgress')}</div>
                     </div>
                   </div>
                   <div className="text-right">
@@ -649,8 +651,8 @@ export default function CMSModuleNew() {
                       </svg>
                     </div>
                     <div>
-                      <div className="text-sm font-semibold text-gray-900">Submitted</div>
-                      <div className="text-xs text-gray-500">Awaiting review</div>
+                      <div className="text-sm font-semibold text-gray-900">{t('cms.submitted')}</div>
+                      <div className="text-xs text-gray-500">{t('cms.awaitingReview')}</div>
                     </div>
                   </div>
                   <div className="text-right">
@@ -670,8 +672,8 @@ export default function CMSModuleNew() {
                       </svg>
                     </div>
                     <div>
-                      <div className="text-sm font-semibold text-gray-900">Approved</div>
-                      <div className="text-xs text-gray-500">Ready to publish</div>
+                      <div className="text-sm font-semibold text-gray-900">{t('cms.approved')}</div>
+                      <div className="text-xs text-gray-500">{t('cms.readyToPublish')}</div>
                     </div>
                   </div>
                   <div className="text-right">
@@ -691,8 +693,8 @@ export default function CMSModuleNew() {
                       </svg>
                     </div>
                     <div>
-                      <div className="text-sm font-semibold text-gray-900">Published</div>
-                      <div className="text-xs text-gray-500">Live content</div>
+                      <div className="text-sm font-semibold text-gray-900">{t('cms.published')}</div>
+                      <div className="text-xs text-gray-500">{t('cms.liveContent')}</div>
                     </div>
                   </div>
                   <div className="text-right">
@@ -712,8 +714,8 @@ export default function CMSModuleNew() {
                       </svg>
                     </div>
                     <div>
-                      <div className="text-sm font-semibold text-gray-900">Rejected</div>
-                      <div className="text-xs text-gray-500">Needs revision</div>
+                      <div className="text-sm font-semibold text-gray-900">{t('cms.rejected')}</div>
+                      <div className="text-xs text-gray-500">{t('cms.needsRevision')}</div>
                     </div>
                   </div>
                   <div className="text-right">
@@ -759,10 +761,10 @@ export default function CMSModuleNew() {
               </div>
               <div>
                 <h3 className="text-xl font-bold text-gray-900">
-                  {editingContent ? 'Edit Content' : 'Upload Content'}
+                  {editingContent ? t('cms.editContent') : t('cms.uploadContent')}
                 </h3>
                 <p className="text-sm text-gray-500">
-                  {editingContent ? 'Update your content details' : 'Create new marketing content'}
+                  {editingContent ? t('cms.updateYourContentDetails') : t('cms.createNewContent')}
                 </p>
               </div>
             </div>
@@ -771,7 +773,7 @@ export default function CMSModuleNew() {
           {/* Content Type Selection */}
           {!editingContent && (
             <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <label className="block text-sm font-semibold text-gray-900 mb-4">Content Type</label>
+              <label className="block text-sm font-semibold text-gray-900 mb-4">{t('cms.contentType')}</label>
               <div className="grid grid-cols-3 gap-3">
                 <button
                   onClick={() => setUploadType('product')}
@@ -781,7 +783,7 @@ export default function CMSModuleNew() {
                       : 'bg-white text-gray-700 border-gray-300 hover:border-[#4f0c1b] hover:bg-gray-50'
                   }`}
                 >
-                  Single Product
+                  {t('cms.singleProduct')}
                 </button>
                 <button
                   onClick={() => setUploadType('collection')}
@@ -791,7 +793,7 @@ export default function CMSModuleNew() {
                       : 'bg-white text-gray-700 border-gray-300 hover:border-[#4f0c1b] hover:bg-gray-50'
                   }`}
                 >
-                  Collection
+                  {t('cms.collection')}
                 </button>
                 <button
                   onClick={() => setUploadType('general')}
@@ -801,7 +803,7 @@ export default function CMSModuleNew() {
                       : 'bg-white text-gray-700 border-gray-300 hover:border-[#4f0c1b] hover:bg-gray-50'
                   }`}
                 >
-                  General
+                  {t('cms.general')}
                 </button>
               </div>
             </div>
@@ -814,7 +816,7 @@ export default function CMSModuleNew() {
                 <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                 </svg>
-                <label className="text-sm font-semibold text-gray-900">Link to Product</label>
+                <label className="text-sm font-semibold text-gray-900">{t('cms.linkToProduct')}</label>
               </div>
               
               <div className="sku-search-container relative mb-4">
@@ -824,7 +826,7 @@ export default function CMSModuleNew() {
                     value={currentTabState.searchSKU}
                     onChange={handleSKUInputChange}
                     onFocus={() => currentTabState.searchSKU.trim().length > 0 && updateCurrentTabState({ showSKUDropdown: true })}
-                    placeholder="Search by SKU or product name..."
+                    placeholder={t('cms.searchBySku')}
                     className="w-full px-4 py-2.5 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                   />
                   {currentTabState.searchSKU && (
@@ -880,7 +882,7 @@ export default function CMSModuleNew() {
 
                 {currentTabState.showSKUDropdown && currentTabState.searchSKU.trim().length > 0 && filteredInventory.length === 0 && (
                   <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-4 text-center text-gray-500">
-                    No products found matching "{currentTabState.searchSKU}"
+                    {t('cms.noProductsFound')} "{currentTabState.searchSKU}"
                   </div>
                 )}
               </div>
@@ -897,10 +899,10 @@ export default function CMSModuleNew() {
                     <div className="flex-1">
                       <p className="font-semibold text-gray-900 mb-1">{currentTabState.selectedProduct.name}</p>
                       <div className="grid grid-cols-2 gap-2 text-sm text-gray-600">
-                        <span><span className="font-medium">SKU:</span> {currentTabState.selectedProduct.sku}</span>
-                        <span><span className="font-medium">Model:</span> {currentTabState.selectedProduct.supplierSKU || 'N/A'}</span>
-                        <span><span className="font-medium">Line:</span> {currentTabState.selectedProduct.line}</span>
-                        <span><span className="font-medium">Category:</span> {currentTabState.selectedProduct.category}</span>
+                        <span><span className="font-medium">{t('inventory.sku')}:</span> {currentTabState.selectedProduct.sku}</span>
+                        <span><span className="font-medium">{t('cms.model')}:</span> {currentTabState.selectedProduct.supplierSKU || 'N/A'}</span>
+                        <span><span className="font-medium">{t('cms.line')}:</span> {currentTabState.selectedProduct.line}</span>
+                        <span><span className="font-medium">{t('cms.category')}:</span> {currentTabState.selectedProduct.category}</span>
                       </div>
                     </div>
                   </div>
@@ -910,7 +912,7 @@ export default function CMSModuleNew() {
               {/* Selected SKUs List */}
               {currentTabState.selectedSKUs.length > 0 && (
                 <div className="mt-4">
-                  <p className="text-xs font-medium text-gray-500 mb-2">Selected SKUs ({currentTabState.selectedSKUs.length})</p>
+                  <p className="text-xs font-medium text-gray-500 mb-2">{t('cms.selectedSkus')} ({currentTabState.selectedSKUs.length})</p>
                   <div className="flex flex-wrap gap-2">
                     {currentTabState.selectedSKUs.map(sku => (
                       <span
@@ -946,7 +948,7 @@ export default function CMSModuleNew() {
               <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
-              <h4 className="text-base font-semibold text-gray-900">Content Details</h4>
+              <h4 className="text-base font-semibold text-gray-900">{t('cms.contentDetails')}</h4>
             </div>
 
             {uploadType === 'product' ? (
@@ -987,7 +989,7 @@ export default function CMSModuleNew() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Title <span className="text-red-500">*</span>
+                      {t('cms.titleColumn')} <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -1298,7 +1300,7 @@ export default function CMSModuleNew() {
                 onClick={handleSubmit}
                 className="px-6 py-2.5 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#3d0a15] font-medium transition-all shadow-sm hover:shadow-md"
               >
-                {editingContent ? 'Update Content' : 'Create as Draft'}
+                {editingContent ? t('cms.updateContent') : t('cms.createAsDraft')}
               </button>
             </div>
           </div>
@@ -1313,11 +1315,11 @@ export default function CMSModuleNew() {
             <div className="p-6 border-b border-gray-200">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-gray-900">
-                  Content Items
+                  {t('cms.contentItems')}
                 </h3>
                 <div className="flex items-center gap-3">
                   <span className="text-sm text-gray-400 font-normal">
-                    {filteredContent.length} of {totalContentCount} {filteredContent.length === 1 ? 'item' : 'items'}
+                    {filteredContent.length} {t('common.of')} {totalContentCount} {filteredContent.length === 1 ? t('cms.item') : t('cms.items')}
                   </span>
                   {/* Filter Button */}
                   <div className="relative">
@@ -1330,7 +1332,7 @@ export default function CMSModuleNew() {
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
                       </svg>
-                      <span className="text-sm font-medium">Filters</span>
+                      <span className="text-sm font-medium">{t('cms.filters')}</span>
                       {(filterStatus !== 'all' || filterSKU) && (
                         <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
                           {[filterStatus !== 'all', filterSKU].filter(Boolean).length}
@@ -1347,29 +1349,29 @@ export default function CMSModuleNew() {
               <div className="p-6 bg-gray-50 border-b border-gray-200">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Status</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('cms.filterByStatus')}</label>
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value as ContentStatus | 'all')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
                 >
-                  <option value="all">All Status</option>
-                  <option value="draft">Draft</option>
-                  <option value="submitted">Submitted</option>
-                  <option value="approved">Approved</option>
-                  <option value="published">Published</option>
-                  <option value="archived">Archived</option>
-                  <option value="rejected">Rejected</option>
+                  <option value="all">{t('cms.allStatus')}</option>
+                  <option value="draft">{t('cms.draft')}</option>
+                  <option value="submitted">{t('cms.submitted')}</option>
+                  <option value="approved">{t('cms.approved')}</option>
+                  <option value="published">{t('cms.published')}</option>
+                  <option value="archived">{t('cms.archived')}</option>
+                  <option value="rejected">{t('cms.rejected')}</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Search by SKU</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('cms.filterBySku')}</label>
                 <input
                   type="text"
                   value={filterSKU}
                   onChange={(e) => setFilterSKU(e.target.value)}
-                  placeholder="Enter SKU"
+                  placeholder={t('cms.searchBySkuPlaceholder')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
                 />
               </div>
@@ -1382,7 +1384,7 @@ export default function CMSModuleNew() {
                   }}
                   className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
                 >
-                  Clear Filters
+                  {t('cms.clearFilters')}
                 </button>
               </div>
             </div>
@@ -1394,14 +1396,14 @@ export default function CMSModuleNew() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Preview
+                      {t('cms.preview')}
                     </th>
                     <th 
                       className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                       onClick={() => handleSort('title')}
                     >
                       <div className="flex items-center gap-1">
-                        <span>Title</span>
+                        <span>{t('cms.titleColumn')}</span>
                         <SortIcon field="title" />
                       </div>
                     </th>
@@ -1410,7 +1412,7 @@ export default function CMSModuleNew() {
                       onClick={() => handleSort('type')}
                     >
                       <div className="flex items-center gap-1">
-                        <span>Type</span>
+                        <span>{t('cms.type')}</span>
                         <SortIcon field="type" />
                       </div>
                     </th>
@@ -1419,7 +1421,7 @@ export default function CMSModuleNew() {
                       onClick={() => handleSort('linkedSKUs')}
                     >
                       <div className="flex items-center gap-1">
-                        <span>Linked SKUs</span>
+                        <span>{t('cms.linkedSkus')}</span>
                         <SortIcon field="linkedSKUs" />
                       </div>
                     </th>
@@ -1428,7 +1430,7 @@ export default function CMSModuleNew() {
                       onClick={() => handleSort('status')}
                     >
                       <div className="flex items-center gap-1">
-                        <span>Status</span>
+                        <span>{t('cms.status')}</span>
                         <SortIcon field="status" />
                       </div>
                     </th>
@@ -1437,7 +1439,7 @@ export default function CMSModuleNew() {
                       onClick={() => handleSort('author')}
                     >
                       <div className="flex items-center gap-1">
-                        <span>Author</span>
+                        <span>{t('cms.author')}</span>
                         <SortIcon field="author" />
                       </div>
                     </th>
@@ -1446,12 +1448,12 @@ export default function CMSModuleNew() {
                       onClick={() => handleSort('createdAt')}
                     >
                       <div className="flex items-center gap-1">
-                        <span>Date</span>
+                        <span>{t('cms.date')}</span>
                         <SortIcon field="createdAt" />
                       </div>
                     </th>
                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
+                      {t('cms.actions')}
                     </th>
                   </tr>
                 </thead>
@@ -1459,7 +1461,7 @@ export default function CMSModuleNew() {
                   {filteredContent.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
-                        No content found
+                        {t('cms.noContentFound')}
                       </td>
                     </tr>
                   ) : (
@@ -1489,7 +1491,9 @@ export default function CMSModuleNew() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
-                            {item.type}
+                            {item.type === 'product' ? t('cms.product') : 
+                             item.type === 'collection' ? t('cms.collection') : 
+                             item.type === 'general' ? t('cms.general') : item.type}
                           </span>
                         </td>
                         <td className="px-6 py-4">
@@ -1553,7 +1557,7 @@ export default function CMSModuleNew() {
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                   </svg>
-                                  Edit
+                                  {t('cms.edit')}
                                 </button>
                                 <button
                                   onClick={async (e) => {
@@ -1562,7 +1566,7 @@ export default function CMSModuleNew() {
                                       await updateContentStatus(item.id, 'submitted', user?.id || '');
                                     } catch (error) {
                                       console.error('Error submitting content:', error);
-                                      alert('Failed to submit content. Please try again.');
+                                      alert(t('cms.submitContentFailed'));
                                     }
                                   }}
                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4f0c1b] text-white hover:bg-[#3d0a15] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
@@ -1570,18 +1574,18 @@ export default function CMSModuleNew() {
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                   </svg>
-                                Submit
+                                {t('cms.submit')}
                               </button>
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    if (confirm('Are you sure you want to delete this draft?')) {
+                                    if (confirm(t('cms.deleteDraftConfirm'))) {
                                       try {
                                         deleteContent(item.id);
-                                        alert('Draft deleted successfully!');
+                                        alert(t('cms.draftDeleted'));
                                       } catch (error) {
                                         console.error('Error deleting draft:', error);
-                                        alert('Failed to delete draft. Please try again.');
+                                        alert(t('cms.deleteDraftFailed'));
                                       }
                                     }
                                   }}
@@ -1590,7 +1594,7 @@ export default function CMSModuleNew() {
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                   </svg>
-                                  Delete
+                                  {t('cms.delete')}
                                 </button>
                               </>
                             )}
@@ -1619,18 +1623,18 @@ export default function CMSModuleNew() {
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                   </svg>
-                                  Edit
+                                  {t('cms.edit')}
                                 </button>
                                 <button
                                   onClick={async (e) => {
                                     e.stopPropagation();
-                                    if (confirm('Are you sure you want to cancel this submission? It will be moved back to draft.')) {
+                                    if (confirm(t('cms.cancelSubmissionConfirm'))) {
                                       try {
                                         await updateContentStatus(item.id, 'draft', user?.id || '');
-                                        alert('Submission cancelled successfully!');
+                                        alert(t('cms.submissionCancelled'));
                                       } catch (error) {
                                         console.error('Error cancelling submission:', error);
-                                        alert('Failed to cancel submission. Please try again.');
+                                        alert(t('cms.cancelSubmissionFailed'));
                                       }
                                     }
                                   }}
@@ -1639,7 +1643,7 @@ export default function CMSModuleNew() {
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                   </svg>
-                                  Cancel
+                                  {t('common.cancel')}
                                 </button>
                                 {hasPermission('cms.edit') && (
                                   <>
@@ -1653,7 +1657,7 @@ export default function CMSModuleNew() {
                                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                       </svg>
-                                  Approve
+                                  {t('cms.approve')}
                                 </button>
                                 <button
                                       onClick={(e) => {
@@ -1665,7 +1669,7 @@ export default function CMSModuleNew() {
                                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                       </svg>
-                                  Reject
+                                  {t('cms.reject')}
                                 </button>
                                   </>
                                 )}
@@ -1682,14 +1686,14 @@ export default function CMSModuleNew() {
                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                                 </svg>
-                                Publish
+                                {t('cms.publish')}
                               </button>
                             )}
                             {item.status === 'published' && hasPermission('cms.delete') && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (confirm('Are you sure you want to delete this published content?')) {
+                                  if (confirm(t('cms.deletePublishedConfirm'))) {
                                     deleteContent(item.id);
                                   }
                                 }}
@@ -1698,7 +1702,7 @@ export default function CMSModuleNew() {
                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                 </svg>
-                                Delete
+                                {t('cms.delete')}
                               </button>
                             )}
                             {item.status === 'rejected' && (
@@ -1713,7 +1717,7 @@ export default function CMSModuleNew() {
                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                 </svg>
-                                Resubmit
+                                {t('cms.resubmit')}
                               </button>
                             )}
                           </div>
@@ -1922,7 +1926,7 @@ function ContentDetailModal({
             <div className="bg-gray-50 rounded-lg p-4 space-y-3">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <span className="text-xs font-medium text-gray-500">Title</span>
+                  <span className="text-xs font-medium text-gray-500">{t('cms.titleColumn')}</span>
                   <p className="text-sm font-medium text-gray-900 mt-1">{content.title}</p>
                 </div>
                 <div>
@@ -2187,6 +2191,7 @@ function ContentView({
   handleSelectProduct?: (product: InventoryItem) => void;
   onContentClick?: (content: CMSContent) => void;
 }) {
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterLine, setFilterLine] = useState('all');
@@ -2372,7 +2377,7 @@ function ContentView({
   // Section configuration
   const sectionConfig = {
     collection: {
-      title: 'Collections',
+      title: t('cms.collections'),
       filter: contentTypeFilter === 'all' || contentTypeFilter === 'collection',
       content: filteredCollectionContent,
       totalCount: totalCollectionContent,
@@ -2405,7 +2410,7 @@ function ContentView({
                 </div>
                 <div className="mb-2">
                   <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
-                    Collection
+                    {t('cms.collection')}
                   </span>
                 </div>
                 <h4 className="font-medium text-gray-900 text-sm line-clamp-2 mb-2">{item.title}</h4>
@@ -2418,7 +2423,12 @@ function ContentView({
                     item.status === 'rejected' ? 'bg-red-100 text-red-800' :
                     'bg-gray-100 text-gray-800'
                   }`}>
-                    {item.status}
+                    {item.status === 'draft' ? t('cms.draft') :
+                     item.status === 'submitted' ? t('cms.submitted') :
+                     item.status === 'approved' ? t('cms.approved') :
+                     item.status === 'published' ? t('cms.published') :
+                     item.status === 'rejected' ? t('cms.rejected') :
+                     item.status === 'archived' ? t('cms.archived') : item.status}
                   </span>
                   {item.status === 'submitted' && item.metadata.resubmissionCount && item.metadata.resubmissionCount > 0 && (
                     <span className="relative inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-blue-600 rounded-full">
@@ -2433,7 +2443,7 @@ function ContentView({
       ),
     },
     general: {
-      title: 'General Content',
+      title: t('cms.general'),
       filter: contentTypeFilter === 'all' || contentTypeFilter === 'general',
       content: filteredGeneralContent,
       totalCount: totalGeneralContent,
@@ -2466,7 +2476,7 @@ function ContentView({
                 </div>
                 <div className="mb-2">
                   <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
-                    General
+                    {t('cms.general')}
                   </span>
                 </div>
                 <h4 className="font-medium text-gray-900 text-sm line-clamp-2 mb-2">{item.title}</h4>
@@ -2479,7 +2489,12 @@ function ContentView({
                     item.status === 'rejected' ? 'bg-red-100 text-red-800' :
                     'bg-gray-100 text-gray-800'
                   }`}>
-                    {item.status}
+                    {item.status === 'draft' ? t('cms.draft') :
+                     item.status === 'submitted' ? t('cms.submitted') :
+                     item.status === 'approved' ? t('cms.approved') :
+                     item.status === 'published' ? t('cms.published') :
+                     item.status === 'rejected' ? t('cms.rejected') :
+                     item.status === 'archived' ? t('cms.archived') : item.status}
                   </span>
                   {item.status === 'submitted' && item.metadata.resubmissionCount && item.metadata.resubmissionCount > 0 && (
                     <span className="relative inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-blue-600 rounded-full">
@@ -2494,7 +2509,7 @@ function ContentView({
       ),
     },
     inventory: {
-      title: 'Products',
+      title: t('cms.products'),
       filter: contentTypeFilter === 'all' || contentTypeFilter === 'inventory',
       content: filteredInventory,
       totalCount: totalInventory,
@@ -2508,8 +2523,8 @@ function ContentView({
               <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
               </svg>
-              <h3 className="mt-2 text-sm font-medium text-gray-900">No products found</h3>
-              <p className="mt-1 text-sm text-gray-500">Try adjusting your filters</p>
+              <h3 className="mt-2 text-sm font-medium text-gray-900">{t('cms.noProductsFound')}</h3>
+              <p className="mt-1 text-sm text-gray-500">{t('cms.tryAdjustingFilters')}</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -2579,26 +2594,26 @@ function ContentView({
                       <h4 className="font-medium text-gray-900 text-sm line-clamp-2">{item.name}</h4>
                       
                       <div className="text-xs text-gray-500 space-y-1">
-                        <div><strong>SKU:</strong> {item.sku}</div>
-                        <div><strong>Model:</strong> {item.supplierSKU || 'N/A'}</div>
-                        <div><strong>Category:</strong> {item.category}</div>
-                        <div><strong>Line:</strong> {item.line}</div>
+                        <div><strong>{t('inventory.sku')}:</strong> {item.sku}</div>
+                        <div><strong>{t('cms.model')}:</strong> {item.supplierSKU || 'N/A'}</div>
+                        <div><strong>{t('cms.category')}:</strong> {item.category}</div>
+                        <div><strong>{t('cms.line')}:</strong> {item.line}</div>
                       </div>
                       
                       <div className="flex items-center justify-between text-xs">
                         <span className={`px-2 py-1 rounded-full font-medium ${
                           isInStock ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                         }`}>
-                          {isInStock ? 'In Stock' : 'Out of Stock'}
+                          {isInStock ? t('cms.inStock') : t('cms.outOfStock')}
                         </span>
                         <span className="text-gray-500">
-                          {allImages.length} image{allImages.length !== 1 ? 's' : ''}
+                          {allImages.length} {allImages.length !== 1 ? t('cms.images') : t('cms.image')}
                         </span>
                       </div>
                       
                       <div className="text-xs text-gray-500">
-                        <div>Ecuador: {item.ecuadorStock} units</div>
-                        <div>USA: {item.usaStock} units</div>
+                        <div>{t('cms.ecuador')}: {item.ecuadorStock} {t('cms.units')}</div>
+                        <div>{t('cms.usa')}: {item.usaStock} {t('cms.units')}</div>
                       </div>
                     </div>
                   </div>
@@ -2696,7 +2711,7 @@ function ContentView({
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
-            <span className="text-sm font-medium">Filters</span>
+            <span className="text-sm font-medium">{t('cms.filtersButton')}</span>
             {activeFiltersCount > 0 && (
               <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
                 {activeFiltersCount}
@@ -2716,7 +2731,7 @@ function ContentView({
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <span className="text-sm font-medium">Bulk Download</span>
+              <span className="text-sm font-medium">{t('cms.bulkDownloadButton')}</span>
               {selectedProducts.size > 0 && (
                 <span className="bg-blue-100 text-blue-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
                   {selectedProducts.size}

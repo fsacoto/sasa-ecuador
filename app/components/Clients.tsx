@@ -9,9 +9,11 @@ import {
   deleteClient 
 } from '../services/clientsService';
 import { useAuth } from '../context/AuthContext';
+import { useTranslation } from '../context/TranslationContext';
 
 export default function Clients() {
   const { user, hasPermission } = useAuth();
+  const { t } = useTranslation();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -41,7 +43,7 @@ export default function Clients() {
       setClients(data);
     } catch (error) {
       console.error('Error loading clients:', error);
-      alert('Error loading clients');
+      alert(t('clients.errorLoading'));
     } finally {
       setLoading(false);
     }
@@ -89,14 +91,14 @@ export default function Clients() {
       if (selectedClient) {
         // Sales role can only edit Ecuador clients
         if (user?.role === 'sales' && selectedClient.country !== 'Ecuador') {
-          alert('You can only edit Ecuador clients');
+          alert(t('clients.onlyEditEcuador'));
           return;
         }
         await updateClient(selectedClient.id, formData);
       } else {
         // Sales role can only create Ecuador clients
         if (user?.role === 'sales' && formData.country !== 'Ecuador') {
-          alert('You can only create Ecuador clients');
+          alert(t('clients.onlyCreateEcuador'));
           return;
         }
         await createClient(formData);
@@ -105,19 +107,19 @@ export default function Clients() {
       loadClients();
     } catch (error) {
       console.error('Error saving client:', error);
-      alert('Error saving client');
+      alert(t('clients.errorSaving'));
     }
   };
 
   const handleDelete = async (client: Client) => {
-    if (!confirm(`Are you sure you want to delete ${client.name}?`)) return;
+    if (!confirm(`${t('clients.deleteConfirm')} ${client.name}?`)) return;
     
     try {
       await deleteClient(client.id);
       loadClients();
     } catch (error) {
       console.error('Error deleting client:', error);
-      alert('Error deleting client');
+      alert(t('clients.errorDeleting'));
     }
   };
 
@@ -169,15 +171,15 @@ export default function Clients() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Clients</h2>
-          <p className="text-sm text-gray-500 mt-1">Manage your customer database</p>
+          <h2 className="text-2xl font-semibold text-gray-900">{t('clients.title')}</h2>
+          <p className="text-sm text-gray-500 mt-1">{t('clients.subtitle')}</p>
         </div>
         {(hasPermission('clients.create') || hasPermission('clients.create.ecuador')) && (
           <button
             onClick={() => openModal()}
             className="bg-[#4f0c1b] text-white px-4 py-2 rounded-lg hover:bg-[#5c1327] transition-colors"
           >
-            Add Client
+            {t('clients.addClient')}
           </button>
         )}
       </div>
@@ -188,7 +190,7 @@ export default function Clients() {
           <div className="flex-1">
             <input
               type="text"
-              placeholder="Search clients..."
+              placeholder={t('clients.searchClients')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
@@ -199,7 +201,7 @@ export default function Clients() {
             onChange={(e) => setFilterCountry(e.target.value as 'Ecuador' | 'USA' | 'All')}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
           >
-            <option value="All">All Countries</option>
+            <option value="All">{t('clients.allCountries')}</option>
             <option value="Ecuador">Ecuador</option>
             <option value="USA">USA</option>
           </select>
@@ -208,10 +210,10 @@ export default function Clients() {
 
       {/* Clients List */}
       {loading ? (
-        <div className="text-center py-12">Loading clients...</div>
+        <div className="text-center py-12">{t('clients.loadingClients')}</div>
       ) : filteredClients.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-          <p className="text-gray-500">No clients found</p>
+          <p className="text-gray-500">{t('clients.noClientsFound')}</p>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
@@ -223,7 +225,7 @@ export default function Clients() {
                   onClick={() => handleSort('name')}
                 >
                   <div className="flex items-center gap-2">
-                    Name
+                    {t('clients.name')}
                     <SortIcon columnKey="name" />
                   </div>
                 </th>
@@ -232,7 +234,7 @@ export default function Clients() {
                   onClick={() => handleSort('email')}
                 >
                   <div className="flex items-center gap-2">
-                    Email
+                    {t('clients.email')}
                     <SortIcon columnKey="email" />
                   </div>
                 </th>
@@ -241,7 +243,7 @@ export default function Clients() {
                   onClick={() => handleSort('phone')}
                 >
                   <div className="flex items-center gap-2">
-                    Phone
+                    {t('clients.phone')}
                     <SortIcon columnKey="phone" />
                   </div>
                 </th>
@@ -250,7 +252,7 @@ export default function Clients() {
                   onClick={() => handleSort('address')}
                 >
                   <div className="flex items-center gap-2">
-                    Address
+                    {t('clients.address')}
                     <SortIcon columnKey="address" />
                   </div>
                 </th>
@@ -259,7 +261,7 @@ export default function Clients() {
                   onClick={() => handleSort('city')}
                 >
                   <div className="flex items-center gap-2">
-                    City
+                    {t('clients.city')}
                     <SortIcon columnKey="city" />
                   </div>
                 </th>
@@ -268,11 +270,11 @@ export default function Clients() {
                   onClick={() => handleSort('country')}
                 >
                   <div className="flex items-center gap-2">
-                    Country
+                    {t('clients.country')}
                     <SortIcon columnKey="country" />
                   </div>
                 </th>
-                <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase">Actions</th>
+                <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase">{t('clients.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -304,7 +306,7 @@ export default function Clients() {
                         <button
                           onClick={() => openModal(client)}
                           className="px-3 py-1.5 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200 transition-colors"
-                          title="Edit"
+                          title={t('clients.edit')}
                         >
                           ✏️
                         </button>
@@ -313,7 +315,7 @@ export default function Clients() {
                         <button
                           onClick={() => handleDelete(client)}
                           className="px-3 py-1.5 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
-                          title="Delete"
+                          title={t('clients.delete')}
                         >
                           🗑️
                         </button>
@@ -332,13 +334,13 @@ export default function Clients() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-semibold mb-4">
-              {selectedClient ? 'Edit Client' : 'Add Client'}
+              {selectedClient ? t('clients.editClient') : t('clients.addClient')}
             </h3>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Name *
+                    {t('clients.nameRequired')}
                   </label>
                   <input
                     type="text"
@@ -350,7 +352,7 @@ export default function Clients() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Country *
+                    {t('clients.countryRequired')}
                   </label>
                   <select
                     required
@@ -367,7 +369,7 @@ export default function Clients() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email
+                    {t('clients.email')}
                   </label>
                   <input
                     type="email"
@@ -378,7 +380,7 @@ export default function Clients() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Phone
+                    {t('clients.phone')}
                   </label>
                   <input
                     type="tel"
@@ -390,7 +392,7 @@ export default function Clients() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Address *
+                  {t('clients.addressRequired')}
                 </label>
                 <input
                   type="text"
@@ -402,7 +404,7 @@ export default function Clients() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  City *
+                  {t('clients.cityRequired')}
                 </label>
                 <input
                   type="text"
@@ -414,7 +416,7 @@ export default function Clients() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Notes
+                  {t('clients.notes')}
                 </label>
                 <textarea
                   value={formData.notes}
@@ -429,13 +431,13 @@ export default function Clients() {
                   onClick={closeModal}
                   className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
                 >
-                  Cancel
+                  {t('clients.cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors"
                 >
-                  Save
+                  {t('clients.save')}
                 </button>
               </div>
             </form>

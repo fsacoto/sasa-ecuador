@@ -4,9 +4,11 @@ import { useState, useEffect, useRef } from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { Supplier } from '../types';
 import SupplierDetailPanel from './SupplierDetailPanel';
+import { useTranslation } from '../context/TranslationContext';
 
 export default function Suppliers() {
   const { suppliers, addSupplier, updateSupplier, deleteSupplier } = useInventory();
+  const { t } = useTranslation();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
@@ -34,11 +36,11 @@ export default function Suppliers() {
   // Get visible columns for suppliers table
   const getVisibleColumns = () => {
     const allColumns = [
-      { key: 'name', label: 'Name' },
-      { key: 'email', label: 'Email' },
-      { key: 'phone', label: 'Phone' },
-      { key: 'country', label: 'Country' },
-      { key: 'actions', label: 'Actions' }
+      { key: 'name', label: t('suppliers.name') },
+      { key: 'email', label: t('suppliers.email') },
+      { key: 'phone', label: t('suppliers.phone') },
+      { key: 'country', label: t('suppliers.country') },
+      { key: 'actions', label: t('suppliers.actions') }
     ];
     return allColumns;
   };
@@ -99,8 +101,8 @@ export default function Suppliers() {
     <div className="space-y-8">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Suppliers</h2>
-          <p className="text-sm text-gray-500 mt-1">Manage vendor information and contacts</p>
+          <h2 className="text-2xl font-semibold text-gray-900">{t('suppliers.title')}</h2>
+          <p className="text-sm text-gray-500 mt-1">{t('suppliers.subtitle')}</p>
         </div>
         <button
           onClick={() => setIsFormOpen(true)}
@@ -109,7 +111,7 @@ export default function Suppliers() {
           <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
           </svg>
-          <span className="text-sm font-medium text-white">Add Supplier</span>
+          <span className="text-sm font-medium text-white">{t('suppliers.addSupplier')}</span>
         </button>
       </div>
 
@@ -125,7 +127,7 @@ export default function Suppliers() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
             </svg>
-            <span className="text-sm font-medium text-gray-700">Hide fields</span>
+            <span className="text-sm font-medium text-gray-700">{t('suppliers.hideFields')}</span>
             {hiddenColumns.size > 0 && (
               <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
                 {hiddenColumns.size}
@@ -136,7 +138,7 @@ export default function Suppliers() {
           {showColumnDropdown && (
             <div ref={dropdownRef} className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
               <div className="p-4">
-                <div className="text-sm font-medium text-gray-700 mb-3">Column Visibility</div>
+                <div className="text-sm font-medium text-gray-700 mb-3">{t('suppliers.columnVisibility')}</div>
                 <div className="grid grid-cols-2 gap-3">
                   {getVisibleColumns().map(column => (
                     <div key={column.key} className="flex items-center justify-between">
@@ -185,11 +187,11 @@ export default function Suppliers() {
           {showSearchDropdown && (
             <div ref={searchDropdownRef} className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
               <div className="p-4">
-                <div className="text-sm font-medium text-gray-700 mb-3">Search</div>
+                <div className="text-sm font-medium text-gray-700 mb-3">{t('suppliers.search')}</div>
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="Search suppliers..."
+                    placeholder={t('suppliers.searchSuppliers')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
@@ -209,7 +211,7 @@ export default function Suppliers() {
           <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 duration-300">
             <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">
-                {editingSupplier ? 'Edit Supplier' : 'Add New Supplier'}
+                {editingSupplier ? t('suppliers.editSupplier') : t('suppliers.addNewSupplier')}
               </h3>
               <button
                 type="button"
@@ -223,7 +225,7 @@ export default function Suppliers() {
             </div>
             <form onSubmit={handleSubmit} className="overflow-y-auto max-h-[calc(90vh-8rem)] p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700">Supplier Name *</label>
+                <label className="block text-sm font-medium mb-1 text-gray-700">{t('suppliers.supplierNameRequired')}</label>
                 <input
                   type="text"
                   required
@@ -234,7 +236,7 @@ export default function Suppliers() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Email</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('suppliers.email')}</label>
                   <input
                     type="email"
                     value={formData.email}
@@ -244,7 +246,7 @@ export default function Suppliers() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Phone</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('suppliers.phone')}</label>
                   <input
                     type="tel"
                     value={formData.phone}
@@ -256,13 +258,13 @@ export default function Suppliers() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Country</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('suppliers.country')}</label>
                   <select
                     value={formData.country}
                     onChange={(e) => setFormData({ ...formData, country: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                   >
-                    <option value="">Select country</option>
+                    <option value="">{t('suppliers.selectCountry')}</option>
                     <option value="USA">🇺🇸 USA</option>
                     <option value="Ecuador">🇪🇨 Ecuador</option>
                     <option value="Colombia">🇨🇴 Colombia</option>
@@ -274,11 +276,11 @@ export default function Suppliers() {
                     <option value="Spain">🇪🇸 Spain</option>
                     <option value="Mexico">🇲🇽 Mexico</option>
                     <option value="Peru">🇵🇪 Peru</option>
-                    <option value="Other">Other</option>
+                    <option value="Other">{t('suppliers.other')}</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Currency</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('suppliers.currency')}</label>
                   <select
                     value={formData.currency}
                     onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
@@ -293,7 +295,7 @@ export default function Suppliers() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700">Notes</label>
+                <label className="block text-sm font-medium mb-1 text-gray-700">{t('suppliers.notes')}</label>
                 <textarea
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
@@ -308,14 +310,14 @@ export default function Suppliers() {
                 onClick={resetForm}
                 className="flex-1 px-6 py-2.5 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all font-medium text-gray-700"
               >
-                Cancel
+                {t('suppliers.cancel')}
               </button>
               <button
                 type="submit"
                 onClick={handleSubmit}
                 className="flex-1 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
               >
-                {editingSupplier ? 'Update' : 'Add'} Supplier
+                {editingSupplier ? t('suppliers.update') : t('suppliers.add')} {t('suppliers.title')}
               </button>
             </div>
           </div>
@@ -329,27 +331,27 @@ export default function Suppliers() {
               <tr>
                 {!hiddenColumns.has('name') && (
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Name
+                    {t('suppliers.name')}
                   </th>
                 )}
                 {!hiddenColumns.has('email') && (
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Email
+                    {t('suppliers.email')}
                   </th>
                 )}
                 {!hiddenColumns.has('phone') && (
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Phone
+                    {t('suppliers.phone')}
                   </th>
                 )}
                 {!hiddenColumns.has('country') && (
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Country
+                    {t('suppliers.country')}
                   </th>
                 )}
                 {!hiddenColumns.has('actions') && (
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
+                    {t('suppliers.actions')}
                   </th>
                 )}
               </tr>
@@ -358,7 +360,7 @@ export default function Suppliers() {
               {filteredSuppliers.length === 0 ? (
                 <tr>
                   <td colSpan={getVisibleColumns().length} className="px-6 py-12 text-center text-sm text-gray-500">
-                    {searchQuery ? 'No suppliers found matching your search.' : 'No suppliers yet. Add your first supplier to get started.'}
+                    {searchQuery ? t('suppliers.noSuppliersMatching') : t('suppliers.noSuppliersYet')}
                   </td>
                 </tr>
               ) : (
@@ -389,17 +391,17 @@ export default function Suppliers() {
                           onClick={() => handleEdit(supplier)}
                           className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium mr-4 transition-colors"
                         >
-                          Edit
+                          {t('suppliers.edit')}
                         </button>
                         <button
                           onClick={() => {
-                            if (confirm('Are you sure you want to delete this supplier?')) {
+                            if (confirm(t('suppliers.deleteConfirm'))) {
                               deleteSupplier(supplier.id);
                             }
                           }}
                           className="text-red-600 hover:text-red-700 font-medium transition-colors"
                         >
-                          Delete
+                          {t('suppliers.delete')}
                         </button>
                       </td>
                     )}

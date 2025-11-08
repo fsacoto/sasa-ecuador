@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { AdditionalCost, AdditionalCostType, LandedCostCalculation } from '../types';
+import { useTranslation } from '../context/TranslationContext';
 
 export default function LandedCosts() {
   const { 
@@ -14,6 +15,7 @@ export default function LandedCosts() {
     getAdditionalCostsByInvoice,
     calculateLandedCosts 
   } = useInventory();
+  const { t } = useTranslation();
 
   const [selectedInvoice, setSelectedInvoice] = useState<string>('');
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -50,7 +52,7 @@ export default function LandedCosts() {
     const validCosts = formData.costs.filter(cost => cost.amount > 0);
     
     if (validCosts.length === 0) {
-      alert('Please enter at least one cost with an amount greater than 0.');
+      alert(t('landedCosts.pleaseEnterCost'));
       return;
     }
     
@@ -90,7 +92,7 @@ export default function LandedCosts() {
   // Handle edit
   const handleEdit = (cost: AdditionalCost) => {
     // For individual cost editing, we'll use a simpler approach
-    const newDescription = prompt('Edit description:', cost.description);
+    const newDescription = prompt(t('landedCosts.editDescription'), cost.description);
     if (newDescription !== null) {
       updateAdditionalCost(cost.id, { description: newDescription });
     }
@@ -98,7 +100,7 @@ export default function LandedCosts() {
 
   // Handle delete
   const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this additional cost?')) {
+    if (confirm(t('landedCosts.deleteConfirm'))) {
       deleteAdditionalCost(id);
     }
   };
@@ -136,8 +138,8 @@ export default function LandedCosts() {
     <div className="space-y-8">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Landed Costs</h2>
-          <p className="text-sm text-gray-500 mt-1">Track additional costs and calculate final unit costs</p>
+          <h2 className="text-2xl font-semibold text-gray-900">{t('landedCosts.title')}</h2>
+          <p className="text-sm text-gray-500 mt-1">{t('landedCosts.subtitle')}</p>
         </div>
         <button
           onClick={() => setIsFormOpen(true)}
@@ -146,13 +148,13 @@ export default function LandedCosts() {
           <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
           </svg>
-          <span className="text-sm font-medium text-white">Add Additional Costs</span>
+          <span className="text-sm font-medium text-white">{t('landedCosts.addAdditionalCosts')}</span>
         </button>
       </div>
 
       {/* Invoice Selection */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-base font-semibold text-gray-900 mb-4">Select Invoice</h3>
+        <h3 className="text-base font-semibold text-gray-900 mb-4">{t('landedCosts.selectInvoice')}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {invoiceNumbers.map(invoiceNumber => {
             const orders = purchaseOrders.filter(order => order.invoice === invoiceNumber);
@@ -171,7 +173,7 @@ export default function LandedCosts() {
               >
                 <div className="font-medium text-gray-900">{invoiceNumber}</div>
                 <div className="text-sm text-gray-500 mt-1">
-                  {itemCount} items • ${totalValue.toFixed(2)}
+                  {itemCount} {t('landedCosts.items')} • ${totalValue.toFixed(2)}
                 </div>
               </button>
             );
@@ -185,10 +187,10 @@ export default function LandedCosts() {
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold text-gray-900">
-                Additional Costs - {selectedInvoice}
+                {t('landedCosts.additionalCosts')} - {selectedInvoice}
               </h3>
               <span className="text-sm text-gray-500">
-                {invoiceAdditionalCosts.length} cost{invoiceAdditionalCosts.length !== 1 ? 's' : ''}
+                {invoiceAdditionalCosts.length} {invoiceAdditionalCosts.length !== 1 ? t('landedCosts.costsPlural') : t('landedCosts.costs')}
               </span>
             </div>
 
@@ -199,8 +201,8 @@ export default function LandedCosts() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                   </svg>
                 </div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-2">No additional costs</h3>
-                <p className="text-gray-600">Add shipping, duties, and other costs to calculate landed costs</p>
+                <h3 className="text-lg font-semibold text-gray-800 mb-2">{t('landedCosts.noAdditionalCosts')}</h3>
+                <p className="text-gray-600">{t('landedCosts.noAdditionalCostsMessage')}</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -249,24 +251,24 @@ export default function LandedCosts() {
           {/* Landed Cost Calculation */}
           {landedCostCalculation && (
             <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h3 className="text-base font-semibold text-gray-900 mb-4">Landed Cost Calculation</h3>
+              <h3 className="text-base font-semibold text-gray-900 mb-4">{t('landedCosts.landedCostCalculation')}</h3>
               
               {/* Summary */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="text-sm font-medium text-gray-500 mb-1">Base Item Total</div>
+                  <div className="text-sm font-medium text-gray-500 mb-1">{t('landedCosts.baseItemTotal')}</div>
                   <div className="text-xl font-semibold text-gray-900">
                     ${landedCostCalculation.baseItemTotal.toFixed(2)}
                   </div>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="text-sm font-medium text-gray-500 mb-1">Additional Costs</div>
+                  <div className="text-sm font-medium text-gray-500 mb-1">{t('landedCosts.totalAdditionalCosts')}</div>
                   <div className="text-xl font-semibold text-gray-900">
                     ${landedCostCalculation.totalAdditionalCosts.toFixed(2)}
                   </div>
                 </div>
                 <div className="bg-[#4f0c1b]/10 rounded-lg p-4">
-                  <div className="text-sm font-medium text-[#4f0c1b] mb-1">Total Landed Cost</div>
+                  <div className="text-sm font-medium text-[#4f0c1b] mb-1">{t('landedCosts.totalLandedCost')}</div>
                   <div className="text-xl font-semibold text-[#4f0c1b]">
                     ${landedCostCalculation.totalLandedCost.toFixed(2)}
                   </div>
@@ -278,15 +280,15 @@ export default function LandedCosts() {
                 <table className="w-full">
                   <thead className="text-xs font-medium text-gray-500 border-b border-gray-200">
                     <tr>
-                      <th className="text-left pb-3 uppercase tracking-wider">SKU</th>
-                      <th className="text-left pb-3 uppercase tracking-wider">Description</th>
-                      <th className="text-right pb-3 uppercase tracking-wider">Quantity</th>
-                      <th className="text-right pb-3 uppercase tracking-wider">Base Cost/Unit</th>
-                      <th className="text-right pb-3 uppercase tracking-wider">Base Total</th>
-                      <th className="text-right pb-3 uppercase tracking-wider">Allocation %</th>
-                      <th className="text-right pb-3 uppercase tracking-wider">Additional Cost</th>
-                      <th className="text-right pb-3 uppercase tracking-wider">Final Cost/Unit</th>
-                      <th className="text-right pb-3 uppercase tracking-wider">Final Total</th>
+                      <th className="text-left pb-3 uppercase tracking-wider">{t('landedCosts.sku')}</th>
+                      <th className="text-left pb-3 uppercase tracking-wider">{t('landedCosts.description')}</th>
+                      <th className="text-right pb-3 uppercase tracking-wider">{t('landedCosts.quantity')}</th>
+                      <th className="text-right pb-3 uppercase tracking-wider">{t('landedCosts.baseCostPerUnit')}</th>
+                      <th className="text-right pb-3 uppercase tracking-wider">{t('landedCosts.baseTotal')}</th>
+                      <th className="text-right pb-3 uppercase tracking-wider">{t('landedCosts.allocationPercent')}</th>
+                      <th className="text-right pb-3 uppercase tracking-wider">{t('landedCosts.additionalCost')}</th>
+                      <th className="text-right pb-3 uppercase tracking-wider">{t('landedCosts.finalCostPerUnit')}</th>
+                      <th className="text-right pb-3 uppercase tracking-wider">{t('landedCosts.finalTotal')}</th>
                     </tr>
                   </thead>
                   <tbody className="text-sm divide-y divide-gray-100">

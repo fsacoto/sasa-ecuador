@@ -11,10 +11,12 @@ import { syncInventoryToOrders } from '../utils/syncUpdates';
 import { handleMultipleImageUpload, validateImageFile } from '../utils/imageUpload';
 import { generateBarcodeFromSKU, generateBarcodeAsFile, isValidBarcodeInput, isBase64Barcode } from '../utils/barcodeGenerator';
 import { uploadImage } from '../services/storageService';
+import { useTranslation } from '../context/TranslationContext';
 
 export default function Inventory() {
   const { inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, purchaseOrders, updatePurchaseOrder } = useInventory();
   const { user, hasPermission } = useAuth();
+  const { t } = useTranslation();
   
   // For sales role, only show Ecuador inventory in read-only mode
   const isSalesRole = user?.role === 'sales';
@@ -83,15 +85,15 @@ export default function Inventory() {
   // Get visible columns for inventory table
   const getVisibleColumns = () => {
     const allColumns = [
-      { key: 'name', label: 'Name' },
-      { key: 'sku', label: 'SKU' },
-      { key: 'barcode', label: 'Barcode' },
-      { key: 'category', label: 'Category' },
-      { key: 'line', label: 'Line' },
-      { key: 'ecuadorStock', label: 'Ecuador' },
-      { key: 'usaStock', label: 'USA' },
-      { key: 'totalStock', label: 'Total' },
-      { key: 'actions', label: 'Actions' }
+      { key: 'name', label: t('inventory.name') },
+      { key: 'sku', label: t('inventory.sku') },
+      { key: 'barcode', label: t('inventory.barcode') },
+      { key: 'category', label: t('inventory.category') },
+      { key: 'line', label: t('inventory.line') },
+      { key: 'ecuadorStock', label: t('inventory.ecuadorStock') },
+      { key: 'usaStock', label: t('inventory.usaStock') },
+      { key: 'totalStock', label: t('inventory.totalStock') },
+      { key: 'actions', label: t('inventory.actions') }
     ];
     return allColumns;
   };
@@ -236,7 +238,7 @@ export default function Inventory() {
       setFormData(prev => ({ ...prev, images: [...prev.images, ...newImages] }));
     } catch (error) {
       console.error('Error uploading images:', error);
-      alert('Failed to upload images. Please try again.');
+      alert(t('inventory.failedToUploadImages'));
     }
     
     // Reset input
@@ -276,8 +278,8 @@ export default function Inventory() {
   };
 
   const handleGenerateBarcode = async (item: InventoryItem) => {
-    if (!isValidBarcodeInput(item.sku)) {
-      alert('Invalid SKU format for barcode generation');
+      if (!isValidBarcodeInput(item.sku)) {
+      alert(t('inventory.invalidSkuFormat'));
       return;
     }
     
@@ -287,7 +289,7 @@ export default function Inventory() {
       console.log('Current auth user:', auth.currentUser);
       
       if (!auth.currentUser) {
-        alert('You must be logged in to generate barcodes. Please refresh the page and try again.');
+        alert(t('inventory.mustBeLoggedIn'));
         return;
       }
       
@@ -315,7 +317,7 @@ export default function Inventory() {
         console.log(`Barcode migrated successfully for SKU ${item.sku}`);
       }
     } catch (error) {
-      alert('Failed to generate and upload barcode. Please try again.');
+      alert(t('inventory.failedToUploadBarcode'));
       console.error('Barcode generation error:', error);
     }
   };
@@ -430,8 +432,8 @@ export default function Inventory() {
     <div className="space-y-8">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Inventory</h2>
-          <p className="text-sm text-gray-500 mt-1">View stock levels and create product catalogs</p>
+          <h2 className="text-2xl font-semibold text-gray-900">{t('inventory.title')}</h2>
+          <p className="text-sm text-gray-500 mt-1">{t('inventory.subtitle')}</p>
         </div>
         <div className="flex gap-3">
           <button
@@ -442,7 +444,7 @@ export default function Inventory() {
             <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-            <span className="text-sm font-medium text-gray-700">Create Catalog</span>
+            <span className="text-sm font-medium text-gray-700">{t('inventory.createCatalog')}</span>
           </button>
           
           {!isReadOnly && (
@@ -453,7 +455,7 @@ export default function Inventory() {
               <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
               </svg>
-              <span className="text-sm font-medium text-white">Add Item</span>
+              <span className="text-sm font-medium text-white">{t('inventory.addItem')}</span>
             </button>
           )}
         </div>
@@ -475,7 +477,7 @@ export default function Inventory() {
               )}
             </svg>
             <span className="text-sm font-medium text-gray-700">
-              {viewMode === 'grid' ? 'Grid View' : 'Gallery View'}
+              {viewMode === 'grid' ? t('inventory.gridView') : t('inventory.galleryView')}
             </span>
           </button>
           
@@ -494,7 +496,7 @@ export default function Inventory() {
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
                   </svg>
-                  Grid View
+                  {t('inventory.gridView')}
                 </button>
                 <button
                   onClick={() => {
@@ -508,7 +510,7 @@ export default function Inventory() {
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
                   </svg>
-                  Gallery View
+                  {t('inventory.galleryView')}
                 </button>
               </div>
             </div>
@@ -582,7 +584,7 @@ export default function Inventory() {
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
-            <span className="text-sm font-medium">Filters</span>
+            <span className="text-sm font-medium">{t('inventory.filters')}</span>
             {(filterCategory !== 'all' || filterLine !== 'all') && (
               <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
                 {[filterCategory !== 'all', filterLine !== 'all'].filter(Boolean).length}
@@ -602,7 +604,7 @@ export default function Inventory() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
               </svg>
-              <span className="text-sm font-medium text-gray-700">Hide fields</span>
+              <span className="text-sm font-medium text-gray-700">{t('inventory.hideFields')}</span>
               {hiddenColumns.size > 0 && (
                 <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
                   {hiddenColumns.size}
@@ -613,7 +615,7 @@ export default function Inventory() {
             {showColumnDropdown && (
               <div ref={dropdownRef} className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
                 <div className="p-4">
-                  <div className="text-sm font-medium text-gray-700 mb-3">Column Visibility</div>
+                  <div className="text-sm font-medium text-gray-700 mb-3">{t('inventory.columnVisibility')}</div>
                   <div className="grid grid-cols-2 gap-3">
                     {getVisibleColumns().map(column => (
                       <div key={column.key} className="flex items-center justify-between">
@@ -663,11 +665,11 @@ export default function Inventory() {
           {showSearchDropdown && (
             <div ref={searchDropdownRef} className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
               <div className="p-4">
-                <div className="text-sm font-medium text-gray-700 mb-3">Search</div>
+                <div className="text-sm font-medium text-gray-700 mb-3">{t('inventory.search')}</div>
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="Search inventory..."
+                    placeholder={t('inventory.searchPlaceholder')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
@@ -689,13 +691,13 @@ export default function Inventory() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* Category Filter */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Category</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{t('inventory.category')}</label>
                 <select
                   value={filterCategory}
                   onChange={(e) => setFilterCategory(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
                 >
-                  <option value="all">All Categories</option>
+                  <option value="all">{t('inventory.allCategories')}</option>
                   {predefinedCategories.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
@@ -707,13 +709,13 @@ export default function Inventory() {
               
               {/* Line Filter */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Line</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{t('inventory.line')}</label>
                 <select
                   value={filterLine}
                   onChange={(e) => setFilterLine(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
                 >
-                  <option value="all">All Lines</option>
+                  <option value="all">{t('inventory.allLines')}</option>
                   {predefinedLines.map(line => (
                     <option key={line} value={line}>{line}</option>
                   ))}
@@ -735,7 +737,7 @@ export default function Inventory() {
                   }}
                   className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium text-sm"
                 >
-                  Clear All Filters
+                  {t('inventory.clearAllFilters')}
                 </button>
               </div>
             )}
@@ -748,10 +750,10 @@ export default function Inventory() {
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
           <span className="text-2xl">⚠️</span>
           <div>
-            <h3 className="text-sm font-semibold text-amber-900">Items Need Review</h3>
+            <h3 className="text-sm font-semibold text-amber-900">{t('inventory.itemsNeedReview')}</h3>
             <p className="text-sm text-amber-700 mt-1">
-              {inventory.filter(item => item.category.includes('NEEDS REVIEW')).length} items from bulk import need additional information.
-              Click on them to edit and complete the details.
+              {t('inventory.itemsNeedReviewMessage').replace('{count}', inventory.filter(item => item.category.includes('NEEDS REVIEW')).length.toString())}
+              {t('inventory.clickToEdit')}
             </p>
           </div>
         </div>
@@ -762,7 +764,7 @@ export default function Inventory() {
           <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 duration-300">
             <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">
-                {editingItem ? 'Edit Inventory Item' : 'Add New Inventory Item'}
+                {editingItem ? t('inventory.editInventoryItem') : t('inventory.addNewInventoryItem')}
               </h3>
               <button
                 type="button"
@@ -776,7 +778,7 @@ export default function Inventory() {
             </div>
             <form onSubmit={handleSubmit} className="overflow-y-auto max-h-[calc(90vh-8rem)] p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700">Name *</label>
+                <label className="block text-sm font-medium mb-1 text-gray-700">{t('inventory.nameRequired')}</label>
                 <input
                   type="text"
                   required
@@ -787,7 +789,7 @@ export default function Inventory() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700">Description</label>
+                <label className="block text-sm font-medium mb-1 text-gray-700">{t('inventory.description')}</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -798,7 +800,7 @@ export default function Inventory() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Category *</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('inventory.categoryRequired')}</label>
                   {categoryMode === 'select' ? (
                     <div className="flex gap-2">
                       <select
@@ -816,20 +818,20 @@ export default function Inventory() {
                         }}
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                       >
-                        <option value="">Select category...</option>
+                        <option value="">{t('inventory.selectCategory')}</option>
                         {predefinedCategories.map(cat => (
                           <option key={cat} value={cat}>{cat}</option>
                         ))}
                         {existingCategories.length > 0 && (
                           <>
-                            <optgroup label="Other Categories">
+                            <optgroup label={t('inventory.otherCategories')}>
                               {existingCategories.map(cat => (
                                 <option key={cat} value={cat}>{cat}</option>
                               ))}
                             </optgroup>
                           </>
                         )}
-                        <option value="__new__">+ Add New Category</option>
+                        <option value="__new__">{t('inventory.addNewCategory')}</option>
                       </select>
                     </div>
                   ) : (
@@ -843,7 +845,7 @@ export default function Inventory() {
                           // Generate SKU after category change (only for new items)
                           setTimeout(() => generateSkuIfNeeded(), 0);
                         }}
-                        placeholder="Enter new category"
+                        placeholder={t('inventory.enterNewCategory')}
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                         autoFocus
                       />
@@ -852,13 +854,13 @@ export default function Inventory() {
                         onClick={() => setCategoryMode('select')}
                         className="px-3 text-sm text-gray-600 hover:text-gray-900"
                       >
-                        Cancel
+                        {t('inventory.cancel')}
                       </button>
                     </div>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Line *</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('inventory.lineRequired')}</label>
                   {lineMode === 'select' ? (
                     <div className="flex gap-2">
                       <select
@@ -876,20 +878,20 @@ export default function Inventory() {
                         }}
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                       >
-                        <option value="">Select line...</option>
+                        <option value="">{t('inventory.selectLine')}</option>
                         {predefinedLines.map(line => (
                           <option key={line} value={line}>{line}</option>
                         ))}
                         {existingLines.length > 0 && (
                           <>
-                            <optgroup label="Other Lines">
+                            <optgroup label={t('inventory.otherLines')}>
                               {existingLines.map(line => (
                                 <option key={line} value={line}>{line}</option>
                               ))}
                             </optgroup>
                           </>
                         )}
-                        <option value="__new__">+ Add New Line</option>
+                        <option value="__new__">{t('inventory.addNewLine')}</option>
                       </select>
                     </div>
                   ) : (
@@ -903,7 +905,7 @@ export default function Inventory() {
                           // Generate SKU after line change (only for new items)
                           setTimeout(() => generateSkuIfNeeded(), 0);
                         }}
-                        placeholder="Enter new line"
+                        placeholder={t('inventory.enterNewLine')}
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                         autoFocus
                       />
@@ -912,7 +914,7 @@ export default function Inventory() {
                         onClick={() => setLineMode('select')}
                         className="px-3 text-sm text-gray-600 hover:text-gray-900"
                       >
-                        Cancel
+                        {t('inventory.cancel')}
                       </button>
                     </div>
                   )}
@@ -920,14 +922,14 @@ export default function Inventory() {
               </div>
 
               <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Internal SKU *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('inventory.internalSku')}</label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     required
                     value={formData.sku}
                     onChange={(e) => handleSkuChange(e.target.value)}
-                    placeholder="Auto-generated from category & line"
+                    placeholder={t('inventory.autoGeneratedSku')}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent bg-white font-mono"
                     readOnly={!!editingItem}
                   />
@@ -936,7 +938,7 @@ export default function Inventory() {
                     onClick={handleRegenerateSku}
                     disabled={!!editingItem || !formData.category || !formData.line}
                     className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-white hover:border-[#4f0c1b] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                    title="Regenerate SKU"
+                    title={t('inventory.regenerateSku')}
                   >
                     <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -954,24 +956,24 @@ export default function Inventory() {
                     }
                     return 'XX';
                   })() : 'XX'}-#####
-                  {!editingItem && ' (auto-generates when you enter category & line)'}
+                  {!editingItem && t('inventory.autoGeneratesWhen')}
                 </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700">Supplier SKU</label>
+                <label className="block text-sm font-medium mb-1 text-gray-700">{t('inventory.supplierSku')}</label>
                 <input
                   type="text"
                   value={formData.supplierSKU}
                   onChange={(e) => setFormData({ ...formData, supplierSKU: e.target.value })}
-                  placeholder="SKU from supplier"
+                  placeholder={t('inventory.supplierSkuPlaceholder')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Ecuador Stock *</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('inventory.ecuadorStockLabel')} *</label>
                   <input
                     type="number"
                     required
@@ -982,7 +984,7 @@ export default function Inventory() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">USA Stock *</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('inventory.usaStockLabel')} *</label>
                   <input
                     type="number"
                     required
@@ -996,7 +998,7 @@ export default function Inventory() {
 
               {/* Image Upload */}
               <div>
-                <label className="block text-sm font-medium mb-2 text-gray-700">Product Images</label>
+                <label className="block text-sm font-medium mb-2 text-gray-700">{t('inventory.productImages')}</label>
                 
                 {/* Image Grid */}
                 {formData.images.length > 0 && (
@@ -1019,7 +1021,7 @@ export default function Inventory() {
                         </button>
                         {index === 0 && (
                           <div className="absolute bottom-1 left-1 bg-[#4f0c1b] text-white text-xs px-2 py-0.5 rounded">
-                            Main
+                            {t('inventory.main')}
                           </div>
                         )}
                       </div>
@@ -1032,7 +1034,7 @@ export default function Inventory() {
                   <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  <span className="text-sm text-gray-600">Upload Images</span>
+                  <span className="text-sm text-gray-600">{t('inventory.uploadImages')}</span>
                   <input
                     type="file"
                     accept="image/*"
@@ -1042,15 +1044,15 @@ export default function Inventory() {
                   />
                 </label>
                 <p className="text-xs text-gray-500 mt-1">
-                  Upload up to 10 images. First image is the main product image. Max 5MB each.
+                  {t('inventory.uploadUpTo10Images')}
                 </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2 text-gray-700">Linked Purchase Orders</label>
+                <label className="block text-sm font-medium mb-2 text-gray-700">{t('inventory.linkedPurchaseOrders')}</label>
                 <div className="border border-gray-300 rounded-lg p-4 max-h-60 overflow-y-auto bg-gray-50">
                   {purchaseOrders.length === 0 ? (
-                    <p className="text-sm text-gray-500">No purchase orders available</p>
+                    <p className="text-sm text-gray-500">{t('inventory.noPurchaseOrdersAvailable')}</p>
                   ) : (
                     <div className="space-y-2">
                       {purchaseOrders.map((order) => (
@@ -1078,14 +1080,14 @@ export default function Inventory() {
                 onClick={resetForm}
                 className="flex-1 px-6 py-2.5 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all font-medium text-gray-700"
               >
-                Cancel
+                {t('inventory.cancel')}
               </button>
               <button
                 type="submit"
                 onClick={handleSubmit}
                 className="flex-1 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
               >
-                {editingItem ? 'Update' : 'Add'} Inventory Item
+                {editingItem ? t('inventory.update') : t('inventory.add')} {t('common.item')}
               </button>
             </div>
           </div>
@@ -1105,7 +1107,7 @@ export default function Inventory() {
                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   >
                     <div className="flex items-center gap-1">
-                      Name
+                      {t('inventory.name')}
                       <SortIcon field="name" />
                     </div>
                   </th>
@@ -1116,14 +1118,14 @@ export default function Inventory() {
                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   >
                     <div className="flex items-center gap-1">
-                      SKU
+                      {t('inventory.sku')}
                       <SortIcon field="sku" />
                     </div>
                   </th>
                 )}
                 {!hiddenColumns.has('barcode') && (
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Barcode
+                    {t('inventory.barcode')}
                   </th>
                 )}
                 {!hiddenColumns.has('category') && (
@@ -1132,7 +1134,7 @@ export default function Inventory() {
                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   >
                     <div className="flex items-center gap-1">
-                      Category
+                      {t('inventory.category')}
                       <SortIcon field="category" />
                     </div>
                   </th>
@@ -1143,7 +1145,7 @@ export default function Inventory() {
                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   >
                     <div className="flex items-center gap-1">
-                      Line
+                      {t('inventory.line')}
                       <SortIcon field="line" />
                     </div>
                   </th>
@@ -1154,7 +1156,7 @@ export default function Inventory() {
                     className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   >
                     <div className="flex items-center gap-1 justify-center">
-                      Ecuador
+                      {t('inventory.ecuadorStock')}
                       <SortIcon field="ecuadorStock" />
                     </div>
                   </th>
@@ -1165,7 +1167,7 @@ export default function Inventory() {
                     className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   >
                     <div className="flex items-center gap-1 justify-center">
-                      USA
+                      {t('inventory.usaStock')}
                       <SortIcon field="usaStock" />
                     </div>
                   </th>
@@ -1176,14 +1178,14 @@ export default function Inventory() {
                     className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   >
                     <div className="flex items-center gap-1 justify-center">
-                      Total
+                      {t('inventory.totalStock')}
                       <SortIcon field="totalStock" />
                     </div>
                   </th>
                 )}
                 {!hiddenColumns.has('actions') && (
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
+                    {t('inventory.actions')}
                   </th>
                 )}
               </tr>
@@ -1193,8 +1195,8 @@ export default function Inventory() {
                 <tr>
                   <td colSpan={getVisibleColumns().length} className="px-6 py-12 text-center text-sm text-gray-500">
                     {filteredInventory.length === 0 
-                      ? 'No inventory items yet. Add your first item to get started.'
-                      : 'No items match your filters. Try adjusting your search or filters.'}
+                      ? t('inventory.noItemsYet')
+                      : t('inventory.noItemsMatchFilters')}
                   </td>
                 </tr>
               ) : (
@@ -1231,7 +1233,7 @@ export default function Inventory() {
                           <span className="font-medium text-[#4f0c1b] hover:underline">{item.name}</span>
                           {needsReview && (
                             <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
-                              Needs Review
+                              {t('inventory.needsReview')}
                             </span>
                           )}
                         </div>
@@ -1375,7 +1377,7 @@ export default function Inventory() {
                             <h3 className="font-medium text-[#4f0c1b] text-sm truncate">{item.name}</h3>
                             {needsReview && (
                               <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
-                                Needs Review
+                                {t('inventory.needsReview')}
                               </span>
                             )}
                           </div>

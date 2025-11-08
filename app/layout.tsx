@@ -4,6 +4,7 @@ import "./globals.css";
 import { InventoryProvider } from "./context/InventoryContext";
 import { CMSProvider } from "./context/CMSContext";
 import { AuthProvider } from "./context/AuthContext";
+import { TranslationProvider } from "./context/TranslationContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -16,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SASA Inventory Management",
+  title: "SASA Business Hub",
   description: "Jewelry inventory management system for SASA",
 };
 
@@ -30,13 +31,15 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <AuthProvider>
-          <InventoryProvider>
-            <CMSProvider>
-              {children}
-            </CMSProvider>
-          </InventoryProvider>
-        </AuthProvider>
+        <TranslationProvider>
+          <AuthProvider>
+            <InventoryProvider>
+              <CMSProvider>
+                {children}
+              </CMSProvider>
+            </InventoryProvider>
+          </AuthProvider>
+        </TranslationProvider>
       </body>
     </html>
   );

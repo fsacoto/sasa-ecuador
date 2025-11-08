@@ -10,9 +10,11 @@ import { getExchangeRates, getExchangeRate, formatLastUpdate, type ExchangeRateR
 import BulkImportModal from './BulkImportModal';
 import BulkDeleteModal from './BulkDeleteModal';
 import { syncPurchaseOrderToInventory, cleanupInventoryAfterOrderDeletion } from '../utils/syncUpdates';
+import { useTranslation } from '../context/TranslationContext';
 
 export default function PurchaseOrders() {
   const { purchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, suppliers, inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem } = useInventory();
+  const { t } = useTranslation();
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
@@ -67,14 +69,14 @@ export default function PurchaseOrders() {
   // Get visible columns based on current view mode
   const getVisibleColumns = () => {
     const allColumns = [
-      { key: 'invoice', label: 'Invoice' },
-      { key: 'supplier', label: 'Supplier' },
-      { key: 'description', label: 'Description' },
-      { key: 'sku', label: 'SKU' },
-      { key: 'quantity', label: 'Quantity' },
-      { key: 'destination', label: 'Destination' },
-      { key: 'status', label: 'Status' },
-      { key: 'landedCost', label: 'Cost/Unit' }
+      { key: 'invoice', label: t('purchaseOrders.invoice') },
+      { key: 'supplier', label: t('purchaseOrders.supplier') },
+      { key: 'description', label: t('purchaseOrders.description') },
+      { key: 'sku', label: t('purchaseOrders.sku') },
+      { key: 'quantity', label: t('purchaseOrders.quantity') },
+      { key: 'destination', label: t('purchaseOrders.destination') },
+      { key: 'status', label: t('purchaseOrders.status') },
+      { key: 'landedCost', label: t('purchaseOrders.costPerUnit') }
     ];
     
     // Return all columns that can be toggled (excluding # and Actions which are always visible)
@@ -84,13 +86,13 @@ export default function PurchaseOrders() {
   // Get group by fields
   const getGroupByFields = () => {
     return [
-      { key: 'invoice', label: 'Invoice' },
-      { key: 'supplier', label: 'Supplier' },
-      { key: 'category', label: 'Category' },
-      { key: 'line', label: 'Line' },
-      { key: 'destination', label: 'Destination' },
-      { key: 'status', label: 'Status' },
-      { key: 'createdAt', label: 'Date Created' },
+      { key: 'invoice', label: t('purchaseOrders.invoice') },
+      { key: 'supplier', label: t('purchaseOrders.supplier') },
+      { key: 'category', label: t('purchaseOrders.category') },
+      { key: 'line', label: t('purchaseOrders.line') },
+      { key: 'destination', label: t('purchaseOrders.destination') },
+      { key: 'status', label: t('purchaseOrders.status') },
+      { key: 'createdAt', label: t('purchaseOrders.dateCreated') },
     ];
   };
 
@@ -346,9 +348,9 @@ export default function PurchaseOrders() {
       if (oldStatus === 'Verified' && newStatus !== 'Verified') {
         const quantityToRemove = editingOrder.quantityReceived || updatedOrder.quantity;
         const confirmed = confirm(
-          `⚠️ WARNING: This order was already verified and added to inventory!\n\n` +
-          `Changing status will REMOVE ${quantityToRemove} units from your ${updatedOrder.destinationStock} inventory.\n\n` +
-          `Continue?`
+          t('purchaseOrders.warningVerifiedStatus')
+            .replace('{quantity}', quantityToRemove.toString())
+            .replace('{destination}', updatedOrder.destinationStock)
         );
         
         if (!confirmed) {
@@ -369,12 +371,11 @@ export default function PurchaseOrders() {
       // Moving TO Verified - prompt for actual quantity and add to inventory
       else if (oldStatus !== 'Verified' && newStatus === 'Verified') {
         const quantityReceived = prompt(
-          `📦 INVENTORY VERIFICATION\n\n` +
-          `Order: ${updatedOrder.description}\n` +
-          `SKU: ${updatedOrder.sku}\n` +
-          `Expected Quantity: ${updatedOrder.quantity}\n` +
-          `Destination: ${updatedOrder.destinationStock}\n\n` +
-          `Enter the ACTUAL quantity received and counted:`,
+          t('purchaseOrders.inventoryVerification')
+            .replace('{description}', updatedOrder.description)
+            .replace('{sku}', updatedOrder.sku)
+            .replace('{quantity}', updatedOrder.quantity.toString())
+            .replace('{destination}', updatedOrder.destinationStock),
           updatedOrder.quantity.toString()
         );
         
@@ -385,22 +386,20 @@ export default function PurchaseOrders() {
         const actualQuantity = parseInt(quantityReceived);
         
         if (isNaN(actualQuantity) || actualQuantity < 0) {
-          alert('Invalid quantity entered. Please enter a valid number.');
+          alert(t('purchaseOrders.invalidQuantity'));
           return;
         }
         
         // Warn if quantity doesn't match
         if (actualQuantity !== updatedOrder.quantity) {
           const difference = actualQuantity - updatedOrder.quantity;
-          const diffText = difference > 0 ? `+${difference} MORE` : `${Math.abs(difference)} LESS`;
+          const diffText = difference > 0 ? `+${difference} ${t('purchaseOrders.more')}` : `${Math.abs(difference)} ${t('purchaseOrders.less')}`;
           
           const confirmMismatch = confirm(
-            `⚠️ QUANTITY MISMATCH\n\n` +
-            `Expected: ${updatedOrder.quantity}\n` +
-            `Received: ${actualQuantity}\n` +
-            `Difference: ${diffText}\n\n` +
-            `This will add ${actualQuantity} units to inventory.\n\n` +
-            `Continue with this quantity?`
+            t('purchaseOrders.quantityMismatch')
+              .replace('{expected}', updatedOrder.quantity.toString())
+              .replace('{received}', actualQuantity.toString())
+              .replace('{difference}', diffText)
           );
           
           if (!confirmMismatch) {
@@ -508,10 +507,10 @@ export default function PurchaseOrders() {
     if (oldStatus === 'Verified' && newStatus !== 'Verified') {
       const quantityToRemove = order.quantityReceived || order.quantity;
       const confirmed = confirm(
-        `⚠️ WARNING: This order has already been verified and added to inventory!\n\n` +
-        `Moving back to "${newStatus}" will REMOVE ${quantityToRemove} units from your ${order.destinationStock} inventory.\n\n` +
-        `This should only be done if the verification was a mistake.\n\n` +
-        `Are you sure you want to continue?`
+        t('purchaseOrders.warningVerifiedStatusChange')
+          .replace('{status}', newStatus)
+          .replace('{quantity}', quantityToRemove.toString())
+          .replace('{destination}', order.destinationStock)
       );
       
       if (!confirmed) {
@@ -549,12 +548,11 @@ export default function PurchaseOrders() {
     // VERIFICATION: When moving to Verified, prompt for actual quantity received
     if (oldStatus !== 'Verified' && newStatus === 'Verified') {
       const quantityReceived = prompt(
-        `📦 INVENTORY VERIFICATION\n\n` +
-        `Order: ${order.description}\n` +
-        `SKU: ${order.sku}\n` +
-        `Expected Quantity: ${order.quantity}\n` +
-        `Destination: ${order.destinationStock}\n\n` +
-        `Enter the ACTUAL quantity received and counted:`,
+        t('purchaseOrders.inventoryVerification')
+          .replace('{description}', order.description)
+          .replace('{sku}', order.sku)
+          .replace('{quantity}', order.quantity.toString())
+          .replace('{destination}', order.destinationStock),
         order.quantity.toString()
       );
       
@@ -567,22 +565,20 @@ export default function PurchaseOrders() {
       
       // Validate input
       if (isNaN(actualQuantity) || actualQuantity < 0) {
-        alert('Invalid quantity entered. Please enter a valid number.');
+        alert(t('purchaseOrders.invalidQuantity'));
         return;
       }
       
       // Warn if quantity doesn't match
       if (actualQuantity !== order.quantity) {
         const difference = actualQuantity - order.quantity;
-        const diffText = difference > 0 ? `+${difference} MORE` : `${Math.abs(difference)} LESS`;
+        const diffText = difference > 0 ? `+${difference} ${t('purchaseOrders.more')}` : `${Math.abs(difference)} ${t('purchaseOrders.less')}`;
         
         const confirmMismatch = confirm(
-          `⚠️ QUANTITY MISMATCH\n\n` +
-          `Expected: ${order.quantity}\n` +
-          `Received: ${actualQuantity}\n` +
-          `Difference: ${diffText}\n\n` +
-          `This will add ${actualQuantity} units to inventory.\n\n` +
-          `Continue with this quantity?`
+          t('purchaseOrders.quantityMismatch')
+            .replace('{expected}', order.quantity.toString())
+            .replace('{received}', actualQuantity.toString())
+            .replace('{difference}', diffText)
         );
         
         if (!confirmMismatch) {
@@ -824,8 +820,8 @@ export default function PurchaseOrders() {
     <div className="space-y-8">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Purchase Orders</h2>
-          <p className="text-sm text-gray-500 mt-1">Import, track, and manage supplier orders</p>
+          <h2 className="text-2xl font-semibold text-gray-900">{t('purchaseOrders.title')}</h2>
+          <p className="text-sm text-gray-500 mt-1">{t('purchaseOrders.subtitle')}</p>
         </div>
         <div className="flex gap-3">
           {/* Bulk Operations Dropdown */}
@@ -837,7 +833,7 @@ export default function PurchaseOrders() {
               <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
               </svg>
-              <span className="text-sm font-medium text-gray-700">Bulk</span>
+              <span className="text-sm font-medium text-gray-700">{t('purchaseOrders.bulk')}</span>
               <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
@@ -856,7 +852,7 @@ export default function PurchaseOrders() {
                     <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
                     </svg>
-                    Import Orders
+                    {t('purchaseOrders.importOrders')}
                   </button>
                   <button
                     onClick={() => {
@@ -868,7 +864,7 @@ export default function PurchaseOrders() {
                     <svg className="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
-                    Delete Orders
+                    {t('purchaseOrders.deleteOrders')}
           </button>
         </div>
               </div>
@@ -882,7 +878,7 @@ export default function PurchaseOrders() {
             <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
             </svg>
-            <span className="text-sm font-medium text-white">Add Order</span>
+            <span className="text-sm font-medium text-white">{t('purchaseOrders.addOrder')}</span>
           </button>
         </div>
           </div>
@@ -900,7 +896,7 @@ export default function PurchaseOrders() {
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
-            <span className="text-sm font-medium">Filters</span>
+            <span className="text-sm font-medium">{t('purchaseOrders.filters')}</span>
             {(filterStatus !== 'all' || filterSupplier !== 'all' || filterDestination !== 'all' || filterDuplicateSku || filterCategory !== 'all' || filterLine !== 'all') && (
               <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
                 {[filterStatus !== 'all', filterSupplier !== 'all', filterDestination !== 'all', filterDuplicateSku, filterCategory !== 'all', filterLine !== 'all'].filter(Boolean).length}
@@ -920,7 +916,7 @@ export default function PurchaseOrders() {
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             </svg>
-            <span className="text-sm font-medium">Group by</span>
+            <span className="text-sm font-medium">{t('purchaseOrders.groupBy')}</span>
             {groupByField && (
               <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
                 1
@@ -931,7 +927,7 @@ export default function PurchaseOrders() {
           {showGroupByDropdown && (
             <div ref={groupByDropdownRef} className="absolute top-full right-0 mt-2 w-64 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
               <div className="p-4">
-                <div className="text-sm font-medium text-gray-700 mb-3">Group by Field</div>
+                <div className="text-sm font-medium text-gray-700 mb-3">{t('purchaseOrders.groupByField')}</div>
                 <div className="space-y-2">
                   <button
                     onClick={() => {
@@ -945,7 +941,7 @@ export default function PurchaseOrders() {
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
-                    No Grouping
+                    {t('purchaseOrders.noGrouping')}
                   </button>
                   {getGroupByFields().map(field => (
                     <button
@@ -980,7 +976,7 @@ export default function PurchaseOrders() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
             </svg>
-            <span className="text-sm font-medium text-gray-700">Hide fields</span>
+            <span className="text-sm font-medium text-gray-700">{t('purchaseOrders.hideFields')}</span>
             {hiddenColumns.size > 0 && (
               <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
                 {hiddenColumns.size}
@@ -991,7 +987,7 @@ export default function PurchaseOrders() {
           {showColumnDropdown && (
             <div ref={dropdownRef} className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
               <div className="p-4">
-                <div className="text-sm font-medium text-gray-700 mb-3">Column Visibility</div>
+                <div className="text-sm font-medium text-gray-700 mb-3">{t('purchaseOrders.columnVisibility')}</div>
                 <div className="grid grid-cols-2 gap-3">
                   {getVisibleColumns().map(column => (
                     <div key={column.key} className="flex items-center justify-between">
@@ -1043,11 +1039,11 @@ export default function PurchaseOrders() {
           {showSearchDropdown && (
             <div ref={searchDropdownRef} className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
               <div className="p-4">
-                <div className="text-sm font-medium text-gray-700 mb-3">Search</div>
+                <div className="text-sm font-medium text-gray-700 mb-3">{t('purchaseOrders.search')}</div>
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="Search purchase orders..."
+                    placeholder={t('purchaseOrders.searchPlaceholder')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
@@ -1069,29 +1065,29 @@ export default function PurchaseOrders() {
             <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
               {/* Status Filter */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{t('purchaseOrders.status')}</label>
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
                 >
-                  <option value="all">All Status</option>
-                  <option value="Ordered">📦 Ordered</option>
-                  <option value="Shipped">🚚 Shipped</option>
-                  <option value="Received">📥 Received</option>
-                  <option value="Verified">✅ Verified</option>
+                  <option value="all">{t('purchaseOrders.allStatus')}</option>
+                  <option value="Ordered">📦 {t('purchaseOrders.ordered')}</option>
+                  <option value="Shipped">🚚 {t('purchaseOrders.shipped')}</option>
+                  <option value="Received">📥 {t('purchaseOrders.received')}</option>
+                  <option value="Verified">✅ {t('purchaseOrders.verified')}</option>
                 </select>
               </div>
               
               {/* Supplier Filter */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Supplier</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{t('purchaseOrders.supplier')}</label>
                 <select
                   value={filterSupplier}
                   onChange={(e) => setFilterSupplier(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
                 >
-                  <option value="all">All Suppliers</option>
+                  <option value="all">{t('purchaseOrders.allSuppliers')}</option>
                   {suppliers.map(supplier => (
                     <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
                   ))}
@@ -1100,27 +1096,27 @@ export default function PurchaseOrders() {
               
               {/* Destination Filter */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Destination</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{t('purchaseOrders.destination')}</label>
                 <select
                   value={filterDestination}
                   onChange={(e) => setFilterDestination(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
                 >
-                  <option value="all">All Destinations</option>
-                  <option value="Ecuador">Ecuador</option>
-                  <option value="USA">USA</option>
+                  <option value="all">{t('purchaseOrders.allDestinations')}</option>
+                  <option value="Ecuador">{t('purchaseOrders.ecuador')}</option>
+                  <option value="USA">{t('purchaseOrders.usa')}</option>
                 </select>
               </div>
               
               {/* Category Filter */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Category</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{t('purchaseOrders.category')}</label>
                 <select
                   value={filterCategory}
                   onChange={(e) => setFilterCategory(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
                 >
-                  <option value="all">All Categories</option>
+                  <option value="all">{t('purchaseOrders.allCategories')}</option>
                   {predefinedCategories.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
@@ -1136,13 +1132,13 @@ export default function PurchaseOrders() {
               
               {/* Line Filter */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Line</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{t('purchaseOrders.line')}</label>
                 <select
                   value={filterLine}
                   onChange={(e) => setFilterLine(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
                 >
-                  <option value="all">All Lines</option>
+                  <option value="all">{t('purchaseOrders.allLines')}</option>
                   {predefinedLines.map(line => (
                     <option key={line} value={line}>{line}</option>
                   ))}
@@ -1167,7 +1163,7 @@ export default function PurchaseOrders() {
                   className="w-4 h-4 text-[#4f0c1b] border-gray-300 rounded focus:ring-[#4f0c1b] focus:ring-2"
                 />
                 <span className="text-gray-700">
-                  Show only duplicate SKUs ({duplicateSkus.length} SKUs with multiple orders)
+                  {t('purchaseOrders.duplicateSkus')} ({duplicateSkus.length} {t('purchaseOrders.sku')}s {t('common.with')} {t('common.multiple')} {t('purchaseOrders.items')})
                 </span>
               </label>
             </div>
@@ -1187,7 +1183,7 @@ export default function PurchaseOrders() {
                   }}
                   className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium text-sm"
                 >
-                  Clear All Filters
+                  {t('purchaseOrders.clearAllFilters')}
                 </button>
               </div>
             )}
@@ -1200,10 +1196,10 @@ export default function PurchaseOrders() {
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
           <span className="text-2xl">⚠️</span>
           <div>
-            <h3 className="text-sm font-semibold text-amber-900">Orders Need Review</h3>
+            <h3 className="text-sm font-semibold text-amber-900">{t('purchaseOrders.ordersNeedReview')}</h3>
             <p className="text-sm text-amber-700 mt-1">
-              {purchaseOrders.filter(order => order.category.includes('NEEDS REVIEW') || !order.supplierId).length} orders from bulk import need additional information.
-              Click Edit to add missing supplier or other details.
+              {t('purchaseOrders.ordersNeedReviewMessage').replace('{count}', purchaseOrders.filter(order => order.category.includes('NEEDS REVIEW') || !order.supplierId).length.toString())}
+              {t('purchaseOrders.clickEditToAdd')}
             </p>
           </div>
         </div>
@@ -1214,7 +1210,7 @@ export default function PurchaseOrders() {
           <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 duration-300">
             <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">
-                {editingOrder ? 'Edit Purchase Order' : 'Add New Purchase Order'}
+                {editingOrder ? t('purchaseOrders.editPurchaseOrder') : t('purchaseOrders.addNewPurchaseOrder')}
               </h3>
               <button
                 type="button"
@@ -1231,7 +1227,7 @@ export default function PurchaseOrders() {
               {(!editingOrder || (editingOrder && editingOrder.category.includes('NEEDS REVIEW'))) && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    {editingOrder ? 'Link to Existing Product (Optional)' : 'Product'}
+                    {editingOrder ? t('purchaseOrders.linkToExistingProduct') : t('purchaseOrders.product')}
                   </label>
                   <div className="flex gap-2">
                     <select
@@ -1240,14 +1236,14 @@ export default function PurchaseOrders() {
                       className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent bg-white text-sm"
                     >
                       <option value="">
-                        {editingOrder ? 'Keep current / create new product...' : 'Select existing product or create new...'}
+                        {editingOrder ? t('purchaseOrders.keepCurrentCreateNew') : t('purchaseOrders.selectExistingOrCreate')}
                       </option>
-                      {!editingOrder && <option value="new">Create New Product</option>}
+                      {!editingOrder && <option value="new">{t('purchaseOrders.createNewProduct')}</option>}
                       {inventory.length > 0 && <option disabled>──────────</option>}
                       {inventory.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.name} · {item.sku}
-                          {item.supplierSKU && formData.supplierSKU && item.supplierSKU === formData.supplierSKU && ' ✓ (Supplier SKU Match)'}
+                          {item.supplierSKU && formData.supplierSKU && item.supplierSKU === formData.supplierSKU && t('purchaseOrders.supplierSkuMatch')}
                         </option>
                       ))}
                     </select>
@@ -1257,23 +1253,23 @@ export default function PurchaseOrders() {
                         onClick={() => setSelectedInventoryId('')}
                         className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
                       >
-                        Cancel
+                        {t('purchaseOrders.cancel')}
                       </button>
                     )}
                   </div>
                   {selectedInventoryId && selectedInventoryId !== 'new' && !editingOrder && (
                     <p className="text-xs text-gray-500 mt-1.5">
-                      Product details loaded from inventory
+                      {t('purchaseOrders.productDetailsLoaded')}
                     </p>
                   )}
                   {selectedInventoryId && selectedInventoryId !== 'new' && editingOrder && (
                     <p className="text-xs text-green-600 mt-1.5 font-medium">
-                      ✓ Will link to existing product and use its SKU, Category, and Line
+                      {t('purchaseOrders.willLinkToExisting')}
                     </p>
                   )}
                   {isCreatingNewItem && (
                     <p className="text-xs text-[#4f0c1b] mt-1.5 font-medium">
-                      New product will be added to inventory
+                      {t('purchaseOrders.newProductWillBeAdded')}
                     </p>
                   )}
                 </div>
@@ -1281,7 +1277,7 @@ export default function PurchaseOrders() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Invoice *</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.invoiceLabel')}</label>
                   <input
                     type="text"
                     required
@@ -1291,7 +1287,7 @@ export default function PurchaseOrders() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Invoice Link</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.invoiceLink')}</label>
                   <input
                     type="url"
                     value={formData.invoiceLink}
@@ -1303,14 +1299,14 @@ export default function PurchaseOrders() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Supplier *</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.supplierLabel')}</label>
                   <select
                     required
                     value={formData.supplierId}
                     onChange={(e) => setFormData({ ...formData, supplierId: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                   >
-                    <option value="">Select a supplier</option>
+                    <option value="">{t('purchaseOrders.selectSupplier')}</option>
                     {suppliers.map((supplier) => (
                       <option key={supplier.id} value={supplier.id}>
                         {supplier.name}
@@ -1319,7 +1315,7 @@ export default function PurchaseOrders() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Supplier SKU</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.supplierSkuLabel')}</label>
                   <input
                     type="text"
                     value={formData.supplierSKU}
@@ -1333,14 +1329,14 @@ export default function PurchaseOrders() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-1 text-gray-700">
-                    {isCreatingNewItem ? 'Product Name *' : 'Description'}
+                    {isCreatingNewItem ? t('purchaseOrders.productName') : t('purchaseOrders.descriptionLabel')}
                   </label>
                   <input
                     type="text"
                     required={isCreatingNewItem}
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder={isCreatingNewItem ? 'e.g., Gold Diamond Ring' : 'Order description'}
+                    placeholder={isCreatingNewItem ? t('purchaseOrders.productNamePlaceholder') : t('purchaseOrders.orderDescription')}
                     disabled={!!(selectedInventoryId && selectedInventoryId !== 'new' && !editingOrder)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
                   />
@@ -1349,7 +1345,7 @@ export default function PurchaseOrders() {
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1 text-gray-700">
-                      Category {(isCreatingNewItem || editingOrder) && '*'}
+                      {t('purchaseOrders.categoryLabel')} {(isCreatingNewItem || editingOrder) && '*'}
                     </label>
                     {(selectedInventoryId && selectedInventoryId !== 'new' && !editingOrder) ? (
                       <input
@@ -1372,20 +1368,20 @@ export default function PurchaseOrders() {
                         }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                       >
-                        <option value="">Select...</option>
+                        <option value="">{t('purchaseOrders.select')}</option>
                         {predefinedCategories.map(cat => (
                           <option key={cat} value={cat}>{cat}</option>
                         ))}
                         {existingCategories.length > 0 && (
                           <>
-                            <optgroup label="Other Categories">
+                            <optgroup label={t('purchaseOrders.otherCategories')}>
                         {existingCategories.map(cat => (
                           <option key={cat} value={cat}>{cat}</option>
                         ))}
                             </optgroup>
                           </>
                         )}
-                        <option value="__new__">+ Add New</option>
+                        <option value="__new__">{t('purchaseOrders.addNew')}</option>
                       </select>
                     ) : (
                       <div className="flex gap-1">
@@ -1394,7 +1390,7 @@ export default function PurchaseOrders() {
                           required={isCreatingNewItem || !!editingOrder}
                           value={formData.category}
                           onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                          placeholder="New category"
+                          placeholder={t('purchaseOrders.newCategory')}
                           className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                           autoFocus
                         />
@@ -1410,7 +1406,7 @@ export default function PurchaseOrders() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1 text-gray-700">
-                      Line {(isCreatingNewItem || editingOrder) && '*'}
+                      {t('purchaseOrders.lineLabel')} {(isCreatingNewItem || editingOrder) && '*'}
                     </label>
                     {(selectedInventoryId && selectedInventoryId !== 'new' && !editingOrder) ? (
                       <input
@@ -1433,20 +1429,20 @@ export default function PurchaseOrders() {
                         }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                       >
-                        <option value="">Select...</option>
+                        <option value="">{t('purchaseOrders.select')}</option>
                         {predefinedLines.map(line => (
                           <option key={line} value={line}>{line}</option>
                         ))}
                         {existingLines.length > 0 && (
                           <>
-                            <optgroup label="Other Lines">
+                            <optgroup label={t('purchaseOrders.otherLines')}>
                         {existingLines.map(line => (
                           <option key={line} value={line}>{line}</option>
                         ))}
                             </optgroup>
                           </>
                         )}
-                        <option value="__new__">+ Add New</option>
+                        <option value="__new__">{t('purchaseOrders.addNew')}</option>
                       </select>
                     ) : (
                       <div className="flex gap-1">
@@ -1455,7 +1451,7 @@ export default function PurchaseOrders() {
                           required={isCreatingNewItem || !!editingOrder}
                           value={formData.line}
                           onChange={(e) => setFormData({ ...formData, line: e.target.value })}
-                          placeholder="New line"
+                          placeholder={t('purchaseOrders.newLine')}
                           className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                           autoFocus
                         />
@@ -1471,7 +1467,7 @@ export default function PurchaseOrders() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1 text-gray-700">
-                      SKU {isCreatingNewItem && '*'}
+                      {t('purchaseOrders.skuLabel')} {isCreatingNewItem && '*'}
                     </label>
                     <div className="flex gap-2">
                       <input
@@ -1479,7 +1475,7 @@ export default function PurchaseOrders() {
                         required={isCreatingNewItem || !!editingOrder}
                         value={formData.sku}
                         onChange={(e) => handleSkuChange(e.target.value)}
-                        placeholder={isCreatingNewItem ? 'Auto' : ''}
+                        placeholder={isCreatingNewItem ? t('purchaseOrders.auto') : ''}
                         disabled={!!(selectedInventoryId && selectedInventoryId !== 'new' && !editingOrder)}
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 font-mono text-sm"
                       />
@@ -1489,7 +1485,7 @@ export default function PurchaseOrders() {
                           onClick={handleRegenerateSku}
                           disabled={!formData.category || !formData.line}
                           className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-white hover:border-[#4f0c1b] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                          title="Regenerate SKU from category & line"
+                          title={t('purchaseOrders.regenerateSkuFromCategory')}
                         >
                           <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -1501,19 +1497,19 @@ export default function PurchaseOrders() {
                 </div>
                 {isCreatingNewItem && formData.category && formData.line && formData.sku && (
                   <p className="text-xs text-gray-500">
-                    SKU will be: {formData.sku}
+                    {t('purchaseOrders.skuWillBe')} {formData.sku}
                   </p>
                 )}
                 {editingOrder && formData.category && formData.line && (
                   <p className="text-xs text-[#4f0c1b]">
-                    💡 Tip: Update Category & Line, then click the regenerate button to create a new SKU. Changes will sync to linked inventory.
+                    {t('purchaseOrders.tipUpdateCategory')}
                   </p>
                 )}
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Quantity *</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.quantityLabel')}</label>
                   <input
                     type="number"
                     required
@@ -1524,7 +1520,7 @@ export default function PurchaseOrders() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Destination Stock *</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.destinationStock')}</label>
                   <select
                     required
                     value={formData.destinationStock}
@@ -1536,7 +1532,7 @@ export default function PurchaseOrders() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Currency</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.currency')}</label>
                   <select
                     value={formData.currency}
                     onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
@@ -1553,7 +1549,7 @@ export default function PurchaseOrders() {
 
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Cost Per Unit *</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.costPerUnit')}</label>
                   <input
                     type="number"
                     required
@@ -1565,7 +1561,7 @@ export default function PurchaseOrders() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Discount Per Unit</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.discountPerUnit')}</label>
                   <input
                     type="number"
                     min="0"
@@ -1576,7 +1572,7 @@ export default function PurchaseOrders() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">Exchange Rate to USD</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.exchangeRateToUsd')}</label>
                   <div className="flex gap-2">
                     <input
                       type="number"
@@ -1591,19 +1587,19 @@ export default function PurchaseOrders() {
                       onClick={fetchExchangeRates}
                       disabled={isLoadingRates || formData.currency === 'USD'}
                       className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      title="Refresh exchange rate"
+                      title={t('purchaseOrders.refreshExchangeRate')}
                     >
                       {isLoadingRates ? '...' : '↻'}
                     </button>
                   </div>
                   {lastRateUpdate && formData.currency !== 'USD' && (
                     <p className="text-xs text-gray-500 mt-1">
-                      Rate updated: {lastRateUpdate}
+                      {t('purchaseOrders.rateUpdated')} {lastRateUpdate}
                     </p>
                   )}
                   {formData.currency === 'USD' && (
                     <p className="text-xs text-gray-500 mt-1">
-                      No conversion needed (USD)
+                      {t('purchaseOrders.noConversionNeeded')}
                     </p>
                   )}
                 </div>
@@ -1612,36 +1608,36 @@ export default function PurchaseOrders() {
 
               {/* Cost Summary */}
               <div className="bg-white border-2 border-[#4f0c1b] rounded-lg p-4">
-                <h4 className="font-semibold mb-3 text-[#4f0c1b]">Cost Summary</h4>
+                <h4 className="font-semibold mb-3 text-[#4f0c1b]">{t('purchaseOrders.costSummary')}</h4>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between text-gray-600">
-                    <span>Product Cost ({formData.currency}):</span>
+                    <span>{t('purchaseOrders.productCost')} ({formData.currency}):</span>
                     <span>{totals.totalCostWithDiscount.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-gray-600">
-                    <span>Product Cost (USD):</span>
+                    <span>{t('purchaseOrders.productCost')} (USD):</span>
                     <span>${totals.costInUSD.toFixed(2)}</span>
                   </div>
                   <div className="border-t-2 border-gray-200 pt-2 mt-2">
                     <div className="flex justify-between font-semibold text-gray-900 text-base">
-                      <span>Total Cost:</span>
+                      <span>{t('purchaseOrders.totalCost')}</span>
                       <span>${totals.costInUSD.toFixed(2)}</span>
                     </div>
                   </div>
                   <div className="bg-[#4f0c1b] text-white rounded-lg p-3 mt-3">
                     <div className="flex justify-between font-semibold">
-                      <span>Cost Per Unit:</span>
+                      <span>{t('purchaseOrders.costPerUnitLabel')}</span>
                       <span>${(totals.costInUSD / formData.quantity).toFixed(2)}</span>
                     </div>
                     <div className="text-xs mt-1 opacity-90">
-                      vs Supplier Cost: {formData.currency} {totals.costPerUnitWithDiscount.toFixed(2)}
+                      {t('purchaseOrders.vsSupplierCost')} {formData.currency} {totals.costPerUnitWithDiscount.toFixed(2)}
                     </div>
                   </div>
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700">Purchase Date *</label>
+                <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.purchaseDate')}</label>
                 <input
                   type="date"
                   required
@@ -1650,7 +1646,7 @@ export default function PurchaseOrders() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Product images are managed in the Inventory section
+                  {t('purchaseOrders.productImagesManaged')}
                 </p>
               </div>
 
@@ -1661,14 +1657,14 @@ export default function PurchaseOrders() {
                 onClick={resetForm}
                 className="flex-1 px-6 py-2.5 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all font-medium text-gray-700"
               >
-                Cancel
+                {t('purchaseOrders.cancel')}
               </button>
               <button
                 type="submit"
                 onClick={handleSubmit}
                 className="flex-1 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
               >
-                {editingOrder ? 'Update' : 'Add'} Purchase Order
+                {editingOrder ? t('purchaseOrders.updatePurchaseOrder') : t('purchaseOrders.addPurchaseOrder')}
               </button>
             </div>
           </div>
@@ -1691,7 +1687,7 @@ export default function PurchaseOrders() {
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-center gap-1">
-                    Invoice
+                    {t('purchaseOrders.invoice')}
                     <SortIcon field="invoice" />
                   </div>
                 </th>
@@ -1702,7 +1698,7 @@ export default function PurchaseOrders() {
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-center gap-1">
-                    Supplier
+                    {t('purchaseOrders.supplier')}
                     <SortIcon field="supplier" />
                   </div>
                 </th>
@@ -1713,7 +1709,7 @@ export default function PurchaseOrders() {
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-center gap-1">
-                    Description
+                    {t('purchaseOrders.description')}
                     <SortIcon field="description" />
                   </div>
                 </th>
@@ -1724,7 +1720,7 @@ export default function PurchaseOrders() {
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-center gap-1">
-                    SKU
+                    {t('purchaseOrders.sku')}
                     <SortIcon field="sku" />
                   </div>
                 </th>
@@ -1735,7 +1731,7 @@ export default function PurchaseOrders() {
                   className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-center gap-1 justify-end">
-                    Quantity
+                    {t('purchaseOrders.quantity')}
                     <SortIcon field="quantity" />
                   </div>
                 </th>
@@ -1746,7 +1742,7 @@ export default function PurchaseOrders() {
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-center gap-1">
-                    Destination
+                    {t('purchaseOrders.destination')}
                     <SortIcon field="destination" />
                   </div>
                 </th>
@@ -1757,7 +1753,7 @@ export default function PurchaseOrders() {
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-center gap-1">
-                    Status
+                    {t('purchaseOrders.status')}
                     <SortIcon field="status" />
                   </div>
                 </th>
@@ -1768,13 +1764,13 @@ export default function PurchaseOrders() {
                   className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-center gap-1 justify-end">
-                    Cost/Unit
+                    {t('purchaseOrders.costPerUnit')}
                     <SortIcon field="landedCost" />
                   </div>
                 </th>
                   )}
                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
+                  {t('purchaseOrders.actions')}
                 </th>
               </tr>
             </thead>
@@ -1791,7 +1787,7 @@ export default function PurchaseOrders() {
                       className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
                       <div className="flex items-center gap-1">
-                        Supplier
+                        {t('purchaseOrders.supplier')}
                         <SortIcon field="supplier" />
                       </div>
                     </th>
@@ -1802,7 +1798,7 @@ export default function PurchaseOrders() {
                       className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
                       <div className="flex items-center gap-1">
-                        Description
+                        {t('purchaseOrders.description')}
                         <SortIcon field="description" />
                       </div>
                     </th>
@@ -1813,7 +1809,7 @@ export default function PurchaseOrders() {
                       className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
                       <div className="flex items-center gap-1">
-                        SKU
+                        {t('purchaseOrders.sku')}
                         <SortIcon field="sku" />
                       </div>
                     </th>
@@ -1824,7 +1820,7 @@ export default function PurchaseOrders() {
                       className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
                       <div className="flex items-center gap-1 justify-end">
-                    Quantity
+                    {t('purchaseOrders.quantity')}
                     <SortIcon field="quantity" />
                   </div>
                 </th>
@@ -1835,7 +1831,7 @@ export default function PurchaseOrders() {
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-center gap-1">
-                    Destination
+                    {t('purchaseOrders.destination')}
                     <SortIcon field="destination" />
                   </div>
                 </th>
@@ -1846,7 +1842,7 @@ export default function PurchaseOrders() {
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-center gap-1">
-                    Status
+                    {t('purchaseOrders.status')}
                     <SortIcon field="status" />
                   </div>
                 </th>
@@ -1857,13 +1853,13 @@ export default function PurchaseOrders() {
                   className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-center gap-1 justify-end">
-                        Cost/Unit
+                        {t('purchaseOrders.costPerUnit')}
                     <SortIcon field="landedCost" />
                   </div>
                 </th>
                   )}
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
+                  {t('purchaseOrders.actions')}
                 </th>
               </tr>
             </thead>
@@ -1873,8 +1869,8 @@ export default function PurchaseOrders() {
                 <tr>
                   <td colSpan={!groupByField ? 10 - hiddenColumns.size : 9 - hiddenColumns.size} className="px-6 py-12 text-center text-sm text-gray-500">
                     {purchaseOrders.length === 0 
-                      ? 'No purchase orders yet. Add your first purchase order to get started.'
-                      : 'No orders match your filters. Try adjusting your search or filters.'}
+                      ? t('purchaseOrders.noOrdersYet')
+                      : t('purchaseOrders.noOrdersMatchFilters')}
                   </td>
                 </tr>
               ) : !groupByField ? (
@@ -1908,7 +1904,7 @@ export default function PurchaseOrders() {
                             {supplier.name}
                           </button>
                         ) : (
-                          <span className="text-amber-600 font-medium">Missing Supplier</span>
+                          <span className="text-amber-600 font-medium">{t('purchaseOrders.missingSupplier')}</span>
                         )}
                       </td>
                       )}
@@ -1923,7 +1919,7 @@ export default function PurchaseOrders() {
                         <div className="flex items-center gap-2 justify-end">
                           <span className="text-gray-700">{order.quantity}</span>
                           {order.status === 'Verified' && order.quantityReceived !== undefined && order.quantityReceived !== order.quantity && (
-                            <span className="text-amber-600 text-xs font-medium" title={`Actually received: ${order.quantityReceived}`}>
+                            <span className="text-amber-600 text-xs font-medium" title={`${t('purchaseOrders.actuallyReceived')}: ${order.quantityReceived}`}>
                               (⚠️ {order.quantityReceived})
                             </span>
                           )}
@@ -1946,13 +1942,13 @@ export default function PurchaseOrders() {
                               'bg-gray-100 text-gray-800'
                             }`}
                           >
-                            <option value="Ordered">📦 Ordered</option>
-                            <option value="Shipped">🚚 Shipped</option>
-                            <option value="Received">📥 Received</option>
-                            <option value="Verified">✅ Verified</option>
+                            <option value="Ordered">📦 {t('purchaseOrders.statusOrdered')}</option>
+                            <option value="Shipped">🚚 {t('purchaseOrders.statusShipped')}</option>
+                            <option value="Received">📥 {t('purchaseOrders.statusReceived')}</option>
+                            <option value="Verified">✅ {t('purchaseOrders.statusVerified')}</option>
                           </select>
                           {order.status === 'Verified' && (
-                            <span className="text-green-600 text-xs" title="Inventory updated">
+                            <span className="text-green-600 text-xs" title={t('purchaseOrders.inventoryUpdated')}>
                               🔒
                             </span>
                           )}
@@ -1962,7 +1958,7 @@ export default function PurchaseOrders() {
                       {!hiddenColumns.has('landedCost') && (
                       <td className="px-6 py-4 whitespace-nowrap text-right">
                         <div className="font-medium text-gray-900">${order.landedCostPerUnit.toFixed(2)}</div>
-                        <div className="text-xs text-gray-500">Total: ${order.totalLandedCost.toFixed(2)}</div>
+                        <div className="text-xs text-gray-500">{t('purchaseOrders.total')}: ${order.totalLandedCost.toFixed(2)}</div>
                       </td>
                       )}
                       <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
@@ -1978,11 +1974,11 @@ export default function PurchaseOrders() {
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                             </svg>
-                          {needsReview ? 'Complete Info' : 'Edit'}
+                          {needsReview ? t('purchaseOrders.completeInfo') : t('purchaseOrders.edit')}
                         </button>
                         <button
                           onClick={() => {
-                            if (confirm('Are you sure you want to delete this purchase order?')) {
+                            if (confirm(t('purchaseOrders.deleteConfirm'))) {
                                 // Clean up orphaned inventory items
                                 cleanupInventoryAfterOrderDeletion([order.id], inventory, deleteInventoryItem);
                               deletePurchaseOrder(order.id);
@@ -1993,7 +1989,7 @@ export default function PurchaseOrders() {
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
-                          Delete
+                          {t('purchaseOrders.delete')}
                         </button>
                         </div>
                       </td>
@@ -2016,11 +2012,11 @@ export default function PurchaseOrders() {
                             <div className="flex items-center gap-3">
                               <h3 className="text-lg font-semibold text-gray-900">{groupKey}</h3>
                               <span className="bg-[#4f0c1b] text-white px-2 py-1 rounded-full text-xs font-medium">
-                                {totalOrders} order{totalOrders !== 1 ? 's' : ''}
+                                {totalOrders} {totalOrders !== 1 ? t('purchaseOrders.orders') : t('purchaseOrders.order')}
                               </span>
                               {hasNeedsReview && (
                                 <span className="bg-amber-100 text-amber-800 text-xs px-2 py-1 rounded-full font-medium">
-                                  Needs Review
+                                  {t('purchaseOrders.needsReview')}
                                 </span>
                               )}
                             </div>
@@ -2029,7 +2025,7 @@ export default function PurchaseOrders() {
                                 ${totalValue.toFixed(2)}
                               </div>
                               <div className="text-xs text-gray-500">
-                                Total Value
+                                {t('purchaseOrders.totalValue')}
                               </div>
                             </div>
                           </div>
@@ -2059,7 +2055,7 @@ export default function PurchaseOrders() {
                                       {supplier.name}
                                     </button>
                                   ) : (
-                                    <span className="text-amber-600 font-medium">Missing Supplier</span>
+                                    <span className="text-amber-600 font-medium">{t('purchaseOrders.missingSupplier')}</span>
                                   )}
                                   {needsReview && (
                                     <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
@@ -2113,7 +2109,7 @@ export default function PurchaseOrders() {
                                     order.status === 'Shipped' ? 'bg-yellow-100 text-yellow-800' :
                                     'bg-gray-100 text-gray-800'
                                   }`}>
-                                    {order.status === 'Verified' ? '✅' : order.status === 'Received' ? '📥' : order.status === 'Shipped' ? '🚚' : '📦'} {order.status}
+                                    {order.status === 'Verified' ? '✅' : order.status === 'Received' ? '📥' : order.status === 'Shipped' ? '🚚' : '📦'} {order.status === 'Verified' ? t('purchaseOrders.statusVerified') : order.status === 'Received' ? t('purchaseOrders.statusReceived') : order.status === 'Shipped' ? t('purchaseOrders.statusShipped') : t('purchaseOrders.statusOrdered')}
                                   </span>
                                 </div>
                               </td>
@@ -2123,7 +2119,7 @@ export default function PurchaseOrders() {
                             {!hiddenColumns.has('landedCost') && (
                               <td className="px-6 py-4 whitespace-nowrap text-right">
                                 <div className="font-medium text-gray-900">${order.landedCostPerUnit.toFixed(2)}</div>
-                                <div className="text-xs text-gray-500">Total: ${order.totalLandedCost.toFixed(2)}</div>
+                                <div className="text-xs text-gray-500">{t('purchaseOrders.total')}: ${order.totalLandedCost.toFixed(2)}</div>
                               </td>
                             )}
                             
@@ -2141,11 +2137,11 @@ export default function PurchaseOrders() {
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                   </svg>
-                                  {needsReview ? 'Complete Info' : 'Edit'}
+                                  {needsReview ? t('purchaseOrders.completeInfo') : t('purchaseOrders.edit')}
                                 </button>
                                 <button
                                   onClick={() => {
-                                    if (confirm('Are you sure you want to delete this purchase order?')) {
+                                    if (confirm(t('purchaseOrders.deleteConfirm'))) {
                                       // Clean up orphaned inventory items
                                       cleanupInventoryAfterOrderDeletion([order.id], inventory, deleteInventoryItem);
                                       deletePurchaseOrder(order.id);
@@ -2156,7 +2152,7 @@ export default function PurchaseOrders() {
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                   </svg>
-                                  Delete
+                                  {t('purchaseOrders.delete')}
                                 </button>
                               </div>
                             </td>
@@ -2175,19 +2171,19 @@ export default function PurchaseOrders() {
         <div className="bg-gray-50 border-t border-gray-200 px-6 py-3 flex items-center justify-between text-sm text-gray-600">
           <div className="flex items-center gap-4">
             <span>
-              Showing <span className="font-semibold text-gray-900">{filteredAndSortedOrders.length}</span> of <span className="font-semibold text-gray-900">{purchaseOrders.length}</span> orders
+              {t('purchaseOrders.showing')} <span className="font-semibold text-gray-900">{filteredAndSortedOrders.length}</span> {t('purchaseOrders.of')} <span className="font-semibold text-gray-900">{purchaseOrders.length}</span> {t('purchaseOrders.orders')}
             </span>
             {groupByField && (
               <span className="text-gray-400">•</span>
             )}
             {groupByField && (
               <span>
-                <span className="font-semibold text-gray-900">{Object.keys(groupedOrders).length}</span> {getGroupByFields().find(f => f.key === groupByField)?.label.toLowerCase() || 'groups'}
+                <span className="font-semibold text-gray-900">{Object.keys(groupedOrders).length}</span> {getGroupByFields().find(f => f.key === groupByField)?.label.toLowerCase() || t('purchaseOrders.groups')}
               </span>
             )}
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-500">
-            <span>Row numbers reset per group when grouping is active</span>
+            <span>{t('purchaseOrders.rowNumbersReset')}</span>
           </div>
         </div>
       </div>

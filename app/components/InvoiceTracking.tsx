@@ -6,10 +6,12 @@ import { getAllInvoices, updateInvoice } from '../services/invoicesService';
 import { getAllClients } from '../services/clientsService';
 import { useAuth } from '../context/AuthContext';
 import { useInventory } from '../context/InventoryContext';
+import { useTranslation } from '../context/TranslationContext';
 
 export default function InvoiceTracking() {
   const { user } = useAuth();
   const { inventory, updateInventoryItem, purchaseOrders } = useInventory();
+  const { t } = useTranslation();
   const editDropdownRef = useRef<HTMLDivElement>(null);
   const [allInvoices, setAllInvoices] = useState<SalesInvoice[]>([]);
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
@@ -176,7 +178,7 @@ export default function InvoiceTracking() {
       setInvoices(filteredData);
     } catch (error) {
       console.error('Error loading invoices:', error);
-      alert('Error loading invoices');
+      alert(t('invoiceTracking.errorLoading'));
     } finally {
       setLoading(false);
     }
@@ -215,7 +217,7 @@ export default function InvoiceTracking() {
         if (item.maxQuantity) {
           parsedValue = Math.min(Math.max(1, parsedValue), item.maxQuantity);
           if (parseFloat(value) > item.maxQuantity) {
-            alert(`Cannot exceed available stock. Maximum quantity is ${item.maxQuantity}`);
+            alert(`${t('invoiceTracking.cannotExceedStock')} ${item.maxQuantity}`);
           }
         }
       }
@@ -270,7 +272,7 @@ export default function InvoiceTracking() {
     if (!editingInvoice) return;
     
     if (editItems.length === 0) {
-      alert('Invoice must have at least one item');
+      alert(t('invoiceTracking.invoiceMustHaveItem'));
       return;
     }
 
@@ -333,7 +335,7 @@ export default function InvoiceTracking() {
       loadInvoices();
     } catch (error) {
       console.error('Error updating invoice:', error);
-      alert('Error updating invoice');
+      alert(t('invoiceTracking.errorUpdating'));
     }
   };
 
@@ -365,7 +367,7 @@ export default function InvoiceTracking() {
     
     // Don't allow more than the original quantity
     if (quantity > invoice.items[index].quantity) {
-      alert(`Cannot deliver more than ${invoice.items[index].quantity} units`);
+      alert(`${t('invoiceTracking.cannotDeliverMore')} ${invoice.items[index].quantity} ${t('invoiceTracking.units')}`);
       return;
     }
     
@@ -378,7 +380,7 @@ export default function InvoiceTracking() {
     // Check if at least one item has quantity > 0
     const totalDelivered = Object.values(deliveryItems).reduce((sum, qty) => sum + qty, 0);
     if (totalDelivered === 0) {
-      alert('Please specify quantities for items to be delivered');
+      alert(t('invoiceTracking.pleaseSpecifyQuantities'));
       return;
     }
 
@@ -393,9 +395,9 @@ export default function InvoiceTracking() {
       })
       .join('\n');
 
-    const warningMessage = `⚠️ WARNING: This will subtract items from Ecuador inventory!\n\n` +
-      `Items to be subtracted from Ecuador stock:\n${itemsToSubtract}\n\n` +
-      `Stock levels for Ecuador will be reduced. Continue?`;
+    const warningMessage = `${t('invoiceTracking.warningSubtractInventory')}\n\n` +
+      `${t('invoiceTracking.itemsToBeSubtracted')}\n${itemsToSubtract}\n\n` +
+      `${t('invoiceTracking.stockLevelsWillBeReduced')}`;
 
     if (!confirm(warningMessage)) return;
 
@@ -457,7 +459,7 @@ export default function InvoiceTracking() {
       });
       
       setWarningItems(itemsList);
-      setWarningMessage('Changing status will affect Ecuador inventory');
+      setWarningMessage(t('invoiceTracking.changingStatusWillAffect'));
       setWarningCallback(() => async () => {
         setShowWarningModal(false);
         await processDeliveryUpdate(invoice, status);
@@ -466,7 +468,7 @@ export default function InvoiceTracking() {
       return;
     } else {
       // For other status changes, use simple confirmation
-      confirmed = confirm(`Change delivery status to ${status}?`);
+      confirmed = confirm(`${t('invoiceTracking.changeDeliveryStatus')} ${status}?`);
       if (!confirmed) return;
     }
     
@@ -498,11 +500,11 @@ export default function InvoiceTracking() {
         }
       }
 
-      alert('Delivery status updated successfully');
+      alert(t('invoiceTracking.deliveryStatusUpdated'));
       loadInvoices();
     } catch (error) {
       console.error('Error updating delivery:', error);
-      alert('Error updating delivery status');
+      alert(t('invoiceTracking.errorUpdatingDeliveryStatus'));
     }
   };
 
@@ -518,13 +520,13 @@ export default function InvoiceTracking() {
 
     const payment = parseFloat(paymentAmount);
     if (isNaN(payment) || payment <= 0) {
-      alert('Please enter a valid payment amount');
+      alert(t('invoiceTracking.pleaseEnterValidPayment'));
       return;
     }
 
     // Allow payment slightly over remaining balance (tolerance for rounding)
     if (payment > paymentInvoice.remainingBalance + 0.01) {
-      alert(`Payment amount cannot exceed remaining balance of $${paymentInvoice.remainingBalance.toFixed(2)}`);
+      alert(`${t('invoiceTracking.paymentCannotExceed')} $${paymentInvoice.remainingBalance.toFixed(2)}`);
       return;
     }
 
@@ -558,12 +560,12 @@ export default function InvoiceTracking() {
       }
 
       await updateInvoice(paymentInvoice.id, updateData);
-      alert('Payment added successfully');
+      alert(t('invoiceTracking.paymentAdded'));
       setShowPaymentModal(false);
       loadInvoices();
     } catch (error) {
       console.error('Error adding payment:', error);
-      alert('Error adding payment');
+      alert(t('invoiceTracking.errorAddingPayment'));
     }
   };
 
@@ -589,7 +591,7 @@ export default function InvoiceTracking() {
         loadInvoices();
       } catch (error) {
         console.error('Error updating payment:', error);
-        alert('Error updating payment status');
+        alert(t('invoiceTracking.errorUpdatingDeliveryStatus'));
       }
     }
   };
@@ -730,47 +732,47 @@ ${'='.repeat(80)}
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Invoice Tracking</h2>
-          <p className="text-sm text-gray-500 mt-1">Track invoice delivery and payment status</p>
+          <h2 className="text-2xl font-semibold text-gray-900">{t('invoiceTracking.title')}</h2>
+          <p className="text-sm text-gray-500 mt-1">{t('invoiceTracking.subtitle')}</p>
         </div>
       </div>
 
       {/* Summary Dashboard */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Invoices</div>
+          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t('invoiceTracking.totalInvoices')}</div>
           <div className="text-2xl font-bold text-gray-900 mt-2">{metrics.totalInvoices}</div>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Unpaid Invoices</div>
+          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t('invoiceTracking.unpaidInvoices')}</div>
           <div className="text-2xl font-bold text-red-600 mt-2">{metrics.unpaidInvoices}</div>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Partially Paid</div>
+          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t('invoiceTracking.partiallyPaid')}</div>
           <div className="text-2xl font-bold text-yellow-600 mt-2">{metrics.partiallyPaidInvoices}</div>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Collected</div>
+          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t('invoiceTracking.totalCollected')}</div>
           <div className="text-2xl font-bold text-green-600 mt-2">${metrics.totalCollected.toFixed(2)}</div>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Pending Collection</div>
+          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t('invoiceTracking.pendingCollection')}</div>
           <div className="text-2xl font-bold text-amber-600 mt-2">${metrics.totalPending.toFixed(2)}</div>
         </div>
       </div>
 
       {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Filters</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('invoiceTracking.filter')}</h3>
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Customer</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.customer')}</label>
             <select
               value={filters.clientId}
               onChange={(e) => setFilters({ ...filters, clientId: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             >
-              <option value="">All Customers</option>
+              <option value="">{t('invoiceTracking.allCustomers')}</option>
               {uniqueClients.map((client) => (
                 <option key={client.id} value={client.id}>
                   {client.name}
@@ -779,34 +781,34 @@ ${'='.repeat(80)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Payment Status</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.paymentStatus')}</label>
             <select
               value={filters.paymentStatus}
               onChange={(e) => setFilters({ ...filters, paymentStatus: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             >
-              <option value="">All</option>
-              <option value="Unpaid">Unpaid</option>
-              <option value="Partially Paid">Partially Paid</option>
-              <option value="Paid">Paid</option>
+              <option value="">{t('invoiceTracking.all')}</option>
+              <option value="Unpaid">{t('invoiceTracking.unpaid')}</option>
+              <option value="Partially Paid">{t('invoiceTracking.partial')}</option>
+              <option value="Paid">{t('invoiceTracking.paid')}</option>
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Status</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.deliveryStatus')}</label>
             <select
               value={filters.deliveryStatus}
               onChange={(e) => setFilters({ ...filters, deliveryStatus: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             >
-              <option value="">All</option>
-              <option value="Pending">Pending</option>
-              <option value="Partially Delivered">Partially Delivered</option>
-              <option value="Delivered">Delivered</option>
-              <option value="Canceled">Canceled</option>
+              <option value="">{t('invoiceTracking.all')}</option>
+              <option value="Pending">{t('invoiceTracking.pending')}</option>
+              <option value="Partially Delivered">{t('invoiceTracking.partiallyDelivered')}</option>
+              <option value="Delivered">{t('invoiceTracking.delivered')}</option>
+              <option value="Canceled">{t('invoiceTracking.canceled')}</option>
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Date From</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.dateFrom')}</label>
             <input
               type="date"
               value={filters.dateFrom}
@@ -815,7 +817,7 @@ ${'='.repeat(80)}
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Date To</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.dateTo')}</label>
             <input
               type="date"
               value={filters.dateTo}
@@ -828,10 +830,10 @@ ${'='.repeat(80)}
 
       {/* Invoices List */}
       {loading ? (
-        <div className="text-center py-12">Loading invoices...</div>
+        <div className="text-center py-12">{t('invoiceTracking.loadingInvoices')}</div>
       ) : invoices.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-          <p className="text-gray-500">No invoices found</p>
+          <p className="text-gray-500">{t('invoiceTracking.noInvoices')}</p>
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
@@ -843,7 +845,7 @@ ${'='.repeat(80)}
                   onClick={() => handleSort('invoiceNumber')}
                 >
                   <div className="flex items-center gap-2">
-                    FAC Number
+                    {t('invoiceTracking.facNumber')}
                     <SortIcon columnKey="invoiceNumber" />
                   </div>
                 </th>
@@ -852,7 +854,7 @@ ${'='.repeat(80)}
                   onClick={() => handleSort('clientName')}
                 >
                   <div className="flex items-center gap-2">
-                    Customer
+                    {t('invoiceTracking.customer')}
                     <SortIcon columnKey="clientName" />
                   </div>
                 </th>
@@ -861,7 +863,7 @@ ${'='.repeat(80)}
                   onClick={() => handleSort('date')}
                 >
                   <div className="flex items-center gap-2">
-                    Date
+                    {t('invoiceTracking.invoiceDate')}
                     <SortIcon columnKey="date" />
                   </div>
                 </th>
@@ -870,7 +872,7 @@ ${'='.repeat(80)}
                   onClick={() => handleSort('grandTotal')}
                 >
                   <div className="flex items-center justify-end gap-2">
-                    Total
+                    {t('invoiceTracking.total')}
                     <SortIcon columnKey="grandTotal" />
                   </div>
                 </th>
@@ -879,7 +881,7 @@ ${'='.repeat(80)}
                   onClick={() => handleSort('paymentStatus')}
                 >
                   <div className="flex items-center gap-2">
-                    Payment
+                    {t('invoiceTracking.paymentStatus')}
                     <SortIcon columnKey="paymentStatus" />
                   </div>
                 </th>
@@ -888,23 +890,23 @@ ${'='.repeat(80)}
                   onClick={() => handleSort('deliveryStatus')}
                 >
                   <div className="flex items-center gap-2">
-                    Delivery
+                    {t('invoiceTracking.deliveryStatus')}
                     <SortIcon columnKey="deliveryStatus" />
                   </div>
                 </th>
                 <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase">
                   <div className="flex items-center justify-end gap-2">
-                    Total Paid
+                    {t('invoiceTracking.totalPaid')}
                     <SortIcon columnKey="amountPaid" />
                   </div>
                 </th>
                 <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase">
                   <div className="flex items-center justify-end gap-2">
-                    Pending
+                    {t('invoiceTracking.pending')}
                     <SortIcon columnKey="remainingBalance" />
                   </div>
                 </th>
-                <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase">Actions</th>
+                <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase">{t('invoiceTracking.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -917,7 +919,7 @@ ${'='.repeat(80)}
                         setDetailsInvoice(invoice);
                         setShowInvoiceDetailsModal(true);
                       }}
-                      title="Click to view details"
+                      title={t('invoiceTracking.clickToViewDetails')}
                     >
                       {invoice.invoiceNumber}
                     </div>
@@ -938,9 +940,9 @@ ${'='.repeat(80)}
                       onChange={(e) => handleUpdatePayment(invoice, e.target.value as any)}
                       className="px-3 py-1 border border-gray-300 rounded text-sm"
                     >
-                      <option value="Unpaid">🔴 Unpaid</option>
-                      <option value="Partially Paid">🟡 Partially Paid</option>
-                      <option value="Paid">🟢 Paid</option>
+                      <option value="Unpaid">🔴 {t('invoiceTracking.unpaid')}</option>
+                      <option value="Partially Paid">🟡 {t('invoiceTracking.partial')}</option>
+                      <option value="Paid">🟢 {t('invoiceTracking.paid')}</option>
                     </select>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -949,10 +951,10 @@ ${'='.repeat(80)}
                       onChange={(e) => handleUpdateDelivery(invoice, e.target.value as any)}
                       className="px-3 py-1 border border-gray-300 rounded text-sm"
                     >
-                      <option value="Pending">⏳ Pending</option>
-                      <option value="Partially Delivered">📦 Partially Delivered</option>
-                      <option value="Delivered">✅ Delivered</option>
-                      <option value="Canceled">❌ Canceled</option>
+                      <option value="Pending">⏳ {t('invoiceTracking.pending')}</option>
+                      <option value="Partially Delivered">📦 {t('invoiceTracking.partiallyDelivered')}</option>
+                      <option value="Delivered">✅ {t('invoiceTracking.delivered')}</option>
+                      <option value="Canceled">❌ {t('invoiceTracking.canceled')}</option>
                     </select>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
@@ -966,21 +968,21 @@ ${'='.repeat(80)}
                       <button
                         onClick={() => openPaymentModal(invoice)}
                         className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200"
-                        title="Add Payment"
+                        title={t('invoiceTracking.addPayment')}
                       >
                         💰
                       </button>
                       <button
                         onClick={() => openEditModal(invoice)}
                         className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs hover:bg-orange-200"
-                        title="Edit Invoice"
+                        title={t('invoiceTracking.editInvoice')}
                       >
                         ✏️
                       </button>
                       <button
                         onClick={() => generatePDF(invoice)}
                         className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs hover:bg-purple-200"
-                        title="Generate PDF"
+                        title={t('invoiceTracking.generatePdf')}
                       >
                         📄
                       </button>
@@ -997,20 +999,20 @@ ${'='.repeat(80)}
       {editingInvoice && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-semibold mb-4">Edit Invoice - {editingInvoice.invoiceNumber}</h3>
+            <h3 className="text-xl font-semibold mb-4">{t('invoiceTracking.editInvoiceTitle')} - {editingInvoice.invoiceNumber}</h3>
             
             {/* Items Table */}
             <div className="mb-6">
               <div className="flex justify-between items-center mb-4">
-                <h4 className="font-semibold">Items</h4>
+                <h4 className="font-semibold">{t('invoiceTracking.items')}</h4>
               </div>
               
               {/* Inventory Search */}
               <div className="mb-4 relative" ref={editDropdownRef}>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Add Product from Inventory</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.addProductFromInventory')}</label>
                 <input
                   type="text"
-                  placeholder="Search by SKU, name, or description..."
+                  placeholder={t('invoiceTracking.searchBySkuPlaceholder')}
                   value={editSearchTerm}
                   onChange={(e) => {
                     setEditSearchTerm(e.target.value);
@@ -1030,7 +1032,7 @@ ${'='.repeat(80)}
                       >
                         <div className="font-mono text-sm font-semibold text-[#4f0c1b]">{product.sku}</div>
                         <div className="text-sm text-gray-600">{product.name}</div>
-                        <div className="text-xs text-gray-500">Stock: {product.ecuadorStock} | {product.category} - {product.line}</div>
+                        <div className="text-xs text-gray-500">{t('invoiceTracking.stock')}: {product.ecuadorStock} | {product.category} - {product.line}</div>
                       </div>
                     ))}
                   </div>
@@ -1041,12 +1043,12 @@ ${'='.repeat(80)}
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-2 py-2 text-left">SKU</th>
-                      <th className="px-2 py-2 text-left">Description</th>
-                      <th className="px-2 py-2 text-center">Qty</th>
-                      <th className="px-2 py-2 text-right">Unit Price</th>
-                      <th className="px-2 py-2 text-right">Total</th>
-                      <th className="px-2 py-2 text-center">Actions</th>
+                      <th className="px-2 py-2 text-left">{t('invoiceTracking.sku')}</th>
+                      <th className="px-2 py-2 text-left">{t('invoiceTracking.description')}</th>
+                      <th className="px-2 py-2 text-center">{t('invoiceTracking.qty')}</th>
+                      <th className="px-2 py-2 text-right">{t('invoiceTracking.unitPrice')}</th>
+                      <th className="px-2 py-2 text-right">{t('invoiceTracking.total')}</th>
+                      <th className="px-2 py-2 text-center">{t('invoiceTracking.actions')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1080,7 +1082,7 @@ ${'='.repeat(80)}
                             />
                             {(item as any).maxQuantity && (
                               <div className="text-xs text-gray-500">
-                                Max: {(item as any).maxQuantity}
+                                {t('invoiceTracking.max')}: {(item as any).maxQuantity}
                               </div>
                             )}
                           </div>
@@ -1102,7 +1104,7 @@ ${'='.repeat(80)}
                             onClick={() => removeEditItem(index)}
                             className="text-red-600 hover:text-red-700"
                           >
-                            Remove
+                            {t('invoiceTracking.remove')}
                           </button>
                         </td>
                       </tr>
@@ -1115,18 +1117,18 @@ ${'='.repeat(80)}
             {/* Discount */}
             <div className="mb-6 grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Discount Type</label>
+                <label className="block text-sm font-medium mb-2">{t('invoiceTracking.discountType')}</label>
                 <select
                   value={editDiscountType}
                   onChange={(e) => setEditDiscountType(e.target.value as 'percentage' | 'flat')}
                   className="w-full px-3 py-2 border border-gray-300 rounded"
                 >
-                  <option value="percentage">Percentage (%)</option>
-                  <option value="flat">Flat Amount</option>
+                  <option value="percentage">{t('invoiceTracking.percentage')} (%)</option>
+                  <option value="flat">{t('invoiceTracking.flatAmount')}</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Discount Value</label>
+                <label className="block text-sm font-medium mb-2">{t('invoiceTracking.discountValue')}</label>
                 <input
                   type="number"
                   value={editDiscountValue}
@@ -1138,23 +1140,23 @@ ${'='.repeat(80)}
 
             {/* Payment Method */}
             <div className="mb-6">
-              <label className="block text-sm font-medium mb-2">Payment Method</label>
+              <label className="block text-sm font-medium mb-2">{t('invoiceTracking.paymentMethod')}</label>
               <select
                 value={editPaymentMethod}
                 onChange={(e) => setEditPaymentMethod(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded"
               >
-                <option value="">Select payment method...</option>
-                <option value="card">💳 Card</option>
-                <option value="cash">💵 Cash</option>
-                <option value="transfer">🏦 Wire Transfer</option>
+                <option value="">{t('invoiceTracking.selectPaymentMethod')}</option>
+                <option value="card">{t('invoiceTracking.card')}</option>
+                <option value="cash">{t('invoiceTracking.cash')}</option>
+                <option value="transfer">{t('invoiceTracking.transfer')}</option>
               </select>
             </div>
 
             {/* Payment Comment */}
             {editPaymentMethod && (
               <div className="mb-6">
-                <label className="block text-sm font-medium mb-2">Payment Notes</label>
+                <label className="block text-sm font-medium mb-2">{t('invoiceTracking.paymentNotes')}</label>
                 <textarea
                   value={editPaymentComment}
                   onChange={(e) => setEditPaymentComment(e.target.value)}
@@ -1167,15 +1169,15 @@ ${'='.repeat(80)}
             {/* Totals */}
             <div className="border-t pt-4 mb-6">
               <div className="flex justify-between mb-2">
-                <span>Subtotal:</span>
+                <span>{t('invoiceTracking.subtotal')}:</span>
                 <span className="font-semibold">${calculateEditSubtotal().toFixed(2)}</span>
               </div>
               <div className="flex justify-between mb-2">
-                <span>Discount:</span>
+                <span>{t('invoiceTracking.discount')}:</span>
                 <span className="font-semibold">${calculateEditDiscount().toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-xl font-bold text-[#4f0c1b] pt-2 border-t">
-                <span>Grand Total:</span>
+                <span>{t('invoiceTracking.grandTotal')}:</span>
                 <span>${calculateEditGrandTotal().toFixed(2)}</span>
               </div>
             </div>
@@ -1186,13 +1188,13 @@ ${'='.repeat(80)}
                 onClick={saveInvoiceEdit}
                 className="flex-1 px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327]"
               >
-                Save Changes
+                {t('invoiceTracking.saveChanges')}
               </button>
               <button
                 onClick={closeEditModal}
                 className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
               >
-                Cancel
+                {t('invoiceTracking.cancel')}
               </button>
             </div>
           </div>
@@ -1203,17 +1205,17 @@ ${'='.repeat(80)}
       {showPaymentModal && paymentInvoice && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-xl font-semibold mb-4">Add Payment - {paymentInvoice.invoiceNumber}</h3>
+            <h3 className="text-xl font-semibold mb-4">{t('invoiceTracking.addPaymentTitle')} - {paymentInvoice.invoiceNumber}</h3>
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Payment Amount</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.paymentAmount')}</label>
                 <input
                   type="number"
                   step="0.01"
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}
-                  placeholder={`Max: $${paymentInvoice.remainingBalance.toFixed(2)}`}
+                  placeholder={`${t('invoiceTracking.max')}: $${paymentInvoice.remainingBalance.toFixed(2)}`}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                 />
                 <button
@@ -1221,12 +1223,12 @@ ${'='.repeat(80)}
                   onClick={() => setPaymentAmount(paymentInvoice.remainingBalance.toFixed(2))}
                   className="mt-2 text-xs text-blue-600 hover:text-blue-800 underline"
                 >
-                  Pay Full Balance (${paymentInvoice.remainingBalance.toFixed(2)})
+                  {t('invoiceTracking.payFullBalance')} (${paymentInvoice.remainingBalance.toFixed(2)})
                 </button>
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Payment Date</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.paymentDate')}</label>
                 <input
                   type="date"
                   value={paymentDate}
@@ -1237,15 +1239,15 @@ ${'='.repeat(80)}
 
               <div className="bg-gray-50 rounded-lg p-4 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Invoice Total:</span>
+                  <span className="text-gray-600">{t('invoiceTracking.invoiceTotal')}:</span>
                   <span className="font-semibold">${paymentInvoice.grandTotal.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Total Paid:</span>
+                  <span className="text-gray-600">{t('invoiceTracking.totalPaid')}:</span>
                   <span className="font-semibold text-green-600">${paymentInvoice.amountPaid.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Remaining:</span>
+                  <span className="text-gray-600">{t('invoiceTracking.remaining')}:</span>
                   <span className="font-semibold text-red-600">${paymentInvoice.remainingBalance.toFixed(2)}</span>
                 </div>
               </div>
@@ -1256,7 +1258,7 @@ ${'='.repeat(80)}
                 onClick={addPayment}
                 className="flex-1 px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327]"
               >
-                Add Payment
+                {t('invoiceTracking.addPayment')}
               </button>
               <button
                 onClick={() => {
@@ -1266,7 +1268,7 @@ ${'='.repeat(80)}
                 }}
                 className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
               >
-                Cancel
+                {t('invoiceTracking.cancel')}
               </button>
             </div>
           </div>
@@ -1277,11 +1279,11 @@ ${'='.repeat(80)}
       {showDeliveryModal && deliveryInvoice && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-semibold mb-4">Partial Delivery - {deliveryInvoice.invoiceNumber}</h3>
+            <h3 className="text-xl font-semibold mb-4">{t('invoiceTracking.partialDeliveryTitle')} - {deliveryInvoice.invoiceNumber}</h3>
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Date</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.deliveryDate')}</label>
                 <input
                   type="date"
                   value={deliveryDate}
@@ -1291,26 +1293,26 @@ ${'='.repeat(80)}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Notes (Optional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.deliveryNotesOptional')}</label>
                 <textarea
                   value={deliveryNotes}
                   onChange={(e) => setDeliveryNotes(e.target.value)}
                   rows={3}
-                  placeholder="Add any notes about what was delivered..."
+                  placeholder={t('invoiceTracking.deliveryNotesPlaceholder')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Items to Deliver</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.itemsToDeliver')}</label>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-3 py-2 text-left">SKU</th>
-                        <th className="px-3 py-2 text-left">Description</th>
-                        <th className="px-3 py-2 text-center">Ordered</th>
-                        <th className="px-3 py-2 text-center">Delivering</th>
+                        <th className="px-3 py-2 text-left">{t('invoiceTracking.sku')}</th>
+                        <th className="px-3 py-2 text-left">{t('invoiceTracking.description')}</th>
+                        <th className="px-3 py-2 text-center">{t('invoiceTracking.ordered')}</th>
+                        <th className="px-3 py-2 text-center">{t('invoiceTracking.delivering')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
@@ -1338,8 +1340,7 @@ ${'='.repeat(80)}
 
               <div className="bg-blue-50 rounded-lg p-4">
                 <div className="text-sm text-blue-800">
-                  <strong>Note:</strong> Only the quantities specified above will be deducted from inventory. 
-                  The remaining quantities can be delivered later.
+                  <strong>{t('invoiceTracking.note')}</strong> {t('invoiceTracking.noteOnlyQuantities')}
                 </div>
               </div>
             </div>
@@ -1349,13 +1350,13 @@ ${'='.repeat(80)}
                 onClick={savePartialDelivery}
                 className="flex-1 px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327]"
               >
-                Register Partial Delivery
+                {t('invoiceTracking.registerPartialDelivery')}
               </button>
               <button
                 onClick={closeDeliveryModal}
                 className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
               >
-                Cancel
+                {t('invoiceTracking.cancel')}
               </button>
             </div>
           </div>
@@ -1382,22 +1383,22 @@ ${'='.repeat(80)}
             <div className="space-y-6">
               {/* Client Information */}
               <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="font-semibold text-gray-900 mb-3">Client Information</h4>
+                <h4 className="font-semibold text-gray-900 mb-3">{t('invoiceTracking.clientInformation')}</h4>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <span className="text-gray-600">Client Name:</span>
+                    <span className="text-gray-600">{t('invoiceTracking.clientName')}:</span>
                     <span className="ml-2 font-medium">{detailsInvoice.clientName}</span>
                   </div>
                   <div>
-                    <span className="text-gray-600">Address:</span>
+                    <span className="text-gray-600">{t('invoiceTracking.address')}:</span>
                     <span className="ml-2 font-medium">{detailsInvoice.clientAddress}</span>
                   </div>
                   <div>
-                    <span className="text-gray-600">Date:</span>
+                    <span className="text-gray-600">{t('invoiceTracking.date')}:</span>
                     <span className="ml-2 font-medium">{new Date(detailsInvoice.date).toLocaleDateString()}</span>
                   </div>
                   <div>
-                    <span className="text-gray-600">Currency:</span>
+                    <span className="text-gray-600">{t('invoiceTracking.currency')}:</span>
                     <span className="ml-2 font-medium">{detailsInvoice.currency}</span>
                   </div>
                 </div>
@@ -1405,16 +1406,16 @@ ${'='.repeat(80)}
 
               {/* Items Table */}
               <div>
-                <h4 className="font-semibold text-gray-900 mb-3">Items</h4>
+                <h4 className="font-semibold text-gray-900 mb-3">{t('invoiceTracking.items')}</h4>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-3 py-2 text-left">SKU</th>
-                        <th className="px-3 py-2 text-left">Description</th>
-                        <th className="px-3 py-2 text-center">Qty</th>
-                        <th className="px-3 py-2 text-right">Unit Price</th>
-                        <th className="px-3 py-2 text-right">Total</th>
+                        <th className="px-3 py-2 text-left">{t('invoiceTracking.sku')}</th>
+                        <th className="px-3 py-2 text-left">{t('invoiceTracking.description')}</th>
+                        <th className="px-3 py-2 text-center">{t('invoiceTracking.qty')}</th>
+                        <th className="px-3 py-2 text-right">{t('invoiceTracking.unitPrice')}</th>
+                        <th className="px-3 py-2 text-right">{t('invoiceTracking.total')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
@@ -1436,15 +1437,15 @@ ${'='.repeat(80)}
               <div className="bg-gray-50 rounded-lg p-4">
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span>Subtotal:</span>
+                    <span>{t('invoiceTracking.subtotal')}:</span>
                     <span className="font-medium">${detailsInvoice.subtotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Discount {detailsInvoice.discountType === 'percentage' ? `(${detailsInvoice.discountValue}%)` : ''}:</span>
+                    <span>{t('invoiceTracking.discount')} {detailsInvoice.discountType === 'percentage' ? `(${detailsInvoice.discountValue}%)` : ''}:</span>
                     <span className="font-medium text-red-600">-${detailsInvoice.discountTotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-lg font-bold text-[#4f0c1b] pt-2 border-t border-gray-300">
-                    <span>Grand Total:</span>
+                    <span>{t('invoiceTracking.grandTotal')}:</span>
                     <span>${detailsInvoice.grandTotal.toFixed(2)}</span>
                   </div>
                 </div>
@@ -1452,29 +1453,29 @@ ${'='.repeat(80)}
 
               {/* Payment Information */}
               <div className="bg-blue-50 rounded-lg p-4">
-                <h4 className="font-semibold text-gray-900 mb-3">Payment Status</h4>
+                <h4 className="font-semibold text-gray-900 mb-3">{t('invoiceTracking.paymentStatus')}</h4>
                 <div className="grid grid-cols-3 gap-4 mb-4">
                   <div>
-                    <div className="text-xs text-gray-600 uppercase">Status</div>
+                    <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.status')}</div>
                     <div className="font-semibold text-blue-700">
-                      {detailsInvoice.paymentStatus === 'Unpaid' && '🔴 Unpaid'}
-                      {detailsInvoice.paymentStatus === 'Partially Paid' && '🟡 Partially Paid'}
-                      {detailsInvoice.paymentStatus === 'Paid' && '🟢 Paid'}
+                      {detailsInvoice.paymentStatus === 'Unpaid' && `🔴 ${t('invoiceTracking.unpaid')}`}
+                      {detailsInvoice.paymentStatus === 'Partially Paid' && `🟡 ${t('invoiceTracking.partial')}`}
+                      {detailsInvoice.paymentStatus === 'Paid' && `🟢 ${t('invoiceTracking.paid')}`}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-600 uppercase">Amount Paid</div>
+                    <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.amountPaid')}</div>
                     <div className="font-semibold text-green-600">${detailsInvoice.amountPaid.toFixed(2)}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-600 uppercase">Remaining</div>
+                    <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.remaining')}</div>
                     <div className="font-semibold text-red-600">${detailsInvoice.remainingBalance.toFixed(2)}</div>
                   </div>
                 </div>
 
                 {detailsInvoice.paymentHistory && detailsInvoice.paymentHistory.length > 0 && (
                   <div className="mt-4">
-                    <div className="text-xs font-semibold text-gray-700 uppercase mb-2">Payment History</div>
+                    <div className="text-xs font-semibold text-gray-700 uppercase mb-2">{t('invoiceTracking.paymentHistory')}</div>
                     <div className="space-y-2">
                       {detailsInvoice.paymentHistory.map((payment, index) => (
                         <div key={index} className="flex justify-between text-sm bg-white p-2 rounded">
@@ -1492,33 +1493,33 @@ ${'='.repeat(80)}
 
               {/* Delivery Information */}
               <div className="bg-purple-50 rounded-lg p-4">
-                <h4 className="font-semibold text-gray-900 mb-3">Delivery Status</h4>
+                <h4 className="font-semibold text-gray-900 mb-3">{t('invoiceTracking.deliveryStatus')}</h4>
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <div className="text-xs text-gray-600 uppercase">Status</div>
+                    <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.status')}</div>
                     <div className="font-semibold text-purple-700">
-                      {detailsInvoice.deliveryStatus === 'Pending' && '⏳ Pending'}
-                      {detailsInvoice.deliveryStatus === 'Partially Delivered' && '📦 Partially Delivered'}
-                      {detailsInvoice.deliveryStatus === 'Delivered' && '✅ Delivered'}
-                      {detailsInvoice.deliveryStatus === 'Canceled' && '❌ Canceled'}
+                      {detailsInvoice.deliveryStatus === 'Pending' && `⏳ ${t('invoiceTracking.pending')}`}
+                      {detailsInvoice.deliveryStatus === 'Partially Delivered' && `📦 ${t('invoiceTracking.partiallyDelivered')}`}
+                      {detailsInvoice.deliveryStatus === 'Delivered' && `✅ ${t('invoiceTracking.delivered')}`}
+                      {detailsInvoice.deliveryStatus === 'Canceled' && `❌ ${t('invoiceTracking.canceled')}`}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-600 uppercase">Delivery Date</div>
+                    <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.deliveryDate')}</div>
                     <div className="font-medium">
                       {detailsInvoice.deliveryDate 
                         ? new Date(detailsInvoice.deliveryDate).toLocaleDateString()
-                        : 'N/A'}
+                        : t('invoiceTracking.na')}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-600 uppercase">Sales Agent</div>
-                    <div className="font-medium">{detailsInvoice.salesAgent || 'N/A'}</div>
+                    <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.salesAgent')}</div>
+                    <div className="font-medium">{detailsInvoice.salesAgent || t('invoiceTracking.na')}</div>
                   </div>
                 </div>
                 {detailsInvoice.deliveryNotes && (
                   <div className="mt-4">
-                    <div className="text-xs text-gray-600 uppercase mb-1">Delivery Notes</div>
+                    <div className="text-xs text-gray-600 uppercase mb-1">{t('invoiceTracking.deliveryNotes')}</div>
                     <div className="text-sm bg-white p-2 rounded">{detailsInvoice.deliveryNotes}</div>
                   </div>
                 )}
@@ -1527,7 +1528,7 @@ ${'='.repeat(80)}
               {/* Payment Method (if exists) */}
               {detailsInvoice.paymentMethod && (
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-900 mb-2">Payment Method</h4>
+                  <h4 className="font-semibold text-gray-900 mb-2">{t('invoiceTracking.paymentMethod')}</h4>
                   <div className="text-sm">
                     <span className="font-medium">{detailsInvoice.paymentMethod.charAt(0).toUpperCase() + detailsInvoice.paymentMethod.slice(1)}</span>
                     {detailsInvoice.paymentComment && (
@@ -1543,7 +1544,7 @@ ${'='.repeat(80)}
                 onClick={() => generatePDF(detailsInvoice)}
                 className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
               >
-                Generate PDF
+                {t('invoiceTracking.generatePdf')}
               </button>
               <button
                 onClick={() => {
@@ -1552,7 +1553,7 @@ ${'='.repeat(80)}
                 }}
                 className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
               >
-                Close
+                {t('invoiceTracking.close')}
               </button>
             </div>
           </div>
@@ -1565,7 +1566,7 @@ ${'='.repeat(80)}
           <div className="bg-white rounded-xl p-6 w-full max-w-2xl">
             <div className="flex items-center gap-3 mb-4">
               <div className="text-4xl">⚠️</div>
-              <h3 className="text-xl font-bold text-orange-600">Inventory Impact Warning</h3>
+              <h3 className="text-xl font-bold text-orange-600">{t('invoiceTracking.inventoryImpactWarning')}</h3>
             </div>
             
             <p className="text-gray-700 mb-4">
@@ -1574,16 +1575,16 @@ ${'='.repeat(80)}
             
             {warningItems.length > 0 && (
               <div className="bg-orange-50 rounded-lg p-4 mb-4">
-                <h4 className="font-semibold text-gray-900 mb-3">Ecuador Stock Impact:</h4>
+                <h4 className="font-semibold text-gray-900 mb-3">{t('invoiceTracking.ecuadorStockImpact')}</h4>
                 <div className="space-y-2">
                   {warningItems.map((item, index) => (
                     <div key={index} className="flex justify-between items-center bg-white rounded p-2">
                       <div className="flex-1">
                         <div className="font-medium text-gray-900">{item.description}</div>
-                        <div className="text-sm text-gray-600">Delivering: {item.quantity} units</div>
+                        <div className="text-sm text-gray-600">{t('invoiceTracking.delivering')}: {item.quantity} {t('invoiceTracking.units')}</div>
                       </div>
                       <div className="text-right">
-                        <div className="text-sm text-gray-600">Ecuador Stock</div>
+                        <div className="text-sm text-gray-600">{t('invoiceTracking.ecuadorStock')}</div>
                         <div className="font-semibold text-orange-600">
                           {item.currentStock} → {item.remainingStock}
                         </div>
@@ -1596,7 +1597,7 @@ ${'='.repeat(80)}
             
             <div className="bg-blue-50 rounded-lg p-3 mb-4">
               <p className="text-sm text-blue-800">
-                <strong>Note:</strong> Stock levels for Ecuador will be reduced after confirmation.
+                <strong>{t('invoiceTracking.note')}</strong> {t('invoiceTracking.stockLevelsWillBeReduced')}
               </p>
             </div>
             
@@ -1609,7 +1610,7 @@ ${'='.repeat(80)}
                 }}
                 className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
               >
-                Cancel
+                {t('invoiceTracking.cancel')}
               </button>
               <button
                 onClick={() => {
@@ -1619,7 +1620,7 @@ ${'='.repeat(80)}
                 }}
                 className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium"
               >
-                Confirm & Update
+                {t('invoiceTracking.confirmAndUpdate')}
               </button>
             </div>
           </div>

@@ -2,10 +2,12 @@
 
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
+import { useTranslation } from '../context/TranslationContext';
 
 export default function Dashboard() {
   const { suppliers, purchaseOrders, inventory } = useInventory();
   const { hasPermission } = useAuth();
+  const { t } = useTranslation();
 
   const getInventoryValueByCountry = () => {
     let ecuadorValue = 0;
@@ -108,7 +110,7 @@ export default function Dashboard() {
       
       if (!hasVerifiedOrder) return;
       
-      const category = item.category || 'Uncategorized';
+      const category = item.category || t('dashboard.uncategorized');
       categoryCounts[category] = (categoryCounts[category] || 0) + 1;
     });
     
@@ -118,8 +120,8 @@ export default function Dashboard() {
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-2xl font-semibold text-gray-900">Dashboard</h2>
-        <p className="text-sm text-gray-500 mt-1">Overview of your inventory operations</p>
+        <h2 className="text-2xl font-semibold text-gray-900">{t('dashboard.title')}</h2>
+        <p className="text-sm text-gray-500 mt-1">{t('dashboard.overview')}</p>
       </div>
 
       {/* Stats Overview */}
@@ -133,7 +135,7 @@ export default function Dashboard() {
                 </svg>
               </div>
               <div>
-                <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Suppliers</div>
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t('dashboard.totalSuppliers')}</div>
                 <div className="text-2xl font-bold text-gray-900">{suppliers.length}</div>
               </div>
             </div>
@@ -149,7 +151,7 @@ export default function Dashboard() {
               </svg>
             </div>
             <div>
-              <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Purchase Orders</div>
+              <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t('dashboard.purchaseOrders')}</div>
               <div className="text-2xl font-bold text-gray-900">{purchaseOrders.length}</div>
             </div>
           </div>
@@ -164,7 +166,7 @@ export default function Dashboard() {
               </svg>
             </div>
             <div>
-              <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Inventory Items</div>
+              <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t('dashboard.inventoryItems')}</div>
               <div className="text-2xl font-bold text-gray-900">{getVerifiedInventoryCount()}</div>
             </div>
           </div>
@@ -178,7 +180,7 @@ export default function Dashboard() {
               </svg>
             </div>
             <div>
-              <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Stock</div>
+              <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t('dashboard.totalStock')}</div>
               <div className="text-2xl font-bold text-gray-900">{getTotalStock()}</div>
             </div>
           </div>
@@ -195,7 +197,7 @@ export default function Dashboard() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </div>
-            <h3 className="text-base font-semibold text-gray-900">Stock by Location</h3>
+            <h3 className="text-base font-semibold text-gray-900">{t('dashboard.stockByLocation')}</h3>
           </div>
           
           <div className="flex items-center gap-6">
@@ -243,7 +245,7 @@ export default function Dashboard() {
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="text-center">
                   <div className="text-lg font-bold text-gray-900">{getTotalStock()}</div>
-                  <div className="text-xs text-gray-500">Total Units</div>
+                  <div className="text-xs text-gray-500">{t('dashboard.totalUnits')}</div>
                 </div>
               </div>
             </div>
@@ -273,8 +275,8 @@ export default function Dashboard() {
               {/* Percentage breakdown */}
               <div className="pt-2 border-t border-gray-200">
                 <div className="flex justify-between text-xs text-gray-500">
-                  <span>Ecuador: {getTotalStock() > 0 ? ((inventory.reduce((sum, item) => sum + item.ecuadorStock, 0) / getTotalStock()) * 100).toFixed(1) : 0}%</span>
-                  <span>USA: {getTotalStock() > 0 ? ((inventory.reduce((sum, item) => sum + item.usaStock, 0) / getTotalStock()) * 100).toFixed(1) : 0}%</span>
+                  <span>{t('dashboard.ecuador')}: {getTotalStock() > 0 ? ((inventory.reduce((sum, item) => sum + item.ecuadorStock, 0) / getTotalStock()) * 100).toFixed(1) : 0}%</span>
+                  <span>{t('dashboard.usa')}: {getTotalStock() > 0 ? ((inventory.reduce((sum, item) => sum + item.usaStock, 0) / getTotalStock()) * 100).toFixed(1) : 0}%</span>
                 </div>
               </div>
             </div>
@@ -289,14 +291,14 @@ export default function Dashboard() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                 </svg>
               </div>
-              <h3 className="text-base font-semibold text-gray-900">Inventory Value by Country</h3>
+              <h3 className="text-base font-semibold text-gray-900">{t('dashboard.inventoryValueByCountry')}</h3>
             </div>
             
             <div className="space-y-4">
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-700">🇪🇨 Ecuador</span>
+                    <span className="text-sm font-medium text-gray-700">🇪🇨 {t('dashboard.ecuador')}</span>
                   </div>
                   <span className="text-sm font-semibold text-gray-900">
                     ${getInventoryValueByCountry().ecuador.toFixed(2)}
@@ -317,7 +319,7 @@ export default function Dashboard() {
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-700">🇺🇸 USA</span>
+                    <span className="text-sm font-medium text-gray-700">🇺🇸 {t('dashboard.usa')}</span>
                   </div>
                   <span className="text-sm font-semibold text-gray-900">
                     ${getInventoryValueByCountry().usa.toFixed(2)}
@@ -337,7 +339,7 @@ export default function Dashboard() {
               
               <div className="pt-3 border-t border-gray-200">
                 <div className="flex justify-between items-center">
-                  <span className="text-base font-semibold text-gray-900">Total Value</span>
+                  <span className="text-base font-semibold text-gray-900">{t('dashboard.totalValueLabel')}</span>
                   <span className="text-lg font-bold text-[#4f0c1b]">
                     ${getTotalInventoryValue().toFixed(2)}
                   </span>
@@ -351,7 +353,7 @@ export default function Dashboard() {
       {/* Low Stock Alert */}
       {getLowStockItems().length > 0 && hasPermission('inventory.edit') && (
         <div className="bg-amber-50 rounded-xl border border-amber-200 p-6">
-          <h3 className="text-base font-semibold text-amber-900 mb-4">Low Stock Alert</h3>
+          <h3 className="text-base font-semibold text-amber-900 mb-4">{t('dashboard.lowStockAlert')}</h3>
           <div className="space-y-2">
             {getLowStockItems().map((item) => (
               <div key={item.id} className="flex justify-between items-center p-4 bg-white rounded-lg border border-amber-100">
@@ -361,10 +363,10 @@ export default function Dashboard() {
                 </div>
                 <div className="text-right">
                   <div className="font-semibold text-amber-600">
-                    {item.ecuadorStock + item.usaStock} units
+                    {item.ecuadorStock + item.usaStock} {t('dashboard.units')}
                   </div>
                   <div className="text-xs text-gray-500 mt-0.5">
-                    EC: {item.ecuadorStock} · USA: {item.usaStock}
+                    {t('dashboard.ec')}: {item.ecuadorStock} · {t('dashboard.usa')}: {item.usaStock}
                   </div>
                 </div>
               </div>
@@ -384,7 +386,7 @@ export default function Dashboard() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                 </svg>
               </div>
-              <h3 className="text-base font-semibold text-gray-900">Order Status Distribution</h3>
+              <h3 className="text-base font-semibold text-gray-900">{t('dashboard.orderStatusDistribution')}</h3>
             </div>
             
             <div className="space-y-3">
@@ -398,11 +400,18 @@ export default function Dashboard() {
                   'Delivered': 'bg-purple-500',
                   'Cancelled': 'bg-red-500'
                 };
+                const statusTranslations: { [key: string]: string } = {
+                  'Pending': t('dashboard.pending'),
+                  'Verified': t('dashboard.verified'),
+                  'Shipped': t('dashboard.shipped'),
+                  'Delivered': t('dashboard.delivered'),
+                  'Cancelled': t('dashboard.cancelled')
+                };
                 
                 return (
                   <div key={status}>
                     <div className="flex justify-between items-center mb-1">
-                      <span className="text-sm font-medium text-gray-700">{status}</span>
+                      <span className="text-sm font-medium text-gray-700">{statusTranslations[status] || status}</span>
                       <span className="text-sm font-semibold text-gray-900">{isNaN(count) ? 0 : count}</span>
                     </div>
                     <div className="w-full bg-gray-100 rounded-full h-2">
@@ -426,7 +435,7 @@ export default function Dashboard() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
               </svg>
             </div>
-            <h3 className="text-base font-semibold text-gray-900">Inventory by Category</h3>
+            <h3 className="text-base font-semibold text-gray-900">{t('dashboard.inventoryByCategory')}</h3>
           </div>
           
           <div className="space-y-3">
