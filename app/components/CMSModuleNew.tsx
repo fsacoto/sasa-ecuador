@@ -24,30 +24,100 @@ export default function CMSModuleNew() {
   
   const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
   const [uploadType, setUploadType] = useState<ContentType>('product');
-  const [selectedSKUs, setSelectedSKUs] = useState<string[]>([]);
-  const [searchSKU, setSearchSKU] = useState('');
   const [filterStatus, setFilterStatus] = useState<ContentStatus | 'all'>('all');
   const [filterSKU, setFilterSKU] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [sortField, setSortField] = useState<string>('createdAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   
-  // Upload form state
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    hashtags: '',
-    category: '',
-    line: '',
-    tags: '',
-    language: 'en' as 'en' | 'es',
+  // Separate state for each content type tab
+  type UploadedFile = {
+    file: File | string;
+    linkedSKU?: string; // For collection type, track which SKU this image is linked to
+  };
+
+  type TabState = {
+    selectedSKUs: string[];
+    searchSKU: string;
+    showSKUDropdown: boolean;
+    selectedProduct: InventoryItem | null;
+    formData: {
+      title: string;
+      description: string;
+      hashtags: string;
+      category: string;
+      line: string;
+      tags: string;
+      language: 'en' | 'es';
+    };
+    uploadedFiles: UploadedFile[];
+  };
+
+  const [tabStates, setTabStates] = useState<Record<ContentType, TabState>>({
+    product: {
+      selectedSKUs: [],
+      searchSKU: '',
+      showSKUDropdown: false,
+      selectedProduct: null,
+      formData: {
+        title: '',
+        description: '',
+        hashtags: '',
+        category: '',
+        line: '',
+        tags: '',
+        language: 'en',
+      },
+      uploadedFiles: [],
+    },
+    collection: {
+      selectedSKUs: [],
+      searchSKU: '',
+      showSKUDropdown: false,
+      selectedProduct: null,
+      formData: {
+        title: '',
+        description: '',
+        hashtags: '',
+        category: '',
+        line: '',
+        tags: '',
+        language: 'en',
+      },
+      uploadedFiles: [],
+    },
+    general: {
+      selectedSKUs: [],
+      searchSKU: '',
+      showSKUDropdown: false,
+      selectedProduct: null,
+      formData: {
+        title: '',
+        description: '',
+        hashtags: '',
+        category: '',
+        line: '',
+        tags: '',
+        language: 'en',
+      },
+      uploadedFiles: [],
+    },
   });
+
+  // Get current tab state
+  const currentTabState = tabStates[uploadType];
+  
+  // Helper functions to update current tab state
+  const updateCurrentTabState = (updates: Partial<TabState>) => {
+    setTabStates(prev => ({
+      ...prev,
+      [uploadType]: { ...prev[uploadType], ...updates }
+    }));
+  };
 
   // Get unique categories and lines from inventory for dropdowns
   const availableCategories = [...new Set(inventory.map(item => item.category))].filter(Boolean).sort();
   const availableLines = [...new Set(inventory.map(item => item.line))].filter(Boolean).sort();
-  const [uploadedFiles, setUploadedFiles] = useState<(File | string)[]>([]);
-  const [selectedProduct, setSelectedProduct] = useState<InventoryItem | null>(null);
   const [selectedContentDetail, setSelectedContentDetail] = useState<CMSContent | null>(null);
   const [resubmitModalOpen, setResubmitModalOpen] = useState(false);
   const [resubmitContentId, setResubmitContentId] = useState<string | null>(null);
@@ -152,35 +222,109 @@ export default function CMSModuleNew() {
     })
     .sort(sortContent);
 
-  // Search SKU function
-  const handleSKUSearch = () => {
-    const product = inventory.find(item => 
-      item.sku.toLowerCase() === searchSKU.toLowerCase() || 
-      item.name.toLowerCase().includes(searchSKU.toLowerCase())
+  // Filter inventory items based on search input for current tab
+  const filteredInventory = inventory.filter(item => {
+    if (!currentTabState.searchSKU.trim()) return false;
+    const searchLower = currentTabState.searchSKU.toLowerCase();
+    return (
+      item.sku.toLowerCase().includes(searchLower) || 
+      item.name.toLowerCase().includes(searchLower) ||
+      (item.supplierSKU && item.supplierSKU.toLowerCase().includes(searchLower))
     );
+  }).slice(0, 10); // Limit to 10 results
+
+  const handleSKUSelect = (product: InventoryItem) => {
+    const currentState = currentTabState;
     
-    if (product) {
-      setSelectedProduct(product);
-      if (!selectedSKUs.includes(product.sku)) {
-        setSelectedSKUs([...selectedSKUs, product.sku]);
-      }
-      // Auto-fill category and line from the selected product
-      setFormData({
-        ...formData,
-        category: product.category || '',
-        line: product.line || '',
+    // For single product type, only allow one SKU (replace if one already exists)
+    if (uploadType === 'product') {
+      updateCurrentTabState({
+        selectedProduct: product,
+        selectedSKUs: [product.sku], // Only one SKU for single product
+        searchSKU: '',
+        showSKUDropdown: false,
+        formData: {
+          ...currentState.formData,
+          category: product.category || currentState.formData.category,
+          line: product.line || currentState.formData.line,
+        },
       });
     } else {
-      alert('Product not found. Please check the SKU or name.');
+      // For collection type, allow multiple SKUs
+      if (!currentState.selectedSKUs.includes(product.sku)) {
+        updateCurrentTabState({
+          selectedProduct: product,
+          selectedSKUs: [...currentState.selectedSKUs, product.sku],
+          searchSKU: '',
+          showSKUDropdown: false,
+          formData: {
+            ...currentState.formData,
+            category: product.category || currentState.formData.category,
+            line: product.line || currentState.formData.line,
+          },
+        });
+      } else {
+        updateCurrentTabState({
+          selectedProduct: product,
+          searchSKU: '',
+          showSKUDropdown: false,
+        });
+      }
     }
-    setSearchSKU('');
   };
+
+  const handleSKUInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    updateCurrentTabState({
+      searchSKU: value,
+      showSKUDropdown: value.trim().length > 0,
+    });
+  };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.sku-search-container')) {
+        updateCurrentTabState({ showSKUDropdown: false });
+      }
+    };
+
+    if (currentTabState.showSKUDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [currentTabState.showSKUDropdown, uploadType]);
 
   // Handle file upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     const imageFiles = files.filter(file => file.type.startsWith('image/'));
-    setUploadedFiles(prev => [...prev, ...imageFiles]);
+    
+    // For collection type with multiple SKUs, we'll show a modal to select SKU for each batch
+    if (uploadType === 'collection' && currentTabState.selectedSKUs.length > 0) {
+      // Store files temporarily and show selection UI
+      const newFiles: UploadedFile[] = imageFiles.map(file => ({ file, linkedSKU: undefined }));
+      updateCurrentTabState({
+        uploadedFiles: [...currentTabState.uploadedFiles, ...newFiles]
+      });
+    } else {
+      // For product or general, or collection with no SKUs, just add files without linking
+      const newFiles: UploadedFile[] = imageFiles.map(file => ({ file }));
+      updateCurrentTabState({
+        uploadedFiles: [...currentTabState.uploadedFiles, ...newFiles]
+      });
+    }
+    
+    // Reset input
+    e.target.value = '';
+  };
+
+  // Handle linking SKU to uploaded file
+  const handleLinkFileToSKU = (fileIndex: number, sku: string | undefined) => {
+    const newFiles = [...currentTabState.uploadedFiles];
+    newFiles[fileIndex] = { ...newFiles[fileIndex], linkedSKU: sku };
+    updateCurrentTabState({ uploadedFiles: newFiles });
   };
 
   // Upload files to Firebase Storage
@@ -202,39 +346,56 @@ export default function CMSModuleNew() {
       return;
     }
 
-    if (!selectedSKUs.length && uploadType === 'product') {
+    const state = currentTabState;
+
+    if (!state.selectedSKUs.length && uploadType === 'product') {
       alert('Please select at least one product for this content type.');
       return;
     }
 
     // For collection/general types, require title and description
     if (uploadType !== 'product') {
-      if (!formData.title || !formData.description) {
+      if (!state.formData.title || !state.formData.description) {
         alert('Please fill in title and description.');
         return;
       }
     }
 
-    const fileUrls = uploadedFiles.length > 0 
-      ? await convertFilesToBase64(uploadedFiles.filter((f): f is File => f instanceof File))
+    // Validate: For collection with multiple SKUs, each SKU must have at least one linked image
+    if (uploadType === 'collection' && state.selectedSKUs.length > 1) {
+      const skusWithImages = new Set(
+        state.uploadedFiles
+          .filter(uf => uf.linkedSKU)
+          .map(uf => uf.linkedSKU)
+      );
+      const missingSKUs = state.selectedSKUs.filter(sku => !skusWithImages.has(sku));
+      
+      if (missingSKUs.length > 0) {
+        alert(`Please link at least one image to each selected SKU. Missing links for: ${missingSKUs.join(', ')}`);
+        return;
+      }
+    }
+
+    const fileUrls = state.uploadedFiles.length > 0 
+      ? await convertFilesToBase64(state.uploadedFiles.filter((uf): uf is UploadedFile & { file: File } => uf.file instanceof File).map(uf => uf.file))
       : [];
 
     // For product type, use product name as title, otherwise use form title
     const contentTitle = uploadType === 'product' 
-      ? (selectedProduct?.name || `Product Content - ${selectedSKUs[0]}`)
-      : formData.title;
+      ? (state.selectedProduct?.name || `Product Content - ${state.selectedSKUs[0]}`)
+      : state.formData.title;
 
     const hashtagsArray = uploadType === 'product' 
       ? [] 
-      : formData.hashtags.split(',').map(tag => tag.trim()).filter(Boolean);
+      : state.formData.hashtags.split(',').map(tag => tag.trim()).filter(Boolean);
     const tagsArray = uploadType === 'product' 
       ? [] 
-      : formData.tags.split(',').map(tag => tag.trim()).filter(Boolean);
+      : state.formData.tags.split(',').map(tag => tag.trim()).filter(Boolean);
 
     addContent({
       type: uploadType,
       title: contentTitle,
-      description: formData.description || '',
+      description: state.formData.description || '',
       hashtags: hashtagsArray,
       status: 'draft',
       statusHistory: [{
@@ -246,25 +407,29 @@ export default function CMSModuleNew() {
       videos: [],
       authorId: user?.id || '',
       authorName: user?.name || 'Unknown',
-      category: formData.category || '',
+      category: state.formData.category || '',
       tags: tagsArray,
-      language: formData.language,
-      linkedProductIds: selectedSKUs,
+      language: state.formData.language,
+      linkedProductIds: state.selectedSKUs,
     });
 
-    // Reset form
-    setFormData({
-      title: '',
-      description: '',
-      hashtags: '',
-      category: '',
-      line: '',
-      tags: '',
-      language: 'en',
+    // Reset form for current tab
+    updateCurrentTabState({
+      formData: {
+        title: '',
+        description: '',
+        hashtags: '',
+        category: '',
+        line: '',
+        tags: '',
+        language: 'en',
+      },
+      uploadedFiles: [],
+      selectedSKUs: [],
+      selectedProduct: null,
+      searchSKU: '',
+      showSKUDropdown: false,
     });
-    setUploadedFiles([]);
-    setSelectedSKUs([]);
-    setSelectedProduct(null);
     alert('Content created successfully! It is now in draft status.');
   };
 
@@ -583,345 +748,559 @@ export default function CMSModuleNew() {
 
       {/* Upload View */}
       {viewMode === 'upload' && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-xl font-semibold text-gray-900 mb-6">
-            {editingContent ? 'Edit Content' : 'Upload Content'}
-          </h3>
-          
-          {/* Content Type Selection */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Content Type</label>
-            <div className="grid grid-cols-3 gap-3">
-              <button
-                onClick={() => setUploadType('product')}
-                disabled={!!editingContent}
-                className={`px-4 py-3 rounded-lg border transition-colors ${
-                  uploadType === 'product'
-                    ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                } ${editingContent ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                Single Product
-              </button>
-              <button
-                onClick={() => setUploadType('collection')}
-                disabled={!!editingContent}
-                className={`px-4 py-3 rounded-lg border transition-colors ${
-                  uploadType === 'collection'
-                    ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                } ${editingContent ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                Collection
-              </button>
-              <button
-                onClick={() => setUploadType('general')}
-                disabled={!!editingContent}
-                className={`px-4 py-3 rounded-lg border transition-colors ${
-                  uploadType === 'general'
-                    ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                } ${editingContent ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                General
-              </button>
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-[#4f0c1b] to-[#3d0a15] rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">
+                  {editingContent ? 'Edit Content' : 'Upload Content'}
+                </h3>
+                <p className="text-sm text-gray-500">
+                  {editingContent ? 'Update your content details' : 'Create new marketing content'}
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* SKU Search */}
-          {uploadType !== 'general' && (
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Link to Product (SKU)</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={searchSKU}
-                  onChange={(e) => setSearchSKU(e.target.value)}
-                  placeholder="Search by SKU or product name"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
-                  onKeyPress={(e) => e.key === 'Enter' && handleSKUSearch()}
-                />
+          {/* Content Type Selection */}
+          {!editingContent && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <label className="block text-sm font-semibold text-gray-900 mb-4">Content Type</label>
+              <div className="grid grid-cols-3 gap-3">
                 <button
-                  onClick={handleSKUSearch}
-                  className="px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#3d0a15]"
+                  onClick={() => setUploadType('product')}
+                  className={`px-4 py-3 rounded-xl border-2 transition-all duration-200 font-medium ${
+                    uploadType === 'product'
+                      ? 'bg-[#4f0c1b] text-white border-[#4f0c1b] shadow-md'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-[#4f0c1b] hover:bg-gray-50'
+                  }`}
                 >
-                  Search
+                  Single Product
+                </button>
+                <button
+                  onClick={() => setUploadType('collection')}
+                  className={`px-4 py-3 rounded-xl border-2 transition-all duration-200 font-medium ${
+                    uploadType === 'collection'
+                      ? 'bg-[#4f0c1b] text-white border-[#4f0c1b] shadow-md'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-[#4f0c1b] hover:bg-gray-50'
+                  }`}
+                >
+                  Collection
+                </button>
+                <button
+                  onClick={() => setUploadType('general')}
+                  className={`px-4 py-3 rounded-xl border-2 transition-all duration-200 font-medium ${
+                    uploadType === 'general'
+                      ? 'bg-[#4f0c1b] text-white border-[#4f0c1b] shadow-md'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-[#4f0c1b] hover:bg-gray-50'
+                  }`}
+                >
+                  General
                 </button>
               </div>
+            </div>
+          )}
 
-              {/* Selected Products */}
-              {selectedProduct && (
-                <div className="mt-3 p-4 bg-green-50 border border-green-200 rounded-lg">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-medium text-gray-900">{selectedProduct.name}</p>
-                      <p className="text-sm text-gray-600">SKU: {selectedProduct.sku}</p>
-                      <p className="text-sm text-gray-600">Model: {selectedProduct.supplierSKU || 'N/A'}</p>
-                      <p className="text-sm text-gray-600">Line: {selectedProduct.line}</p>
+          {/* Product Selection Section */}
+          {uploadType !== 'general' && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+                <label className="text-sm font-semibold text-gray-900">Link to Product</label>
+              </div>
+              
+              <div className="sku-search-container relative mb-4">
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={currentTabState.searchSKU}
+                    onChange={handleSKUInputChange}
+                    onFocus={() => currentTabState.searchSKU.trim().length > 0 && updateCurrentTabState({ showSKUDropdown: true })}
+                    placeholder="Search by SKU or product name..."
+                    className="w-full px-4 py-2.5 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  />
+                  {currentTabState.searchSKU && (
+                    <button
+                      onClick={() => {
+                        updateCurrentTabState({ searchSKU: '', showSKUDropdown: false });
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+
+                {/* Dropdown Results */}
+                {currentTabState.showSKUDropdown && filteredInventory.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-80 overflow-y-auto">
+                    {filteredInventory.map((product) => (
+                      <button
+                        key={product.id}
+                        onClick={() => handleSKUSelect(product)}
+                        className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1">
+                            <p className="font-medium text-gray-900">{product.name}</p>
+                            <div className="flex items-center gap-3 mt-1 text-sm text-gray-600">
+                              <span><span className="font-medium">SKU:</span> {product.sku}</span>
+                              {product.supplierSKU && (
+                                <span><span className="font-medium">Model:</span> {product.supplierSKU}</span>
+                              )}
+                            </div>
+                            {product.category && (
+                              <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">
+                                {product.category}
+                              </span>
+                            )}
+                          </div>
+                          {currentTabState.selectedSKUs.includes(product.sku) && (
+                            <div className="flex-shrink-0">
+                              <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {currentTabState.showSKUDropdown && currentTabState.searchSKU.trim().length > 0 && filteredInventory.length === 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-4 text-center text-gray-500">
+                    No products found matching "{currentTabState.searchSKU}"
+                  </div>
+                )}
+              </div>
+
+              {/* Selected Product Display */}
+              {currentTabState.selectedProduct && (
+                <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-900 mb-1">{currentTabState.selectedProduct.name}</p>
+                      <div className="grid grid-cols-2 gap-2 text-sm text-gray-600">
+                        <span><span className="font-medium">SKU:</span> {currentTabState.selectedProduct.sku}</span>
+                        <span><span className="font-medium">Model:</span> {currentTabState.selectedProduct.supplierSKU || 'N/A'}</span>
+                        <span><span className="font-medium">Line:</span> {currentTabState.selectedProduct.line}</span>
+                        <span><span className="font-medium">Category:</span> {currentTabState.selectedProduct.category}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
               )}
 
               {/* Selected SKUs List */}
-              {selectedSKUs.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {selectedSKUs.map(sku => (
-                    <span
-                      key={sku}
-                      className="inline-flex items-center gap-1 px-3 py-1 bg-[#4f0c1b] text-white text-sm rounded-full"
-                    >
-                      {sku}
-                      <button
-                        onClick={() => setSelectedSKUs(selectedSKUs.filter(s => s !== sku))}
-                        className="hover:text-gray-300"
+              {currentTabState.selectedSKUs.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-medium text-gray-500 mb-2">Selected SKUs ({currentTabState.selectedSKUs.length})</p>
+                  <div className="flex flex-wrap gap-2">
+                    {currentTabState.selectedSKUs.map(sku => (
+                      <span
+                        key={sku}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#4f0c1b] text-white text-sm rounded-lg font-medium"
                       >
-                        ×
-                      </button>
-                    </span>
-                  ))}
+                        {sku}
+                        <button
+                          onClick={() => {
+                            const newSKUs = currentTabState.selectedSKUs.filter(s => s !== sku);
+                            updateCurrentTabState({ 
+                              selectedSKUs: newSKUs,
+                              selectedProduct: newSKUs.length === 0 ? null : (uploadType === 'product' ? null : currentTabState.selectedProduct)
+                            });
+                          }}
+                          className="hover:text-gray-300 transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* Form Fields */}
-          {uploadType === 'product' ? (
-            <>
-              {/* Single Product: Only show Language and Comments */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Language</label>
-                <select
-                  value={editingContent ? editFormData.language : formData.language}
-                  onChange={(e) => editingContent 
-                    ? setEditFormData({ ...editFormData, language: e.target.value as 'en' | 'es' })
-                    : setFormData({ ...formData, language: e.target.value as 'en' | 'es' })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
-                >
-                  <option value="en">English</option>
-                  <option value="es">Español</option>
-                </select>
-              </div>
+          {/* Content Details Section */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center gap-2 mb-6">
+              <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              <h4 className="text-base font-semibold text-gray-900">Content Details</h4>
+            </div>
 
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Comments</label>
-                <textarea
-                  value={editingContent ? editFormData.description : formData.description}
-                  onChange={(e) => editingContent
-                    ? setEditFormData({ ...editFormData, description: e.target.value })
-                    : setFormData({ ...formData, description: e.target.value })
-                  }
-                  placeholder="Add any comments or notes about this product content..."
-                  rows={4}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              {/* Collection/General: Show full form */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Title *</label>
-                  <input
-                    type="text"
-                    value={editingContent ? editFormData.title : formData.title}
-                    onChange={(e) => editingContent
-                      ? setEditFormData({ ...editFormData, title: e.target.value })
-                      : setFormData({ ...formData, title: e.target.value })
-                    }
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
-                  />
-                </div>
-
+            {uploadType === 'product' ? (
+              <div className="space-y-5">
+                {/* Single Product: Only show Language and Comments */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Language</label>
                   <select
-                    value={editingContent ? editFormData.language : formData.language}
-                    onChange={(e) => editingContent
+                    value={editingContent ? editFormData.language : currentTabState.formData.language}
+                    onChange={(e) => editingContent 
                       ? setEditFormData({ ...editFormData, language: e.target.value as 'en' | 'es' })
-                      : setFormData({ ...formData, language: e.target.value as 'en' | 'es' })
+                      : updateCurrentTabState({ formData: { ...currentTabState.formData, language: e.target.value as 'en' | 'es' } })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                   >
                     <option value="en">English</option>
                     <option value="es">Español</option>
                   </select>
                 </div>
-              </div>
-
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Description *</label>
-                <textarea
-                  value={editingContent ? editFormData.description : formData.description}
-                  onChange={(e) => editingContent
-                    ? setEditFormData({ ...editFormData, description: e.target.value })
-                    : setFormData({ ...formData, description: e.target.value })
-                  }
-                  required
-                  rows={4}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Hashtags (comma separated)</label>
-                  <input
-                    type="text"
-                    value={editingContent ? editFormData.hashtags : formData.hashtags}
-                    onChange={(e) => editingContent
-                      ? setEditFormData({ ...editFormData, hashtags: e.target.value })
-                      : setFormData({ ...formData, hashtags: e.target.value })
-                    }
-                    placeholder="#jewelry #necklace"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
-                  />
-                </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Tags (comma separated)</label>
-                  <input
-                    type="text"
-                    value={editingContent ? editFormData.tags : formData.tags}
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Comments</label>
+                  <textarea
+                    value={editingContent ? editFormData.description : currentTabState.formData.description}
                     onChange={(e) => editingContent
-                      ? setEditFormData({ ...editFormData, tags: e.target.value })
-                      : setFormData({ ...formData, tags: e.target.value })
+                      ? setEditFormData({ ...editFormData, description: e.target.value })
+                      : updateCurrentTabState({ formData: { ...currentTabState.formData, description: e.target.value } })
                     }
-                    placeholder="promotion, sale"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                    placeholder="Add any comments or notes about this product content..."
+                    rows={4}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent resize-none"
                   />
                 </div>
               </div>
-            </>
-          )}
-
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Category {selectedProduct && <span className="text-xs text-gray-500">(Auto-filled from SKU)</span>}
-            </label>
-            <select
-              value={editingContent ? editFormData.category : formData.category}
-              onChange={(e) => editingContent
-                ? setEditFormData({ ...editFormData, category: e.target.value })
-                : setFormData({ ...formData, category: e.target.value })
-              }
-              disabled={!!selectedProduct}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
-            >
-              <option value="">Select a category</option>
-              {availableCategories.map(category => (
-                <option key={category} value={category}>{category}</option>
-              ))}
-            </select>
-            {selectedProduct && (
-              <div className="mt-1 px-2 py-1 bg-green-50 border border-green-200 rounded text-sm text-green-700">
-                Auto-filled: <strong>{selectedProduct.category}</strong>
-              </div>
-            )}
-          </div>
-
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Line {selectedProduct && <span className="text-xs text-gray-500">(Auto-filled from SKU)</span>}
-            </label>
-            <select
-              value={editingContent ? editFormData.line : formData.line}
-              onChange={(e) => editingContent
-                ? setEditFormData({ ...editFormData, line: e.target.value })
-                : setFormData({ ...formData, line: e.target.value })
-              }
-              disabled={!!selectedProduct}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
-            >
-              <option value="">Select a line</option>
-              {availableLines.map(line => (
-                <option key={line} value={line}>{line}</option>
-              ))}
-            </select>
-            {selectedProduct && (
-              <div className="mt-1 px-2 py-1 bg-green-50 border border-green-200 rounded text-sm text-green-700">
-                Auto-filled: <strong>{selectedProduct.line}</strong>
-              </div>
-            )}
-          </div>
-
-          {/* File Upload */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Upload Images</label>
-            <input
-              type="file"
-              multiple
-              accept="image/*"
-              onChange={handleFileUpload}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
-            />
-            
-            {uploadedFiles.length > 0 && (
-              <div className="mt-3 flex gap-2 flex-wrap">
-                {uploadedFiles.map((file, index) => (
-                  <div key={index} className="relative w-20 h-20 border border-gray-300 rounded-lg overflow-hidden">
-                    <img
-                      src={file instanceof File ? URL.createObjectURL(file) : file}
-                      alt={`Upload ${index + 1}`}
-                      className="w-full h-full object-cover"
+            ) : (
+              <div className="space-y-5">
+                {/* Collection/General: Show full form */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Title <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={editingContent ? editFormData.title : currentTabState.formData.title}
+                      onChange={(e) => editingContent
+                        ? setEditFormData({ ...editFormData, title: e.target.value })
+                        : updateCurrentTabState({ formData: { ...currentTabState.formData, title: e.target.value } })
+                      }
+                      required
+                      placeholder="Enter content title..."
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                     />
-                    <button
-                      onClick={() => setUploadedFiles(uploadedFiles.filter((_, i) => i !== index))}
-                      className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs"
-                    >
-                      ×
-                    </button>
                   </div>
-                ))}
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Language</label>
+                    <select
+                      value={editingContent ? editFormData.language : currentTabState.formData.language}
+                      onChange={(e) => editingContent
+                        ? setEditFormData({ ...editFormData, language: e.target.value as 'en' | 'es' })
+                        : updateCurrentTabState({ formData: { ...currentTabState.formData, language: e.target.value as 'en' | 'es' } })
+                      }
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    >
+                      <option value="en">English</option>
+                      <option value="es">Español</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Description <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={editingContent ? editFormData.description : currentTabState.formData.description}
+                    onChange={(e) => editingContent
+                      ? setEditFormData({ ...editFormData, description: e.target.value })
+                      : updateCurrentTabState({ formData: { ...currentTabState.formData, description: e.target.value } })
+                    }
+                    required
+                    placeholder="Enter content description..."
+                    rows={4}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent resize-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Hashtags</label>
+                    <input
+                      type="text"
+                      value={editingContent ? editFormData.hashtags : currentTabState.formData.hashtags}
+                      onChange={(e) => editingContent
+                        ? setEditFormData({ ...editFormData, hashtags: e.target.value })
+                        : updateCurrentTabState({ formData: { ...currentTabState.formData, hashtags: e.target.value } })
+                      }
+                      placeholder="#jewelry #necklace"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Separate multiple hashtags with spaces</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Tags</label>
+                    <input
+                      type="text"
+                      value={editingContent ? editFormData.tags : currentTabState.formData.tags}
+                      onChange={(e) => editingContent
+                        ? setEditFormData({ ...editFormData, tags: e.target.value })
+                        : updateCurrentTabState({ formData: { ...currentTabState.formData, tags: e.target.value } })
+                      }
+                      placeholder="promotion, sale"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Separate multiple tags with commas</p>
+                  </div>
+                </div>
               </div>
             )}
           </div>
 
-          {/* Submit Button */}
-          <div className="flex justify-end gap-3">
-            <button
-              onClick={() => {
-                if (editingContent) {
-                  setEditingContent(null);
-                  setEditFormData({
-                    title: '',
-                    description: '',
-                    hashtags: '',
-                    category: '',
-                    line: '',
-                    tags: '',
-                    language: 'en',
-                  });
-                  setEditUploadedFiles([]);
-                  setEditSelectedSKUs([]);
-                } else {
-                setFormData({
-                  title: '',
-                  description: '',
-                  hashtags: '',
-                  category: '',
-                  line: '',
-                  tags: '',
-                  language: 'en',
-                });
-                setUploadedFiles([]);
-                setSelectedSKUs([]);
-                setSelectedProduct(null);
-                }
-              }}
-              className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              {editingContent ? 'Cancel' : 'Clear'}
-            </button>
-            <button
-              onClick={handleSubmit}
-              className="px-6 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#3d0a15] font-medium"
-            >
-              {editingContent ? 'Update Content' : 'Create as Draft'}
-            </button>
+          {/* Category & Line Section */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center gap-2 mb-6">
+              <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+              </svg>
+              <h4 className="text-base font-semibold text-gray-900">Classification</h4>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Category
+                  {currentTabState.selectedProduct && <span className="text-xs text-gray-500 ml-1">(Auto-filled)</span>}
+                </label>
+                <select
+                  value={editingContent ? editFormData.category : currentTabState.formData.category}
+                  onChange={(e) => editingContent
+                    ? setEditFormData({ ...editFormData, category: e.target.value })
+                    : updateCurrentTabState({ formData: { ...currentTabState.formData, category: e.target.value } })
+                  }
+                  disabled={!!currentTabState.selectedProduct}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
+                >
+                  <option value="">Select a category</option>
+                  {availableCategories.map(category => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+                {currentTabState.selectedProduct && (
+                  <div className="mt-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+                    <span className="font-medium">Auto-filled:</span> {currentTabState.selectedProduct.category}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Line
+                  {currentTabState.selectedProduct && <span className="text-xs text-gray-500 ml-1">(Auto-filled)</span>}
+                </label>
+                <select
+                  value={editingContent ? editFormData.line : currentTabState.formData.line}
+                  onChange={(e) => editingContent
+                    ? setEditFormData({ ...editFormData, line: e.target.value })
+                    : updateCurrentTabState({ formData: { ...currentTabState.formData, line: e.target.value } })
+                  }
+                  disabled={!!currentTabState.selectedProduct}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
+                >
+                  <option value="">Select a line</option>
+                  {availableLines.map(line => (
+                    <option key={line} value={line}>{line}</option>
+                  ))}
+                </select>
+                {currentTabState.selectedProduct && (
+                  <div className="mt-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+                    <span className="font-medium">Auto-filled:</span> {currentTabState.selectedProduct.line}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* File Upload Section */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <label className="text-sm font-semibold text-gray-900">Upload Images</label>
+            </div>
+            
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-[#4f0c1b] transition-colors">
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={handleFileUpload}
+                className="hidden"
+                id="file-upload"
+              />
+              <label
+                htmlFor="file-upload"
+                className="cursor-pointer flex flex-col items-center"
+              >
+                <svg className="w-12 h-12 text-gray-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <span className="text-sm font-medium text-gray-700 mb-1">Click to upload or drag and drop</span>
+                <span className="text-xs text-gray-500">PNG, JPG, GIF up to 10MB</span>
+              </label>
+            </div>
+            
+            {currentTabState.uploadedFiles.length > 0 && (
+              <div className="mt-4">
+                <p className="text-xs font-medium text-gray-500 mb-3">
+                  Uploaded Images ({currentTabState.uploadedFiles.length})
+                  {uploadType === 'collection' && currentTabState.selectedSKUs.length > 0 && (
+                    <span className="text-amber-600 ml-2">
+                      • Hover over images to link them to SKUs
+                    </span>
+                  )}
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                  {currentTabState.uploadedFiles.map((uploadedFile, index) => (
+                    <div key={index} className="relative group">
+                      <div className="aspect-square w-full border border-gray-300 rounded-lg overflow-hidden bg-gray-100">
+                        <img
+                          src={uploadedFile.file instanceof File ? URL.createObjectURL(uploadedFile.file) : uploadedFile.file}
+                          alt={`Upload ${index + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      
+                      {/* SKU Link Selector for Collection */}
+                      {uploadType === 'collection' && currentTabState.selectedSKUs.length > 0 && (
+                        <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-75 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <select
+                            value={uploadedFile.linkedSKU || ''}
+                            onChange={(e) => handleLinkFileToSKU(index, e.target.value || undefined)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full text-xs px-2 py-1 bg-white text-gray-900 rounded border border-gray-300 focus:outline-none focus:ring-1 focus:ring-[#4f0c1b]"
+                          >
+                            <option value="">Not linked</option>
+                            {currentTabState.selectedSKUs.map(sku => (
+                              <option key={sku} value={sku}>{sku}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      
+                      {/* Linked SKU Badge */}
+                      {uploadedFile.linkedSKU && (
+                        <div className="absolute top-2 left-2 px-2 py-1 bg-[#4f0c1b] text-white text-xs rounded font-medium">
+                          {uploadedFile.linkedSKU}
+                        </div>
+                      )}
+                      
+                      <button
+                        onClick={() => {
+                          const newFiles = currentTabState.uploadedFiles.filter((_, i) => i !== index);
+                          updateCurrentTabState({ uploadedFiles: newFiles });
+                        }}
+                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-red-600 z-10"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Validation Message for Collection */}
+                {uploadType === 'collection' && currentTabState.selectedSKUs.length > 1 && (
+                  <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-xs text-amber-800 font-medium mb-2">
+                      ⚠️ Each selected SKU must have at least one linked image
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {currentTabState.selectedSKUs.map(sku => {
+                        const hasLinkedImage = currentTabState.uploadedFiles.some(uf => uf.linkedSKU === sku);
+                        return (
+                          <span
+                            key={sku}
+                            className={`px-2 py-1 text-xs rounded ${
+                              hasLinkedImage
+                                ? 'bg-green-100 text-green-800 border border-green-300'
+                                : 'bg-red-100 text-red-800 border border-red-300'
+                            }`}
+                          >
+                            {sku} {hasLinkedImage ? '✓' : '✗'}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  if (editingContent) {
+                    setEditingContent(null);
+                    setEditFormData({
+                      title: '',
+                      description: '',
+                      hashtags: '',
+                      category: '',
+                      line: '',
+                      tags: '',
+                      language: 'en',
+                    });
+                    setEditUploadedFiles([]);
+                    setEditSelectedSKUs([]);
+                  } else {
+                    updateCurrentTabState({
+                      formData: {
+                        title: '',
+                        description: '',
+                        hashtags: '',
+                        category: '',
+                        line: '',
+                        tags: '',
+                        language: 'en',
+                      },
+                      uploadedFiles: [],
+                      selectedSKUs: [],
+                      selectedProduct: null,
+                      searchSKU: '',
+                      showSKUDropdown: false,
+                    });
+                  }
+                }}
+                className="px-6 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium text-gray-700 transition-all"
+              >
+                {editingContent ? 'Cancel' : 'Clear'}
+              </button>
+              <button
+                onClick={handleSubmit}
+                className="px-6 py-2.5 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#3d0a15] font-medium transition-all shadow-sm hover:shadow-md"
+              >
+                {editingContent ? 'Update Content' : 'Create as Draft'}
+              </button>
+            </div>
           </div>
         </div>
       )}
