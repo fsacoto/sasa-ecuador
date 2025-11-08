@@ -51,11 +51,18 @@ export default function CMSModuleNew() {
   const stats = getContentStats();
   
   // Filter content
-  const filteredContent = content.filter(item => {
-    if (filterStatus !== 'all' && item.status !== filterStatus) return false;
-    if (filterSKU && !item.linkedProductIds.some(sku => sku.toLowerCase().includes(filterSKU.toLowerCase()))) return false;
-    return true;
-  });
+  const filteredContent = content
+    .filter(item => {
+      if (filterStatus !== 'all' && item.status !== filterStatus) return false;
+      if (filterSKU && !item.linkedProductIds.some(sku => sku.toLowerCase().includes(filterSKU.toLowerCase()))) return false;
+      return true;
+    })
+    // Sort by creation date (newest first) to maintain stable order when status changes
+    .sort((a, b) => {
+      const dateA = a.metadata.createdAt.getTime();
+      const dateB = b.metadata.createdAt.getTime();
+      return dateB - dateA; // Newest first
+    });
 
   // Search SKU function
   const handleSKUSearch = () => {
@@ -1415,43 +1422,59 @@ function ContentView({
   const categories = [...new Set(inventory.map(item => item.category))].filter(Boolean).sort();
   const lines = [...new Set(inventory.map(item => item.line))].filter(Boolean).sort();
   
-  // Get unique collection names (titles) from collection type content
-  const collectionNames = [...new Set(content.filter(item => item.type === 'collection').map(item => item.title))].filter(Boolean).sort();
+  // Get unique collection names (titles) from published collection type content
+  const collectionNames = [...new Set(content.filter(item => item.type === 'collection' && item.status === 'published').map(item => item.title))].filter(Boolean).sort();
 
-  // Get total counts before filtering (for "X of Y" display)
-  const totalProductContent = content.filter(item => item.type === 'product').length;
-  const totalCollectionContent = content.filter(item => item.type === 'collection').length;
-  const totalGeneralContent = content.filter(item => item.type === 'general').length;
+  // Get total counts before filtering (for "X of Y" display) - Only count published content
+  const totalProductContent = content.filter(item => item.type === 'product' && item.status === 'published').length;
+  const totalCollectionContent = content.filter(item => item.type === 'collection' && item.status === 'published').length;
+  const totalGeneralContent = content.filter(item => item.type === 'general' && item.status === 'published').length;
   const totalInventory = inventory.length;
 
-  // Filter CMS content by type
-  const filteredGeneralContent = content.filter(item => {
-    if (item.type !== 'general') return false;
-    if (contentTypeFilter !== 'all' && contentTypeFilter !== 'inventory' && contentTypeFilter !== 'general') return false;
-    if (contentTypeFilter === 'inventory') return false;
-    if (searchTerm && !item.title.toLowerCase().includes(searchTerm.toLowerCase()) && 
-        !item.description.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-    return true;
-  });
+  // Helper function to sort content by creation date (stable order)
+  const sortByCreationDate = (a: CMSContent, b: CMSContent) => {
+    const dateA = a.metadata.createdAt.getTime();
+    const dateB = b.metadata.createdAt.getTime();
+    return dateB - dateA; // Newest first
+  };
 
-  const filteredCollectionContent = content.filter(item => {
-    if (item.type !== 'collection') return false;
-    if (contentTypeFilter !== 'all' && contentTypeFilter !== 'inventory' && contentTypeFilter !== 'collection') return false;
-    if (contentTypeFilter === 'inventory') return false;
-    if (searchTerm && !item.title.toLowerCase().includes(searchTerm.toLowerCase()) && 
-        !item.description.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-    if (filterCollectionName !== 'all' && item.title !== filterCollectionName) return false;
-    return true;
-  });
+  // Filter CMS content by type - ONLY show published content
+  const filteredGeneralContent = content
+    .filter(item => {
+      if (item.status !== 'published') return false; // Only show published content
+      if (item.type !== 'general') return false;
+      if (contentTypeFilter !== 'all' && contentTypeFilter !== 'inventory' && contentTypeFilter !== 'general') return false;
+      if (contentTypeFilter === 'inventory') return false;
+      if (searchTerm && !item.title.toLowerCase().includes(searchTerm.toLowerCase()) && 
+          !item.description.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+      return true;
+    })
+    .sort(sortByCreationDate);
 
-  const filteredProductContent = content.filter(item => {
-    if (item.type !== 'product') return false;
-    if (contentTypeFilter !== 'all' && contentTypeFilter !== 'inventory' && contentTypeFilter !== 'product') return false;
-    if (contentTypeFilter === 'inventory') return false;
-    if (searchTerm && !item.title.toLowerCase().includes(searchTerm.toLowerCase()) && 
-        !item.description.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-    return true;
-  });
+  const filteredCollectionContent = content
+    .filter(item => {
+      if (item.status !== 'published') return false; // Only show published content
+      if (item.type !== 'collection') return false;
+      if (contentTypeFilter !== 'all' && contentTypeFilter !== 'inventory' && contentTypeFilter !== 'collection') return false;
+      if (contentTypeFilter === 'inventory') return false;
+      if (searchTerm && !item.title.toLowerCase().includes(searchTerm.toLowerCase()) && 
+          !item.description.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+      if (filterCollectionName !== 'all' && item.title !== filterCollectionName) return false;
+      return true;
+    })
+    .sort(sortByCreationDate);
+
+  const filteredProductContent = content
+    .filter(item => {
+      if (item.status !== 'published') return false; // Only show published content
+      if (item.type !== 'product') return false;
+      if (contentTypeFilter !== 'all' && contentTypeFilter !== 'inventory' && contentTypeFilter !== 'product') return false;
+      if (contentTypeFilter === 'inventory') return false;
+      if (searchTerm && !item.title.toLowerCase().includes(searchTerm.toLowerCase()) && 
+          !item.description.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+      return true;
+    })
+    .sort(sortByCreationDate);
 
   // Filter inventory
   const filteredInventory = inventory.filter(item => {
