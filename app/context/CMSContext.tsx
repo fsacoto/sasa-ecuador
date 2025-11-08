@@ -11,6 +11,7 @@ interface CMSContextType {
   updateContent: (id: string, updates: Partial<CMSContent>) => Promise<void>;
   deleteContent: (id: string) => Promise<void>;
   updateContentStatus: (id: string, status: ContentStatus, userId: string, notes?: string) => Promise<void>;
+  resubmitRejectedContent: (id: string, userId: string, changesNotes: string) => Promise<void>;
   getContentByStatus: (status: ContentStatus) => CMSContent[];
   getContentBySKU: (sku: string) => CMSContent[];
   getContentStats: () => {
@@ -20,6 +21,7 @@ interface CMSContextType {
     approved: number;
     published: number;
     archived: number;
+    rejected: number;
   };
 }
 
@@ -103,18 +105,35 @@ export function CMSProvider({ children }: { children: ReactNode }) {
       setContent((prev) =>
         prev.map((item) => {
           if (item.id === id) {
-            return {
-              ...item,
-              status,
-              statusHistory: [
-                ...item.statusHistory,
+            // If rejecting already rejected content, don't duplicate the status history entry
+            let newStatusHistory = [...item.statusHistory];
+            if (status === 'rejected' && item.status === 'rejected') {
+              // Update the last rejected entry instead of adding a new one
+              const lastRejectedIndex = newStatusHistory.findLastIndex(h => h.status === 'rejected');
+              if (lastRejectedIndex !== -1 && notes) {
+                newStatusHistory[lastRejectedIndex] = {
+                  ...newStatusHistory[lastRejectedIndex],
+                  notes: notes,
+                  timestamp: new Date(),
+                  userId,
+                };
+              }
+            } else {
+              newStatusHistory = [
+                ...newStatusHistory,
                 {
                   status,
                   timestamp: new Date(),
                   userId,
                   notes,
                 },
-              ],
+              ];
+            }
+            
+            return {
+              ...item,
+              status,
+              statusHistory: newStatusHistory,
               metadata: {
                 ...item.metadata,
                 updatedAt: new Date(),
@@ -128,6 +147,42 @@ export function CMSProvider({ children }: { children: ReactNode }) {
       );
     } catch (error) {
       console.error('Error updating CMS content status:', error);
+      throw error;
+    }
+  };
+
+  const resubmitRejectedContent = async (id: string, userId: string, changesNotes: string) => {
+    try {
+      await cmsService.resubmitRejectedContent(id, userId, changesNotes);
+      setContent((prev) =>
+        prev.map((item) => {
+          if (item.id === id) {
+            const resubmissionCount = (item.metadata.resubmissionCount || 0) + 1;
+            return {
+              ...item,
+              status: 'submitted', // Status changes to submitted when resubmitting
+              statusHistory: [
+                ...item.statusHistory,
+                {
+                  status: 'resubmitted',
+                  timestamp: new Date(),
+                  userId,
+                  notes: changesNotes,
+                },
+              ],
+              metadata: {
+                ...item.metadata,
+                updatedAt: new Date(),
+                resubmissionCount,
+                lastResubmittedAt: new Date(),
+              },
+            };
+          }
+          return item;
+        })
+      );
+    } catch (error) {
+      console.error('Error resubmitting rejected content:', error);
       throw error;
     }
   };
@@ -148,6 +203,7 @@ export function CMSProvider({ children }: { children: ReactNode }) {
       approved: content.filter((item) => item.status === 'approved').length,
       published: content.filter((item) => item.status === 'published').length,
       archived: content.filter((item) => item.status === 'archived').length,
+      rejected: content.filter((item) => item.status === 'rejected').length,
     };
   };
 
@@ -160,6 +216,7 @@ export function CMSProvider({ children }: { children: ReactNode }) {
         updateContent,
         deleteContent,
         updateContentStatus,
+        resubmitRejectedContent,
         getContentByStatus,
         getContentBySKU,
         getContentStats,

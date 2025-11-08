@@ -96,7 +96,7 @@ export interface LandedCostCalculation {
 }
 
 export type ContentType = 'product' | 'collection' | 'general';
-export type ContentStatus = 'draft' | 'submitted' | 'approved' | 'published' | 'archived';
+export type ContentStatus = 'draft' | 'submitted' | 'approved' | 'published' | 'archived' | 'rejected';
 export type ContentLanguage = 'en' | 'es';
 
 export interface CMSContent {
@@ -107,7 +107,7 @@ export interface CMSContent {
   hashtags: string[];
   status: ContentStatus;
   statusHistory: {
-    status: ContentStatus;
+    status: ContentStatus | 'resubmitted';
     timestamp: Date;
     userId: string;
     notes?: string;
@@ -127,6 +127,8 @@ export interface CMSContent {
     archivedAt?: Date;
     reviewerId?: string;
     reviewerNotes?: string;
+    resubmissionCount?: number;
+    lastResubmittedAt?: Date;
   };
 }
 
