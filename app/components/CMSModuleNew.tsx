@@ -3647,6 +3647,51 @@ function ContentView({
         return name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
       };
 
+      // Helper function to get file extension from blob type or URL
+      const getFileExtension = (blob: Blob, url: string): string => {
+        // First try to get extension from blob MIME type
+        if (blob.type) {
+          const mimeToExt: { [key: string]: string } = {
+            'image/jpeg': 'jpg',
+            'image/jpg': 'jpg',
+            'image/png': 'png',
+            'image/gif': 'gif',
+            'image/webp': 'webp',
+            'image/svg+xml': 'svg',
+            'video/mp4': 'mp4',
+            'video/quicktime': 'mov',
+            'video/webm': 'webm',
+            'video/x-msvideo': 'avi',
+            'video/x-matroska': 'mkv',
+            'video/mpeg': 'mpg',
+            'audio/mpeg': 'mp3',
+            'audio/wav': 'wav',
+            'application/pdf': 'pdf',
+          };
+          if (mimeToExt[blob.type]) {
+            return mimeToExt[blob.type];
+          }
+        }
+        
+        // Fallback: try to extract from URL
+        const urlLower = url.toLowerCase();
+        const urlMatch = url.match(/\.(jpg|jpeg|png|gif|webp|svg|mp4|mov|webm|avi|mkv|mpg|mpeg|mp3|wav|pdf)(\?|$)/i);
+        if (urlMatch) {
+          return urlMatch[1].toLowerCase();
+        }
+        
+        // Check URL path patterns
+        if (urlLower.includes('/videos/')) {
+          if (urlLower.includes('.mov')) return 'mov';
+          if (urlLower.includes('.webm')) return 'webm';
+          if (urlLower.includes('.avi')) return 'avi';
+          return 'mp4'; // Default for videos folder
+        }
+        
+        // Default to jpg for images
+        return 'jpg';
+      };
+
       // Helper function to get unique filename
       const getUniqueFileName = (baseName: string, extension: string = 'jpg'): string => {
         let fileName = `${baseName}.${extension}`;
@@ -3659,18 +3704,22 @@ function ContentView({
         return fileName;
       };
 
-      // Download image using API route (bypasses CORS by using server-side proxy)
-      const downloadImage = async (imageUrl: string): Promise<Blob | null> => {
+      // Download media (images, videos, etc.) using API route (bypasses CORS by using server-side proxy)
+      const downloadMedia = async (mediaUrl: string): Promise<{ blob: Blob; extension: string } | null> => {
         try {
           // Handle data URLs (base64)
-          if (imageUrl.startsWith('data:')) {
-            const response = await fetch(imageUrl);
+          if (mediaUrl.startsWith('data:')) {
+            const response = await fetch(mediaUrl);
             const blob = await response.blob();
-            return blob.size > 0 ? blob : null;
+            if (blob.size > 0) {
+              const extension = getFileExtension(blob, mediaUrl);
+              return { blob, extension };
+            }
+            return null;
           }
           
           // Use API route to proxy the download (server-side, no CORS issues)
-          const apiUrl = `/api/download-image?url=${encodeURIComponent(imageUrl)}`;
+          const apiUrl = `/api/download-image?url=${encodeURIComponent(mediaUrl)}`;
           const response = await fetch(apiUrl, {
             method: 'GET',
             cache: 'no-cache'
@@ -3679,7 +3728,8 @@ function ContentView({
           if (response.ok) {
             const blob = await response.blob();
             if (blob && blob.size > 0) {
-              return blob;
+              const extension = getFileExtension(blob, mediaUrl);
+              return { blob, extension };
             }
           } else {
             console.warn('API route failed with status:', response.status);
@@ -3687,7 +3737,7 @@ function ContentView({
           
           return null;
         } catch (error) {
-          console.error('Error downloading image via API:', imageUrl.substring(0, 50) + '...', error);
+          console.error('Error downloading media via API:', mediaUrl.substring(0, 50) + '...', error);
           return null;
         }
       };
@@ -3704,17 +3754,21 @@ function ContentView({
           ...(item.images || []),
           ...productContentForSKU.flatMap(content => content.images || [])
         ];
+        const allVideos = [
+          ...productContentForSKU.flatMap(content => content.videos || [])
+        ];
+        const allMedia = [...allImages, ...allVideos];
 
-        for (let i = 0; i < allImages.length; i++) {
-          const imageUrl = allImages[i];
-          console.log(`Downloading image ${i + 1}/${allImages.length} for SKU ${item.sku}:`, imageUrl.substring(0, 80) + '...');
-          const blob = await downloadImage(imageUrl);
-          if (blob) {
-            console.log(`✓ Successfully downloaded image ${i + 1} for SKU ${item.sku}, size: ${blob.size} bytes`);
-            zip.file(getUniqueFileName(`${item.sku}_${i + 1}`), blob);
+        for (let i = 0; i < allMedia.length; i++) {
+          const mediaUrl = allMedia[i];
+          console.log(`Downloading media ${i + 1}/${allMedia.length} for SKU ${item.sku}:`, mediaUrl.substring(0, 80) + '...');
+          const result = await downloadMedia(mediaUrl);
+          if (result) {
+            console.log(`✓ Successfully downloaded media ${i + 1} for SKU ${item.sku}, size: ${result.blob.size} bytes, type: ${result.extension}`);
+            zip.file(getUniqueFileName(`${item.sku}_${i + 1}`, result.extension), result.blob);
             fileCount++;
           } else {
-            console.warn(`✗ Failed to download image ${i + 1} for SKU ${item.sku}`);
+            console.warn(`✗ Failed to download media ${i + 1} for SKU ${item.sku}`);
             failedCount++;
           }
         }
@@ -3723,14 +3777,19 @@ function ContentView({
       // Process collection items
       const selectedCollectionItems = filteredCollectionContent.filter(item => selectedCollections.has(item.id));
       for (const item of selectedCollectionItems) {
-        if (item.images && item.images.length > 0) {
-          const safeTitle = sanitizeFileName(item.title);
-          for (let i = 0; i < item.images.length; i++) {
-            const imageUrl = item.images[i];
-            console.log(`Downloading collection image ${i + 1}/${item.images.length} for "${item.title}"`);
-            const blob = await downloadImage(imageUrl);
-            if (blob) {
-              zip.file(getUniqueFileName(`${safeTitle}_${i + 1}`), blob);
+        const safeTitle = sanitizeFileName(item.title);
+        const allMedia = [
+          ...(item.images || []),
+          ...(item.videos || [])
+        ];
+        
+        if (allMedia.length > 0) {
+          for (let i = 0; i < allMedia.length; i++) {
+            const mediaUrl = allMedia[i];
+            console.log(`Downloading collection media ${i + 1}/${allMedia.length} for "${item.title}"`);
+            const result = await downloadMedia(mediaUrl);
+            if (result) {
+              zip.file(getUniqueFileName(`${safeTitle}_${i + 1}`, result.extension), result.blob);
               fileCount++;
             } else {
               failedCount++;
@@ -3742,14 +3801,19 @@ function ContentView({
       // Process general content items
       const selectedGeneralItems = filteredGeneralContent.filter(item => selectedGeneral.has(item.id));
       for (const item of selectedGeneralItems) {
-        if (item.images && item.images.length > 0) {
-          const safeTitle = sanitizeFileName(item.title);
-          for (let i = 0; i < item.images.length; i++) {
-            const imageUrl = item.images[i];
-            console.log(`Downloading collection image ${i + 1}/${item.images.length} for "${item.title}"`);
-            const blob = await downloadImage(imageUrl);
-            if (blob) {
-              zip.file(getUniqueFileName(`${safeTitle}_${i + 1}`), blob);
+        const safeTitle = sanitizeFileName(item.title);
+        const allMedia = [
+          ...(item.images || []),
+          ...(item.videos || [])
+        ];
+        
+        if (allMedia.length > 0) {
+          for (let i = 0; i < allMedia.length; i++) {
+            const mediaUrl = allMedia[i];
+            console.log(`Downloading general content media ${i + 1}/${allMedia.length} for "${item.title}"`);
+            const result = await downloadMedia(mediaUrl);
+            if (result) {
+              zip.file(getUniqueFileName(`${safeTitle}_${i + 1}`, result.extension), result.blob);
               fileCount++;
             } else {
               failedCount++;
@@ -3766,12 +3830,17 @@ function ContentView({
       });
       
       for (const item of selectedProductContentItems) {
-        if (item.images && item.images.length > 0) {
-          const sku = item.linkedProductIds.length > 0 ? item.linkedProductIds[0] : 'unlinked';
-          for (let i = 0; i < item.images.length; i++) {
-            const blob = await downloadImage(item.images[i]);
-            if (blob) {
-              zip.file(getUniqueFileName(`${sku}_${i + 1}`), blob);
+        const sku = item.linkedProductIds.length > 0 ? item.linkedProductIds[0] : 'unlinked';
+        const allMedia = [
+          ...(item.images || []),
+          ...(item.videos || [])
+        ];
+        
+        if (allMedia.length > 0) {
+          for (let i = 0; i < allMedia.length; i++) {
+            const result = await downloadMedia(allMedia[i]);
+            if (result) {
+              zip.file(getUniqueFileName(`${sku}_${i + 1}`, result.extension), result.blob);
               fileCount++;
             } else {
               failedCount++;
@@ -3782,8 +3851,8 @@ function ContentView({
 
       if (fileCount === 0) {
         alert(failedCount > 0 
-          ? `Failed to download all ${failedCount} image(s). Please check your internet connection.`
-          : 'No images found in selected items'
+          ? `Failed to download all ${failedCount} media file(s). Please check your internet connection.`
+          : 'No media files found in selected items'
         );
         setIsDownloading(false);
         return;
@@ -3812,12 +3881,12 @@ function ContentView({
 
       const totalItems = selectedInventoryItems.length + selectedCollectionItems.length + selectedGeneralItems.length + selectedProductContentItems.length;
       alert(failedCount > 0
-        ? `Downloaded ${fileCount} image(s) successfully. ${failedCount} image(s) failed.`
-        : `Successfully downloaded ${fileCount} image(s) from ${totalItems} item(s) as ZIP file`
+        ? `Downloaded ${fileCount} media file(s) successfully. ${failedCount} media file(s) failed.`
+        : `Successfully downloaded ${fileCount} media file(s) from ${totalItems} item(s) as ZIP file`
       );
     } catch (error) {
-      console.error('Error downloading images:', error);
-      alert(`Error downloading images: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Error downloading media:', error);
+      alert(`Error downloading media: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsDownloading(false);
     }
