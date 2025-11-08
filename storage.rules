@@ -8,7 +8,14 @@ service firebase.storage {
       return request.auth != null;
     }
     
-    // Images storage
+    // Images storage - CMS images can be larger (up to 50MB)
+    match /images/cms/{allImages=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && 
+                   request.resource.size < 50 * 1024 * 1024; // 50MB max for CMS
+    }
+    
+    // Images storage - other images limited to 5MB
     match /images/{allImages=**} {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated() && 

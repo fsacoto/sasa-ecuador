@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { useCMS } from '../context/CMSContext';
@@ -299,21 +299,27 @@ export default function CMSModuleNew() {
     }
   }, [currentTabState.showSKUDropdown, uploadType]);
 
-  // Handle file upload
+  // Handle file upload - accepts images, videos, and other media formats
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    // Accept images, videos, and other media formats
+    const mediaFiles = files.filter(file => 
+      file.type.startsWith('image/') || 
+      file.type.startsWith('video/') ||
+      file.type.startsWith('audio/') ||
+      ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(file.type)
+    );
     
     // For collection type with multiple SKUs, we'll show a modal to select SKU for each batch
     if (uploadType === 'collection' && currentTabState.selectedSKUs.length > 0) {
       // Store files temporarily and show selection UI
-      const newFiles: UploadedFile[] = imageFiles.map(file => ({ file, linkedSKU: undefined }));
+      const newFiles: UploadedFile[] = mediaFiles.map(file => ({ file, linkedSKU: undefined }));
       updateCurrentTabState({
         uploadedFiles: [...currentTabState.uploadedFiles, ...newFiles]
       });
     } else {
       // For product or general, or collection with no SKUs, just add files without linking
-      const newFiles: UploadedFile[] = imageFiles.map(file => ({ file }));
+      const newFiles: UploadedFile[] = mediaFiles.map(file => ({ file }));
       updateCurrentTabState({
         uploadedFiles: [...currentTabState.uploadedFiles, ...newFiles]
       });
@@ -330,11 +336,34 @@ export default function CMSModuleNew() {
     updateCurrentTabState({ uploadedFiles: newFiles });
   };
 
-  // Upload files to Firebase Storage
+  // Upload files to Firebase Storage (supports images, videos, and other media)
   const convertFilesToBase64 = async (files: File[]): Promise<string[]> => {
     try {
-      const { handleMultipleImageUpload } = await import('../utils/imageUpload');
-      return await handleMultipleImageUpload(files, 'images/cms/');
+      const { uploadFile } = await import('../services/storageService');
+      const downloadURLs: string[] = [];
+      
+      // Upload each file to the appropriate path based on file type
+      for (const file of files) {
+        const timestamp = Date.now();
+        const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+        
+        let basePath: string;
+        if (file.type.startsWith('image/')) {
+          basePath = 'images/cms/';
+        } else if (file.type.startsWith('video/')) {
+          basePath = 'videos/cms/';
+        } else if (file.type.startsWith('audio/')) {
+          basePath = 'documents/cms/'; // Store audio in documents folder
+        } else {
+          basePath = 'documents/cms/'; // PDFs, Word docs, etc.
+        }
+        
+        const filePath = `${basePath}${timestamp}_${sanitizedName}`;
+        const url = await uploadFile(file, filePath);
+        downloadURLs.push(url);
+      }
+      
+      return downloadURLs;
     } catch (error) {
       console.error('Error uploading files:', error);
       throw error;
@@ -459,8 +488,12 @@ export default function CMSModuleNew() {
     const allImages = [...existingFiles, ...newFileUrls];
 
     // For product type, use product name as title, otherwise use form title
+    // Get product from inventory if available
+    const productForSKU = editSelectedSKUs.length > 0 
+      ? inventory.find(item => item.sku === editSelectedSKUs[0])
+      : null;
     const contentTitle = uploadType === 'product' 
-      ? (selectedProduct?.name || `Product Content - ${editSelectedSKUs[0]}`)
+      ? (productForSKU?.name || `Product Content - ${editSelectedSKUs[0] || 'Unknown'}`)
       : editFormData.title;
 
     const hashtagsArray = uploadType === 'product' 
@@ -495,7 +528,8 @@ export default function CMSModuleNew() {
     });
     setEditUploadedFiles([]);
     setEditSelectedSKUs([]);
-    setSelectedProduct(null);
+    // Reset tab state selectedProduct
+    updateCurrentTabState({ selectedProduct: null });
     setFormData({
       title: '',
       description: '',
@@ -510,11 +544,17 @@ export default function CMSModuleNew() {
     alert('Content updated successfully!');
   };
 
-  // Handle edit file upload
+  // Handle edit file upload - accepts images, videos, and other media formats
   const handleEditFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
-    setEditUploadedFiles(prev => [...prev, ...imageFiles]);
+    // Accept images, videos, and other media formats
+    const mediaFiles = files.filter(file => 
+      file.type.startsWith('image/') || 
+      file.type.startsWith('video/') ||
+      file.type.startsWith('audio/') ||
+      ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(file.type)
+    );
+    setEditUploadedFiles(prev => [...prev, ...mediaFiles]);
   };
 
   const handleApprove = (contentId: string) => {
@@ -1143,14 +1183,14 @@ export default function CMSModuleNew() {
               <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
-              <label className="text-sm font-semibold text-gray-900">Upload Images</label>
+              <label className="text-sm font-semibold text-gray-900">Upload Media</label>
             </div>
             
             <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-[#4f0c1b] transition-colors">
               <input
                 type="file"
                 multiple
-                accept="image/*"
+                accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
                 onChange={handleFileUpload}
                 className="hidden"
                 id="file-upload"
@@ -1163,14 +1203,14 @@ export default function CMSModuleNew() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
                 <span className="text-sm font-medium text-gray-700 mb-1">Click to upload or drag and drop</span>
-                <span className="text-xs text-gray-500">PNG, JPG, GIF up to 10MB</span>
+                <span className="text-xs text-gray-500">Images, Videos, Audio, PDF, DOC (up to 50MB)</span>
               </label>
             </div>
             
             {currentTabState.uploadedFiles.length > 0 && (
               <div className="mt-4">
                 <p className="text-xs font-medium text-gray-500 mb-3">
-                  Uploaded Images ({currentTabState.uploadedFiles.length})
+                  Uploaded Media ({currentTabState.uploadedFiles.length})
                   {uploadType === 'collection' && currentTabState.selectedSKUs.length > 0 && (
                     <span className="text-amber-600 ml-2">
                       • Hover over images to link them to SKUs
@@ -1178,14 +1218,64 @@ export default function CMSModuleNew() {
                   )}
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                  {currentTabState.uploadedFiles.map((uploadedFile, index) => (
+                  {currentTabState.uploadedFiles.map((uploadedFile, index) => {
+                    const file = uploadedFile.file instanceof File ? uploadedFile.file : null;
+                    const fileUrl = uploadedFile.file instanceof File ? URL.createObjectURL(uploadedFile.file) : uploadedFile.file;
+                    const fileType = file ? file.type : (typeof uploadedFile.file === 'string' ? 'image' : 'unknown');
+                    const isImage = fileType.startsWith('image/');
+                    const isVideo = fileType.startsWith('video/');
+                    const isAudio = fileType.startsWith('audio/');
+                    const isPDF = fileType === 'application/pdf';
+                    const isDocument = fileType.includes('word') || fileType.includes('document');
+                    
+                    return (
                     <div key={index} className="relative group">
                       <div className="aspect-square w-full border border-gray-300 rounded-lg overflow-hidden bg-gray-100">
-                        <img
-                          src={uploadedFile.file instanceof File ? URL.createObjectURL(uploadedFile.file) : uploadedFile.file}
-                          alt={`Upload ${index + 1}`}
-                          className="w-full h-full object-cover"
-                        />
+                        {isImage ? (
+                          <img
+                            src={fileUrl}
+                            alt={`Upload ${index + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : isVideo ? (
+                          <video
+                            src={fileUrl}
+                            className="w-full h-full object-cover"
+                            controls={false}
+                          >
+                            <source src={fileUrl} type={fileType} />
+                          </video>
+                        ) : isAudio ? (
+                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-100 to-purple-200">
+                            <svg className="w-12 h-12 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                            </svg>
+                          </div>
+                        ) : isPDF ? (
+                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-red-100 to-red-200">
+                            <svg className="w-12 h-12 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                        ) : isDocument ? (
+                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-100 to-blue-200">
+                            <svg className="w-12 h-12 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </div>
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-gray-200">
+                            <svg className="w-12 h-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                        )}
+                        {/* File type badge */}
+                        {!isImage && (
+                          <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 backdrop-blur-sm text-white text-xs rounded font-medium">
+                            {isVideo ? 'VIDEO' : isAudio ? 'AUDIO' : isPDF ? 'PDF' : isDocument ? 'DOC' : 'FILE'}
+                          </div>
+                        )}
                       </div>
                       
                       {/* SKU Link Selector for Collection */}
@@ -1224,7 +1314,8 @@ export default function CMSModuleNew() {
                         </svg>
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 
                 {/* Validation Message for Collection */}
@@ -1473,19 +1564,116 @@ export default function CMSModuleNew() {
                         onClick={() => setSelectedContentDetail(item)}
                       >
                         <td className="px-6 py-4 whitespace-nowrap">
-                          {item.images.length > 0 ? (
-                            <img
-                              src={item.images[0]}
-                              alt={item.title}
-                              className="w-16 h-16 object-cover rounded-lg"
-                            />
-                          ) : (
-                            <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center">
-                              <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                              </svg>
-                            </div>
-                          )}
+                          {(() => {
+                            // Prioritize videos, then images
+                            const hasVideos = item.videos && item.videos.length > 0;
+                            const hasImages = item.images && item.images.length > 0;
+                            
+                            if (!hasVideos && !hasImages) {
+                              return (
+                                <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center">
+                                  <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                  </svg>
+                                </div>
+                              );
+                            }
+                            
+                            // Get the first media item (prioritize video)
+                            const mediaUrl = hasVideos ? item.videos[0] : item.images[0];
+                            const urlLower = mediaUrl.toLowerCase();
+                            
+                            // Robust video detection
+                            const isVideo = !!(
+                              urlLower.includes('/videos/') || 
+                              urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
+                              urlLower.includes('video/') ||
+                              urlLower.includes('contenttype=video') ||
+                              urlLower.match(/video\/mp4|video\/quicktime|video\/webm|video\/x-msvideo/i) ||
+                              // Check for Firebase Storage video patterns
+                              (urlLower.includes('firebasestorage') && (
+                                urlLower.includes('.mov') || 
+                                urlLower.includes('.mp4') || 
+                                urlLower.includes('.webm')
+                              ))
+                            );
+                            
+                            return (
+                              <div className="w-16 h-16 relative rounded-lg overflow-hidden bg-gray-100">
+                                {isVideo ? (
+                                  <>
+                                    <video
+                                      src={mediaUrl}
+                                      className="w-full h-full object-cover pointer-events-none"
+                                      preload="metadata"
+                                      muted
+                                      playsInline
+                                      onLoadedMetadata={(e) => {
+                                        const video = e.currentTarget;
+                                        if (video.duration > 1) {
+                                          video.currentTime = 1;
+                                        } else if (video.duration > 0) {
+                                          video.currentTime = video.duration / 2;
+                                        }
+                                      }}
+                                      onError={(e) => {
+                                        console.log('Video preview failed to load, trying as image:', mediaUrl);
+                                      }}
+                                    />
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
+                                      <div className="w-6 h-6 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center">
+                                        <svg className="w-3 h-3 text-gray-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                                          <path d="M8 5v14l11-7z" />
+                                        </svg>
+                                      </div>
+                                    </div>
+                                    <div className="absolute top-1 left-1 px-1 py-0.5 bg-black/60 backdrop-blur-sm text-white text-[10px] rounded font-medium">
+                                      VIDEO
+                                    </div>
+                                  </>
+                                ) : (
+                                  <img
+                                    src={mediaUrl}
+                                    alt={item.title}
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      // If image fails, it might be a video
+                                      const img = e.currentTarget;
+                                      const imgUrl = img.src;
+                                      const urlLower = imgUrl.toLowerCase();
+                                      const isVideoUrl = !!(
+                                        urlLower.includes('/videos/') || 
+                                        urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
+                                        urlLower.includes('video/') ||
+                                        (urlLower.includes('firebasestorage') && (
+                                          urlLower.includes('.mov') || 
+                                          urlLower.includes('.mp4') || 
+                                          urlLower.includes('.webm')
+                                        ))
+                                      );
+                                      if (isVideoUrl) {
+                                        // Replace img with video element
+                                        const video = document.createElement('video');
+                                        video.src = imgUrl;
+                                        video.className = 'w-full h-full object-cover pointer-events-none';
+                                        video.preload = 'metadata';
+                                        video.muted = true;
+                                        video.playsInline = true;
+                                        video.onloadedmetadata = () => {
+                                          if (video.duration > 1) {
+                                            video.currentTime = 1;
+                                          } else if (video.duration > 0) {
+                                            video.currentTime = video.duration / 2;
+                                          }
+                                        };
+                                        img.parentElement?.replaceChild(video, img);
+                                      }
+                                    }}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-sm font-medium text-gray-900">{item.title}</div>
@@ -1868,6 +2056,9 @@ function ContentDetailModal({
   inventory: InventoryItem[];
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
+  const [selectedVideoUrl, setSelectedVideoUrl] = useState<string | null>(null);
+  
   // Get linked product details
   const linkedProducts = content.linkedProductIds
     .map(sku => inventory.find(item => item.sku === sku))
@@ -1941,7 +2132,7 @@ function ContentDetailModal({
                 </div>
                 <div>
                   <span className="text-xs font-medium text-gray-500">Status</span>
-                  <p className="text-sm font-medium text-gray-900 mt-1">
+                  <div className="text-sm font-medium text-gray-900 mt-1">
                     <div className="flex items-center gap-2">
                       <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                         content.status === 'draft' ? 'bg-yellow-100 text-yellow-800' :
@@ -1959,7 +2150,7 @@ function ContentDetailModal({
                         </span>
                       )}
                     </div>
-                  </p>
+                  </div>
                 </div>
                 <div>
                   <span className="text-xs font-medium text-gray-500">Language</span>
@@ -1981,20 +2172,180 @@ function ContentDetailModal({
             </div>
           </div>
 
-          {/* Images */}
-          {content.images.length > 0 && (
+          {/* Media (Images and Videos) */}
+          {((content.images && content.images.length > 0) || (content.videos && content.videos.length > 0)) && (
             <div>
-              <h4 className="text-sm font-medium text-gray-700 mb-3">Images ({content.images.length})</h4>
+              <h4 className="text-sm font-medium text-gray-700 mb-3">
+                Media ({((content.images?.length || 0) + (content.videos?.length || 0))})
+              </h4>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {content.images.map((image, index) => (
-                  <div key={index} className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                    <img
-                      src={image}
-                      alt={`${content.title} - Image ${index + 1}`}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                ))}
+                {/* Render videos first */}
+                {(content.videos || []).map((videoUrl, index) => {
+                  const handleVideoClick = (e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    console.log('Video clicked:', videoUrl);
+                    setSelectedVideoUrl(videoUrl);
+                  };
+
+                  return (
+                    <div 
+                      key={`video-${index}`} 
+                      className="aspect-square bg-gray-100 rounded-lg overflow-hidden relative group cursor-pointer"
+                      onClick={handleVideoClick}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleVideoClick(e as any);
+                      }}
+                    >
+                      <video
+                        src={videoUrl}
+                        className="w-full h-full object-cover pointer-events-none"
+                        preload="metadata"
+                        muted
+                        playsInline
+                        onLoadedMetadata={(e) => {
+                          const video = e.currentTarget;
+                          if (video.duration > 1) {
+                            video.currentTime = 1;
+                          } else if (video.duration > 0) {
+                            video.currentTime = video.duration / 2;
+                          }
+                        }}
+                        onError={(e) => {
+                          console.error('Video load error:', e);
+                        }}
+                      />
+                      <div 
+                        className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors cursor-pointer z-10"
+                        onClick={handleVideoClick}
+                      >
+                        <div className="w-12 h-12 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center group-hover:scale-110 transition-transform pointer-events-auto">
+                          <svg className="w-6 h-6 text-gray-900 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                        </div>
+                      </div>
+                      <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 backdrop-blur-sm text-white text-xs rounded font-medium z-10 pointer-events-none">
+                        VIDEO
+                      </div>
+                    </div>
+                  );
+                })}
+                
+                {/* Render images, but check if any are actually videos */}
+                {(content.images || []).map((mediaUrl, index) => {
+                  // Check if it's a video by URL pattern or file extension
+                  // Also check for common video MIME types in the URL
+                  // More aggressive detection - check URL more thoroughly
+                  const urlLower = mediaUrl.toLowerCase();
+                  const isVideo = !!(
+                    urlLower.includes('/videos/') || 
+                    urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
+                    urlLower.includes('video/') ||
+                    urlLower.includes('contenttype=video') ||
+                    urlLower.match(/video\/mp4|video\/quicktime|video\/webm|video\/x-msvideo/i) ||
+                    // Check for Firebase Storage video patterns
+                    (urlLower.includes('firebasestorage') && (
+                      urlLower.includes('.mov') || 
+                      urlLower.includes('.mp4') || 
+                      urlLower.includes('.webm') ||
+                      urlLower.includes('videos/')
+                    ))
+                  );
+                  
+                  const handleMediaClick = (e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    console.log('Media clicked:', { mediaUrl, isVideo, index });
+                    // Always open video player modal - let the player handle if it's actually a video
+                    console.log('Opening media player for:', mediaUrl);
+                    setSelectedVideoUrl(mediaUrl);
+                  };
+
+                  return (
+                    <div 
+                      key={`image-${index}`} 
+                      className="aspect-square bg-gray-100 rounded-lg overflow-hidden relative group cursor-pointer"
+                      onClick={handleMediaClick}
+                      onContextMenu={(e) => {
+                        // Always prevent browser context menu and open our player
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleMediaClick(e as any);
+                      }}
+                    >
+                      {isVideo ? (
+                        <>
+                          <video
+                            src={mediaUrl}
+                            className="w-full h-full object-cover pointer-events-none"
+                            preload="metadata"
+                            muted
+                            playsInline
+                            onLoadedMetadata={(e) => {
+                              // Seek to 1 second to show a frame
+                              const video = e.currentTarget;
+                              if (video.duration > 1) {
+                                video.currentTime = 1;
+                              } else if (video.duration > 0) {
+                                video.currentTime = video.duration / 2;
+                              }
+                            }}
+                            onError={(e) => {
+                              console.error('Video load error:', e);
+                            }}
+                          />
+                          <div 
+                            className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors cursor-pointer z-10"
+                            onClick={handleMediaClick}
+                          >
+                            <div className="w-12 h-12 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center group-hover:scale-110 transition-transform pointer-events-auto">
+                              <svg className="w-6 h-6 text-gray-900 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            </div>
+                          </div>
+                          <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 backdrop-blur-sm text-white text-xs rounded font-medium z-10 pointer-events-none">
+                            VIDEO
+                          </div>
+                        </>
+                      ) : (
+                        <img
+                          src={mediaUrl}
+                          alt={`${content.title} - Media ${index + 1}`}
+                          className="w-full h-full object-cover cursor-pointer"
+                          onClick={handleMediaClick}
+                          onError={(e) => {
+                            // If image fails to load, it might be a video
+                            console.log('Image failed to load, checking if it is a video:', mediaUrl);
+                            const videoUrl = mediaUrl;
+                            const urlLower = videoUrl.toLowerCase();
+                            const isVideoUrl = !!(
+                              urlLower.includes('/videos/') || 
+                              urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
+                              urlLower.includes('video/') ||
+                              (urlLower.includes('firebasestorage') && (
+                                urlLower.includes('.mov') || 
+                                urlLower.includes('.mp4') || 
+                                urlLower.includes('.webm')
+                              ))
+                            );
+                            if (isVideoUrl) {
+                              console.log('Detected as video after image load failure, opening player');
+                              setSelectedVideoUrl(videoUrl);
+                            } else {
+                              // Even if not detected, try opening as video - might work
+                              console.log('Image failed, trying to open as video anyway');
+                              setSelectedVideoUrl(videoUrl);
+                            }
+                          }}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -2177,6 +2528,165 @@ function ContentDetailModal({
           </button>
         </div>
       </div>
+      
+      {/* Video Player Modal */}
+      {selectedVideoUrl && (
+        <VideoPlayerModal 
+          videoUrl={selectedVideoUrl}
+          onClose={() => setSelectedVideoUrl(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Video Player Modal Component
+function VideoPlayerModal({ 
+  videoUrl, 
+  onClose 
+}: { 
+  videoUrl: string; 
+  onClose: () => void;
+}) {
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    console.log('VideoPlayerModal mounted with URL:', videoUrl);
+    setIsLoading(true);
+    
+    // Small delay to ensure DOM is ready
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [videoUrl]);
+
+  return (
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-95 z-[100] flex items-center justify-center p-4"
+      onClick={onClose}
+      style={{ zIndex: 9999 }}
+    >
+      <div 
+        className="relative w-full max-w-5xl bg-black rounded-lg overflow-hidden shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          className="absolute -top-12 left-0 text-white hover:text-gray-300 transition-colors z-10 bg-black/50 rounded-full p-2"
+          aria-label="Go back"
+        >
+          <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors z-10 bg-black/50 rounded-full p-2"
+          aria-label="Close video"
+        >
+          <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+        
+        {error ? (
+          <div className="p-8 text-center">
+            <div className="text-red-400 mb-4">
+              <svg className="w-16 h-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <p className="text-white text-lg mb-2">Error loading video</p>
+            <p className="text-gray-400 text-sm">{error}</p>
+            <button
+              onClick={onClose}
+              className="mt-4 px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600"
+            >
+              Close
+            </button>
+          </div>
+        ) : (
+          <div className="relative w-full bg-black" style={{ maxHeight: '85vh', minHeight: '400px' }}>
+            {/* Back button inside video player */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+              }}
+              className="absolute top-4 left-4 z-20 text-white hover:text-gray-300 transition-colors bg-black/70 hover:bg-black/90 rounded-full p-2 backdrop-blur-sm"
+              aria-label="Go back"
+            >
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+            </button>
+            
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
+                <div className="text-white text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+                  <p>Loading video...</p>
+                  <p className="text-xs text-gray-400 mt-2">{videoUrl.substring(0, 50)}...</p>
+                </div>
+              </div>
+            )}
+            <video
+              key={videoUrl}
+              src={videoUrl}
+              controls
+              autoPlay
+              playsInline
+              className="w-full h-auto"
+              style={{ maxHeight: '85vh', maxWidth: '100%', display: isLoading ? 'none' : 'block' }}
+              onError={(e) => {
+                console.error('Video error:', e);
+                const videoElement = e.currentTarget;
+                const error = videoElement.error;
+                if (error) {
+                  console.error('Video error code:', error.code, 'message:', error.message);
+                  setError(`Failed to load video (Error ${error.code}). Please check the URL or try again.`);
+                } else {
+                  setError('Failed to load video. Please check the URL or try again.');
+                }
+                setIsLoading(false);
+              }}
+              onLoadStart={() => {
+                console.log('Video loadstart');
+                setIsLoading(true);
+                setError(null);
+              }}
+              onCanPlay={() => {
+                console.log('Video can play');
+                setIsLoading(false);
+              }}
+              onLoadedData={() => {
+                console.log('Video loaded');
+                setIsLoading(false);
+              }}
+              onLoadedMetadata={() => {
+                console.log('Video metadata loaded');
+                setIsLoading(false);
+              }}
+            >
+              <source src={videoUrl} type="video/mp4" />
+              <source src={videoUrl} type="video/quicktime" />
+              <source src={videoUrl} type="video/webm" />
+              Your browser does not support the video tag.
+            </video>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -2216,6 +2726,7 @@ function ContentView({
   const [contentViewerTab, setContentViewerTab] = useState<'images' | 'videos'>('images');
   const [selectedContentItems, setSelectedContentItems] = useState<Set<string>>(new Set());
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+  const [selectedVideoUrl, setSelectedVideoUrl] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<{
     product: boolean;
     collection: boolean;
@@ -2433,27 +2944,116 @@ function ContentView({
                       className="w-5 h-5 text-[#4f0c1b] focus:ring-[#4f0c1b] border-gray-300 rounded cursor-pointer"
                     />
                   </div>
-                  {/* Image - opens detail modal */}
+                  {/* Media - opens detail modal */}
                   <div 
-                    className="aspect-square bg-gray-100 rounded-lg mb-3 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                    className="aspect-square bg-gray-100 rounded-lg mb-3 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity relative"
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedCollectionDetail(item);
                     }}
                   >
-                    {item.images.length > 0 ? (
-                      <img
-                        src={item.images[0]}
-                        alt={item.title}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-400">
-                        <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                      </div>
-                    )}
+                    {(() => {
+                      // Prioritize videos, then images
+                      const hasVideos = item.videos && item.videos.length > 0;
+                      const hasImages = item.images && item.images.length > 0;
+                      
+                      if (!hasVideos && !hasImages) {
+                        return (
+                          <div className="w-full h-full flex items-center justify-center text-gray-400">
+                            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                        );
+                      }
+                      
+                      // Get the first media item (prioritize video)
+                      const mediaUrl = hasVideos ? item.videos[0] : item.images[0];
+                      const urlLower = mediaUrl.toLowerCase();
+                      
+                      // Robust video detection
+                      const isVideo = !!(
+                        urlLower.includes('/videos/') || 
+                        urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
+                        urlLower.includes('video/') ||
+                        urlLower.includes('contenttype=video') ||
+                        urlLower.match(/video\/mp4|video\/quicktime|video\/webm|video\/x-msvideo/i) ||
+                        (urlLower.includes('firebasestorage') && (
+                          urlLower.includes('.mov') || 
+                          urlLower.includes('.mp4') || 
+                          urlLower.includes('.webm')
+                        ))
+                      );
+                      
+                      return isVideo ? (
+                        <>
+                          <video
+                            src={mediaUrl}
+                            className="w-full h-full object-cover pointer-events-none"
+                            preload="metadata"
+                            muted
+                            playsInline
+                            onLoadedMetadata={(e) => {
+                              const video = e.currentTarget;
+                              if (video.duration > 1) {
+                                video.currentTime = 1;
+                              } else if (video.duration > 0) {
+                                video.currentTime = video.duration / 2;
+                              }
+                            }}
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
+                            <div className="w-12 h-12 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center">
+                              <svg className="w-6 h-6 text-gray-900 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            </div>
+                          </div>
+                          <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 backdrop-blur-sm text-white text-xs rounded font-medium">
+                            VIDEO
+                          </div>
+                        </>
+                      ) : (
+                        <img
+                          src={mediaUrl}
+                          alt={item.title}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            // If image fails, it might be a video
+                            const img = e.currentTarget;
+                            const imgUrl = img.src;
+                            const urlLower = imgUrl.toLowerCase();
+                            const isVideoUrl = !!(
+                              urlLower.includes('/videos/') || 
+                              urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
+                              urlLower.includes('video/') ||
+                              (urlLower.includes('firebasestorage') && (
+                                urlLower.includes('.mov') || 
+                                urlLower.includes('.mp4') || 
+                                urlLower.includes('.webm')
+                              ))
+                            );
+                            if (isVideoUrl) {
+                              // Replace img with video element
+                              const video = document.createElement('video');
+                              video.src = imgUrl;
+                              video.className = 'w-full h-full object-cover pointer-events-none';
+                              video.preload = 'metadata';
+                              video.muted = true;
+                              video.playsInline = true;
+                              video.onloadedmetadata = () => {
+                                if (video.duration > 1) {
+                                  video.currentTime = 1;
+                                } else if (video.duration > 0) {
+                                  video.currentTime = video.duration / 2;
+                                }
+                              };
+                              img.parentElement?.replaceChild(video, img);
+                            }
+                          }}
+                        />
+                      );
+                    })()}
                   </div>
                   {/* Content area - clicking here selects the item */}
                   <div className="mb-2">
@@ -2541,27 +3141,116 @@ function ContentView({
                       className="w-5 h-5 text-[#4f0c1b] focus:ring-[#4f0c1b] border-gray-300 rounded cursor-pointer"
                     />
                   </div>
-                  {/* Image - opens detail modal */}
+                  {/* Media - opens detail modal */}
                   <div 
-                    className="aspect-square bg-gray-100 rounded-lg mb-3 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                    className="aspect-square bg-gray-100 rounded-lg mb-3 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity relative"
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedGeneralDetail(item);
                     }}
                   >
-                    {item.images.length > 0 ? (
-                      <img
-                        src={item.images[0]}
-                        alt={item.title}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-400">
-                        <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                      </div>
-                    )}
+                    {(() => {
+                      // Prioritize videos, then images
+                      const hasVideos = item.videos && item.videos.length > 0;
+                      const hasImages = item.images && item.images.length > 0;
+                      
+                      if (!hasVideos && !hasImages) {
+                        return (
+                          <div className="w-full h-full flex items-center justify-center text-gray-400">
+                            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                        );
+                      }
+                      
+                      // Get the first media item (prioritize video)
+                      const mediaUrl = hasVideos ? item.videos[0] : item.images[0];
+                      const urlLower = mediaUrl.toLowerCase();
+                      
+                      // Robust video detection
+                      const isVideo = !!(
+                        urlLower.includes('/videos/') || 
+                        urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
+                        urlLower.includes('video/') ||
+                        urlLower.includes('contenttype=video') ||
+                        urlLower.match(/video\/mp4|video\/quicktime|video\/webm|video\/x-msvideo/i) ||
+                        (urlLower.includes('firebasestorage') && (
+                          urlLower.includes('.mov') || 
+                          urlLower.includes('.mp4') || 
+                          urlLower.includes('.webm')
+                        ))
+                      );
+                      
+                      return isVideo ? (
+                        <>
+                          <video
+                            src={mediaUrl}
+                            className="w-full h-full object-cover pointer-events-none"
+                            preload="metadata"
+                            muted
+                            playsInline
+                            onLoadedMetadata={(e) => {
+                              const video = e.currentTarget;
+                              if (video.duration > 1) {
+                                video.currentTime = 1;
+                              } else if (video.duration > 0) {
+                                video.currentTime = video.duration / 2;
+                              }
+                            }}
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
+                            <div className="w-12 h-12 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center">
+                              <svg className="w-6 h-6 text-gray-900 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            </div>
+                          </div>
+                          <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 backdrop-blur-sm text-white text-xs rounded font-medium">
+                            VIDEO
+                          </div>
+                        </>
+                      ) : (
+                        <img
+                          src={mediaUrl}
+                          alt={item.title}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            // If image fails, it might be a video
+                            const img = e.currentTarget;
+                            const imgUrl = img.src;
+                            const urlLower = imgUrl.toLowerCase();
+                            const isVideoUrl = !!(
+                              urlLower.includes('/videos/') || 
+                              urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
+                              urlLower.includes('video/') ||
+                              (urlLower.includes('firebasestorage') && (
+                                urlLower.includes('.mov') || 
+                                urlLower.includes('.mp4') || 
+                                urlLower.includes('.webm')
+                              ))
+                            );
+                            if (isVideoUrl) {
+                              // Replace img with video element
+                              const video = document.createElement('video');
+                              video.src = imgUrl;
+                              video.className = 'w-full h-full object-cover pointer-events-none';
+                              video.preload = 'metadata';
+                              video.muted = true;
+                              video.playsInline = true;
+                              video.onloadedmetadata = () => {
+                                if (video.duration > 1) {
+                                  video.currentTime = 1;
+                                } else if (video.duration > 0) {
+                                  video.currentTime = video.duration / 2;
+                                }
+                              };
+                              img.parentElement?.replaceChild(video, img);
+                            }
+                          }}
+                        />
+                      );
+                    })()}
                   </div>
                   {/* Content area - clicking here selects the item */}
                   <div className="mb-2">
@@ -2643,14 +3332,52 @@ function ContentView({
                 // Get product content for this SKU
                 const productContentForSKU = groupedProductContent[item.sku] || [];
                 
-                // Combine all images: inventory images first, then CMS content images
+                // Helper function to detect if a URL is a video
+                const isVideoUrl = (url: string): boolean => {
+                  const urlLower = url.toLowerCase();
+                  return !!(
+                    urlLower.includes('/videos/') || 
+                    urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
+                    urlLower.includes('video/') ||
+                    urlLower.includes('contenttype=video') ||
+                    urlLower.match(/video\/mp4|video\/quicktime|video\/webm|video\/x-msvideo/i) ||
+                    (urlLower.includes('firebasestorage') && (
+                      urlLower.includes('.mov') || 
+                      urlLower.includes('.mp4') || 
+                      urlLower.includes('.webm')
+                    ))
+                  );
+                };
+
+                // Separate images and videos: filter out videos from images arrays
+                const inventoryImages = (item.images || []).filter(img => !isVideoUrl(img));
+                const inventoryVideos = (item.images || []).filter(img => isVideoUrl(img));
+                
+                const cmsImages = productContentForSKU.flatMap(content => {
+                  const contentImages = content.images || [];
+                  return contentImages.filter(img => !isVideoUrl(img));
+                });
+                const cmsVideos = productContentForSKU.flatMap(content => {
+                  const contentImages = content.images || [];
+                  const contentVideos = content.videos || [];
+                  // Filter videos from images array and combine with videos array
+                  const videosFromImages = contentImages.filter(img => isVideoUrl(img));
+                  return [...contentVideos, ...videosFromImages];
+                });
+                
                 const allImages: string[] = [
-                  ...(item.images || []),
-                  ...productContentForSKU.flatMap(content => content.images || [])
+                  ...inventoryImages,
+                  ...cmsImages
                 ];
                 
-                // Get main photo (first available image)
-                const mainPhoto = allImages.length > 0 ? allImages[0] : null;
+                const allVideos: string[] = [
+                  ...inventoryVideos,
+                  ...cmsVideos
+                ];
+                
+                // Get main photo (first available image, or first video if no images)
+                const mainPhoto = allImages.length > 0 ? allImages[0] : (allVideos.length > 0 ? allVideos[0] : null);
+                const mainPhotoIsVideo = mainPhoto ? isVideoUrl(mainPhoto) : false;
                 
                 return (
                   <div
@@ -2673,22 +3400,85 @@ function ContentView({
                       />
                     </div>
 
-                    {/* Image - opens detail modal */}
+                    {/* Media - opens detail modal */}
                     <div 
-                      className="aspect-square bg-gray-100 rounded-lg mb-3 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity" 
+                      className="aspect-square bg-gray-100 rounded-lg mb-3 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity relative" 
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedProductDetail(item);
                         setSelectedPhotoIndex(0);
                       }}
                     >
-                      {mainPhoto ? (
-                        <img
-                          src={mainPhoto}
-                          alt={item.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
+                      {mainPhoto ? (() => {
+                        return mainPhotoIsVideo ? (
+                          <>
+                            <video
+                              src={mainPhoto}
+                              className="w-full h-full object-cover pointer-events-none"
+                              preload="metadata"
+                              muted
+                              playsInline
+                              onLoadedMetadata={(e) => {
+                                const video = e.currentTarget;
+                                if (video.duration > 1) {
+                                  video.currentTime = 1;
+                                } else if (video.duration > 0) {
+                                  video.currentTime = video.duration / 2;
+                                }
+                              }}
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
+                              <div className="w-12 h-12 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center">
+                                <svg className="w-6 h-6 text-gray-900 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M8 5v14l11-7z" />
+                                </svg>
+                              </div>
+                            </div>
+                            <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 backdrop-blur-sm text-white text-xs rounded font-medium">
+                              VIDEO
+                            </div>
+                          </>
+                        ) : (
+                          <img
+                            src={mainPhoto}
+                            alt={item.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              // If image fails, it might be a video
+                              const img = e.currentTarget;
+                              const imgUrl = img.src;
+                              const urlLower = imgUrl.toLowerCase();
+                              const isVideoUrl = !!(
+                                urlLower.includes('/videos/') || 
+                                urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
+                                urlLower.includes('video/') ||
+                                (urlLower.includes('firebasestorage') && (
+                                  urlLower.includes('.mov') || 
+                                  urlLower.includes('.mp4') || 
+                                  urlLower.includes('.webm')
+                                ))
+                              );
+                              if (isVideoUrl) {
+                                // Replace img with video element
+                                const video = document.createElement('video');
+                                video.src = imgUrl;
+                                video.className = 'w-full h-full object-cover pointer-events-none';
+                                video.preload = 'metadata';
+                                video.muted = true;
+                                video.playsInline = true;
+                                video.onloadedmetadata = () => {
+                                  if (video.duration > 1) {
+                                    video.currentTime = 1;
+                                  } else if (video.duration > 0) {
+                                    video.currentTime = video.duration / 2;
+                                  }
+                                };
+                                img.parentElement?.replaceChild(video, img);
+                              }
+                            }}
+                          />
+                        );
+                      })() : (
                         <div className="w-full h-full flex items-center justify-center text-gray-400">
                           <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -3403,12 +4193,52 @@ function ContentView({
 
       {/* Product Detail Modal */}
       {selectedProductDetail && !showPhotoGallery && (() => {
-        // Get all images: inventory images first, then CMS content images
+        // Helper function to detect if a URL is a video
+        const isVideoUrl = (url: string): boolean => {
+          const urlLower = url.toLowerCase();
+          return !!(
+            urlLower.includes('/videos/') || 
+            urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
+            urlLower.includes('video/') ||
+            urlLower.includes('contenttype=video') ||
+            urlLower.match(/video\/mp4|video\/quicktime|video\/webm|video\/x-msvideo/i) ||
+            (urlLower.includes('firebasestorage') && (
+              urlLower.includes('.mov') || 
+              urlLower.includes('.mp4') || 
+              urlLower.includes('.webm')
+            ))
+          );
+        };
+
+        // Get all media: inventory first, then CMS content
         const productContentForSKU = groupedProductContent[selectedProductDetail.sku] || [];
+        
+        // Separate images and videos
+        const inventoryImages = (selectedProductDetail.images || []).filter(img => !isVideoUrl(img));
+        const inventoryVideos = (selectedProductDetail.images || []).filter(img => isVideoUrl(img));
+        
+        const cmsImages = productContentForSKU.flatMap(content => {
+          const contentImages = content.images || [];
+          return contentImages.filter(img => !isVideoUrl(img));
+        });
+        const cmsVideos = productContentForSKU.flatMap(content => {
+          const contentImages = content.images || [];
+          const contentVideos = content.videos || [];
+          const videosFromImages = contentImages.filter(img => isVideoUrl(img));
+          return [...contentVideos, ...videosFromImages];
+        });
+        
         const allImages: string[] = [
-          ...(selectedProductDetail.images || []),
-          ...productContentForSKU.flatMap(content => content.images || [])
+          ...inventoryImages,
+          ...cmsImages
         ];
+        const allVideos: string[] = [
+          ...inventoryVideos,
+          ...cmsVideos
+        ];
+        
+        // Get main photo (first image, not video)
+        const mainPhoto = allImages.length > 0 ? allImages[0] : null;
         
         return (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => setSelectedProductDetail(null)}>
@@ -3472,10 +4302,81 @@ function ContentView({
                           <div className="text-center">
                             <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
                             <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
+                  </div>
+                )}
+
+                {/* Videos Gallery */}
+                {allVideos.length > 0 && (
+                  <div className="mb-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        <h4 className="text-base font-semibold text-gray-900">Videos</h4>
+                      </div>
+                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                        {allVideos.length}
+                      </span>
                     </div>
-                  )}
-                </div>
+                    <div className="flex gap-3">
+                      {allVideos.slice(0, 4).map((video: string, index: number) => (
+                        <div 
+                          key={index} 
+                          className="flex-shrink-0 w-24 h-24 bg-gray-100 rounded-xl overflow-hidden cursor-pointer hover:opacity-90 hover:scale-105 transition-all duration-200 border-2 border-gray-200 shadow-sm hover:shadow-md relative"
+                          onClick={() => {
+                            setSelectedContentItems(new Set());
+                            setContentViewerTab('videos');
+                            setShowContentViewer(true);
+                          }}
+                        >
+                          <video
+                            src={video}
+                            className="w-full h-full object-cover"
+                            preload="metadata"
+                            muted
+                            playsInline
+                            onLoadedMetadata={(e) => {
+                              const videoEl = e.currentTarget;
+                              if (videoEl.duration > 1) {
+                                videoEl.currentTime = 1;
+                              } else if (videoEl.duration > 0) {
+                                videoEl.currentTime = videoEl.duration / 2;
+                              }
+                            }}
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                            <div className="w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center">
+                              <svg className="w-4 h-4 text-gray-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            </div>
+                          </div>
+                          <div className="absolute top-1 left-1 px-1 py-0.5 bg-black/60 backdrop-blur-sm text-white text-[10px] rounded font-medium">
+                            VIDEO
+                          </div>
+                        </div>
+                      ))}
+                      {allVideos.length > 4 && (
+                        <div 
+                          className="flex-shrink-0 w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center cursor-pointer hover:from-gray-200 hover:to-gray-300 transition-all duration-200 border-2 border-gray-300 shadow-sm hover:shadow-md hover:scale-105"
+                          onClick={() => {
+                            setSelectedContentItems(new Set());
+                            setContentViewerTab('videos');
+                            setShowContentViewer(true);
+                          }}
+                        >
+                          <div className="text-center">
+                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allVideos.length - 4}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -3594,12 +4495,46 @@ function ContentView({
       {showContentViewer && selectedProductDetail && (() => {
         // Get all images and videos: inventory first, then CMS content
         const productContentForSKU = groupedProductContent[selectedProductDetail.sku] || [];
+        // Helper function to detect if a URL is a video
+        const isVideoUrl = (url: string): boolean => {
+          const urlLower = url.toLowerCase();
+          return !!(
+            urlLower.includes('/videos/') || 
+            urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
+            urlLower.includes('video/') ||
+            urlLower.includes('contenttype=video') ||
+            urlLower.match(/video\/mp4|video\/quicktime|video\/webm|video\/x-msvideo/i) ||
+            (urlLower.includes('firebasestorage') && (
+              urlLower.includes('.mov') || 
+              urlLower.includes('.mp4') || 
+              urlLower.includes('.webm')
+            ))
+          );
+        };
+
+        // Collect all media from inventory and CMS content
+        const inventoryImages = (selectedProductDetail.images || []).filter(img => !isVideoUrl(img));
+        const inventoryVideos = (selectedProductDetail.images || []).filter(img => isVideoUrl(img));
+        
+        const cmsImages = productContentForSKU.flatMap(content => {
+          const contentImages = content.images || [];
+          return contentImages.filter(img => !isVideoUrl(img));
+        });
+        const cmsVideos = productContentForSKU.flatMap(content => {
+          const contentImages = content.images || [];
+          const contentVideos = content.videos || [];
+          // Filter videos from images array and combine with videos array
+          const videosFromImages = contentImages.filter(img => isVideoUrl(img));
+          return [...contentVideos, ...videosFromImages];
+        });
+        
         const allImages: string[] = [
-          ...(selectedProductDetail.images || []),
-          ...productContentForSKU.flatMap(content => content.images || [])
+          ...inventoryImages,
+          ...cmsImages
         ];
         const allVideos: string[] = [
-          ...productContentForSKU.flatMap(content => content.videos || [])
+          ...inventoryVideos,
+          ...cmsVideos
         ];
         
         const currentContent = contentViewerTab === 'images' ? allImages : allVideos;
@@ -3850,16 +4785,41 @@ function ContentView({
                               <div className="aspect-square bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center relative overflow-hidden">
                                 <video
                                   src={url}
-                                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300 pointer-events-none"
                                   controls={false}
+                                  preload="metadata"
+                                  muted
+                                  playsInline
+                                  onLoadedMetadata={(e) => {
+                                    const videoEl = e.currentTarget;
+                                    if (videoEl.duration > 1) {
+                                      videoEl.currentTime = 1;
+                                    } else if (videoEl.duration > 0) {
+                                      videoEl.currentTime = videoEl.duration / 2;
+                                    }
+                                  }}
                                 />
-                                <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/20 transition-colors">
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/20 transition-colors pointer-events-none">
                                   <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
                                     <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
                                       <path d="M8 5v14l11-7z" />
                                     </svg>
                                   </div>
                                 </div>
+                                
+                                {/* Play Button in Bottom Right Corner */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedVideoUrl(url);
+                                  }}
+                                  className="absolute bottom-2 right-2 z-20 w-10 h-10 bg-[#4f0c1b] hover:bg-[#3d0a15] rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-all duration-200 group/play"
+                                  aria-label="Play video"
+                                >
+                                  <svg className="w-5 h-5 text-white ml-0.5 group-hover/play:scale-110 transition-transform" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M8 5v14l11-7z" />
+                                  </svg>
+                                </button>
                               </div>
                             )}
                             
@@ -3914,8 +4874,29 @@ function ContentView({
 
       {/* Collection Detail Modal */}
       {selectedCollectionDetail && (() => {
-        const allImages = selectedCollectionDetail.images || [];
-        const allVideos = selectedCollectionDetail.videos || [];
+        // Helper function to detect if a URL is a video
+        const isVideoUrl = (url: string): boolean => {
+          const urlLower = url.toLowerCase();
+          return !!(
+            urlLower.includes('/videos/') || 
+            urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
+            urlLower.includes('video/') ||
+            urlLower.includes('contenttype=video') ||
+            urlLower.match(/video\/mp4|video\/quicktime|video\/webm|video\/x-msvideo/i) ||
+            (urlLower.includes('firebasestorage') && (
+              urlLower.includes('.mov') || 
+              urlLower.includes('.mp4') || 
+              urlLower.includes('.webm')
+            ))
+          );
+        };
+
+        // Filter videos from images array
+        const contentImages = selectedCollectionDetail.images || [];
+        const contentVideos = selectedCollectionDetail.videos || [];
+        const allImages = contentImages.filter(img => !isVideoUrl(img));
+        const videosFromImages = contentImages.filter(img => isVideoUrl(img));
+        const allVideos = [...contentVideos, ...videosFromImages];
         
         return (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => setSelectedCollectionDetail(null)}>
@@ -3967,6 +4948,66 @@ function ContentView({
                           <div className="text-center">
                             <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
                             <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Videos Gallery */}
+                {allVideos.length > 0 && (
+                  <div className="mb-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        <h4 className="text-base font-semibold text-gray-900">Videos</h4>
+                      </div>
+                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                        {allVideos.length}
+                      </span>
+                    </div>
+                    <div className="flex gap-3">
+                      {allVideos.slice(0, 4).map((video: string, index: number) => (
+                        <div 
+                          key={index} 
+                          className="flex-shrink-0 w-24 h-24 bg-gray-100 rounded-xl overflow-hidden cursor-pointer hover:opacity-90 hover:scale-105 transition-all duration-200 border-2 border-gray-200 shadow-sm hover:shadow-md relative"
+                          onClick={() => setSelectedVideoUrl(video)}
+                        >
+                          <video
+                            src={video}
+                            className="w-full h-full object-cover"
+                            preload="metadata"
+                            muted
+                            playsInline
+                            onLoadedMetadata={(e) => {
+                              const videoEl = e.currentTarget;
+                              if (videoEl.duration > 1) {
+                                videoEl.currentTime = 1;
+                              } else if (videoEl.duration > 0) {
+                                videoEl.currentTime = videoEl.duration / 2;
+                              }
+                            }}
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                            <div className="w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center">
+                              <svg className="w-4 h-4 text-gray-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            </div>
+                          </div>
+                          <div className="absolute top-1 left-1 px-1 py-0.5 bg-black/60 backdrop-blur-sm text-white text-[10px] rounded font-medium">
+                            VIDEO
+                          </div>
+                        </div>
+                      ))}
+                      {allVideos.length > 4 && (
+                        <div className="flex-shrink-0 w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center border-2 border-gray-300 shadow-sm">
+                          <div className="text-center">
+                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allVideos.length - 4}</span>
                           </div>
                         </div>
                       )}
@@ -4108,8 +5149,29 @@ function ContentView({
 
       {/* General Content Detail Modal */}
       {selectedGeneralDetail && (() => {
-        const allImages = selectedGeneralDetail.images || [];
-        const allVideos = selectedGeneralDetail.videos || [];
+        // Helper function to detect if a URL is a video
+        const isVideoUrl = (url: string): boolean => {
+          const urlLower = url.toLowerCase();
+          return !!(
+            urlLower.includes('/videos/') || 
+            urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
+            urlLower.includes('video/') ||
+            urlLower.includes('contenttype=video') ||
+            urlLower.match(/video\/mp4|video\/quicktime|video\/webm|video\/x-msvideo/i) ||
+            (urlLower.includes('firebasestorage') && (
+              urlLower.includes('.mov') || 
+              urlLower.includes('.mp4') || 
+              urlLower.includes('.webm')
+            ))
+          );
+        };
+
+        // Filter videos from images array
+        const contentImages = selectedGeneralDetail.images || [];
+        const contentVideos = selectedGeneralDetail.videos || [];
+        const allImages = contentImages.filter(img => !isVideoUrl(img));
+        const videosFromImages = contentImages.filter(img => isVideoUrl(img));
+        const allVideos = [...contentVideos, ...videosFromImages];
         
         return (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => setSelectedGeneralDetail(null)}>
@@ -4161,6 +5223,66 @@ function ContentView({
                           <div className="text-center">
                             <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
                             <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Videos Gallery */}
+                {allVideos.length > 0 && (
+                  <div className="mb-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        <h4 className="text-base font-semibold text-gray-900">Videos</h4>
+                      </div>
+                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                        {allVideos.length}
+                      </span>
+                    </div>
+                    <div className="flex gap-3">
+                      {allVideos.slice(0, 4).map((video: string, index: number) => (
+                        <div 
+                          key={index} 
+                          className="flex-shrink-0 w-24 h-24 bg-gray-100 rounded-xl overflow-hidden cursor-pointer hover:opacity-90 hover:scale-105 transition-all duration-200 border-2 border-gray-200 shadow-sm hover:shadow-md relative"
+                          onClick={() => setSelectedVideoUrl(video)}
+                        >
+                          <video
+                            src={video}
+                            className="w-full h-full object-cover"
+                            preload="metadata"
+                            muted
+                            playsInline
+                            onLoadedMetadata={(e) => {
+                              const videoEl = e.currentTarget;
+                              if (videoEl.duration > 1) {
+                                videoEl.currentTime = 1;
+                              } else if (videoEl.duration > 0) {
+                                videoEl.currentTime = videoEl.duration / 2;
+                              }
+                            }}
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                            <div className="w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center">
+                              <svg className="w-4 h-4 text-gray-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            </div>
+                          </div>
+                          <div className="absolute top-1 left-1 px-1 py-0.5 bg-black/60 backdrop-blur-sm text-white text-[10px] rounded font-medium">
+                            VIDEO
+                          </div>
+                        </div>
+                      ))}
+                      {allVideos.length > 4 && (
+                        <div className="flex-shrink-0 w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center border-2 border-gray-300 shadow-sm">
+                          <div className="text-center">
+                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allVideos.length - 4}</span>
                           </div>
                         </div>
                       )}
@@ -4299,6 +5421,14 @@ function ContentView({
           </div>
         );
       })()}
+
+      {/* Video Player Modal */}
+      {selectedVideoUrl && (
+        <VideoPlayerModal 
+          videoUrl={selectedVideoUrl}
+          onClose={() => setSelectedVideoUrl(null)}
+        />
+      )}
     </div>
   );
 }
