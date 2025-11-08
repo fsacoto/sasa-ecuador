@@ -9,6 +9,8 @@ import {
 } from 'firebase/auth';
 import { auth } from '../utils/firebase';
 import { getUserRole, getPermissionsForRole, createUserDocument } from '../services/userRoles';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../utils/firebase';
 
 export type UserRole = 'admin' | 'marketing';
 
@@ -47,14 +49,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Create user document in Firestore if it doesn't exist
         await createUserDocument(firebaseUser.uid, email, firebaseUser.displayName || undefined);
         
-        // Get user role from Firestore
+        // Get user data from Firestore (role and name)
+        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
         const role = await getUserRole(firebaseUser.uid);
+        const userName = userDoc.exists() && userDoc.data().name 
+          ? userDoc.data().name 
+          : (firebaseUser.displayName || getUserDisplayName(email));
         
         const userData: User = {
           id: firebaseUser.uid,
           email: firebaseUser.email || '',
           role: role,
-          name: firebaseUser.displayName || getUserDisplayName(email)
+          name: userName
         };
         
         setUser(userData);

@@ -26,6 +26,8 @@ export const PERMISSIONS = {
     'cms.view',
     'cms.edit',
     'cms.delete',
+    'cms.approve',
+    'cms.deny',
     'users.manage',
     'clients.view',
     'clients.edit',
@@ -40,6 +42,8 @@ export const PERMISSIONS = {
     'inventory.view.availability',
     'images.download',
     'content.export'
+    // Note: Marketing users CANNOT delete published content, approve, or deny content
+    // These permissions are admin-only: 'cms.delete', 'cms.approve', 'cms.deny'
   ],
   sales: [
     'inventory.view.ecuador',
@@ -98,21 +102,51 @@ export async function createUserDocument(userId: string, email: string, displayN
     // Check if user already exists
     const userDoc = await getDoc(doc(db, 'users', userId));
     
-    if (!userDoc.exists()) {
+    const emailLower = email.toLowerCase();
+    
+    // Check for specific users
+    const isAdminUser = emailLower === 'fernandosacoto@gmail.com' || (emailLower.includes('sacoto') && emailLower !== 'josesacoto1@gmail.com');
+    const isJoseSacoto = emailLower === 'josesacoto1@gmail.com';
+    
+    let userName: string;
+    let userRole: UserRole;
+    
+    if (isAdminUser) {
+      userName = 'Fernando Sacoto';
+      userRole = 'admin';
+    } else if (isJoseSacoto) {
+      userName = 'Jose Sacoto';
+      userRole = 'marketing';
+    } else {
+      userName = displayName || email.split('@')[0];
       // Check if this is the first user (first admin)
       const usersCollection = collection(db, 'users');
       const snapshot = await getDocs(usersCollection);
-      
-      // First user becomes admin, all others default to marketing
-      const role: UserRole = snapshot.empty ? 'admin' : 'marketing';
-      
+      userRole = snapshot.empty ? 'admin' : 'marketing';
+    }
+    
+    if (!userDoc.exists()) {
       await setDoc(doc(db, 'users', userId), {
         email,
-        name: displayName || email.split('@')[0],
-        role,
+        name: userName,
+        role: userRole,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });
+    } else {
+      // User exists, update name and role if needed to ensure they match
+      const existingData = userDoc.data();
+      const needsUpdate = 
+        (isAdminUser && (existingData.name !== 'Fernando Sacoto' || existingData.role !== 'admin')) ||
+        (isJoseSacoto && (existingData.name !== 'Jose Sacoto' || existingData.role !== 'marketing'));
+      
+      if (needsUpdate) {
+        await setDoc(doc(db, 'users', userId), {
+          name: userName,
+          role: userRole,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      }
     }
   } catch (error) {
     console.error('Error creating user document:', error);

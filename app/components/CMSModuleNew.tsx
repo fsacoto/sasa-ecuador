@@ -7,6 +7,7 @@ import { useCMS } from '../context/CMSContext';
 import { useTranslation } from '../context/TranslationContext';
 import { ContentType, ContentStatus, InventoryItem, CMSContent } from '../types';
 import JSZip from 'jszip';
+// Removed Firebase Storage imports - using direct URL fetch instead
 
 type ViewMode = 'dashboard' | 'upload' | 'manage' | 'products';
 
@@ -1645,33 +1646,33 @@ export default function CMSModuleNew() {
                                   </svg>
                                   {t('common.cancel')}
                                 </button>
-                                {hasPermission('cms.edit') && (
-                                  <>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleApprove(item.id);
-                                      }}
-                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
-                                    >
-                                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                      </svg>
-                                  {t('cms.approve')}
-                                </button>
-                                <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleReject(item.id);
-                                      }}
-                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-300 bg-white text-red-700 hover:bg-red-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
-                                    >
-                                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                      </svg>
-                                  {t('cms.reject')}
-                                </button>
-                                  </>
+                                {hasPermission('cms.approve') && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleApprove(item.id);
+                                    }}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                  >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    {t('cms.approve')}
+                                  </button>
+                                )}
+                                {hasPermission('cms.deny') && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleReject(item.id);
+                                    }}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-300 bg-white text-red-700 hover:bg-red-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                  >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                    {t('cms.reject')}
+                                  </button>
                                 )}
                               </>
                             )}
@@ -1698,6 +1699,7 @@ export default function CMSModuleNew() {
                                   }
                                 }}
                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-300 bg-white text-red-700 hover:bg-red-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                title="Only admins can delete published content"
                               >
                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -2199,8 +2201,13 @@ function ContentView({
   const [filterCollectionName, setFilterCollectionName] = useState('all');
   const [contentTypeFilter, setContentTypeFilter] = useState<'all' | 'product' | 'collection' | 'general' | 'inventory'>('all');
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
+  const [selectedCollections, setSelectedCollections] = useState<Set<string>>(new Set());
+  const [selectedGeneral, setSelectedGeneral] = useState<Set<string>>(new Set());
+  const [selectedProductContent, setSelectedProductContent] = useState<Set<string>>(new Set());
   const [isDownloading, setIsDownloading] = useState(false);
   const [selectedProductDetail, setSelectedProductDetail] = useState<InventoryItem | null>(null);
+  const [selectedCollectionDetail, setSelectedCollectionDetail] = useState<CMSContent | null>(null);
+  const [selectedGeneralDetail, setSelectedGeneralDetail] = useState<CMSContent | null>(null);
   const [showPhotoGallery, setShowPhotoGallery] = useState(false);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
@@ -2386,58 +2393,100 @@ function ContentView({
       toggleExpanded: () => setExpandedSections(prev => ({ ...prev, collection: !prev.collection })),
       renderContent: () => (
         <div className="p-6">
+          <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-200">
+            <span className="text-sm text-gray-600">
+              {selectedCollections.size} of {filteredCollectionContent.length} selected
+            </span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSelectAllCollections();
+              }}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#4f0c1b] bg-[#4f0c1b]/10 rounded-lg hover:bg-[#4f0c1b]/20 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {selectedCollections.size === filteredCollectionContent.length ? 'Deselect All' : 'Select All'}
+            </button>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredCollectionContent.map((item) => (
-              <div
-                key={item.id}
-                className="border rounded-lg p-4 transition-all duration-200 border-gray-200 hover:border-gray-300 cursor-pointer"
-                onClick={() => onContentClick?.(item)}
-              >
-                <div className="aspect-square bg-gray-100 rounded-lg mb-3 overflow-hidden">
-                  {item.images.length > 0 ? (
-                    <img
-                      src={item.images[0]}
-                      alt={item.title}
-                      className="w-full h-full object-cover"
+            {filteredCollectionContent.map((item) => {
+              const isSelected = selectedCollections.has(item.id);
+              return (
+                <div
+                  key={item.id}
+                  className={`border rounded-lg p-4 transition-all duration-200 relative cursor-pointer ${
+                    isSelected
+                      ? 'border-[#4f0c1b] bg-[#4f0c1b]/5'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                  onClick={() => handleToggleCollection(item.id)}
+                >
+                  {/* Checkbox */}
+                  <div className="absolute top-4 right-4 z-10">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => handleToggleCollection(item.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-5 h-5 text-[#4f0c1b] focus:ring-[#4f0c1b] border-gray-300 rounded cursor-pointer"
                     />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400">
-                      <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                  )}
-                </div>
-                <div className="mb-2">
-                  <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
-                    {t('cms.collection')}
-                  </span>
-                </div>
-                <h4 className="font-medium text-gray-900 text-sm line-clamp-2 mb-2">{item.title}</h4>
-                <div className="flex items-center justify-between text-xs">
-                  <span className={`px-2 py-1 rounded-full font-medium ${
-                    item.status === 'draft' ? 'bg-yellow-100 text-yellow-800' :
-                    item.status === 'submitted' ? 'bg-amber-100 text-amber-800' :
-                    item.status === 'approved' ? 'bg-green-100 text-green-800' :
-                    item.status === 'published' ? 'bg-purple-100 text-purple-800' :
-                    item.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
-                    {item.status === 'draft' ? t('cms.draft') :
-                     item.status === 'submitted' ? t('cms.submitted') :
-                     item.status === 'approved' ? t('cms.approved') :
-                     item.status === 'published' ? t('cms.published') :
-                     item.status === 'rejected' ? t('cms.rejected') :
-                     item.status === 'archived' ? t('cms.archived') : item.status}
-                  </span>
-                  {item.status === 'submitted' && item.metadata.resubmissionCount && item.metadata.resubmissionCount > 0 && (
-                    <span className="relative inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-blue-600 rounded-full">
-                      {item.metadata.resubmissionCount + 1}
+                  </div>
+                  {/* Image - opens detail modal */}
+                  <div 
+                    className="aspect-square bg-gray-100 rounded-lg mb-3 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedCollectionDetail(item);
+                    }}
+                  >
+                    {item.images.length > 0 ? (
+                      <img
+                        src={item.images[0]}
+                        alt={item.title}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-gray-400">
+                        <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                  {/* Content area - clicking here selects the item */}
+                  <div className="mb-2">
+                    <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
+                      {t('cms.collection')}
                     </span>
-                  )}
+                  </div>
+                  <h4 className="font-medium text-gray-900 text-sm line-clamp-2 mb-2">{item.title}</h4>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className={`px-2 py-1 rounded-full font-medium ${
+                      item.status === 'draft' ? 'bg-yellow-100 text-yellow-800' :
+                      item.status === 'submitted' ? 'bg-amber-100 text-amber-800' :
+                      item.status === 'approved' ? 'bg-green-100 text-green-800' :
+                      item.status === 'published' ? 'bg-purple-100 text-purple-800' :
+                      item.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {item.status === 'draft' ? t('cms.draft') :
+                       item.status === 'submitted' ? t('cms.submitted') :
+                       item.status === 'approved' ? t('cms.approved') :
+                       item.status === 'published' ? t('cms.published') :
+                       item.status === 'rejected' ? t('cms.rejected') :
+                       item.status === 'archived' ? t('cms.archived') : item.status}
+                    </span>
+                    {item.status === 'submitted' && item.metadata.resubmissionCount && item.metadata.resubmissionCount > 0 && (
+                      <span className="relative inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-blue-600 rounded-full">
+                        {item.metadata.resubmissionCount + 1}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ),
@@ -2452,58 +2501,100 @@ function ContentView({
       toggleExpanded: () => setExpandedSections(prev => ({ ...prev, general: !prev.general })),
       renderContent: () => (
         <div className="p-6">
+          <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-200">
+            <span className="text-sm text-gray-600">
+              {selectedGeneral.size} of {filteredGeneralContent.length} selected
+            </span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSelectAllGeneral();
+              }}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#4f0c1b] bg-[#4f0c1b]/10 rounded-lg hover:bg-[#4f0c1b]/20 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {selectedGeneral.size === filteredGeneralContent.length ? 'Deselect All' : 'Select All'}
+            </button>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredGeneralContent.map((item) => (
-              <div
-                key={item.id}
-                className="border rounded-lg p-4 transition-all duration-200 border-gray-200 hover:border-gray-300 cursor-pointer"
-                onClick={() => onContentClick?.(item)}
-              >
-                <div className="aspect-square bg-gray-100 rounded-lg mb-3 overflow-hidden">
-                  {item.images.length > 0 ? (
-                    <img
-                      src={item.images[0]}
-                      alt={item.title}
-                      className="w-full h-full object-cover"
+            {filteredGeneralContent.map((item) => {
+              const isSelected = selectedGeneral.has(item.id);
+              return (
+                <div
+                  key={item.id}
+                  className={`border rounded-lg p-4 transition-all duration-200 relative cursor-pointer ${
+                    isSelected
+                      ? 'border-[#4f0c1b] bg-[#4f0c1b]/5'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                  onClick={() => handleToggleGeneral(item.id)}
+                >
+                  {/* Checkbox */}
+                  <div className="absolute top-4 right-4 z-10">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => handleToggleGeneral(item.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-5 h-5 text-[#4f0c1b] focus:ring-[#4f0c1b] border-gray-300 rounded cursor-pointer"
                     />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400">
-                      <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                  )}
-                </div>
-                <div className="mb-2">
-                  <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
-                    {t('cms.general')}
-                  </span>
-                </div>
-                <h4 className="font-medium text-gray-900 text-sm line-clamp-2 mb-2">{item.title}</h4>
-                <div className="flex items-center justify-between text-xs">
-                  <span className={`px-2 py-1 rounded-full font-medium ${
-                    item.status === 'draft' ? 'bg-yellow-100 text-yellow-800' :
-                    item.status === 'submitted' ? 'bg-amber-100 text-amber-800' :
-                    item.status === 'approved' ? 'bg-green-100 text-green-800' :
-                    item.status === 'published' ? 'bg-purple-100 text-purple-800' :
-                    item.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
-                    {item.status === 'draft' ? t('cms.draft') :
-                     item.status === 'submitted' ? t('cms.submitted') :
-                     item.status === 'approved' ? t('cms.approved') :
-                     item.status === 'published' ? t('cms.published') :
-                     item.status === 'rejected' ? t('cms.rejected') :
-                     item.status === 'archived' ? t('cms.archived') : item.status}
-                  </span>
-                  {item.status === 'submitted' && item.metadata.resubmissionCount && item.metadata.resubmissionCount > 0 && (
-                    <span className="relative inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-blue-600 rounded-full">
-                      {item.metadata.resubmissionCount + 1}
+                  </div>
+                  {/* Image - opens detail modal */}
+                  <div 
+                    className="aspect-square bg-gray-100 rounded-lg mb-3 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedGeneralDetail(item);
+                    }}
+                  >
+                    {item.images.length > 0 ? (
+                      <img
+                        src={item.images[0]}
+                        alt={item.title}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-gray-400">
+                        <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                  {/* Content area - clicking here selects the item */}
+                  <div className="mb-2">
+                    <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
+                      {t('cms.general')}
                     </span>
-                  )}
+                  </div>
+                  <h4 className="font-medium text-gray-900 text-sm line-clamp-2 mb-2">{item.title}</h4>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className={`px-2 py-1 rounded-full font-medium ${
+                      item.status === 'draft' ? 'bg-yellow-100 text-yellow-800' :
+                      item.status === 'submitted' ? 'bg-amber-100 text-amber-800' :
+                      item.status === 'approved' ? 'bg-green-100 text-green-800' :
+                      item.status === 'published' ? 'bg-purple-100 text-purple-800' :
+                      item.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {item.status === 'draft' ? t('cms.draft') :
+                       item.status === 'submitted' ? t('cms.submitted') :
+                       item.status === 'approved' ? t('cms.approved') :
+                       item.status === 'published' ? t('cms.published') :
+                       item.status === 'rejected' ? t('cms.rejected') :
+                       item.status === 'archived' ? t('cms.archived') : item.status}
+                    </span>
+                    {item.status === 'submitted' && item.metadata.resubmissionCount && item.metadata.resubmissionCount > 0 && (
+                      <span className="relative inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-blue-600 rounded-full">
+                        {item.metadata.resubmissionCount + 1}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ),
@@ -2527,8 +2618,26 @@ function ContentView({
               <p className="mt-1 text-sm text-gray-500">{t('cms.tryAdjustingFilters')}</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {filteredInventory.map((item) => {
+            <>
+              <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-200">
+                <span className="text-sm text-gray-600">
+                  {selectedProducts.size} of {filteredInventory.length} selected
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelectAllInventory();
+                  }}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#4f0c1b] bg-[#4f0c1b]/10 rounded-lg hover:bg-[#4f0c1b]/20 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {selectedProducts.size === filteredInventory.length ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {filteredInventory.map((item) => {
                 const totalStock = item.ecuadorStock + item.usaStock;
                 const isInStock = totalStock > 0;
                 // Get product content for this SKU
@@ -2546,11 +2655,12 @@ function ContentView({
                 return (
                   <div
                     key={item.id}
-                    className={`border rounded-lg p-4 transition-all duration-200 ${
+                    className={`border rounded-lg p-4 transition-all duration-200 relative cursor-pointer ${
                       selectedProducts.has(item.sku)
                         ? 'border-[#4f0c1b] bg-[#4f0c1b]/5'
                         : 'border-gray-200 hover:border-gray-300'
-                    } relative`}
+                    }`}
+                    onClick={() => handleToggleProduct(item.sku)}
                   >
                     {/* Checkbox */}
                     <div className="absolute top-4 right-4 z-10">
@@ -2563,10 +2673,11 @@ function ContentView({
                       />
                     </div>
 
-                    {/* Image */}
+                    {/* Image - opens detail modal */}
                     <div 
                       className="aspect-square bg-gray-100 rounded-lg mb-3 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity" 
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setSelectedProductDetail(item);
                         setSelectedPhotoIndex(0);
                       }}
@@ -2586,11 +2697,8 @@ function ContentView({
                       )}
                     </div>
                     
-                    {/* Content */}
-                    <div className="space-y-2 cursor-pointer" onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggleProduct(item.sku);
-                    }}>
+                    {/* Content area - clicking here selects the item */}
+                    <div className="space-y-2">
                       <h4 className="font-medium text-gray-900 text-sm line-clamp-2">{item.name}</h4>
                       
                       <div className="text-xs text-gray-500 space-y-1">
@@ -2619,7 +2727,8 @@ function ContentView({
                   </div>
                 );
               })}
-            </div>
+              </div>
+            </>
           )}
         </div>
       ),
@@ -2637,8 +2746,8 @@ function ContentView({
     setSelectedProducts(newSelected);
   };
 
-  // Handle select all
-  const handleSelectAll = () => {
+  // Handle select all for inventory
+  const handleSelectAllInventory = () => {
     if (selectedProducts.size === filteredInventory.length) {
       setSelectedProducts(new Set());
     } else {
@@ -2646,42 +2755,279 @@ function ContentView({
     }
   };
 
-  // Download images
+  // Handle select/deselect all items across all content types
+  const handleSelectAllItems = () => {
+    const totalItems = filteredInventory.length + filteredCollectionContent.length + filteredGeneralContent.length + filteredProductContent.length;
+    const totalSelected = selectedProducts.size + selectedCollections.size + selectedGeneral.size + selectedProductContent.size;
+    
+    if (totalSelected === totalItems) {
+      // Deselect all
+      setSelectedProducts(new Set());
+      setSelectedCollections(new Set());
+      setSelectedGeneral(new Set());
+      setSelectedProductContent(new Set());
+    } else {
+      // Select all
+      setSelectedProducts(new Set(filteredInventory.map(item => item.sku)));
+      setSelectedCollections(new Set(filteredCollectionContent.map(item => item.id)));
+      setSelectedGeneral(new Set(filteredGeneralContent.map(item => item.id)));
+      setSelectedProductContent(new Set(filteredProductContent.map(item => item.id)));
+    }
+  };
+
+  // Handle select all for collections
+  const handleSelectAllCollections = () => {
+    if (selectedCollections.size === filteredCollectionContent.length) {
+      setSelectedCollections(new Set());
+    } else {
+      setSelectedCollections(new Set(filteredCollectionContent.map(item => item.id)));
+    }
+  };
+
+  // Handle select all for general content
+  const handleSelectAllGeneral = () => {
+    if (selectedGeneral.size === filteredGeneralContent.length) {
+      setSelectedGeneral(new Set());
+    } else {
+      setSelectedGeneral(new Set(filteredGeneralContent.map(item => item.id)));
+    }
+  };
+
+  // Handle select all for product content
+  const handleSelectAllProductContent = () => {
+    if (selectedProductContent.size === filteredProductContent.length) {
+      setSelectedProductContent(new Set());
+    } else {
+      setSelectedProductContent(new Set(filteredProductContent.map(item => item.id)));
+    }
+  };
+
+  // Handle collection selection
+  const handleToggleCollection = (contentId: string) => {
+    const newSelected = new Set(selectedCollections);
+    if (newSelected.has(contentId)) {
+      newSelected.delete(contentId);
+    } else {
+      newSelected.add(contentId);
+    }
+    setSelectedCollections(newSelected);
+  };
+
+  // Handle general content selection
+  const handleToggleGeneral = (contentId: string) => {
+    const newSelected = new Set(selectedGeneral);
+    if (newSelected.has(contentId)) {
+      newSelected.delete(contentId);
+    } else {
+      newSelected.add(contentId);
+    }
+    setSelectedGeneral(newSelected);
+  };
+
+  // Handle product content selection
+  const handleToggleProductContent = (contentId: string) => {
+    const newSelected = new Set(selectedProductContent);
+    if (newSelected.has(contentId)) {
+      newSelected.delete(contentId);
+    } else {
+      newSelected.add(contentId);
+    }
+    setSelectedProductContent(newSelected);
+  };
+
+  // Download images from all selected content as ZIP - Simple approach using URLs directly
   const handleDownloadImages = async () => {
-    if (selectedProducts.size === 0) {
-      alert('Please select products to download images');
+    const totalSelected = selectedProducts.size + selectedCollections.size + selectedGeneral.size + selectedProductContent.size;
+    
+    if (totalSelected === 0) {
+      alert('Please select items to download images');
       return;
     }
 
     setIsDownloading(true);
 
     try {
-      const selectedItems = filteredInventory.filter(item => selectedProducts.has(item.sku));
+      const zip = new JSZip();
+      let fileCount = 0;
+      let failedCount = 0;
+      const usedFileNames = new Set<string>();
 
-      for (const item of selectedItems) {
-        if (item.images && item.images.length > 0) {
-          for (let i = 0; i < item.images.length; i++) {
-            const imageUrl = item.images[i];
+      // Helper function to sanitize filenames
+      const sanitizeFileName = (name: string) => {
+        return name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      };
+
+      // Helper function to get unique filename
+      const getUniqueFileName = (baseName: string, extension: string = 'jpg'): string => {
+        let fileName = `${baseName}.${extension}`;
+        let counter = 1;
+        while (usedFileNames.has(fileName)) {
+          fileName = `${baseName}_${counter}.${extension}`;
+          counter++;
+        }
+        usedFileNames.add(fileName);
+        return fileName;
+      };
+
+      // Download image using API route (bypasses CORS by using server-side proxy)
+      const downloadImage = async (imageUrl: string): Promise<Blob | null> => {
+        try {
+          // Handle data URLs (base64)
+          if (imageUrl.startsWith('data:')) {
             const response = await fetch(imageUrl);
             const blob = await response.blob();
+            return blob.size > 0 ? blob : null;
+          }
+          
+          // Use API route to proxy the download (server-side, no CORS issues)
+          const apiUrl = `/api/download-image?url=${encodeURIComponent(imageUrl)}`;
+          const response = await fetch(apiUrl, {
+            method: 'GET',
+            cache: 'no-cache'
+          });
+          
+          if (response.ok) {
+            const blob = await response.blob();
+            if (blob && blob.size > 0) {
+              return blob;
+            }
+          } else {
+            console.warn('API route failed with status:', response.status);
+          }
+          
+          return null;
+        } catch (error) {
+          console.error('Error downloading image via API:', imageUrl.substring(0, 50) + '...', error);
+          return null;
+        }
+      };
 
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `${item.sku}_${i + 1}.jpg`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+      // Track SKUs that are already processed
+      const processedSKUs = new Set<string>();
 
-            // Small delay between downloads
-            await new Promise(resolve => setTimeout(resolve, 500));
+      // Process inventory items
+      const selectedInventoryItems = inventory.filter(item => selectedProducts.has(item.sku));
+      for (const item of selectedInventoryItems) {
+        processedSKUs.add(item.sku);
+        const productContentForSKU = groupedProductContent[item.sku] || [];
+        const allImages = [
+          ...(item.images || []),
+          ...productContentForSKU.flatMap(content => content.images || [])
+        ];
+
+        for (let i = 0; i < allImages.length; i++) {
+          const imageUrl = allImages[i];
+          console.log(`Downloading image ${i + 1}/${allImages.length} for SKU ${item.sku}:`, imageUrl.substring(0, 80) + '...');
+          const blob = await downloadImage(imageUrl);
+          if (blob) {
+            console.log(`✓ Successfully downloaded image ${i + 1} for SKU ${item.sku}, size: ${blob.size} bytes`);
+            zip.file(getUniqueFileName(`${item.sku}_${i + 1}`), blob);
+            fileCount++;
+          } else {
+            console.warn(`✗ Failed to download image ${i + 1} for SKU ${item.sku}`);
+            failedCount++;
           }
         }
       }
 
-      alert(`Successfully downloaded images from ${selectedItems.length} product(s)`);
+      // Process collection items
+      const selectedCollectionItems = filteredCollectionContent.filter(item => selectedCollections.has(item.id));
+      for (const item of selectedCollectionItems) {
+        if (item.images && item.images.length > 0) {
+          const safeTitle = sanitizeFileName(item.title);
+          for (let i = 0; i < item.images.length; i++) {
+            const imageUrl = item.images[i];
+            console.log(`Downloading collection image ${i + 1}/${item.images.length} for "${item.title}"`);
+            const blob = await downloadImage(imageUrl);
+            if (blob) {
+              zip.file(getUniqueFileName(`${safeTitle}_${i + 1}`), blob);
+              fileCount++;
+            } else {
+              failedCount++;
+            }
+          }
+        }
+      }
+
+      // Process general content items
+      const selectedGeneralItems = filteredGeneralContent.filter(item => selectedGeneral.has(item.id));
+      for (const item of selectedGeneralItems) {
+        if (item.images && item.images.length > 0) {
+          const safeTitle = sanitizeFileName(item.title);
+          for (let i = 0; i < item.images.length; i++) {
+            const imageUrl = item.images[i];
+            console.log(`Downloading collection image ${i + 1}/${item.images.length} for "${item.title}"`);
+            const blob = await downloadImage(imageUrl);
+            if (blob) {
+              zip.file(getUniqueFileName(`${safeTitle}_${i + 1}`), blob);
+              fileCount++;
+            } else {
+              failedCount++;
+            }
+          }
+        }
+      }
+
+      // Process product content items (skip if SKU already processed)
+      const selectedProductContentItems = filteredProductContent.filter(item => {
+        if (!selectedProductContent.has(item.id)) return false;
+        const sku = item.linkedProductIds.length > 0 ? item.linkedProductIds[0] : null;
+        return sku ? !processedSKUs.has(sku) : true;
+      });
+      
+      for (const item of selectedProductContentItems) {
+        if (item.images && item.images.length > 0) {
+          const sku = item.linkedProductIds.length > 0 ? item.linkedProductIds[0] : 'unlinked';
+          for (let i = 0; i < item.images.length; i++) {
+            const blob = await downloadImage(item.images[i]);
+            if (blob) {
+              zip.file(getUniqueFileName(`${sku}_${i + 1}`), blob);
+              fileCount++;
+            } else {
+              failedCount++;
+            }
+          }
+        }
+      }
+
+      if (fileCount === 0) {
+        alert(failedCount > 0 
+          ? `Failed to download all ${failedCount} image(s). Please check your internet connection.`
+          : 'No images found in selected items'
+        );
+        setIsDownloading(false);
+        return;
+      }
+
+      // Generate ZIP
+      const zipBlob = await zip.generateAsync({ 
+        type: 'blob',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 6 }
+      });
+      
+      // Download ZIP
+      const url = URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `media_download_${new Date().toISOString().split('T')[0]}.zip`;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 100);
+
+      const totalItems = selectedInventoryItems.length + selectedCollectionItems.length + selectedGeneralItems.length + selectedProductContentItems.length;
+      alert(failedCount > 0
+        ? `Downloaded ${fileCount} image(s) successfully. ${failedCount} image(s) failed.`
+        : `Successfully downloaded ${fileCount} image(s) from ${totalItems} item(s) as ZIP file`
+      );
     } catch (error) {
       console.error('Error downloading images:', error);
-      alert('Error downloading images. Please try again.');
+      alert(`Error downloading images: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsDownloading(false);
     }
@@ -2719,27 +3065,25 @@ function ContentView({
             )}
           </button>
         </div>
-        {/* Bulk Download Toggle Button - Only show for inventory */}
-        {(contentTypeFilter === 'all' || contentTypeFilter === 'inventory') && (
-          <div className="relative">
-            <button
-              onClick={() => setShowBulkDownload(!showBulkDownload)}
-              className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
-                showBulkDownload ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
-              }`}
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <span className="text-sm font-medium">{t('cms.bulkDownloadButton')}</span>
-              {selectedProducts.size > 0 && (
-                <span className="bg-blue-100 text-blue-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
-                  {selectedProducts.size}
-                </span>
-              )}
-            </button>
-          </div>
-        )}
+        {/* Bulk Download Toggle Button - Show for all content types */}
+        <div className="relative">
+          <button
+            onClick={() => setShowBulkDownload(!showBulkDownload)}
+            className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
+              showBulkDownload ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span className="text-sm font-medium">{t('cms.bulkDownloadButton')}</span>
+            {(selectedProducts.size + selectedCollections.size + selectedGeneral.size + selectedProductContent.size) > 0 && (
+              <span className="bg-blue-100 text-blue-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
+                {selectedProducts.size + selectedCollections.size + selectedGeneral.size + selectedProductContent.size}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Filters Panel */}
@@ -2847,35 +3191,47 @@ function ContentView({
       </div>
       )}
 
-      {/* Bulk Download Panel - Only show for inventory */}
-      {showBulkDownload && (contentTypeFilter === 'all' || contentTypeFilter === 'inventory') && (
+      {/* Bulk Download Panel - Show for all content types */}
+      {showBulkDownload && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Bulk Download</h3>
-              <p className="text-sm text-gray-600 mt-1">Select products and download all images</p>
+              <p className="text-sm text-gray-600 mt-1">Select items from any section and download all images</p>
             </div>
             <div className="flex items-center gap-3">
               <span className="text-sm text-gray-500">
-                {selectedProducts.size} of {filteredInventory.length} selected
+                {selectedProducts.size + selectedCollections.size + selectedGeneral.size + selectedProductContent.size} item(s) selected
               </span>
               <button
-                onClick={handleSelectAll}
-                className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
-              >
-                {selectedProducts.size === filteredInventory.length ? 'Deselect All' : 'Select All'}
-              </button>
-              <button
                 onClick={handleDownloadImages}
-                disabled={selectedProducts.size === 0 || isDownloading}
+                disabled={(selectedProducts.size + selectedCollections.size + selectedGeneral.size + selectedProductContent.size) === 0 || isDownloading}
                 className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                {isDownloading ? 'Downloading...' : 'Download Images'}
+                {isDownloading ? 'Creating ZIP...' : 'Download as ZIP'}
               </button>
             </div>
+          </div>
+          <div className="flex items-center gap-2 pt-4 border-t border-gray-200">
+            <button
+              onClick={handleSelectAllItems}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#4f0c1b] bg-[#4f0c1b]/10 rounded-lg hover:bg-[#4f0c1b]/20 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {(selectedProducts.size + selectedCollections.size + selectedGeneral.size + selectedProductContent.size) === 
+               (filteredInventory.length + filteredCollectionContent.length + filteredGeneralContent.length + filteredProductContent.length)
+                ? 'Deselect All' 
+                : 'Select All'}
+            </button>
+            <span className="text-xs text-gray-400">|</span>
+            <span className="text-xs text-gray-500">
+              {filteredInventory.length + filteredCollectionContent.length + filteredGeneralContent.length + filteredProductContent.length} total items available
+            </span>
           </div>
         </div>
       )}
@@ -3551,6 +3907,394 @@ function ContentView({
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Collection Detail Modal */}
+      {selectedCollectionDetail && (() => {
+        const allImages = selectedCollectionDetail.images || [];
+        const allVideos = selectedCollectionDetail.videos || [];
+        
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => setSelectedCollectionDetail(null)}>
+            <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              {/* Header */}
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
+                <h3 className="text-xl font-semibold text-gray-900">{selectedCollectionDetail.title}</h3>
+                <button
+                  onClick={() => setSelectedCollectionDetail(null)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-6">
+                {/* Images Gallery at Top - Max 4 visible + overflow indicator */}
+                {allImages.length > 0 && (
+                  <div className="mb-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <h4 className="text-base font-semibold text-gray-900">Images</h4>
+                      </div>
+                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                        {allImages.length}
+                      </span>
+                    </div>
+                    <div className="flex gap-3">
+                      {allImages.slice(0, 4).map((img: string, index: number) => (
+                        <div 
+                          key={index} 
+                          className="flex-shrink-0 w-24 h-24 bg-gray-100 rounded-xl overflow-hidden cursor-pointer hover:opacity-90 hover:scale-105 transition-all duration-200 border-2 border-gray-200 shadow-sm hover:shadow-md"
+                        >
+                          <img
+                            src={img}
+                            alt={`${selectedCollectionDetail.title} - Image ${index + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      ))}
+                      {allImages.length > 4 && (
+                        <div className="flex-shrink-0 w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center border-2 border-gray-300 shadow-sm">
+                          <div className="text-center">
+                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Content Information */}
+                  <div className="space-y-6">
+                    <div>
+                      <div className="flex items-center gap-2 mb-4">
+                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <h4 className="text-base font-semibold text-gray-900">Content Information</h4>
+                      </div>
+                      <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-5 space-y-4 border border-gray-200 shadow-sm">
+                        <div className="flex items-start justify-between pb-3 border-b border-gray-200">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Title</span>
+                          <p className="text-sm font-semibold text-gray-900 text-right">{selectedCollectionDetail.title}</p>
+                        </div>
+                        <div className="flex items-start justify-between pb-3 border-b border-gray-200">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</span>
+                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
+                            {t('cms.collection')}
+                          </span>
+                        </div>
+                        <div className="flex items-start justify-between pb-3 border-b border-gray-200">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</span>
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                            selectedCollectionDetail.status === 'draft' ? 'bg-yellow-100 text-yellow-800' :
+                            selectedCollectionDetail.status === 'submitted' ? 'bg-amber-100 text-amber-800' :
+                            selectedCollectionDetail.status === 'approved' ? 'bg-green-100 text-green-800' :
+                            selectedCollectionDetail.status === 'published' ? 'bg-purple-100 text-purple-800' :
+                            selectedCollectionDetail.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {selectedCollectionDetail.status}
+                          </span>
+                        </div>
+                        <div className="flex items-start justify-between pb-3 border-b border-gray-200">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Language</span>
+                          <p className="text-sm font-semibold text-gray-900 text-right">{selectedCollectionDetail.language.toUpperCase()}</p>
+                        </div>
+                        <div className="flex items-start justify-between pb-3 border-b border-gray-200">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Category</span>
+                          <p className="text-sm font-semibold text-gray-900 text-right">{selectedCollectionDetail.category || 'N/A'}</p>
+                        </div>
+                        <div className="flex items-start justify-between pb-3 border-b border-gray-200">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Author</span>
+                          <p className="text-sm font-semibold text-gray-900 text-right">{selectedCollectionDetail.authorName}</p>
+                        </div>
+                        <div className="pt-1">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">Description</span>
+                          <p className="text-sm text-gray-700 leading-relaxed">{selectedCollectionDetail.description || 'No description available'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center gap-2 mb-4">
+                      <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                      </svg>
+                      <h4 className="text-base font-semibold text-gray-900">Tags & Hashtags</h4>
+                    </div>
+                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-5 space-y-4 border border-gray-200 shadow-sm">
+                      {selectedCollectionDetail.hashtags.length > 0 && (
+                        <div>
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">Hashtags</span>
+                          <div className="flex flex-wrap gap-2">
+                            {selectedCollectionDetail.hashtags.map((tag, idx) => (
+                              <span key={idx} className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {selectedCollectionDetail.tags.length > 0 && (
+                        <div>
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">Tags</span>
+                          <div className="flex flex-wrap gap-2">
+                            {selectedCollectionDetail.tags.map((tag, idx) => (
+                              <span key={idx} className="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {selectedCollectionDetail.hashtags.length === 0 && selectedCollectionDetail.tags.length === 0 && (
+                        <p className="text-sm text-gray-500">No tags or hashtags</p>
+                      )}
+                    </div>
+
+                    {/* Linked Products */}
+                    {selectedCollectionDetail.linkedProductIds.length > 0 && (
+                      <div className="mt-6">
+                        <div className="flex items-center gap-2 mb-4">
+                          <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                          </svg>
+                          <h4 className="text-base font-semibold text-gray-900">Linked Products ({selectedCollectionDetail.linkedProductIds.length})</h4>
+                        </div>
+                        <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-5 space-y-2 border border-gray-200 shadow-sm">
+                          <div className="flex flex-wrap gap-2">
+                            {selectedCollectionDetail.linkedProductIds.map((sku, idx) => (
+                              <span key={idx} className="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded">
+                                {sku}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="pt-4 col-span-2">
+                    <button
+                      onClick={() => {
+                        handleToggleCollection(selectedCollectionDetail.id);
+                        setSelectedCollectionDetail(null);
+                      }}
+                      className="w-full px-4 py-2 border border-[#4f0c1b] text-[#4f0c1b] rounded-lg hover:bg-[#4f0c1b]/10 transition-colors font-medium"
+                    >
+                      {selectedCollections.has(selectedCollectionDetail.id) ? 'Deselect for Download' : 'Select for Download'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* General Content Detail Modal */}
+      {selectedGeneralDetail && (() => {
+        const allImages = selectedGeneralDetail.images || [];
+        const allVideos = selectedGeneralDetail.videos || [];
+        
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => setSelectedGeneralDetail(null)}>
+            <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              {/* Header */}
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
+                <h3 className="text-xl font-semibold text-gray-900">{selectedGeneralDetail.title}</h3>
+                <button
+                  onClick={() => setSelectedGeneralDetail(null)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-6">
+                {/* Images Gallery at Top - Max 4 visible + overflow indicator */}
+                {allImages.length > 0 && (
+                  <div className="mb-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <h4 className="text-base font-semibold text-gray-900">Images</h4>
+                      </div>
+                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                        {allImages.length}
+                      </span>
+                    </div>
+                    <div className="flex gap-3">
+                      {allImages.slice(0, 4).map((img: string, index: number) => (
+                        <div 
+                          key={index} 
+                          className="flex-shrink-0 w-24 h-24 bg-gray-100 rounded-xl overflow-hidden cursor-pointer hover:opacity-90 hover:scale-105 transition-all duration-200 border-2 border-gray-200 shadow-sm hover:shadow-md"
+                        >
+                          <img
+                            src={img}
+                            alt={`${selectedGeneralDetail.title} - Image ${index + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      ))}
+                      {allImages.length > 4 && (
+                        <div className="flex-shrink-0 w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center border-2 border-gray-300 shadow-sm">
+                          <div className="text-center">
+                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Content Information */}
+                  <div className="space-y-6">
+                    <div>
+                      <div className="flex items-center gap-2 mb-4">
+                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <h4 className="text-base font-semibold text-gray-900">Content Information</h4>
+                      </div>
+                      <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-5 space-y-4 border border-gray-200 shadow-sm">
+                        <div className="flex items-start justify-between pb-3 border-b border-gray-200">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Title</span>
+                          <p className="text-sm font-semibold text-gray-900 text-right">{selectedGeneralDetail.title}</p>
+                        </div>
+                        <div className="flex items-start justify-between pb-3 border-b border-gray-200">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</span>
+                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
+                            {t('cms.general')}
+                          </span>
+                        </div>
+                        <div className="flex items-start justify-between pb-3 border-b border-gray-200">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</span>
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                            selectedGeneralDetail.status === 'draft' ? 'bg-yellow-100 text-yellow-800' :
+                            selectedGeneralDetail.status === 'submitted' ? 'bg-amber-100 text-amber-800' :
+                            selectedGeneralDetail.status === 'approved' ? 'bg-green-100 text-green-800' :
+                            selectedGeneralDetail.status === 'published' ? 'bg-purple-100 text-purple-800' :
+                            selectedGeneralDetail.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {selectedGeneralDetail.status}
+                          </span>
+                        </div>
+                        <div className="flex items-start justify-between pb-3 border-b border-gray-200">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Language</span>
+                          <p className="text-sm font-semibold text-gray-900 text-right">{selectedGeneralDetail.language.toUpperCase()}</p>
+                        </div>
+                        <div className="flex items-start justify-between pb-3 border-b border-gray-200">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Category</span>
+                          <p className="text-sm font-semibold text-gray-900 text-right">{selectedGeneralDetail.category || 'N/A'}</p>
+                        </div>
+                        <div className="flex items-start justify-between pb-3 border-b border-gray-200">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Author</span>
+                          <p className="text-sm font-semibold text-gray-900 text-right">{selectedGeneralDetail.authorName}</p>
+                        </div>
+                        <div className="pt-1">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">Description</span>
+                          <p className="text-sm text-gray-700 leading-relaxed">{selectedGeneralDetail.description || 'No description available'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center gap-2 mb-4">
+                      <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                      </svg>
+                      <h4 className="text-base font-semibold text-gray-900">Tags & Hashtags</h4>
+                    </div>
+                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-5 space-y-4 border border-gray-200 shadow-sm">
+                      {selectedGeneralDetail.hashtags.length > 0 && (
+                        <div>
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">Hashtags</span>
+                          <div className="flex flex-wrap gap-2">
+                            {selectedGeneralDetail.hashtags.map((tag, idx) => (
+                              <span key={idx} className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {selectedGeneralDetail.tags.length > 0 && (
+                        <div>
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">Tags</span>
+                          <div className="flex flex-wrap gap-2">
+                            {selectedGeneralDetail.tags.map((tag, idx) => (
+                              <span key={idx} className="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {selectedGeneralDetail.hashtags.length === 0 && selectedGeneralDetail.tags.length === 0 && (
+                        <p className="text-sm text-gray-500">No tags or hashtags</p>
+                      )}
+                    </div>
+
+                    {/* Linked Products */}
+                    {selectedGeneralDetail.linkedProductIds.length > 0 && (
+                      <div className="mt-6">
+                        <div className="flex items-center gap-2 mb-4">
+                          <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                          </svg>
+                          <h4 className="text-base font-semibold text-gray-900">Linked Products ({selectedGeneralDetail.linkedProductIds.length})</h4>
+                        </div>
+                        <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-5 space-y-2 border border-gray-200 shadow-sm">
+                          <div className="flex flex-wrap gap-2">
+                            {selectedGeneralDetail.linkedProductIds.map((sku, idx) => (
+                              <span key={idx} className="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded">
+                                {sku}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="pt-4 col-span-2">
+                    <button
+                      onClick={() => {
+                        handleToggleGeneral(selectedGeneralDetail.id);
+                        setSelectedGeneralDetail(null);
+                      }}
+                      className="w-full px-4 py-2 border border-[#4f0c1b] text-[#4f0c1b] rounded-lg hover:bg-[#4f0c1b]/10 transition-colors font-medium"
+                    >
+                      {selectedGeneral.has(selectedGeneralDetail.id) ? 'Deselect for Download' : 'Select for Download'}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         );

@@ -223,11 +223,32 @@ export async function deleteMultipleFiles(paths: string[]): Promise<void> {
  */
 export function extractStoragePath(url: string): string | null {
   try {
-    // Firebase Storage URLs have a specific format
-    // https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}?alt=media&token=...
-    const match = url.match(/\/o\/(.+?)\?alt=media/);
-    return match ? decodeURIComponent(match[1]) : null;
-  } catch {
+    // Firebase Storage URLs have multiple formats:
+    // Format 1: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}?alt=media&token=...
+    // Format 2: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}?alt=media
+    // Format 3: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{encodedPath}
+    
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+    
+    // Extract path from /o/{path} pattern
+    const match = pathname.match(/\/o\/(.+)$/);
+    if (match) {
+      const encodedPath = match[1];
+      // Decode the path (handles %2F, %20, etc.)
+      const decodedPath = decodeURIComponent(encodedPath);
+      return decodedPath;
+    }
+    
+    // Fallback: try to match with query params
+    const altMatch = url.match(/\/o\/(.+?)(?:\?|$)/);
+    if (altMatch) {
+      return decodeURIComponent(altMatch[1]);
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error extracting storage path from URL:', url, error);
     return null;
   }
 }

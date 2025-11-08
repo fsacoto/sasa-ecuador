@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useAuth } from './context/AuthContext';
 import { useTranslation } from './context/TranslationContext';
@@ -21,9 +21,19 @@ type Tab = 'dashboard' | 'inventory-suite' | 'suppliers' | 'purchase-orders' | '
 function AppContent() {
   const { user, logout, hasPermission, isLoading } = useAuth();
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  // Marketing users default to CMS, others default to dashboard
+  const [activeTab, setActiveTab] = useState<Tab>(user?.role === 'marketing' ? 'cms' : 'dashboard');
   const [showSalesDropdown, setShowSalesDropdown] = useState(false);
   const [showInventoryDropdown, setShowInventoryDropdown] = useState(false);
+  
+  // Update active tab when user role changes (e.g., after login)
+  useEffect(() => {
+    if (user?.role === 'marketing' && activeTab !== 'cms') {
+      setActiveTab('cms');
+    } else if (user?.role !== 'marketing' && activeTab === 'cms' && !hasPermission('cms.view')) {
+      setActiveTab('dashboard');
+    }
+  }, [user?.role, activeTab, hasPermission]);
 
   // Show loading spinner while checking authentication
   if (isLoading) {
@@ -44,6 +54,13 @@ function AppContent() {
 
   // Define tabs based on user role
   const getTabs = () => {
+    // Marketing users only get CMS access
+    if (user?.role === 'marketing') {
+      return [
+        { id: 'cms' as Tab, label: t('navigation.cms'), permission: 'cms.view' },
+      ];
+    }
+
     const baseTabs = [
       { id: 'dashboard' as Tab, label: t('navigation.dashboard'), permission: 'inventory.view' },
     ];
@@ -57,7 +74,7 @@ function AppContent() {
         { id: 'invoice-tracking' as Tab, label: t('navigation.invoiceTracking'), permission: 'sales.view' }
       );
     } else {
-      // Admin and marketing roles
+      // Admin role
       if (hasPermission('cms.view')) {
         baseTabs.push({ id: 'cms' as Tab, label: t('navigation.cms'), permission: 'cms.view' });
       }
@@ -265,7 +282,7 @@ function AppContent() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-6 lg:px-8 py-10">
-        {activeTab === 'dashboard' && <Dashboard />}
+        {activeTab === 'dashboard' && user?.role !== 'marketing' && <Dashboard />}
         {activeTab === 'suppliers' && hasPermission('suppliers.view') && <Suppliers />}
         {activeTab === 'purchase-orders' && hasPermission('purchase.view') && <PurchaseOrders />}
         {activeTab === 'inventory' && (hasPermission('inventory.view') || hasPermission('inventory.view.ecuador')) && <Inventory />}
