@@ -5,6 +5,7 @@ import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { useCMS } from '../context/CMSContext';
 import { ContentType, ContentStatus, InventoryItem, CMSContent } from '../types';
+import JSZip from 'jszip';
 
 type ViewMode = 'dashboard' | 'upload' | 'manage' | 'products';
 
@@ -15,6 +16,7 @@ export default function CMSModuleNew() {
     content, 
     addContent, 
     deleteContent, 
+    updateContent,
     updateContentStatus,
     resubmitRejectedContent,
     getContentStats 
@@ -26,6 +28,9 @@ export default function CMSModuleNew() {
   const [searchSKU, setSearchSKU] = useState('');
   const [filterStatus, setFilterStatus] = useState<ContentStatus | 'all'>('all');
   const [filterSKU, setFilterSKU] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [sortField, setSortField] = useState<string>('createdAt');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   
   // Upload form state
   const [formData, setFormData] = useState({
@@ -47,22 +52,105 @@ export default function CMSModuleNew() {
   const [resubmitModalOpen, setResubmitModalOpen] = useState(false);
   const [resubmitContentId, setResubmitContentId] = useState<string | null>(null);
   const [resubmitChanges, setResubmitChanges] = useState('');
+  const [editingContent, setEditingContent] = useState<CMSContent | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    title: '',
+    description: '',
+    hashtags: '',
+    category: '',
+    line: '',
+    tags: '',
+    language: 'en' as 'en' | 'es',
+  });
+  const [editUploadedFiles, setEditUploadedFiles] = useState<(File | string)[]>([]);
+  const [editSelectedSKUs, setEditSelectedSKUs] = useState<string[]>([]);
   
   const stats = getContentStats();
   
-  // Filter content
+  // Total content count (for "X of Y" display)
+  const totalContentCount = content.length;
+  
+  // Handle column sorting
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // SortIcon component
+  const SortIcon = ({ field }: { field: string }) => {
+    if (sortField !== field) {
+      return (
+        <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+        </svg>
+      );
+    }
+    return sortDirection === 'asc' ? (
+      <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+      </svg>
+    ) : (
+      <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    );
+  };
+
+  // Sort function
+  const sortContent = (a: CMSContent, b: CMSContent): number => {
+    let aValue: any;
+    let bValue: any;
+
+    switch (sortField) {
+      case 'title':
+        aValue = a.title.toLowerCase();
+        bValue = b.title.toLowerCase();
+        break;
+      case 'type':
+        aValue = a.type.toLowerCase();
+        bValue = b.type.toLowerCase();
+        break;
+      case 'status':
+        aValue = a.status.toLowerCase();
+        bValue = b.status.toLowerCase();
+        break;
+      case 'author':
+        aValue = a.authorName.toLowerCase();
+        bValue = b.authorName.toLowerCase();
+        break;
+      case 'createdAt':
+        aValue = a.metadata.createdAt.getTime();
+        bValue = b.metadata.createdAt.getTime();
+        break;
+      case 'updatedAt':
+        aValue = a.metadata.updatedAt.getTime();
+        bValue = b.metadata.updatedAt.getTime();
+        break;
+      case 'linkedSKUs':
+        aValue = a.linkedProductIds.length;
+        bValue = b.linkedProductIds.length;
+        break;
+      default:
+        return 0;
+    }
+
+    if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+    if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+    return 0;
+  };
+
+  // Filter and sort content
   const filteredContent = content
     .filter(item => {
-      if (filterStatus !== 'all' && item.status !== filterStatus) return false;
-      if (filterSKU && !item.linkedProductIds.some(sku => sku.toLowerCase().includes(filterSKU.toLowerCase()))) return false;
-      return true;
+    if (filterStatus !== 'all' && item.status !== filterStatus) return false;
+    if (filterSKU && !item.linkedProductIds.some(sku => sku.toLowerCase().includes(filterSKU.toLowerCase()))) return false;
+    return true;
     })
-    // Sort by creation date (newest first) to maintain stable order when status changes
-    .sort((a, b) => {
-      const dateA = a.metadata.createdAt.getTime();
-      const dateB = b.metadata.createdAt.getTime();
-      return dateB - dateA; // Newest first
-    });
+    .sort(sortContent);
 
   // Search SKU function
   const handleSKUSearch = () => {
@@ -108,6 +196,12 @@ export default function CMSModuleNew() {
 
   // Submit content
   const handleSubmit = async () => {
+    if (editingContent) {
+      // Handle edit mode
+      await handleEditSubmit();
+      return;
+    }
+
     if (!selectedSKUs.length && uploadType === 'product') {
       alert('Please select at least one product for this content type.');
       return;
@@ -172,6 +266,87 @@ export default function CMSModuleNew() {
     setSelectedSKUs([]);
     setSelectedProduct(null);
     alert('Content created successfully! It is now in draft status.');
+  };
+
+  // Handle edit submit
+  const handleEditSubmit = async () => {
+    if (!editingContent) return;
+
+    // For collection/general types, require title and description
+    if (uploadType !== 'product') {
+      if (!editFormData.title || !editFormData.description) {
+        alert('Please fill in title and description.');
+        return;
+      }
+    }
+
+    // Get new file URLs (only for newly uploaded files)
+    const newFiles = editUploadedFiles.filter((f): f is File => f instanceof File);
+    const existingFiles = editUploadedFiles.filter((f): f is string => typeof f === 'string');
+    const newFileUrls = newFiles.length > 0 
+      ? await convertFilesToBase64(newFiles)
+      : [];
+
+    // Combine existing and new images
+    const allImages = [...existingFiles, ...newFileUrls];
+
+    // For product type, use product name as title, otherwise use form title
+    const contentTitle = uploadType === 'product' 
+      ? (selectedProduct?.name || `Product Content - ${editSelectedSKUs[0]}`)
+      : editFormData.title;
+
+    const hashtagsArray = uploadType === 'product' 
+      ? [] 
+      : editFormData.hashtags.split(',').map(tag => tag.trim()).filter(Boolean);
+    const tagsArray = uploadType === 'product' 
+      ? [] 
+      : editFormData.tags.split(',').map(tag => tag.trim()).filter(Boolean);
+
+    // Update the content
+    await updateContent(editingContent.id, {
+      title: contentTitle,
+      description: editFormData.description || '',
+      hashtags: hashtagsArray,
+      images: allImages,
+      category: editFormData.category || '',
+      tags: tagsArray,
+      language: editFormData.language,
+      linkedProductIds: editSelectedSKUs,
+    });
+
+    // Reset edit state
+    setEditingContent(null);
+    setEditFormData({
+      title: '',
+      description: '',
+      hashtags: '',
+      category: '',
+      line: '',
+      tags: '',
+      language: 'en',
+    });
+    setEditUploadedFiles([]);
+    setEditSelectedSKUs([]);
+    setSelectedProduct(null);
+    setFormData({
+      title: '',
+      description: '',
+      hashtags: '',
+      category: '',
+      line: '',
+      tags: '',
+      language: 'en',
+    });
+    setUploadedFiles([]);
+    setSelectedSKUs([]);
+    alert('Content updated successfully!');
+  };
+
+  // Handle edit file upload
+  const handleEditFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    setEditUploadedFiles(prev => [...prev, ...imageFiles]);
   };
 
   const handleApprove = (contentId: string) => {
@@ -254,101 +429,133 @@ export default function CMSModuleNew() {
 
       {/* Dashboard View */}
       {viewMode === 'dashboard' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="space-y-6">
+          {/* Overview Section */}
           <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 bg-gradient-to-br from-[#4f0c1b] to-[#3d0a15] rounded-xl flex items-center justify-center shadow-lg">
+                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
               </div>
               <div>
-                <div className="text-xs font-medium text-gray-500 uppercase">Total Content</div>
-                <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
+                <h3 className="text-lg font-bold text-gray-900">Content Overview</h3>
+                <p className="text-sm text-gray-500">Total content items in the system</p>
+              </div>
+              <div className="ml-auto">
+                <div className="text-3xl font-bold text-[#4f0c1b]">{stats.total}</div>
+                <div className="text-xs text-gray-500 mt-1">Total Items</div>
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
+          {/* Status Cards */}
+          <div>
+            <h3 className="text-base font-semibold text-gray-900 mb-4">Content Status Distribution</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Draft */}
+              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">Drafts</div>
+                      <div className="text-xs text-gray-500">In progress</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-gray-900">{stats.draft}</div>
+                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.draft / stats.total) * 100) : 0}%</div>
+                  </div>
+                </div>
               </div>
-              <div>
-                <div className="text-xs font-medium text-gray-500 uppercase">Drafts</div>
-                <div className="text-2xl font-bold text-gray-900">{stats.draft}</div>
-              </div>
-            </div>
-          </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+              {/* Submitted */}
+              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">Submitted</div>
+                      <div className="text-xs text-gray-500">Awaiting review</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-gray-900">{stats.submitted}</div>
+                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.submitted / stats.total) * 100) : 0}%</div>
+                  </div>
+                </div>
               </div>
-              <div>
-                <div className="text-xs font-medium text-gray-500 uppercase">Submitted</div>
-                <div className="text-2xl font-bold text-gray-900">{stats.submitted}</div>
-              </div>
-            </div>
-          </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+              {/* Approved */}
+              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">Approved</div>
+                      <div className="text-xs text-gray-500">Ready to publish</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-gray-900">{stats.approved}</div>
+                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.approved / stats.total) * 100) : 0}%</div>
+                  </div>
+                </div>
               </div>
-              <div>
-                <div className="text-xs font-medium text-gray-500 uppercase">Approved</div>
-                <div className="text-2xl font-bold text-gray-900">{stats.approved}</div>
-              </div>
-            </div>
-          </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
+              {/* Published */}
+              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">Published</div>
+                      <div className="text-xs text-gray-500">Live content</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-gray-900">{stats.published}</div>
+                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.published / stats.total) * 100) : 0}%</div>
+                  </div>
+                </div>
               </div>
-              <div>
-                <div className="text-xs font-medium text-gray-500 uppercase">Published</div>
-                <div className="text-2xl font-bold text-gray-900">{stats.published}</div>
-              </div>
-            </div>
-          </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                </svg>
-              </div>
-              <div>
-                <div className="text-xs font-medium text-gray-500 uppercase">Archived</div>
-                <div className="text-2xl font-bold text-gray-900">{stats.archived}</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </div>
-              <div>
-                <div className="text-xs font-medium text-gray-500 uppercase">Rejected</div>
-                <div className="text-2xl font-bold text-gray-900">{stats.rejected}</div>
+              {/* Rejected */}
+              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">Rejected</div>
+                      <div className="text-xs text-gray-500">Needs revision</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-gray-900">{stats.rejected}</div>
+                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.rejected / stats.total) * 100) : 0}%</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -377,7 +584,9 @@ export default function CMSModuleNew() {
       {/* Upload View */}
       {viewMode === 'upload' && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-xl font-semibold text-gray-900 mb-6">Upload Content</h3>
+          <h3 className="text-xl font-semibold text-gray-900 mb-6">
+            {editingContent ? 'Edit Content' : 'Upload Content'}
+          </h3>
           
           {/* Content Type Selection */}
           <div className="mb-6">
@@ -385,31 +594,34 @@ export default function CMSModuleNew() {
             <div className="grid grid-cols-3 gap-3">
               <button
                 onClick={() => setUploadType('product')}
+                disabled={!!editingContent}
                 className={`px-4 py-3 rounded-lg border transition-colors ${
                   uploadType === 'product'
                     ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]'
                     : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                }`}
+                } ${editingContent ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 Single Product
               </button>
               <button
                 onClick={() => setUploadType('collection')}
+                disabled={!!editingContent}
                 className={`px-4 py-3 rounded-lg border transition-colors ${
                   uploadType === 'collection'
                     ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]'
                     : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                }`}
+                } ${editingContent ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 Collection
               </button>
               <button
                 onClick={() => setUploadType('general')}
+                disabled={!!editingContent}
                 className={`px-4 py-3 rounded-lg border transition-colors ${
                   uploadType === 'general'
                     ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]'
                     : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                }`}
+                } ${editingContent ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 General
               </button>
@@ -480,8 +692,11 @@ export default function CMSModuleNew() {
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Language</label>
                 <select
-                  value={formData.language}
-                  onChange={(e) => setFormData({ ...formData, language: e.target.value as 'en' | 'es' })}
+                  value={editingContent ? editFormData.language : formData.language}
+                  onChange={(e) => editingContent 
+                    ? setEditFormData({ ...editFormData, language: e.target.value as 'en' | 'es' })
+                    : setFormData({ ...formData, language: e.target.value as 'en' | 'es' })
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
                 >
                   <option value="en">English</option>
@@ -492,8 +707,11 @@ export default function CMSModuleNew() {
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Comments</label>
                 <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  value={editingContent ? editFormData.description : formData.description}
+                  onChange={(e) => editingContent
+                    ? setEditFormData({ ...editFormData, description: e.target.value })
+                    : setFormData({ ...formData, description: e.target.value })
+                  }
                   placeholder="Add any comments or notes about this product content..."
                   rows={4}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
@@ -508,8 +726,11 @@ export default function CMSModuleNew() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Title *</label>
                   <input
                     type="text"
-                    value={formData.title}
-                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    value={editingContent ? editFormData.title : formData.title}
+                    onChange={(e) => editingContent
+                      ? setEditFormData({ ...editFormData, title: e.target.value })
+                      : setFormData({ ...formData, title: e.target.value })
+                    }
                     required
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
                   />
@@ -518,8 +739,11 @@ export default function CMSModuleNew() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Language</label>
                   <select
-                    value={formData.language}
-                    onChange={(e) => setFormData({ ...formData, language: e.target.value as 'en' | 'es' })}
+                    value={editingContent ? editFormData.language : formData.language}
+                    onChange={(e) => editingContent
+                      ? setEditFormData({ ...editFormData, language: e.target.value as 'en' | 'es' })
+                      : setFormData({ ...formData, language: e.target.value as 'en' | 'es' })
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
                   >
                     <option value="en">English</option>
@@ -531,8 +755,11 @@ export default function CMSModuleNew() {
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Description *</label>
                 <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  value={editingContent ? editFormData.description : formData.description}
+                  onChange={(e) => editingContent
+                    ? setEditFormData({ ...editFormData, description: e.target.value })
+                    : setFormData({ ...formData, description: e.target.value })
+                  }
                   required
                   rows={4}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
@@ -544,8 +771,11 @@ export default function CMSModuleNew() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Hashtags (comma separated)</label>
                   <input
                     type="text"
-                    value={formData.hashtags}
-                    onChange={(e) => setFormData({ ...formData, hashtags: e.target.value })}
+                    value={editingContent ? editFormData.hashtags : formData.hashtags}
+                    onChange={(e) => editingContent
+                      ? setEditFormData({ ...editFormData, hashtags: e.target.value })
+                      : setFormData({ ...formData, hashtags: e.target.value })
+                    }
                     placeholder="#jewelry #necklace"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
                   />
@@ -555,8 +785,11 @@ export default function CMSModuleNew() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Tags (comma separated)</label>
                   <input
                     type="text"
-                    value={formData.tags}
-                    onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
+                    value={editingContent ? editFormData.tags : formData.tags}
+                    onChange={(e) => editingContent
+                      ? setEditFormData({ ...editFormData, tags: e.target.value })
+                      : setFormData({ ...formData, tags: e.target.value })
+                    }
                     placeholder="promotion, sale"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
                   />
@@ -570,8 +803,11 @@ export default function CMSModuleNew() {
               Category {selectedProduct && <span className="text-xs text-gray-500">(Auto-filled from SKU)</span>}
             </label>
             <select
-              value={formData.category}
-              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+              value={editingContent ? editFormData.category : formData.category}
+              onChange={(e) => editingContent
+                ? setEditFormData({ ...editFormData, category: e.target.value })
+                : setFormData({ ...formData, category: e.target.value })
+              }
               disabled={!!selectedProduct}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
             >
@@ -592,8 +828,11 @@ export default function CMSModuleNew() {
               Line {selectedProduct && <span className="text-xs text-gray-500">(Auto-filled from SKU)</span>}
             </label>
             <select
-              value={formData.line}
-              onChange={(e) => setFormData({ ...formData, line: e.target.value })}
+              value={editingContent ? editFormData.line : formData.line}
+              onChange={(e) => editingContent
+                ? setEditFormData({ ...editFormData, line: e.target.value })
+                : setFormData({ ...formData, line: e.target.value })
+              }
               disabled={!!selectedProduct}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
             >
@@ -645,6 +884,20 @@ export default function CMSModuleNew() {
           <div className="flex justify-end gap-3">
             <button
               onClick={() => {
+                if (editingContent) {
+                  setEditingContent(null);
+                  setEditFormData({
+                    title: '',
+                    description: '',
+                    hashtags: '',
+                    category: '',
+                    line: '',
+                    tags: '',
+                    language: 'en',
+                  });
+                  setEditUploadedFiles([]);
+                  setEditSelectedSKUs([]);
+                } else {
                 setFormData({
                   title: '',
                   description: '',
@@ -657,16 +910,17 @@ export default function CMSModuleNew() {
                 setUploadedFiles([]);
                 setSelectedSKUs([]);
                 setSelectedProduct(null);
+                }
               }}
               className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
             >
-              Clear
+              {editingContent ? 'Cancel' : 'Clear'}
             </button>
             <button
               onClick={handleSubmit}
               className="px-6 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#3d0a15] font-medium"
             >
-              Create as Draft
+              {editingContent ? 'Update Content' : 'Create as Draft'}
             </button>
           </div>
         </div>
@@ -675,8 +929,43 @@ export default function CMSModuleNew() {
       {/* Manage Content View */}
       {viewMode === 'manage' && (
         <div className="space-y-6">
-          {/* Filters */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          {/* Content Table */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Content Items
+                </h3>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-gray-400 font-normal">
+                    {filteredContent.length} of {totalContentCount} {filteredContent.length === 1 ? 'item' : 'items'}
+                  </span>
+                  {/* Filter Button */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowFilters(!showFilters)}
+                      className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
+                        showFilters ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
+                      }`}
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                      </svg>
+                      <span className="text-sm font-medium">Filters</span>
+                      {(filterStatus !== 'all' || filterSKU) && (
+                        <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
+                          {[filterStatus !== 'all', filterSKU].filter(Boolean).length}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Filters Panel */}
+            {showFilters && (
+              <div className="p-6 bg-gray-50 border-b border-gray-200">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Status</label>
@@ -719,27 +1008,72 @@ export default function CMSModuleNew() {
               </div>
             </div>
           </div>
-
-          {/* Content Table */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="p-6 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Content Items ({filteredContent.length})
-              </h3>
-            </div>
+            )}
 
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Preview</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Linked SKUs</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Author</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Preview
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                      onClick={() => handleSort('title')}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Title</span>
+                        <SortIcon field="title" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                      onClick={() => handleSort('type')}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Type</span>
+                        <SortIcon field="type" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                      onClick={() => handleSort('linkedSKUs')}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Linked SKUs</span>
+                        <SortIcon field="linkedSKUs" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                      onClick={() => handleSort('status')}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Status</span>
+                        <SortIcon field="status" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                      onClick={() => handleSort('author')}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Author</span>
+                        <SortIcon field="author" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                      onClick={() => handleSort('createdAt')}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>Date</span>
+                        <SortIcon field="createdAt" />
+                      </div>
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -814,48 +1148,177 @@ export default function CMSModuleNew() {
                           {item.metadata.createdAt.toLocaleDateString()}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
-                          <div className="flex items-center justify-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
                             {item.status === 'draft' && (
+                              <>
                               <button
-                                onClick={() => updateContentStatus(item.id, 'submitted', user?.id || '')}
-                                className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs font-medium"
-                              >
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingContent(item);
+                                    setUploadType(item.type);
+                                    setEditFormData({
+                                      title: item.title,
+                                      description: item.description,
+                                      hashtags: item.hashtags.join(', '),
+                                      category: item.category,
+                                      line: item.line || '',
+                                      tags: item.tags.join(', '),
+                                      language: item.language,
+                                    });
+                                    setEditUploadedFiles(item.images.map(img => img));
+                                    setEditSelectedSKUs(item.linkedProductIds || []);
+                                    setViewMode('upload');
+                                  }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    try {
+                                      await updateContentStatus(item.id, 'submitted', user?.id || '');
+                                    } catch (error) {
+                                      console.error('Error submitting content:', error);
+                                      alert('Failed to submit content. Please try again.');
+                                    }
+                                  }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4f0c1b] text-white hover:bg-[#3d0a15] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
                                 Submit
                               </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (confirm('Are you sure you want to delete this draft?')) {
+                                      try {
+                                        deleteContent(item.id);
+                                        alert('Draft deleted successfully!');
+                                      } catch (error) {
+                                        console.error('Error deleting draft:', error);
+                                        alert('Failed to delete draft. Please try again.');
+                                      }
+                                    }
+                                  }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-300 bg-white text-red-700 hover:bg-red-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                  Delete
+                                </button>
+                              </>
                             )}
-                            {item.status === 'submitted' && hasPermission('cms.edit') && (
+                            {item.status === 'submitted' && (
                               <>
                                 <button
-                                  onClick={() => handleApprove(item.id)}
-                                  className="px-3 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200 text-xs font-medium"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingContent(item);
+                                    setUploadType(item.type);
+                                    setEditFormData({
+                                      title: item.title,
+                                      description: item.description,
+                                      hashtags: item.hashtags.join(', '),
+                                      category: item.category,
+                                      line: item.line || '',
+                                      tags: item.tags.join(', '),
+                                      language: item.language,
+                                    });
+                                    setEditUploadedFiles(item.images.map(img => img));
+                                    setEditSelectedSKUs(item.linkedProductIds || []);
+                                    setViewMode('upload');
+                                  }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
                                 >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    if (confirm('Are you sure you want to cancel this submission? It will be moved back to draft.')) {
+                                      try {
+                                        await updateContentStatus(item.id, 'draft', user?.id || '');
+                                        alert('Submission cancelled successfully!');
+                                      } catch (error) {
+                                        console.error('Error cancelling submission:', error);
+                                        alert('Failed to cancel submission. Please try again.');
+                                      }
+                                    }
+                                  }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                  Cancel
+                                </button>
+                                {hasPermission('cms.edit') && (
+                                  <>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleApprove(item.id);
+                                      }}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                    >
+                                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                      </svg>
                                   Approve
                                 </button>
                                 <button
-                                  onClick={() => handleReject(item.id)}
-                                  className="px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 text-xs font-medium"
-                                >
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleReject(item.id);
+                                      }}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-300 bg-white text-red-700 hover:bg-red-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                    >
+                                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                      </svg>
                                   Reject
                                 </button>
+                                  </>
+                                )}
                               </>
                             )}
                             {item.status === 'approved' && (
                               <button
-                                onClick={() => handlePublish(item.id)}
-                                className="px-3 py-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 text-xs font-medium"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handlePublish(item.id);
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4f0c1b] text-white hover:bg-[#3d0a15] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
                               >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                </svg>
                                 Publish
                               </button>
                             )}
                             {item.status === 'published' && hasPermission('cms.delete') && (
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   if (confirm('Are you sure you want to delete this published content?')) {
                                     deleteContent(item.id);
                                   }
                                 }}
-                                className="px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 text-xs font-medium"
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-300 bg-white text-red-700 hover:bg-red-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
                               >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
                                 Delete
                               </button>
                             )}
@@ -866,8 +1329,11 @@ export default function CMSModuleNew() {
                                   setResubmitContentId(item.id);
                                   setResubmitModalOpen(true);
                                 }}
-                                className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-xs font-medium"
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4f0c1b] text-white hover:bg-[#3d0a15] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
                               >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
                                 Resubmit
                               </button>
                             )}
@@ -1351,6 +1817,14 @@ function ContentView({
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [isDownloading, setIsDownloading] = useState(false);
   const [selectedProductDetail, setSelectedProductDetail] = useState<InventoryItem | null>(null);
+  const [showPhotoGallery, setShowPhotoGallery] = useState(false);
+  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
+  const [showFilters, setShowFilters] = useState(false);
+  const [showBulkDownload, setShowBulkDownload] = useState(false);
+  const [showContentViewer, setShowContentViewer] = useState(false);
+  const [contentViewerTab, setContentViewerTab] = useState<'images' | 'videos'>('images');
+  const [selectedContentItems, setSelectedContentItems] = useState<Set<string>>(new Set());
+  const [isDownloadingZip, setIsDownloadingZip] = useState(false);
   const [expandedSections, setExpandedSections] = useState<{
     product: boolean;
     collection: boolean;
@@ -1362,7 +1836,7 @@ function ContentView({
     general: false,
     inventory: false,
   });
-  const [sectionOrder, setSectionOrder] = useState<('product' | 'collection' | 'general' | 'inventory')[]>(['product', 'collection', 'general', 'inventory']);
+  const [sectionOrder, setSectionOrder] = useState<('product' | 'collection' | 'general' | 'inventory')[]>(['collection', 'general', 'inventory']);
   const [draggedSection, setDraggedSection] = useState<string | null>(null);
   const [dragOverSection, setDragOverSection] = useState<string | null>(null);
 
@@ -1442,39 +1916,50 @@ function ContentView({
   const filteredGeneralContent = content
     .filter(item => {
       if (item.status !== 'published') return false; // Only show published content
-      if (item.type !== 'general') return false;
-      if (contentTypeFilter !== 'all' && contentTypeFilter !== 'inventory' && contentTypeFilter !== 'general') return false;
-      if (contentTypeFilter === 'inventory') return false;
-      if (searchTerm && !item.title.toLowerCase().includes(searchTerm.toLowerCase()) && 
-          !item.description.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-      return true;
+    if (item.type !== 'general') return false;
+    if (contentTypeFilter !== 'all' && contentTypeFilter !== 'inventory' && contentTypeFilter !== 'general') return false;
+    if (contentTypeFilter === 'inventory') return false;
+    if (searchTerm && !item.title.toLowerCase().includes(searchTerm.toLowerCase()) && 
+        !item.description.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+    return true;
     })
     .sort(sortByCreationDate);
 
   const filteredCollectionContent = content
     .filter(item => {
       if (item.status !== 'published') return false; // Only show published content
-      if (item.type !== 'collection') return false;
-      if (contentTypeFilter !== 'all' && contentTypeFilter !== 'inventory' && contentTypeFilter !== 'collection') return false;
-      if (contentTypeFilter === 'inventory') return false;
-      if (searchTerm && !item.title.toLowerCase().includes(searchTerm.toLowerCase()) && 
-          !item.description.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-      if (filterCollectionName !== 'all' && item.title !== filterCollectionName) return false;
-      return true;
+    if (item.type !== 'collection') return false;
+    if (contentTypeFilter !== 'all' && contentTypeFilter !== 'inventory' && contentTypeFilter !== 'collection') return false;
+    if (contentTypeFilter === 'inventory') return false;
+    if (searchTerm && !item.title.toLowerCase().includes(searchTerm.toLowerCase()) && 
+        !item.description.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+    if (filterCollectionName !== 'all' && item.title !== filterCollectionName) return false;
+    return true;
     })
     .sort(sortByCreationDate);
 
   const filteredProductContent = content
     .filter(item => {
       if (item.status !== 'published') return false; // Only show published content
-      if (item.type !== 'product') return false;
-      if (contentTypeFilter !== 'all' && contentTypeFilter !== 'inventory' && contentTypeFilter !== 'product') return false;
-      if (contentTypeFilter === 'inventory') return false;
-      if (searchTerm && !item.title.toLowerCase().includes(searchTerm.toLowerCase()) && 
-          !item.description.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-      return true;
+    if (item.type !== 'product') return false;
+    if (contentTypeFilter !== 'all' && contentTypeFilter !== 'inventory' && contentTypeFilter !== 'product') return false;
+    if (contentTypeFilter === 'inventory') return false;
+    if (searchTerm && !item.title.toLowerCase().includes(searchTerm.toLowerCase()) && 
+        !item.description.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+    return true;
     })
     .sort(sortByCreationDate);
+
+  // Group product content by linked SKU
+  const groupedProductContent = filteredProductContent.reduce((acc, item) => {
+    // Use the first linked SKU as the grouping key
+    const sku = item.linkedProductIds.length > 0 ? item.linkedProductIds[0] : 'unlinked';
+    if (!acc[sku]) {
+      acc[sku] = [];
+    }
+    acc[sku].push(item);
+    return acc;
+  }, {} as Record<string, typeof filteredProductContent>);
 
   // Filter inventory
   const filteredInventory = inventory.filter(item => {
@@ -1507,71 +1992,6 @@ function ContentView({
 
   // Section configuration
   const sectionConfig = {
-    product: {
-      title: 'Product Content',
-      filter: contentTypeFilter === 'all' || contentTypeFilter === 'product',
-      content: filteredProductContent,
-      hasContent: filteredProductContent.length > 0,
-      expanded: expandedSections.product,
-      toggleExpanded: () => setExpandedSections(prev => ({ ...prev, product: !prev.product })),
-      renderContent: () => (
-        <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredProductContent.map((item) => (
-              <div
-                key={item.id}
-                className="border rounded-lg p-4 transition-all duration-200 border-gray-200 hover:border-gray-300 cursor-pointer"
-                onClick={() => onContentClick?.(item)}
-              >
-                <div className="aspect-square bg-gray-100 rounded-lg mb-3 overflow-hidden">
-                  {item.images.length > 0 ? (
-                    <img
-                      src={item.images[0]}
-                      alt={item.title}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400">
-                      <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                  )}
-                </div>
-                <div className="mb-2">
-                  <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
-                    Product
-                  </span>
-                </div>
-                <h4 className="font-medium text-gray-900 text-sm line-clamp-2 mb-2">{item.title}</h4>
-                <div className="flex items-center justify-between text-xs">
-                  <span className={`px-2 py-1 rounded-full font-medium ${
-                    item.status === 'draft' ? 'bg-yellow-100 text-yellow-800' :
-                    item.status === 'submitted' ? 'bg-amber-100 text-amber-800' :
-                    item.status === 'approved' ? 'bg-green-100 text-green-800' :
-                    item.status === 'published' ? 'bg-purple-100 text-purple-800' :
-                    item.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
-                    {item.status}
-                  </span>
-                  {item.status === 'submitted' && item.metadata.resubmissionCount && item.metadata.resubmissionCount > 0 && (
-                    <span className="relative inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-blue-600 rounded-full">
-                      {item.metadata.resubmissionCount + 1}
-                    </span>
-                  )}
-                </div>
-                {item.linkedProductIds.length > 0 && (
-                  <div className="mt-2 text-xs text-gray-500">
-                    {item.linkedProductIds.length} product{item.linkedProductIds.length > 1 ? 's' : ''} linked
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      ),
-    },
     collection: {
       title: 'Collections',
       filter: contentTypeFilter === 'all' || contentTypeFilter === 'collection',
@@ -1717,6 +2137,17 @@ function ContentView({
               {filteredInventory.map((item) => {
                 const totalStock = item.ecuadorStock + item.usaStock;
                 const isInStock = totalStock > 0;
+                // Get product content for this SKU
+                const productContentForSKU = groupedProductContent[item.sku] || [];
+                
+                // Combine all images: inventory images first, then CMS content images
+                const allImages: string[] = [
+                  ...(item.images || []),
+                  ...productContentForSKU.flatMap(content => content.images || [])
+                ];
+                
+                // Get main photo (first available image)
+                const mainPhoto = allImages.length > 0 ? allImages[0] : null;
                 
                 return (
                   <div
@@ -1739,10 +2170,16 @@ function ContentView({
                     </div>
 
                     {/* Image */}
-                    <div className="aspect-square bg-gray-100 rounded-lg mb-3 overflow-hidden cursor-pointer" onClick={() => setSelectedProductDetail(item)}>
-                      {item.images && item.images.length > 0 ? (
+                    <div 
+                      className="aspect-square bg-gray-100 rounded-lg mb-3 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity" 
+                      onClick={() => {
+                        setSelectedProductDetail(item);
+                        setSelectedPhotoIndex(0);
+                      }}
+                    >
+                      {mainPhoto ? (
                         <img
-                          src={item.images[0]}
+                          src={mainPhoto}
                           alt={item.name}
                           className="w-full h-full object-cover"
                         />
@@ -1776,7 +2213,7 @@ function ContentView({
                           {isInStock ? 'In Stock' : 'Out of Stock'}
                         </span>
                         <span className="text-gray-500">
-                          {item.images?.length || 0} images
+                          {allImages.length} image{allImages.length !== 1 ? 's' : ''}
                         </span>
                       </div>
                       
@@ -1856,9 +2293,63 @@ function ContentView({
     }
   };
 
+  // Count active filters
+  const activeFiltersCount = [
+    contentTypeFilter !== 'all',
+    searchTerm,
+    filterCategory !== 'all',
+    filterLine !== 'all',
+    filterAvailability !== 'all',
+    filterCollectionName !== 'all'
+  ].filter(Boolean).length;
+
   return (
     <div className="space-y-6">
-      {/* Filters */}
+      {/* Filters and Bulk Download Toggle Buttons */}
+      <div className="flex items-center justify-end gap-3">
+        <div className="relative">
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
+              showFilters ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            <span className="text-sm font-medium">Filters</span>
+            {activeFiltersCount > 0 && (
+              <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
+                {activeFiltersCount}
+              </span>
+            )}
+          </button>
+        </div>
+        {/* Bulk Download Toggle Button - Only show for inventory */}
+        {(contentTypeFilter === 'all' || contentTypeFilter === 'inventory') && (
+          <div className="relative">
+            <button
+              onClick={() => setShowBulkDownload(!showBulkDownload)}
+              className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
+                showBulkDownload ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span className="text-sm font-medium">Bulk Download</span>
+              {selectedProducts.size > 0 && (
+                <span className="bg-blue-100 text-blue-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
+                  {selectedProducts.size}
+                </span>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Filters Panel */}
+      {showFilters && (
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
           <div>
@@ -1960,9 +2451,10 @@ function ContentView({
           </div>
         </div>
       </div>
+      )}
 
-      {/* Download Controls - Only show for inventory */}
-      {(contentTypeFilter === 'all' || contentTypeFilter === 'inventory') && (
+      {/* Bulk Download Panel - Only show for inventory */}
+      {showBulkDownload && (contentTypeFilter === 'all' || contentTypeFilter === 'inventory') && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -2057,12 +2549,122 @@ function ContentView({
       })}
 
 
+      {/* Photo Gallery Modal */}
+      {showPhotoGallery && selectedProductDetail && (() => {
+        // Get all images: inventory images first, then CMS content images
+        const productContentForSKU = groupedProductContent[selectedProductDetail.sku] || [];
+        const allImages: string[] = [
+          ...(selectedProductDetail.images || []),
+          ...productContentForSKU.flatMap(content => content.images || [])
+        ];
+        
+        if (allImages.length === 0) return null;
+        
+        return (
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4" 
+            onClick={() => {
+              setShowPhotoGallery(false);
+              setSelectedProductDetail(null);
+            }}
+          >
+            <div className="relative w-full h-full max-w-7xl max-h-[95vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+              {/* Header */}
+              <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-black/50 to-transparent px-6 py-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-semibold text-white">{selectedProductDetail.name}</h3>
+                  <p className="text-sm text-white/80">Image {selectedPhotoIndex + 1} of {allImages.length}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowPhotoGallery(false);
+                    setSelectedProductDetail(null);
+                  }}
+                  className="text-white hover:text-gray-300 transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Main Image */}
+              <div className="flex-1 flex items-center justify-center relative">
+                {/* Previous Button */}
+                {allImages.length > 1 && (
+                  <button
+                    onClick={() => setSelectedPhotoIndex((prev) => (prev - 1 + allImages.length) % allImages.length)}
+                    className="absolute left-4 z-10 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-full p-3 text-white transition-all"
+                  >
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                )}
+
+                {/* Current Image */}
+                <img
+                  src={allImages[selectedPhotoIndex]}
+                  alt={`${selectedProductDetail.name} - Image ${selectedPhotoIndex + 1}`}
+                  className="max-w-full max-h-full object-contain"
+                />
+
+                {/* Next Button */}
+                {allImages.length > 1 && (
+                  <button
+                    onClick={() => setSelectedPhotoIndex((prev) => (prev + 1) % allImages.length)}
+                    className="absolute right-4 z-10 bg-white/10 hover:bg-white/20 backdrop-blur-sm rounded-full p-3 text-white transition-all"
+                  >
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+
+              {/* Thumbnail Strip */}
+              {allImages.length > 1 && (
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent px-6 py-4">
+                  <div className="flex gap-2 justify-center overflow-x-auto pb-2">
+                    {allImages.map((img: string, index: number) => (
+                      <button
+                        key={index}
+                        onClick={() => setSelectedPhotoIndex(index)}
+                        className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-all ${
+                          index === selectedPhotoIndex 
+                            ? 'border-white scale-110' 
+                            : 'border-white/30 hover:border-white/60'
+                        }`}
+                      >
+                        <img
+                          src={img}
+                          alt={`Thumbnail ${index + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Product Detail Modal */}
-      {selectedProductDetail && (
+      {selectedProductDetail && !showPhotoGallery && (() => {
+        // Get all images: inventory images first, then CMS content images
+        const productContentForSKU = groupedProductContent[selectedProductDetail.sku] || [];
+        const allImages: string[] = [
+          ...(selectedProductDetail.images || []),
+          ...productContentForSKU.flatMap(content => content.images || [])
+        ];
+        
+        return (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => setSelectedProductDetail(null)}>
           <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
               <h3 className="text-xl font-semibold text-gray-900">{selectedProductDetail.name}</h3>
               <button
                 onClick={() => setSelectedProductDetail(null)}
@@ -2076,14 +2678,31 @@ function ContentView({
 
             {/* Content */}
             <div className="p-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Images Gallery */}
-                <div>
-                  <h4 className="text-sm font-medium text-gray-700 mb-3">Images ({selectedProductDetail.images?.length || 0})</h4>
-                  {selectedProductDetail.images && selectedProductDetail.images.length > 0 ? (
-                    <div className="grid grid-cols-2 gap-3">
-                      {selectedProductDetail.images.map((img: string, index: number) => (
-                        <div key={index} className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
+                {/* Images Gallery at Top - Max 4 visible + overflow indicator */}
+                {allImages.length > 0 && (
+                  <div className="mb-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <h4 className="text-base font-semibold text-gray-900">Images</h4>
+                      </div>
+                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                        {allImages.length}
+                      </span>
+                    </div>
+                    <div className="flex gap-3">
+                      {allImages.slice(0, 4).map((img: string, index: number) => (
+                        <div 
+                          key={index} 
+                          className="flex-shrink-0 w-24 h-24 bg-gray-100 rounded-xl overflow-hidden cursor-pointer hover:opacity-90 hover:scale-105 transition-all duration-200 border-2 border-gray-200 shadow-sm hover:shadow-md"
+                          onClick={() => {
+                            setSelectedContentItems(new Set());
+                            setContentViewerTab('images');
+                            setShowContentViewer(true);
+                          }}
+                        >
                           <img
                             src={img}
                             alt={`${selectedProductDetail.name} - Image ${index + 1}`}
@@ -2091,66 +2710,114 @@ function ContentView({
                           />
                         </div>
                       ))}
+                      {allImages.length > 4 && (
+                        <div 
+                          className="flex-shrink-0 w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center cursor-pointer hover:from-gray-200 hover:to-gray-300 transition-all duration-200 border-2 border-gray-300 shadow-sm hover:shadow-md hover:scale-105"
+                          onClick={() => {
+                            setSelectedContentItems(new Set());
+                            setContentViewerTab('images');
+                            setShowContentViewer(true);
+                          }}
+                        >
+                          <div className="text-center">
+                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
                     </div>
-                  ) : (
-                    <div className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center">
-                      <p className="text-gray-400">No images available</p>
                     </div>
                   )}
                 </div>
+                  </div>
+                )}
 
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Product Details */}
-                <div className="space-y-4">
+                  <div className="space-y-6">
                   <div>
-                    <h4 className="text-sm font-medium text-gray-700 mb-3">Product Information</h4>
-                    <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-                      <div>
-                        <span className="text-xs font-medium text-gray-500">SKU</span>
-                        <p className="text-sm font-medium text-gray-900">{selectedProductDetail.sku}</p>
+                      <div className="flex items-center gap-2 mb-4">
+                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <h4 className="text-base font-semibold text-gray-900">Product Information</h4>
                       </div>
-                      <div>
-                        <span className="text-xs font-medium text-gray-500">Model</span>
-                        <p className="text-sm font-medium text-gray-900">{selectedProductDetail.supplierSKU || 'N/A'}</p>
+                      <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-5 space-y-4 border border-gray-200 shadow-sm">
+                        <div className="flex items-start justify-between pb-3 border-b border-gray-200">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">SKU</span>
+                          <p className="text-sm font-semibold text-gray-900 text-right">{selectedProductDetail.sku}</p>
                       </div>
-                      <div>
-                        <span className="text-xs font-medium text-gray-500">Category</span>
-                        <p className="text-sm font-medium text-gray-900">{selectedProductDetail.category}</p>
+                        <div className="flex items-start justify-between pb-3 border-b border-gray-200">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Model</span>
+                          <p className="text-sm font-semibold text-gray-900 text-right">{selectedProductDetail.supplierSKU || 'N/A'}</p>
                       </div>
-                      <div>
-                        <span className="text-xs font-medium text-gray-500">Line</span>
-                        <p className="text-sm font-medium text-gray-900">{selectedProductDetail.line}</p>
+                        <div className="flex items-start justify-between pb-3 border-b border-gray-200">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Category</span>
+                          <p className="text-sm font-semibold text-gray-900 text-right">{selectedProductDetail.category}</p>
                       </div>
-                      <div>
-                        <span className="text-xs font-medium text-gray-500">Description</span>
-                        <p className="text-sm text-gray-700">{selectedProductDetail.description || 'No description available'}</p>
+                        <div className="flex items-start justify-between pb-3 border-b border-gray-200">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Line</span>
+                          <p className="text-sm font-semibold text-gray-900 text-right">{selectedProductDetail.line}</p>
+                        </div>
+                        <div className="pt-1">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-2">Description</span>
+                          <p className="text-sm text-gray-700 leading-relaxed">{selectedProductDetail.description || 'No description available'}</p>
                       </div>
                     </div>
                   </div>
 
                   <div>
-                    <h4 className="text-sm font-medium text-gray-700 mb-3">Stock Information</h4>
-                    <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Ecuador Stock</span>
-                        <span className="text-lg font-semibold text-gray-900">{selectedProductDetail.ecuadorStock} units</span>
+                      <div className="flex items-center gap-2 mb-4">
+                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                        <h4 className="text-base font-semibold text-gray-900">Stock Information</h4>
                       </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">USA Stock</span>
-                        <span className="text-lg font-semibold text-gray-900">{selectedProductDetail.usaStock} units</span>
+                      <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-5 space-y-4 border border-gray-200 shadow-sm">
+                        <div className="flex justify-between items-center pb-3 border-b border-gray-200">
+                          <div className="flex items-center gap-2">
+                            <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span className="text-sm font-medium text-gray-700">Ecuador Stock</span>
                       </div>
-                      <div className="flex justify-between items-center pt-2 border-t border-gray-200">
-                        <span className="text-sm font-medium text-gray-700">Total Stock</span>
-                        <span className="text-lg font-bold text-[#4f0c1b]">
+                          <span className="text-lg font-bold text-gray-900">{selectedProductDetail.ecuadorStock} units</span>
+                        </div>
+                        <div className="flex justify-between items-center pb-3 border-b border-gray-200">
+                          <div className="flex items-center gap-2">
+                            <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span className="text-sm font-medium text-gray-700">USA Stock</span>
+                          </div>
+                          <span className="text-lg font-bold text-gray-900">{selectedProductDetail.usaStock} units</span>
+                        </div>
+                        <div className="flex justify-between items-center pt-2">
+                          <span className="text-sm font-semibold text-gray-900">Total Stock</span>
+                          <span className="text-xl font-bold text-[#4f0c1b]">
                           {selectedProductDetail.ecuadorStock + selectedProductDetail.usaStock} units
                         </span>
                       </div>
-                      <div className="mt-3">
-                        <span className={`px-3 py-1 text-xs font-medium rounded-full ${
+                        <div className="pt-3 border-t border-gray-200">
+                          <span className={`inline-flex items-center px-3 py-1.5 text-xs font-semibold rounded-full ${
                           (selectedProductDetail.ecuadorStock + selectedProductDetail.usaStock) > 0
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {(selectedProductDetail.ecuadorStock + selectedProductDetail.usaStock) > 0 ? 'In Stock' : 'Out of Stock'}
+                              ? 'bg-green-100 text-green-800 border border-green-200'
+                              : 'bg-red-100 text-red-800 border border-red-200'
+                          }`}>
+                            {(selectedProductDetail.ecuadorStock + selectedProductDetail.usaStock) > 0 ? (
+                              <>
+                                <svg className="w-3.5 h-3.5 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                                In Stock
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-3.5 h-3.5 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                </svg>
+                                Out of Stock
+                              </>
+                            )}
                         </span>
                       </div>
                     </div>
@@ -2170,7 +2837,330 @@ function ContentView({
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
+
+      {/* Content Viewer Modal */}
+      {showContentViewer && selectedProductDetail && (() => {
+        // Get all images and videos: inventory first, then CMS content
+        const productContentForSKU = groupedProductContent[selectedProductDetail.sku] || [];
+        const allImages: string[] = [
+          ...(selectedProductDetail.images || []),
+          ...productContentForSKU.flatMap(content => content.images || [])
+        ];
+        const allVideos: string[] = [
+          ...productContentForSKU.flatMap(content => content.videos || [])
+        ];
+        
+        const currentContent = contentViewerTab === 'images' ? allImages : allVideos;
+        
+        const handleToggleSelection = (index: number) => {
+          const itemKey = `${contentViewerTab}-${index}`;
+          const newSelected = new Set(selectedContentItems);
+          if (newSelected.has(itemKey)) {
+            newSelected.delete(itemKey);
+          } else {
+            newSelected.add(itemKey);
+          }
+          setSelectedContentItems(newSelected);
+        };
+
+        const handleSelectAll = () => {
+          const allKeys = currentContent.map((_, index) => `${contentViewerTab}-${index}`);
+          if (selectedContentItems.size === currentContent.length) {
+            setSelectedContentItems(new Set());
+          } else {
+            setSelectedContentItems(new Set(allKeys));
+          }
+        };
+
+        const handleDownloadZip = async () => {
+          if (selectedContentItems.size === 0) {
+            alert('Please select items to download');
+            return;
+          }
+
+          setIsDownloadingZip(true);
+          try {
+            const zip = new JSZip();
+            const selectedIndices = Array.from(selectedContentItems)
+              .map(key => {
+                const [type, index] = key.split('-');
+                return { type, index: parseInt(index) };
+              })
+              .filter(item => item.type === contentViewerTab);
+
+            for (const { index } of selectedIndices) {
+              const url = currentContent[index];
+              if (url) {
+                try {
+                  const response = await fetch(url);
+                  const blob = await response.blob();
+                  const fileName = contentViewerTab === 'images' 
+                    ? `image_${index + 1}.jpg` 
+                    : `video_${index + 1}.mp4`;
+                  zip.file(fileName, blob);
+                } catch (error) {
+                  console.error(`Error downloading ${url}:`, error);
+                }
+              }
+            }
+
+            const zipBlob = await zip.generateAsync({ type: 'blob' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(zipBlob);
+            link.download = `${selectedProductDetail.name}_${contentViewerTab}.zip`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+            
+            alert(`Successfully downloaded ${selectedIndices.length} ${contentViewerTab}`);
+            setSelectedContentItems(new Set());
+          } catch (error) {
+            console.error('Error creating ZIP:', error);
+            alert('Error creating ZIP file. Please try again.');
+          } finally {
+            setIsDownloadingZip(false);
+          }
+        };
+
+        return (
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" 
+            onClick={() => {
+              setShowContentViewer(false);
+              setSelectedContentItems(new Set());
+            }}
+          >
+            <div 
+              className="bg-white rounded-xl max-w-6xl w-full max-h-[90vh] flex flex-col" 
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="sticky top-0 bg-gradient-to-r from-white to-gray-50 border-b border-gray-200 px-6 py-5 flex items-center justify-between z-10 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-[#4f0c1b]/10 rounded-lg flex items-center justify-center">
+                    <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">{selectedProductDetail.name}</h3>
+                    <p className="text-xs text-gray-500 font-medium">Content Library</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowContentViewer(false);
+                    setSelectedContentItems(new Set());
+                  }}
+                  className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Tabs */}
+              <div className="border-b border-gray-200 bg-white px-6">
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => {
+                      setContentViewerTab('images');
+                      setSelectedContentItems(new Set());
+                    }}
+                    className={`relative px-5 py-3 font-semibold text-sm transition-all duration-200 ${
+                      contentViewerTab === 'images'
+                        ? 'text-[#4f0c1b]'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <span>Images</span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                        contentViewerTab === 'images'
+                          ? 'bg-[#4f0c1b]/10 text-[#4f0c1b]'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {allImages.length}
+                      </span>
+                    </div>
+                    {contentViewerTab === 'images' && (
+                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#4f0c1b] rounded-t-full" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setContentViewerTab('videos');
+                      setSelectedContentItems(new Set());
+                    }}
+                    className={`relative px-5 py-3 font-semibold text-sm transition-all duration-200 ${
+                      contentViewerTab === 'videos'
+                        ? 'text-[#4f0c1b]'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      <span>Videos</span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                        contentViewerTab === 'videos'
+                          ? 'bg-[#4f0c1b]/10 text-[#4f0c1b]'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {allVideos.length}
+                      </span>
+                    </div>
+                    {contentViewerTab === 'videos' && (
+                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#4f0c1b] rounded-t-full" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Content Grid */}
+              <div className="flex-1 overflow-y-auto p-6">
+                {currentContent.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-gray-500">No {contentViewerTab} available</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Select All Button */}
+                    <div className="mb-5 flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3 border border-gray-200">
+                      <button
+                        onClick={handleSelectAll}
+                        className="flex items-center gap-2 text-sm font-semibold text-[#4f0c1b] hover:text-[#3d0a15] transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        {selectedContentItems.size === currentContent.length ? 'Deselect All' : 'Select All'}
+                      </button>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Selected:</span>
+                        <span className="px-2.5 py-1 bg-[#4f0c1b]/10 text-[#4f0c1b] text-sm font-bold rounded-full">
+                          {selectedContentItems.size}
+                        </span>
+                        <span className="text-xs text-gray-400">/</span>
+                        <span className="text-sm font-semibold text-gray-700">{currentContent.length}</span>
+                      </div>
+                    </div>
+
+                    {/* Grid */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {currentContent.map((url: string, index: number) => {
+                        const itemKey = `${contentViewerTab}-${index}`;
+                        const isSelected = selectedContentItems.has(itemKey);
+                        
+                        return (
+                          <div
+                            key={index}
+                            className={`relative border-2 rounded-xl overflow-hidden cursor-pointer transition-all duration-200 group ${
+                              isSelected 
+                                ? 'border-[#4f0c1b] ring-4 ring-[#4f0c1b]/20 shadow-lg scale-105' 
+                                : 'border-gray-200 hover:border-[#4f0c1b]/50 hover:shadow-md'
+                            }`}
+                            onClick={() => handleToggleSelection(index)}
+                          >
+                            {/* Selection Checkbox */}
+                            <div className="absolute top-3 right-3 z-10">
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center shadow-lg transition-all ${
+                                isSelected 
+                                  ? 'bg-[#4f0c1b] scale-110' 
+                                  : 'bg-white/90 group-hover:bg-white'
+                              }`}>
+                                {isSelected ? (
+                                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                  </svg>
+                                ) : (
+                                  <div className="w-3 h-3 border-2 border-gray-400 rounded-sm group-hover:border-[#4f0c1b] transition-colors" />
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Content */}
+                            {contentViewerTab === 'images' ? (
+                              <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200">
+                                <img
+                                  src={url}
+                                  alt={`Image ${index + 1}`}
+                                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                                />
+                              </div>
+                            ) : (
+                              <div className="aspect-square bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center relative overflow-hidden">
+                                <video
+                                  src={url}
+                                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                                  controls={false}
+                                />
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/20 transition-colors">
+                                  <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                                    <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                      <path d="M8 5v14l11-7z" />
+                                    </svg>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Index Badge */}
+                            <div className="absolute bottom-2 left-2 z-10">
+                              <span className="px-2 py-1 bg-black/60 backdrop-blur-sm text-white text-xs font-semibold rounded-md">
+                                #{index + 1}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Footer with Download Button */}
+              {currentContent.length > 0 && (
+                <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex items-center justify-between">
+                  <span className="text-sm text-gray-600">
+                    {selectedContentItems.size} item{selectedContentItems.size !== 1 ? 's' : ''} selected
+                  </span>
+                  <button
+                    onClick={handleDownloadZip}
+                    disabled={selectedContentItems.size === 0 || isDownloadingZip}
+                    className="flex items-center gap-2 px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#3d0a15] disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                  >
+                    {isDownloadingZip ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Creating ZIP...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        Download as ZIP
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
