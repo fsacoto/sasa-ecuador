@@ -2744,8 +2744,8 @@ function ContentView({
     inventory: false,
   });
   const [sectionOrder, setSectionOrder] = useState<('product' | 'collection' | 'general' | 'inventory')[]>(['collection', 'general', 'inventory']);
-  const [draggedSection, setDraggedSection] = useState<string | null>(null);
-  const [dragOverSection, setDragOverSection] = useState<string | null>(null);
+  const [draggedSection, setDraggedSection] = useState<'product' | 'collection' | 'general' | 'inventory' | null>(null);
+  const [dragOverSection, setDragOverSection] = useState<'product' | 'collection' | 'general' | 'inventory' | null>(null);
 
   // Reset expanded sections when component mounts (when switching to this tab)
   useEffect(() => {
@@ -4102,8 +4102,8 @@ function ContentView({
 
       {/* Draggable Content Sections */}
       {sectionOrder.map((sectionType) => {
-        const config = sectionConfig[sectionType];
-        if (!config.filter || !config.hasContent) return null;
+        const config = sectionConfig[sectionType as keyof typeof sectionConfig];
+        if (!config || !config.filter || !config.hasContent) return null;
 
         return (
           <div
