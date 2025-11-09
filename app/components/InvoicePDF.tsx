@@ -2,6 +2,40 @@
 
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { SalesInvoice } from '../types';
+import enMessages from '../locales/en.json';
+import esMessages from '../locales/es.json';
+
+type Locale = 'en' | 'es';
+
+const messagesMap: Record<Locale, typeof enMessages> = {
+  en: enMessages,
+  es: esMessages,
+};
+
+// Translation helper function for PDF component
+const translate = (locale: Locale, key: string): string => {
+  const keys = key.split('.');
+  let value: unknown = messagesMap[locale];
+  
+  for (const k of keys) {
+    if (value && typeof value === 'object' && k in value) {
+      value = (value as Record<string, unknown>)[k];
+    } else {
+      // Fallback to English if key not found
+      value = messagesMap.en;
+      for (const fallbackKey of keys) {
+        if (value && typeof value === 'object' && fallbackKey in value) {
+          value = (value as Record<string, unknown>)[fallbackKey];
+        } else {
+          return key; // Return key if not found in fallback either
+        }
+      }
+      break;
+    }
+  }
+  
+  return typeof value === 'string' ? value : key;
+};
 
 const styles = StyleSheet.create({
   page: {
@@ -218,9 +252,11 @@ const styles = StyleSheet.create({
 interface InvoicePDFProps {
   invoice: SalesInvoice;
   logoSrc?: string;
+  locale?: Locale;
 }
 
-export default function InvoicePDF({ invoice, logoSrc = '/sasa.png' }: InvoicePDFProps) {
+export default function InvoicePDF({ invoice, logoSrc = '/sasa.png', locale = 'en' }: InvoicePDFProps) {
+  const t = (key: string) => translate(locale, key);
   // Format date
   const formatDate = (date: Date | string) => {
     const d = typeof date === 'string' ? new Date(date) : date;
@@ -259,12 +295,12 @@ export default function InvoicePDF({ invoice, logoSrc = '/sasa.png' }: InvoicePD
 
           {/* Right: Invoice Info */}
           <View style={styles.invoiceInfoSection}>
-            <Text style={styles.invoiceTitle}>INVOICE</Text>
+            <Text style={styles.invoiceTitle}>{t('pdf.invoice.title')}</Text>
             <Text style={styles.invoiceNumber}>{invoice.invoiceNumber}</Text>
-            <Text style={styles.invoiceDate}>Date Issued: {formatDate(invoice.date)}</Text>
+            <Text style={styles.invoiceDate}>{t('pdf.invoice.dateIssued')}: {formatDate(invoice.date)}</Text>
             
             <View style={styles.customerSection}>
-              <Text style={styles.customerLabel}>Issued to:</Text>
+              <Text style={styles.customerLabel}>{t('pdf.invoice.issuedTo')}:</Text>
               <Text style={styles.customerName}>{invoice.clientName}</Text>
               <Text style={styles.customerAddress}>
                 {streetAddress}
@@ -279,12 +315,12 @@ export default function InvoicePDF({ invoice, logoSrc = '/sasa.png' }: InvoicePD
         <View style={styles.table}>
           {/* Table Header */}
           <View style={styles.tableHeader}>
-            <Text style={[styles.colNo, styles.headerText]}>NO</Text>
-            <Text style={[styles.colSku, styles.headerText]}>SKU</Text>
-            <Text style={[styles.colDescription, styles.headerText]}>DESCRIPTION</Text>
-            <Text style={[styles.colQty, styles.headerText]}>QTY</Text>
-            <Text style={[styles.colPrice, styles.headerText]}>PRICE</Text>
-            <Text style={[styles.colSubtotal, styles.headerText]}>SUBTOTAL</Text>
+            <Text style={[styles.colNo, styles.headerText]}>{t('pdf.invoice.no')}</Text>
+            <Text style={[styles.colSku, styles.headerText]}>{t('pdf.invoice.sku')}</Text>
+            <Text style={[styles.colDescription, styles.headerText]}>{t('pdf.invoice.description')}</Text>
+            <Text style={[styles.colQty, styles.headerText]}>{t('pdf.invoice.qty')}</Text>
+            <Text style={[styles.colPrice, styles.headerText]}>{t('pdf.invoice.price')}</Text>
+            <Text style={[styles.colSubtotal, styles.headerText]}>{t('pdf.invoice.subtotal')}</Text>
           </View>
 
           {/* Table Rows */}
@@ -304,21 +340,21 @@ export default function InvoicePDF({ invoice, logoSrc = '/sasa.png' }: InvoicePD
         <View style={styles.summarySection}>
           <View style={styles.summaryTable}>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Subtotal</Text>
+              <Text style={styles.summaryLabel}>{t('pdf.invoice.subtotalLabel')}</Text>
               <Text style={styles.summaryValue}>${invoice.subtotal.toFixed(2)}</Text>
             </View>
             
             {invoice.discountTotal > 0 && (
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>
-                  Discount {invoice.discountType === 'percentage' ? `(${invoice.discountValue}%)` : ''}
+                  {t('pdf.invoice.discount')} {invoice.discountType === 'percentage' ? `(${invoice.discountValue}%)` : ''}
                 </Text>
                 <Text style={styles.summaryValue}>-${invoice.discountTotal.toFixed(2)}</Text>
               </View>
             )}
 
             <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>TOTAL</Text>
+              <Text style={styles.totalLabel}>{t('pdf.invoice.total')}</Text>
               <Text style={styles.totalValue}>${invoice.grandTotal.toFixed(2)}</Text>
             </View>
           </View>
@@ -326,7 +362,7 @@ export default function InvoicePDF({ invoice, logoSrc = '/sasa.png' }: InvoicePD
 
         {/* Footer Section */}
         <View style={styles.footer}>
-          <Text style={styles.footerNote}>Thank you for your purchase.</Text>
+          <Text style={styles.footerNote}>{t('pdf.invoice.thankYou')}</Text>
           <View style={styles.signatureLine} />
           <Text style={styles.pageNumber}>1 / 1</Text>
         </View>

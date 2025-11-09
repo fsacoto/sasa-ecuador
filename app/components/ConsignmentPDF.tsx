@@ -2,6 +2,40 @@
 
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { Consignment } from '../types';
+import enMessages from '../locales/en.json';
+import esMessages from '../locales/es.json';
+
+type Locale = 'en' | 'es';
+
+const messagesMap: Record<Locale, typeof enMessages> = {
+  en: enMessages,
+  es: esMessages,
+};
+
+// Translation helper function for PDF component
+const translate = (locale: Locale, key: string): string => {
+  const keys = key.split('.');
+  let value: unknown = messagesMap[locale];
+  
+  for (const k of keys) {
+    if (value && typeof value === 'object' && k in value) {
+      value = (value as Record<string, unknown>)[k];
+    } else {
+      // Fallback to English if key not found
+      value = messagesMap.en;
+      for (const fallbackKey of keys) {
+        if (value && typeof value === 'object' && fallbackKey in value) {
+          value = (value as Record<string, unknown>)[fallbackKey];
+        } else {
+          return key; // Return key if not found in fallback either
+        }
+      }
+      break;
+    }
+  }
+  
+  return typeof value === 'string' ? value : key;
+};
 
 const styles = StyleSheet.create({
   page: {
@@ -210,9 +244,11 @@ const styles = StyleSheet.create({
 interface ConsignmentPDFProps {
   consignment: Consignment;
   logoSrc?: string;
+  locale?: Locale;
 }
 
-export default function ConsignmentPDF({ consignment, logoSrc = '/sasa.png' }: ConsignmentPDFProps) {
+export default function ConsignmentPDF({ consignment, logoSrc = '/sasa.png', locale = 'en' }: ConsignmentPDFProps) {
+  const t = (key: string) => translate(locale, key);
   // Format date
   const formatDate = (date: Date | string) => {
     const d = typeof date === 'string' ? new Date(date) : date;
@@ -254,12 +290,12 @@ export default function ConsignmentPDF({ consignment, logoSrc = '/sasa.png' }: C
 
           {/* Right: Consignment Info */}
           <View style={styles.consignmentInfoSection}>
-            <Text style={styles.consignmentTitle}>CONSIGNMENT NOTE</Text>
+            <Text style={styles.consignmentTitle}>{t('pdf.consignment.title')}</Text>
             <Text style={styles.consignmentNumber}>{consignment.consignmentId}</Text>
-            <Text style={styles.consignmentDate}>Date Issued: {formatDate(consignment.dateCreated)}</Text>
+            <Text style={styles.consignmentDate}>{t('pdf.consignment.dateIssued')}: {formatDate(consignment.dateCreated)}</Text>
             
             <View style={styles.customerSection}>
-              <Text style={styles.customerLabel}>Client:</Text>
+              <Text style={styles.customerLabel}>{t('pdf.consignment.client')}:</Text>
               <Text style={styles.customerName}>{consignment.clientName}</Text>
               {consignment.clientAddress && (
                 <Text style={styles.customerAddress}>
@@ -276,10 +312,10 @@ export default function ConsignmentPDF({ consignment, logoSrc = '/sasa.png' }: C
         <View style={styles.table}>
           {/* Table Header */}
           <View style={styles.tableHeader}>
-            <Text style={[styles.colNo, styles.headerText]}>NO</Text>
-            <Text style={[styles.colSku, styles.headerText]}>SKU</Text>
-            <Text style={[styles.colDescription, styles.headerText]}>DESCRIPTION</Text>
-            <Text style={[styles.colQty, styles.headerText]}>QTY DELIVERED</Text>
+            <Text style={[styles.colNo, styles.headerText]}>{t('pdf.consignment.no')}</Text>
+            <Text style={[styles.colSku, styles.headerText]}>{t('pdf.consignment.sku')}</Text>
+            <Text style={[styles.colDescription, styles.headerText]}>{t('pdf.consignment.description')}</Text>
+            <Text style={[styles.colQty, styles.headerText]}>{t('pdf.consignment.qtyDelivered')}</Text>
           </View>
 
           {/* Table Rows */}
@@ -297,12 +333,12 @@ export default function ConsignmentPDF({ consignment, logoSrc = '/sasa.png' }: C
         <View style={styles.summarySection}>
           <View style={styles.summaryTable}>
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Total Items Delivered</Text>
+              <Text style={styles.summaryLabel}>{t('pdf.consignment.totalItemsDelivered')}</Text>
               <Text style={styles.summaryValue}>{totalItemsDelivered}</Text>
             </View>
             
             <View style={styles.statusRow}>
-              <Text style={styles.statusLabel}>Status</Text>
+              <Text style={styles.statusLabel}>{t('pdf.consignment.status')}</Text>
               <Text style={styles.statusValue}>{consignment.status}</Text>
             </View>
           </View>
@@ -311,10 +347,10 @@ export default function ConsignmentPDF({ consignment, logoSrc = '/sasa.png' }: C
         {/* Footer Section */}
         <View style={styles.footer}>
           <Text style={styles.footerNote}>
-            This is a consignment delivery note. Items remain property of SASA until sold.
+            {t('pdf.consignment.footerNote')}
           </Text>
           <View style={styles.signatureLine} />
-          <Text style={styles.signatureLabel}>Client Signature ______________________</Text>
+          <Text style={styles.signatureLabel}>{t('pdf.consignment.clientSignature')}</Text>
           <Text style={styles.pageNumber}>1 / 1</Text>
         </View>
       </Page>

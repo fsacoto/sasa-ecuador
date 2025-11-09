@@ -832,6 +832,38 @@
     "selectLanguage": "Seleccionar Idioma",
     "english": "Inglés",
     "spanish": "Español"
+  },
+  "pdf": {
+    "selectLanguage": "Seleccionar Idioma del PDF",
+    "selectLanguageForPdf": "Seleccione el idioma para el documento PDF",
+    "invoice": {
+      "title": "FACTURA",
+      "dateIssued": "Fecha de Emisión",
+      "issuedTo": "Emitida a",
+      "no": "NO",
+      "sku": "SKU",
+      "description": "DESCRIPCIÓN",
+      "qty": "CANT",
+      "price": "PRECIO",
+      "subtotal": "SUBTOTAL",
+      "subtotalLabel": "Subtotal",
+      "discount": "Descuento",
+      "total": "TOTAL",
+      "thankYou": "Gracias por su compra."
+    },
+    "consignment": {
+      "title": "NOTA DE CONSIGNACIÓN",
+      "dateIssued": "Fecha de Emisión",
+      "client": "Cliente",
+      "no": "NO",
+      "sku": "SKU",
+      "description": "DESCRIPCIÓN",
+      "qtyDelivered": "CANT ENTREGADA",
+      "totalItemsDelivered": "Total de Artículos Entregados",
+      "status": "Estado",
+      "footerNote": "Esta es una nota de entrega en consignación. Los artículos permanecen como propiedad de SASA hasta que se vendan.",
+      "clientSignature": "Firma del Cliente ______________________"
+    }
   }
 }
 

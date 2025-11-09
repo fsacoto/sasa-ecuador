@@ -68,6 +68,10 @@ export default function InvoiceTracking() {
   const [invoiceToDelete, setInvoiceToDelete] = useState<SalesInvoice | null>(null);
   const [itemsReturningToStock, setItemsReturningToStock] = useState<Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}>>([]);
 
+  // PDF language selection modal state
+  const [showPdfLanguageModal, setShowPdfLanguageModal] = useState(false);
+  const [pdfInvoice, setPdfInvoice] = useState<SalesInvoice | null>(null);
+
   useEffect(() => {
     loadInvoices();
   }, []);
@@ -781,7 +785,12 @@ export default function InvoiceTracking() {
     };
   };
 
-  const generatePDF = async (invoice: SalesInvoice) => {
+  const handleGeneratePDFClick = (invoice: SalesInvoice) => {
+    setPdfInvoice(invoice);
+    setShowPdfLanguageModal(true);
+  };
+
+  const generatePDF = async (invoice: SalesInvoice, locale: 'en' | 'es' = 'en') => {
     try {
       // Convert logo image for PDF - use full URL for public assets
       const { convertImageForPDF } = await import('../utils/imageConverter');
@@ -796,8 +805,8 @@ export default function InvoiceTracking() {
         import('./InvoicePDF')
       ]);
 
-      // Create PDF document with converted logo
-      const pdfDocument = <InvoicePDF invoice={invoice} logoSrc={logoBase64 || logoUrl} />;
+      // Create PDF document with converted logo and locale
+      const pdfDocument = <InvoicePDF invoice={invoice} logoSrc={logoBase64 || logoUrl} locale={locale} />;
 
       // Generate blob
       const instance = pdf(pdfDocument);
@@ -812,9 +821,15 @@ export default function InvoiceTracking() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+      
+      // Close modal
+      setShowPdfLanguageModal(false);
+      setPdfInvoice(null);
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Failed to generate PDF. Please try again.');
+      setShowPdfLanguageModal(false);
+      setPdfInvoice(null);
     }
   };
 
@@ -1167,7 +1182,7 @@ export default function InvoiceTracking() {
                         ✏️
                       </button>
                       <button
-                        onClick={() => generatePDF(invoice)}
+                        onClick={() => handleGeneratePDFClick(invoice)}
                         className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs hover:bg-purple-200"
                         title={t('invoiceTracking.generatePdf')}
                       >
@@ -1905,6 +1920,43 @@ export default function InvoiceTracking() {
                 {t('invoiceTracking.deleteInvoice')}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* PDF Language Selection Modal */}
+      {showPdfLanguageModal && pdfInvoice && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+            <h3 className="text-xl font-semibold mb-4">{t('pdf.selectLanguage')}</h3>
+            <p className="text-sm text-gray-600 mb-6">{t('pdf.selectLanguageForPdf')}</p>
+            
+            <div className="space-y-3 mb-6">
+              <button
+                onClick={() => generatePDF(pdfInvoice, 'en')}
+                className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+              >
+                <span>{t('language.english')}</span>
+                <span>🇺🇸</span>
+              </button>
+              <button
+                onClick={() => generatePDF(pdfInvoice, 'es')}
+                className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+              >
+                <span>{t('language.spanish')}</span>
+                <span>🇪🇸</span>
+              </button>
+            </div>
+
+            <button
+              onClick={() => {
+                setShowPdfLanguageModal(false);
+                setPdfInvoice(null);
+              }}
+              className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+            >
+              {t('invoiceTracking.cancel')}
+            </button>
           </div>
         </div>
       )}

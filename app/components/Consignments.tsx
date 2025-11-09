@@ -8,7 +8,6 @@ import { createInvoice } from '../services/invoicesService';
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../context/TranslationContext';
-import ConsignmentPDF from './ConsignmentPDF';
 
 type View = 'list' | 'create' | 'details';
 
@@ -34,6 +33,10 @@ export default function Consignments() {
   const [salesQuantities, setSalesQuantities] = useState<{[key: number]: number}>({});
   const [returnQuantities, setReturnQuantities] = useState<{[key: number]: number}>({});
   const hasLoadedRef = useRef(false);
+
+  // PDF language selection modal state
+  const [showPdfLanguageModal, setShowPdfLanguageModal] = useState(false);
+  const [pdfConsignment, setPdfConsignment] = useState<Consignment | null>(null);
 
   // Create a stable string identifier - always a string, never changes array size
   const userIdString = (user?.uid || user?.id || '') as string;
@@ -419,7 +422,12 @@ export default function Consignments() {
     setReturnQuantities({});
   };
 
-  const generatePDF = async (consignment: Consignment) => {
+  const handleGeneratePDFClick = (consignment: Consignment) => {
+    setPdfConsignment(consignment);
+    setShowPdfLanguageModal(true);
+  };
+
+  const generatePDF = async (consignment: Consignment, locale: 'en' | 'es' = 'en') => {
     try {
       const { convertImageForPDF } = await import('../utils/imageConverter');
       const logoUrl = typeof window !== 'undefined' 
@@ -432,7 +440,7 @@ export default function Consignments() {
         import('./ConsignmentPDF')
       ]);
 
-      const pdfDocument = <ConsignmentPDF consignment={consignment} logoSrc={logoBase64 || logoUrl} />;
+      const pdfDocument = <ConsignmentPDF consignment={consignment} logoSrc={logoBase64 || logoUrl} locale={locale} />;
 
       const instance = pdf(pdfDocument);
       const blob = await instance.toBlob();
@@ -445,9 +453,15 @@ export default function Consignments() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+      
+      // Close modal
+      setShowPdfLanguageModal(false);
+      setPdfConsignment(null);
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Failed to generate PDF. Please try again.');
+      setShowPdfLanguageModal(false);
+      setPdfConsignment(null);
     }
   };
 
@@ -456,7 +470,8 @@ export default function Consignments() {
   // List View
   if (view === 'list') {
     return (
-      <div className="space-y-6">
+      <>
+        <div className="space-y-6">
         <div className="flex justify-between items-center">
           <div>
             <h2 className="text-2xl font-semibold text-gray-900">Consignments</h2>
@@ -536,13 +551,51 @@ export default function Consignments() {
           </div>
         )}
       </div>
+        {/* PDF Language Selection Modal */}
+        {showPdfLanguageModal && pdfConsignment && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-6 w-full max-w-md">
+              <h3 className="text-xl font-semibold mb-4">{t('pdf.selectLanguage')}</h3>
+              <p className="text-sm text-gray-600 mb-6">{t('pdf.selectLanguageForPdf')}</p>
+              
+              <div className="space-y-3 mb-6">
+                <button
+                  onClick={() => generatePDF(pdfConsignment, 'en')}
+                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                >
+                  <span>{t('language.english')}</span>
+                  <span>🇺🇸</span>
+                </button>
+                <button
+                  onClick={() => generatePDF(pdfConsignment, 'es')}
+                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                >
+                  <span>{t('language.spanish')}</span>
+                  <span>🇪🇸</span>
+                </button>
+              </div>
+
+              <button
+                onClick={() => {
+                  setShowPdfLanguageModal(false);
+                  setPdfConsignment(null);
+                }}
+                className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 
   // Create View
   if (view === 'create') {
     return (
-      <div className="space-y-6">
+      <>
+        <div className="space-y-6">
         <div className="flex justify-between items-center">
           <div>
             <h2 className="text-2xl font-semibold text-gray-900">Create New Consignment</h2>
@@ -718,13 +771,51 @@ export default function Consignments() {
           </div>
         )}
       </div>
+        {/* PDF Language Selection Modal */}
+        {showPdfLanguageModal && pdfConsignment && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-6 w-full max-w-md">
+              <h3 className="text-xl font-semibold mb-4">{t('pdf.selectLanguage')}</h3>
+              <p className="text-sm text-gray-600 mb-6">{t('pdf.selectLanguageForPdf')}</p>
+              
+              <div className="space-y-3 mb-6">
+                <button
+                  onClick={() => generatePDF(pdfConsignment, 'en')}
+                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                >
+                  <span>{t('language.english')}</span>
+                  <span>🇺🇸</span>
+                </button>
+                <button
+                  onClick={() => generatePDF(pdfConsignment, 'es')}
+                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                >
+                  <span>{t('language.spanish')}</span>
+                  <span>🇪🇸</span>
+                </button>
+              </div>
+
+              <button
+                onClick={() => {
+                  setShowPdfLanguageModal(false);
+                  setPdfConsignment(null);
+                }}
+                className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 
   // Details View
   if (view === 'details' && selectedConsignment) {
     return (
-      <div className="space-y-6">
+      <>
+        <div className="space-y-6">
         <div className="flex justify-between items-center">
           <div>
             <h2 className="text-2xl font-semibold text-gray-900">{selectedConsignment.consignmentId}</h2>
@@ -732,7 +823,7 @@ export default function Consignments() {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => generatePDF(selectedConsignment)}
+              onClick={() => handleGeneratePDFClick(selectedConsignment)}
               className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
             >
               Generate Consignment Note (PDF)
@@ -891,6 +982,43 @@ export default function Consignments() {
           </div>
         </div>
       </div>
+        {/* PDF Language Selection Modal */}
+        {showPdfLanguageModal && pdfConsignment && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-6 w-full max-w-md">
+              <h3 className="text-xl font-semibold mb-4">{t('pdf.selectLanguage')}</h3>
+              <p className="text-sm text-gray-600 mb-6">{t('pdf.selectLanguageForPdf')}</p>
+              
+              <div className="space-y-3 mb-6">
+                <button
+                  onClick={() => generatePDF(pdfConsignment, 'en')}
+                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                >
+                  <span>{t('language.english')}</span>
+                  <span>🇺🇸</span>
+                </button>
+                <button
+                  onClick={() => generatePDF(pdfConsignment, 'es')}
+                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                >
+                  <span>{t('language.spanish')}</span>
+                  <span>🇪🇸</span>
+                </button>
+              </div>
+
+              <button
+                onClick={() => {
+                  setShowPdfLanguageModal(false);
+                  setPdfConsignment(null);
+                }}
+                className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 

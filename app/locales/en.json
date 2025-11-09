@@ -836,6 +836,38 @@
     "selectLanguage": "Select Language",
     "english": "English",
     "spanish": "Español"
+  },
+  "pdf": {
+    "selectLanguage": "Select PDF Language",
+    "selectLanguageForPdf": "Select the language for the PDF document",
+    "invoice": {
+      "title": "INVOICE",
+      "dateIssued": "Date Issued",
+      "issuedTo": "Issued to",
+      "no": "NO",
+      "sku": "SKU",
+      "description": "DESCRIPTION",
+      "qty": "QTY",
+      "price": "PRICE",
+      "subtotal": "SUBTOTAL",
+      "subtotalLabel": "Subtotal",
+      "discount": "Discount",
+      "total": "TOTAL",
+      "thankYou": "Thank you for your purchase."
+    },
+    "consignment": {
+      "title": "CONSIGNMENT NOTE",
+      "dateIssued": "Date Issued",
+      "client": "Client",
+      "no": "NO",
+      "sku": "SKU",
+      "description": "DESCRIPTION",
+      "qtyDelivered": "QTY DELIVERED",
+      "totalItemsDelivered": "Total Items Delivered",
+      "status": "Status",
+      "footerNote": "This is a consignment delivery note. Items remain property of SASA until sold.",
+      "clientSignature": "Client Signature ______________________"
+    }
   }
 }
 
