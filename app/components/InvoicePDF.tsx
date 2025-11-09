@@ -89,32 +89,39 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E0E0E0',
   },
   colNo: {
-    width: '8%',
+    width: '6%',
     textAlign: 'left',
     fontSize: 10,
     color: '#333333',
   },
+  colSku: {
+    width: '15%',
+    textAlign: 'left',
+    fontSize: 10,
+    color: '#333333',
+    paddingLeft: 5,
+  },
   colDescription: {
-    width: '50%',
+    width: '33%',
     textAlign: 'left',
     fontSize: 10,
     color: '#333333',
     paddingLeft: 5,
   },
   colQty: {
-    width: '12%',
+    width: '10%',
     textAlign: 'left',
     fontSize: 10,
     color: '#333333',
   },
   colPrice: {
-    width: '15%',
+    width: '18%',
     textAlign: 'right',
     fontSize: 10,
     color: '#333333',
   },
   colSubtotal: {
-    width: '15%',
+    width: '18%',
     textAlign: 'right',
     fontSize: 10,
     color: '#333333',
@@ -273,6 +280,7 @@ export default function InvoicePDF({ invoice, logoSrc = '/sasa.png' }: InvoicePD
           {/* Table Header */}
           <View style={styles.tableHeader}>
             <Text style={[styles.colNo, styles.headerText]}>NO</Text>
+            <Text style={[styles.colSku, styles.headerText]}>SKU</Text>
             <Text style={[styles.colDescription, styles.headerText]}>DESCRIPTION</Text>
             <Text style={[styles.colQty, styles.headerText]}>QTY</Text>
             <Text style={[styles.colPrice, styles.headerText]}>PRICE</Text>
@@ -283,10 +291,8 @@ export default function InvoicePDF({ invoice, logoSrc = '/sasa.png' }: InvoicePD
           {invoice.items.map((item, index) => (
             <View key={index} style={styles.tableRow}>
               <Text style={styles.colNo}>{index + 1}</Text>
-              <Text style={styles.colDescription}>
-                {item.description || item.sku}
-                {item.sku && item.description && ` (${item.sku})`}
-              </Text>
+              <Text style={styles.colSku}>{item.sku || '-'}</Text>
+              <Text style={styles.colDescription}>{item.description || '-'}</Text>
               <Text style={styles.colQty}>{item.quantity}</Text>
               <Text style={styles.colPrice}>${item.unitPrice.toFixed(2)}</Text>
               <Text style={styles.colSubtotal}>${item.totalPrice.toFixed(2)}</Text>
