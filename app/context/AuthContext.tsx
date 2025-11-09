@@ -12,7 +12,7 @@ import { getUserRole, getPermissionsForRole, createUserDocument } from '../servi
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 
-export type UserRole = 'admin' | 'marketing';
+export type UserRole = 'admin' | 'marketing' | 'sales';
 
 export interface User {
   id: string;

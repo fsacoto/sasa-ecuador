@@ -157,6 +157,11 @@ export default function Clients() {
     let aVal: string | number | Date | undefined = a[sortConfig.key as keyof Client];
     let bVal: string | number | Date | undefined = b[sortConfig.key as keyof Client];
 
+    // Handle undefined values
+    if (aVal === undefined && bVal === undefined) return 0;
+    if (aVal === undefined) return 1;
+    if (bVal === undefined) return -1;
+
     if (typeof aVal === 'string') {
       aVal = aVal.toLowerCase();
       bVal = (bVal as string).toLowerCase();
