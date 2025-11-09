@@ -334,13 +334,16 @@ export default function Inventory() {
 
   const filteredAndSortedInventory = filteredInventory
     .filter(item => {
-      // Only show items that have at least one verified purchase order
+      // Show items that have at least one verified purchase order OR have no linked purchase orders (standalone items)
       const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
         const order = purchaseOrders.find(o => o.id === orderId);
         return order && order.status === 'Verified';
       });
       
-      if (!hasVerifiedOrder) return false;
+      // Allow items with verified orders OR items with no linked orders (standalone inventory items)
+      const isStandaloneItem = item.linkedPurchaseOrders.length === 0;
+      
+      if (!hasVerifiedOrder && !isStandaloneItem) return false;
       
       // Search filter
       if (searchQuery) {
