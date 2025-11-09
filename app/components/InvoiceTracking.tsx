@@ -214,14 +214,14 @@ export default function InvoiceTracking() {
   const handleEditItem = (index: number, field: string, value: string | number) => {
     const updatedItems = [...editItems];
     if (field === 'quantity' || field === 'unitPrice') {
-      let parsedValue = parseFloat(value) || 0;
+      let parsedValue = parseFloat(String(value)) || 0;
       
         // For quantity, validate against max stock
         if (field === 'quantity') {
           const item = updatedItems[index] as SalesInvoiceLine;
         if (item.maxQuantity) {
           parsedValue = Math.min(Math.max(1, parsedValue), item.maxQuantity);
-          if (parseFloat(value) > item.maxQuantity) {
+          if (parseFloat(String(value)) > item.maxQuantity) {
             alert(`${t('invoiceTracking.cannotExceedStock')} ${item.maxQuantity}`);
           }
         }
