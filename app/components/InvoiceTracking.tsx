@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { SalesInvoice, SalesInvoiceLine, InventoryItem, Client, PaymentRecord } from '../types';
 import { getAllInvoices, updateInvoice, deleteInvoice } from '../services/invoicesService';
 import { getAllClients } from '../services/clientsService';
@@ -781,89 +781,41 @@ export default function InvoiceTracking() {
     };
   };
 
-  const generatePDF = (invoice: SalesInvoice) => {
-    // Helper function to pad strings for table formatting
-    const pad = (str: string, length: number) => (str || '').substring(0, length).padEnd(length);
-    
-    // Calculate column widths
-    const colWidths = {
-      sku: 12,
-      description: 30,
-      quantity: 10,
-      unitPrice: 12,
-      total: 12
-    };
-    
-    // Create table header
-    const header = `${pad('SKU', colWidths.sku)} | ${pad('Descripción', colWidths.description)} | ${pad('Cantidad', colWidths.quantity)} | ${pad('Precio Unit', colWidths.unitPrice)} | ${pad('Total', colWidths.total)}`;
-    const separator = '-'.repeat(header.length);
-    
-    // Create table rows
-    const rows = invoice.items.map(item => {
-      return `${pad(item.sku, colWidths.sku)} | ${pad(item.description || '', colWidths.description)} | ${pad(String(item.quantity), colWidths.quantity)} | ${pad(`$${item.unitPrice.toFixed(2)}`, colWidths.unitPrice)} | ${pad(`$${item.totalPrice.toFixed(2)}`, colWidths.total)}`;
-    }).join('\n');
-    
-    // Get client phone and email from address field or create separate fields
-    const addressParts = invoice.clientAddress.split(', ');
-    const city = addressParts.length > 1 ? addressParts[addressParts.length - 2] : '';
-    const country = addressParts.length > 0 ? addressParts[addressParts.length - 1] : '';
-    const streetAddress = addressParts.length > 2 ? addressParts.slice(0, -2).join(', ') : invoice.clientAddress;
-    
-    // Create PDF document
-    const pdfContent = `
+  const generatePDF = async (invoice: SalesInvoice) => {
+    try {
+      // Convert logo image for PDF - use full URL for public assets
+      const { convertImageForPDF } = await import('../utils/imageConverter');
+      const logoUrl = typeof window !== 'undefined' 
+        ? `${window.location.origin}/sasa.png` 
+        : '/sasa.png';
+      const logoBase64 = await convertImageForPDF(logoUrl);
+      
+      // Dynamically import PDF components
+      const [{ pdf }, { default: InvoicePDF }] = await Promise.all([
+        import('@react-pdf/renderer'),
+        import('./InvoicePDF')
+      ]);
 
-${'='.repeat(80)}
-                      NOTA DE VENTA
-${'='.repeat(80)}
+      // Create PDF document with converted logo
+      const pdfDocument = <InvoicePDF invoice={invoice} logoSrc={logoBase64 || logoUrl} />;
 
-Empresa: SASA
-Cliente: ${invoice.clientName}
-Dirección: ${streetAddress}${city ? `, ${city}` : ''}${country ? `, ${country}` : ''}
-Fecha: ${new Date(invoice.date).toLocaleDateString()}
-Número de Factura: ${invoice.invoiceNumber}
+      // Generate blob
+      const instance = pdf(pdfDocument);
+      const blob = await instance.toBlob();
 
-${'='.repeat(80)}
-                      DETALLE DE PRODUCTOS
-${'='.repeat(80)}
-
-${header}
-${separator}
-${rows}
-
-${'='.repeat(80)}
-                                 TOTALES
-${'='.repeat(80)}
-
-${pad('', colWidths.sku + colWidths.description + colWidths.quantity + colWidths.unitPrice + 4)} | ${pad('SUBTOTAL:', colWidths.total)} $${invoice.subtotal.toFixed(2)}
-${pad('', colWidths.sku + colWidths.description + colWidths.quantity + colWidths.unitPrice + 4)} | ${pad('DESCUENTO:', colWidths.total)} $${invoice.discountTotal.toFixed(2)}
-${separator}
-${pad('', colWidths.sku + colWidths.description + colWidths.quantity + colWidths.unitPrice + 4)} | ${pad('TOTAL:', colWidths.total)} $${invoice.grandTotal.toFixed(2)}
-
-${invoice.paymentMethod ? `
-${'='.repeat(80)}
-                        MÉTODO DE PAGO
-${'='.repeat(80)}
-
-Método: ${invoice.paymentMethod.charAt(0).toUpperCase() + invoice.paymentMethod.slice(1)}
-${invoice.paymentComment ? `Notas: ${invoice.paymentComment}` : ''}
-` : ''}
-
-${'='.repeat(80)}
-                    Gracias por su compra
-${'='.repeat(80)}
-
-    `;
-
-    // Create downloadable text file
-    const blob = new Blob([pdfContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${invoice.invoiceNumber}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+      // Create download link
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `invoice-${invoice.invoiceNumber}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate PDF. Please try again.');
+    }
   };
 
   const handleSort = (key: string) => {
