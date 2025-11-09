@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 
 export type UserRole = 'admin' | 'marketing' | 'sales';
@@ -119,20 +119,29 @@ export async function createUserDocument(userId: string, email: string, displayN
       userRole = 'marketing';
     } else {
       userName = displayName || email.split('@')[0];
-      // Check if this is the first user (first admin)
-      const usersCollection = collection(db, 'users');
-      const snapshot = await getDocs(usersCollection);
-      userRole = snapshot.empty ? 'admin' : 'marketing';
+      // Default to marketing role for new users
+      // Admins can manually promote users if needed
+      userRole = 'marketing';
     }
     
     if (!userDoc.exists()) {
-      await setDoc(doc(db, 'users', userId), {
-        email,
-        name: userName,
-        role: userRole,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
+      // Create new user document
+      try {
+        await setDoc(doc(db, 'users', userId), {
+          email,
+          name: userName,
+          role: userRole,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        console.log('User document created successfully:', userId);
+      } catch (createError) {
+        console.error('Error creating user document (setDoc):', createError);
+        if (createError instanceof Error && 'code' in createError) {
+          console.error('Firestore error code:', (createError as any).code);
+        }
+        throw createError; // Re-throw to be caught by outer catch
+      }
     } else {
       // User exists, update name and role if needed to ensure they match
       const existingData = userDoc.data();
@@ -141,15 +150,39 @@ export async function createUserDocument(userId: string, email: string, displayN
         (isJoseSacoto && (existingData.name !== 'Jose Sacoto' || existingData.role !== 'marketing'));
       
       if (needsUpdate) {
-        await setDoc(doc(db, 'users', userId), {
-          name: userName,
-          role: userRole,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
+        try {
+          await setDoc(doc(db, 'users', userId), {
+            name: userName,
+            role: userRole,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+          console.log('User document updated successfully:', userId);
+        } catch (updateError) {
+          console.error('Error updating user document (setDoc merge):', updateError);
+          if (updateError instanceof Error && 'code' in updateError) {
+            console.error('Firestore error code:', (updateError as any).code);
+          }
+          throw updateError; // Re-throw to be caught by outer catch
+        }
       }
     }
   } catch (error) {
-    console.error('Error creating user document:', error);
+    // Log detailed error information
+    if (error instanceof Error) {
+      console.error('Error in createUserDocument:', error.message);
+      if ('code' in error) {
+        const firestoreError = error as any;
+        console.error('Firestore error code:', firestoreError.code);
+        console.error('Firestore error details:', {
+          code: firestoreError.code,
+          message: firestoreError.message
+        });
+      }
+    } else {
+      console.error('Error in createUserDocument:', error);
+    }
+    // Don't throw - allow authentication to proceed even if user document creation fails
+    // The user can still log in, and the document can be created later
   }
 }
 

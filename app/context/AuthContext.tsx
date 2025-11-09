@@ -7,6 +7,7 @@ import {
   onAuthStateChanged,
   User as FirebaseUser
 } from 'firebase/auth';
+import { FirebaseError } from 'firebase/app';
 import { auth } from '../utils/firebase';
 import { getUserRole, getPermissionsForRole, createUserDocument } from '../services/userRoles';
 import { doc, getDoc } from 'firebase/firestore';
@@ -44,26 +45,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for authentication state changes
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
-        const email = firebaseUser.email || '';
-        
-        // Create user document in Firestore if it doesn't exist
-        await createUserDocument(firebaseUser.uid, email, firebaseUser.displayName || undefined);
-        
-        // Get user data from Firestore (role and name)
-        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        const role = await getUserRole(firebaseUser.uid);
-        const userName = userDoc.exists() && userDoc.data().name 
-          ? userDoc.data().name 
-          : (firebaseUser.displayName || getUserDisplayName(email));
-        
-        const userData: User = {
-          id: firebaseUser.uid,
-          email: firebaseUser.email || '',
-          role: role,
-          name: userName
-        };
-        
-        setUser(userData);
+        try {
+          const email = firebaseUser.email || '';
+          
+          // Create user document in Firestore if it doesn't exist
+          await createUserDocument(firebaseUser.uid, email, firebaseUser.displayName || undefined);
+          
+          // Get user data from Firestore (role and name)
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          const role = await getUserRole(firebaseUser.uid);
+          const userName = userDoc.exists() && userDoc.data().name 
+            ? userDoc.data().name 
+            : (firebaseUser.displayName || getUserDisplayName(email));
+          
+          const userData: User = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email || '',
+            role: role,
+            name: userName
+          };
+          
+          setUser(userData);
+        } catch (error) {
+          console.error('Error loading user data:', error);
+          // Set user with minimal data if Firestore access fails
+          const userData: User = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email || '',
+            role: 'marketing', // Default role
+            name: firebaseUser.displayName || getUserDisplayName(firebaseUser.email || '')
+          };
+          setUser(userData);
+        }
       } else {
         setUser(null);
       }
@@ -78,12 +91,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      // Trim email to avoid whitespace issues
+      const trimmedEmail = email.trim();
+      
+      if (!trimmedEmail || !password) {
+        setIsLoading(false);
+        return false;
+      }
+      
+      await signInWithEmailAndPassword(auth, trimmedEmail, password);
       setIsLoading(false);
       return true;
     } catch (error) {
-      console.error('Login error:', error);
       setIsLoading(false);
+      
+      // Handle Firebase Auth errors
+      if (error instanceof FirebaseError) {
+        const errorCode = error.code;
+        console.error('Login error:', errorCode, error.message);
+        
+        // Handle specific error codes
+        switch (errorCode) {
+          case 'auth/invalid-email':
+          case 'auth/user-disabled':
+          case 'auth/user-not-found':
+          case 'auth/wrong-password':
+          case 'auth/invalid-credential':
+            // For security, we don't reveal which specific error occurred
+            // All these errors result in the same user-facing message
+            return false;
+          case 'auth/too-many-requests':
+            console.error('Too many login attempts. Please try again later.');
+            return false;
+          case 'auth/network-request-failed':
+            console.error('Network error. Please check your connection.');
+            return false;
+          default:
+            console.error('Unexpected authentication error:', errorCode);
+            return false;
+        }
+      }
+      
+      // Handle non-FirebaseError errors
+      console.error('Login error:', error);
       return false;
     }
   };

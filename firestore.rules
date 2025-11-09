@@ -10,8 +10,13 @@ service cloud.firestore {
     
     // Users collection
     match /users/{userId} {
-      allow read, write: if isAuthenticated() && request.auth.uid == userId;
-      allow create: if isAuthenticated(); // Allow creation on first login
+      // Allow reading users collection (includes listing) for authenticated users
+      // This is needed for checking if collection is empty on first user creation
+      allow read: if isAuthenticated();
+      // Allow creating own user document (for first login)
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      // Allow updating/deleting only own user document
+      allow update, delete: if isAuthenticated() && request.auth.uid == userId;
     }
     
     // Suppliers collection
