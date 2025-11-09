@@ -175,8 +175,8 @@ export default function CMSModuleNew() {
 
   // Sort function
   const sortContent = (a: CMSContent, b: CMSContent): number => {
-    let aValue: any;
-    let bValue: any;
+    let aValue: string | number;
+    let bValue: string | number;
 
     switch (sortField) {
       case 'title':
@@ -529,18 +529,20 @@ export default function CMSModuleNew() {
     setEditUploadedFiles([]);
     setEditSelectedSKUs([]);
     // Reset tab state selectedProduct
-    updateCurrentTabState({ selectedProduct: null });
-    setFormData({
-      title: '',
-      description: '',
-      hashtags: '',
-      category: '',
-      line: '',
-      tags: '',
-      language: 'en',
+    updateCurrentTabState({ 
+      selectedProduct: null,
+      formData: {
+        title: '',
+        description: '',
+        hashtags: '',
+        category: '',
+        line: '',
+        tags: '',
+        language: 'en',
+      },
+      uploadedFiles: [],
+      selectedSKUs: [],
     });
-    setUploadedFiles([]);
-    setSelectedSKUs([]);
     alert('Content updated successfully!');
   };
 
@@ -777,10 +779,13 @@ export default function CMSModuleNew() {
           content={content}
           inventory={inventory}
           handleSelectProduct={(product) => {
-            setSelectedProduct(product);
-            if (!selectedSKUs.includes(product.sku)) {
-              setSelectedSKUs([...selectedSKUs, product.sku]);
-            }
+            const currentState = tabStates[uploadType];
+            updateCurrentTabState({
+              selectedProduct: product,
+              selectedSKUs: currentState.selectedSKUs.includes(product.sku) 
+                ? currentState.selectedSKUs 
+                : [...currentState.selectedSKUs, product.sku]
+            });
             setViewMode('upload');
           }}
           onContentClick={(contentItem) => {
@@ -923,7 +928,7 @@ export default function CMSModuleNew() {
 
                 {currentTabState.showSKUDropdown && currentTabState.searchSKU.trim().length > 0 && filteredInventory.length === 0 && (
                   <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-4 text-center text-gray-500">
-                    {t('cms.noProductsFound')} "{currentTabState.searchSKU}"
+                    {t('cms.noProductsFound')} &quot;{currentTabState.searchSKU}&quot;
                   </div>
                 )}
               </div>
@@ -1733,7 +1738,7 @@ export default function CMSModuleNew() {
                                       description: item.description,
                                       hashtags: item.hashtags.join(', '),
                                       category: item.category,
-                                      line: item.line || '',
+                                      line: '',
                                       tags: item.tags.join(', '),
                                       language: item.language,
                                     });
@@ -1799,7 +1804,7 @@ export default function CMSModuleNew() {
                                       description: item.description,
                                       hashtags: item.hashtags.join(', '),
                                       category: item.category,
-                                      line: item.line || '',
+                                      line: '',
                                       tags: item.tags.join(', '),
                                       language: item.language,
                                     });
@@ -2196,7 +2201,7 @@ function ContentDetailModal({
                       onContextMenu={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        handleVideoClick(e as any);
+                        handleVideoClick(e as React.MouseEvent<HTMLDivElement>);
                       }}
                     >
                       <video
@@ -2273,7 +2278,7 @@ function ContentDetailModal({
                         // Always prevent browser context menu and open our player
                         e.preventDefault();
                         e.stopPropagation();
-                        handleMediaClick(e as any);
+                        handleMediaClick(e as React.MouseEvent<HTMLDivElement>);
                       }}
                     >
                       {isVideo ? (

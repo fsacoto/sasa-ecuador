@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { SalesInvoice, SalesInvoiceLine, InventoryItem, Client, PaymentRecord } from '../types';
-import { getAllInvoices, updateInvoice } from '../services/invoicesService';
+import { getAllInvoices, updateInvoice, deleteInvoice } from '../services/invoicesService';
 import { getAllClients } from '../services/clientsService';
 import { useAuth } from '../context/AuthContext';
 import { useInventory } from '../context/InventoryContext';
@@ -62,6 +62,11 @@ export default function InvoiceTracking() {
   const [warningMessage, setWarningMessage] = useState('');
   const [warningItems, setWarningItems] = useState<Array<{description: string, quantity: number, currentStock: number, remainingStock: number}>>([]);
   const [warningCallback, setWarningCallback] = useState<(() => void) | null>(null);
+
+  // Delete confirmation modal state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [invoiceToDelete, setInvoiceToDelete] = useState<SalesInvoice | null>(null);
+  const [itemsReturningToStock, setItemsReturningToStock] = useState<Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}>>([]);
 
   useEffect(() => {
     loadInvoices();
@@ -206,14 +211,14 @@ export default function InvoiceTracking() {
     setEditPaymentComment('');
   };
 
-  const handleEditItem = (index: number, field: string, value: any) => {
+  const handleEditItem = (index: number, field: string, value: string | number) => {
     const updatedItems = [...editItems];
     if (field === 'quantity' || field === 'unitPrice') {
       let parsedValue = parseFloat(value) || 0;
       
-      // For quantity, validate against max stock
-      if (field === 'quantity') {
-        const item = updatedItems[index] as any;
+        // For quantity, validate against max stock
+        if (field === 'quantity') {
+          const item = updatedItems[index] as SalesInvoiceLine;
         if (item.maxQuantity) {
           parsedValue = Math.min(Math.max(1, parsedValue), item.maxQuantity);
           if (parseFloat(value) > item.maxQuantity) {
@@ -276,6 +281,78 @@ export default function InvoiceTracking() {
       return;
     }
 
+    // Check if invoice was delivered - if so, we need to handle inventory returns
+    const wasDelivered = editingInvoice.deliveryStatus === 'Delivered' || editingInvoice.deliveryStatus === 'Partially Delivered';
+    
+    // Calculate items that need to be returned to inventory
+    const itemsToReturn: Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}> = [];
+    
+    if (wasDelivered) {
+      // Create a map of new items by SKU
+      const newItemsMap = new Map<string, number>();
+      editItems.forEach(item => {
+        const existingQty = newItemsMap.get(item.sku) || 0;
+        newItemsMap.set(item.sku, existingQty + item.quantity);
+      });
+      
+      // Compare with original items
+      editingInvoice.items.forEach(originalItem => {
+        const newQuantity = newItemsMap.get(originalItem.sku) || 0;
+        const originalQuantity = originalItem.quantity;
+        
+        if (newQuantity < originalQuantity) {
+          // Item was removed or quantity reduced
+          const quantityToReturn = originalQuantity - newQuantity;
+          const inventoryItem = inventory.find(inv => inv.sku === originalItem.sku);
+          
+          if (inventoryItem) {
+            const currentStock = inventoryItem.ecuadorStock;
+            const newStock = currentStock + quantityToReturn;
+            
+            itemsToReturn.push({
+              description: originalItem.description,
+              sku: originalItem.sku,
+              quantity: quantityToReturn,
+              currentStock,
+              newStock
+            });
+          }
+        }
+        
+        // Remove from map so we can check for completely removed items
+        newItemsMap.delete(originalItem.sku);
+      });
+    }
+
+    // Show warning if items need to be returned
+    if (itemsToReturn.length > 0) {
+      setItemsReturningToStock(itemsToReturn);
+      setWarningMessage(t('invoiceTracking.itemsRemovedMessage'));
+      setWarningCallback(() => async () => {
+        setShowWarningModal(false);
+        await processInvoiceEditWithReturns(itemsToReturn);
+      });
+      setShowWarningModal(true);
+      return;
+    }
+
+    // No items to return, proceed with normal update
+    await processInvoiceEditWithReturns([]);
+  };
+
+  const processInvoiceEditWithReturns = async (itemsToReturn: Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}>) => {
+    if (!editingInvoice) return;
+
+    // Return items to inventory first
+    for (const itemReturn of itemsToReturn) {
+      const inventoryItem = inventory.find(inv => inv.sku === itemReturn.sku);
+      if (inventoryItem) {
+        await updateInventoryItem(inventoryItem.id, {
+          ecuadorStock: itemReturn.newStock
+        });
+      }
+    }
+
     const newGrandTotal = calculateEditGrandTotal();
     const currentAmountPaid = editingInvoice.amountPaid || 0;
     const newRemainingBalance = Math.max(0, newGrandTotal - currentAmountPaid);
@@ -300,7 +377,7 @@ export default function InvoiceTracking() {
     }
 
     try {
-      const updatedInvoice: any = {
+      const updatedInvoice: Partial<SalesInvoice> = {
         items: editItems,
         subtotal: calculateEditSubtotal(),
         discountType: editDiscountType,
@@ -328,6 +405,9 @@ export default function InvoiceTracking() {
       }
       if (newDeliveryStatus !== editingInvoice.deliveryStatus) {
         statusChangedMsg += `\nDelivery status changed to: ${newDeliveryStatus}`;
+      }
+      if (itemsToReturn.length > 0) {
+        statusChangedMsg += `\n${itemsToReturn.length} item(s) returned to inventory.`;
       }
       alert(statusChangedMsg);
       
@@ -402,7 +482,7 @@ export default function InvoiceTracking() {
     if (!confirm(warningMessage)) return;
 
     try {
-      const updateData: any = {
+      const updateData: Partial<SalesInvoice> = {
         deliveryStatus: 'Partially Delivered',
         deliveryDate: new Date(deliveryDate),
         deliveryNotes: deliveryNotes
@@ -477,8 +557,8 @@ export default function InvoiceTracking() {
 
   const processDeliveryUpdate = async (invoice: SalesInvoice, status: string) => {
     try {
-      const updateData: any = {
-        deliveryStatus: status,
+      const updateData: Partial<SalesInvoice> = {
+        deliveryStatus: status as SalesInvoice['deliveryStatus'],
       };
       
       if (status === 'Delivered') {
@@ -548,7 +628,7 @@ export default function InvoiceTracking() {
       }
 
       // Round to 2 decimal places to avoid floating point issues
-      const updateData: any = {
+      const updateData: Partial<SalesInvoice> = {
         paymentStatus: newStatus,
         amountPaid: Math.round(totalPaid * 100) / 100,
         remainingBalance: Math.max(0, Math.round(remainingBalance * 100) / 100),
@@ -581,7 +661,7 @@ export default function InvoiceTracking() {
     // Allow changing back to Unpaid only
     if (status === 'Unpaid') {
       try {
-        const updateData: any = {
+        const updateData: Partial<SalesInvoice> = {
           paymentStatus: 'Unpaid',
           amountPaid: 0,
           remainingBalance: invoice.grandTotal,
@@ -635,7 +715,7 @@ export default function InvoiceTracking() {
     const streetAddress = addressParts.length > 2 ? addressParts.slice(0, -2).join(', ') : invoice.clientAddress;
     
     // Create PDF document
-    let pdfContent = `
+    const pdfContent = `
 
 ${'='.repeat(80)}
                       NOTA DE VENTA
@@ -701,8 +781,8 @@ ${'='.repeat(80)}
   };
 
   const sortedInvoices = [...invoices].sort((a, b) => {
-    let aVal: any = a[sortConfig.key as keyof SalesInvoice];
-    let bVal: any = b[sortConfig.key as keyof SalesInvoice];
+    let aVal: string | number | Date | undefined = a[sortConfig.key as keyof SalesInvoice];
+    let bVal: string | number | Date | undefined = b[sortConfig.key as keyof SalesInvoice];
 
     // Handle cell sorting
     if (typeof aVal === 'string') {
@@ -724,6 +804,66 @@ ${'='.repeat(80)}
   const SortIcon = ({ columnKey }: { columnKey: string }) => {
     if (sortConfig.key !== columnKey) return <span className="text-gray-400">↕</span>;
     return sortConfig.direction === 'asc' ? <span>↑</span> : <span>↓</span>;
+  };
+
+  const handleDeleteInvoice = (invoice: SalesInvoice) => {
+    // Check if invoice was delivered - if so, items need to be returned to inventory
+    const wasDelivered = invoice.deliveryStatus === 'Delivered' || invoice.deliveryStatus === 'Partially Delivered';
+    
+    if (wasDelivered) {
+      // Calculate items to return
+      const itemsToReturn: Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}> = [];
+      
+      invoice.items.forEach(item => {
+        const inventoryItem = inventory.find(inv => inv.sku === item.sku);
+        if (inventoryItem) {
+          const currentStock = inventoryItem.ecuadorStock;
+          const newStock = currentStock + item.quantity;
+          
+          itemsToReturn.push({
+            description: item.description,
+            sku: item.sku,
+            quantity: item.quantity,
+            currentStock,
+            newStock
+          });
+        }
+      });
+      
+      if (itemsToReturn.length > 0) {
+        setItemsReturningToStock(itemsToReturn);
+        setInvoiceToDelete(invoice);
+        setShowDeleteModal(true);
+        return;
+      }
+    }
+    
+    // If not delivered or no items to return, proceed with simple confirmation
+    if (confirm(t('invoiceTracking.deleteInvoiceConfirm'))) {
+      deleteInvoiceAndReturnItems(invoice, []);
+    }
+  };
+
+  const deleteInvoiceAndReturnItems = async (invoice: SalesInvoice, itemsToReturn: Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}>) => {
+    try {
+      // Return items to inventory first
+      for (const itemReturn of itemsToReturn) {
+        const inventoryItem = inventory.find(inv => inv.sku === itemReturn.sku);
+        if (inventoryItem) {
+          await updateInventoryItem(inventoryItem.id, {
+            ecuadorStock: itemReturn.newStock
+          });
+        }
+      }
+      
+      // Delete the invoice
+      await deleteInvoice(invoice.id);
+      alert(t('invoiceTracking.invoiceDeleted'));
+      loadInvoices();
+    } catch (error) {
+      console.error('Error deleting invoice:', error);
+      alert(t('invoiceTracking.errorDeletingInvoice'));
+    }
   };
 
   const metrics = calculateMetrics();
@@ -937,7 +1077,7 @@ ${'='.repeat(80)}
                   <td className="px-6 py-4 whitespace-nowrap">
                     <select
                       value={invoice.paymentStatus}
-                      onChange={(e) => handleUpdatePayment(invoice, e.target.value as any)}
+                      onChange={(e) => handleUpdatePayment(invoice, e.target.value as SalesInvoice['paymentStatus'])}
                       className="px-3 py-1 border border-gray-300 rounded text-sm"
                     >
                       <option value="Unpaid">🔴 {t('invoiceTracking.unpaid')}</option>
@@ -948,7 +1088,7 @@ ${'='.repeat(80)}
                   <td className="px-6 py-4 whitespace-nowrap">
                     <select
                       value={invoice.deliveryStatus}
-                      onChange={(e) => handleUpdateDelivery(invoice, e.target.value as any)}
+                      onChange={(e) => handleUpdateDelivery(invoice, e.target.value as SalesInvoice['deliveryStatus'])}
                       className="px-3 py-1 border border-gray-300 rounded text-sm"
                     >
                       <option value="Pending">⏳ {t('invoiceTracking.pending')}</option>
@@ -985,6 +1125,13 @@ ${'='.repeat(80)}
                         title={t('invoiceTracking.generatePdf')}
                       >
                         📄
+                      </button>
+                      <button
+                        onClick={() => handleDeleteInvoice(invoice)}
+                        className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200"
+                        title={t('invoiceTracking.deleteInvoice')}
+                      >
+                        🗑️
                       </button>
                     </div>
                   </td>
@@ -1075,14 +1222,14 @@ ${'='.repeat(80)}
                             <input
                               type="number"
                               min="1"
-                              max={(item as any).maxQuantity || undefined}
+                              max={(item as SalesInvoiceLine & { maxQuantity?: number }).maxQuantity || undefined}
                               value={item.quantity}
                               onChange={(e) => handleEditItem(index, 'quantity', e.target.value)}
                               className="w-20 px-2 py-1 border rounded text-center"
                             />
-                            {(item as any).maxQuantity && (
+                            {(item as SalesInvoiceLine & { maxQuantity?: number }).maxQuantity && (
                               <div className="text-xs text-gray-500">
-                                {t('invoiceTracking.max')}: {(item as any).maxQuantity}
+                                {t('invoiceTracking.max')}: {(item as SalesInvoiceLine & { maxQuantity?: number }).maxQuantity}
                               </div>
                             )}
                           </div>
@@ -1594,10 +1741,32 @@ ${'='.repeat(80)}
                 </div>
               </div>
             )}
+
+            {itemsReturningToStock.length > 0 && (
+              <div className="bg-green-50 rounded-lg p-4 mb-4">
+                <h4 className="font-semibold text-gray-900 mb-3">{t('invoiceTracking.itemsReturningToStock')}</h4>
+                <div className="space-y-2">
+                  {itemsReturningToStock.map((item, index) => (
+                    <div key={index} className="flex justify-between items-center bg-white rounded p-2">
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">{item.description}</div>
+                        <div className="text-sm text-gray-600">{t('invoiceTracking.quantityReturning')}: {item.quantity} {t('invoiceTracking.units')}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm text-gray-600">{t('invoiceTracking.ecuadorStock')}</div>
+                        <div className="font-semibold text-green-600">
+                          {item.currentStock} → {item.newStock}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             
             <div className="bg-blue-50 rounded-lg p-3 mb-4">
               <p className="text-sm text-blue-800">
-                <strong>{t('invoiceTracking.note')}</strong> {t('invoiceTracking.stockLevelsWillBeReduced')}
+                <strong>{t('invoiceTracking.note')}</strong> {itemsReturningToStock.length > 0 ? t('invoiceTracking.returningToStock') : t('invoiceTracking.stockLevelsWillBeReduced')}
               </p>
             </div>
             
@@ -1606,6 +1775,7 @@ ${'='.repeat(80)}
                 onClick={() => {
                   setShowWarningModal(false);
                   setWarningItems([]);
+                  setItemsReturningToStock([]);
                   setWarningCallback(null);
                 }}
                 className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
@@ -1621,6 +1791,71 @@ ${'='.repeat(80)}
                 className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium"
               >
                 {t('invoiceTracking.confirmAndUpdate')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && invoiceToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="text-4xl">🗑️</div>
+              <h3 className="text-xl font-bold text-red-600">{t('invoiceTracking.deleteInvoice')}</h3>
+            </div>
+            
+            <p className="text-gray-700 mb-4">
+              {t('invoiceTracking.deleteInvoiceConfirm')}
+            </p>
+            
+            {itemsReturningToStock.length > 0 && (
+              <div className="bg-green-50 rounded-lg p-4 mb-4">
+                <h4 className="font-semibold text-gray-900 mb-3">{t('invoiceTracking.itemsReturningToStock')}</h4>
+                <p className="text-sm text-gray-700 mb-3">{t('invoiceTracking.itemsReturningToStockMessage')}</p>
+                <div className="space-y-2">
+                  {itemsReturningToStock.map((item, index) => (
+                    <div key={index} className="flex justify-between items-center bg-white rounded p-2">
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">{item.description}</div>
+                        <div className="text-sm text-gray-600">{t('invoiceTracking.quantityReturning')}: {item.quantity} {t('invoiceTracking.units')}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm text-gray-600">{t('invoiceTracking.ecuadorStock')}</div>
+                        <div className="font-semibold text-green-600">
+                          {item.currentStock} → {item.newStock}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setInvoiceToDelete(null);
+                  setItemsReturningToStock([]);
+                }}
+                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
+              >
+                {t('invoiceTracking.cancel')}
+              </button>
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  if (invoiceToDelete) {
+                    deleteInvoiceAndReturnItems(invoiceToDelete, itemsReturningToStock);
+                  }
+                  setInvoiceToDelete(null);
+                  setItemsReturningToStock([]);
+                }}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium"
+              >
+                {t('invoiceTracking.deleteInvoice')}
               </button>
             </div>
           </div>

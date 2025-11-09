@@ -113,7 +113,7 @@ export async function addPurchaseOrdersBulk(orders: Omit<PurchaseOrder, 'id' | '
 export async function updatePurchaseOrder(id: string, updates: Partial<PurchaseOrder>): Promise<void> {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
-    const { id: _, createdAt, ...updateData } = updates;
+    const { id: _, createdAt: _createdAt, ...updateData } = updates;
     await updateDoc(docRef, updateData);
   } catch (error) {
     console.error('Error updating purchase order:', error);

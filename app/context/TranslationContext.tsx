@@ -49,7 +49,7 @@ export function TranslationProvider({ children }: { children: ReactNode }) {
   // Translation function
   const t = (key: string): string => {
     const keys = key.split('.');
-    let value: any = messagesMap[locale];
+    let value: unknown = messagesMap[locale];
     
     for (const k of keys) {
       if (value && typeof value === 'object' && k in value) {
@@ -89,7 +89,7 @@ export function useTranslation() {
     // Fallback to English translations if context is not available
     const fallbackT = (key: string): string => {
       const keys = key.split('.');
-      let value: any = messagesMap.en;
+      let value: unknown = messagesMap.en;
       for (const k of keys) {
         if (value && typeof value === 'object' && k in value) {
           value = value[k];

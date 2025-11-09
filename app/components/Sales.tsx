@@ -166,7 +166,7 @@ export default function Sales() {
 
     try {
       // Invoice number will be auto-generated in createInvoice
-      const newInvoice: any = {
+      const newInvoice: Omit<SalesInvoice, 'id' | 'invoiceNumber' | 'createdAt'> = {
         invoiceNumber: 'TEMP', // Will be replaced with sequential number
         clientId: selectedClient?.id || '',
         clientName: selectedClient?.name || 'Walk-in Customer',

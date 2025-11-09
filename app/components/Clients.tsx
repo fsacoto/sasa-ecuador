@@ -154,8 +154,8 @@ export default function Clients() {
   };
 
   const sortedClients = [...filteredClients].sort((a, b) => {
-    let aVal: any = a[sortConfig.key as keyof Client];
-    let bVal: any = b[sortConfig.key as keyof Client];
+    let aVal: string | number | Date | undefined = a[sortConfig.key as keyof Client];
+    let bVal: string | number | Date | undefined = b[sortConfig.key as keyof Client];
 
     if (typeof aVal === 'string') {
       aVal = aVal.toLowerCase();

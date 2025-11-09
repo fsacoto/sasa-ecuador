@@ -59,10 +59,11 @@ export async function GET(request: NextRequest) {
         'Cache-Control': 'no-cache',
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error downloading image:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to download image';
     return NextResponse.json(
-      { error: error.message || 'Failed to download image' },
+      { error: errorMessage },
       { status: 500 }
     );
   }

@@ -63,7 +63,7 @@ export async function updateSupplier(id: string, updates: Partial<Supplier>): Pr
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
     // Remove id from updates if present (it shouldn't be there)
-    const { id: _, createdAt, ...updateData } = updates;
+    const { id: _, createdAt: _createdAt, ...updateData } = updates;
     await updateDoc(docRef, updateData);
   } catch (error) {
     console.error('Error updating supplier:', error);

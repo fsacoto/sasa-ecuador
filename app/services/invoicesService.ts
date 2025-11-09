@@ -6,11 +6,10 @@ import {
   setDoc, 
   deleteDoc, 
   query, 
-  where,
-  orderBy 
+  where
 } from 'firebase/firestore';
 import { db } from '../utils/firebase';
-import { SalesInvoice } from '../types';
+import { SalesInvoice, PaymentRecord } from '../types';
 
 const INVOICES_COLLECTION = 'invoices';
 
@@ -65,7 +64,7 @@ export async function getAllInvoices(filters?: {
         createdAt: createdDate,
         deliveryDate: data.deliveryDate?.toDate?.() || undefined,
         paymentDate: data.paymentDate?.toDate?.() || undefined,
-        paymentHistory: (data.paymentHistory || []).map((p: any) => ({
+        paymentHistory: (data.paymentHistory || []).map((p: PaymentRecord & { date?: { toDate?: () => Date } }) => ({
           ...p, 
           date: p.date?.toDate?.() || new Date()
         }))
@@ -109,7 +108,7 @@ export async function getInvoice(invoiceId: string): Promise<SalesInvoice | null
         createdAt: data.createdAt?.toDate() || new Date(),
         deliveryDate: data.deliveryDate?.toDate(),
         paymentDate: data.paymentDate?.toDate(),
-        paymentHistory: data.paymentHistory?.map((p: any) => ({...p, date: p.date?.toDate() || new Date()})) || []
+        paymentHistory: data.paymentHistory?.map((p: PaymentRecord & { date?: { toDate?: () => Date } }) => ({...p, date: p.date?.toDate() || new Date()})) || []
       } as SalesInvoice;
     }
     return null;
@@ -164,7 +163,7 @@ export async function createInvoice(invoice: Omit<SalesInvoice, 'id' | 'createdA
     }
     
     // Filter out undefined values
-    const newInvoice: any = {
+    const newInvoice: SalesInvoice = {
       ...invoice,
       invoiceNumber: invoiceNumber,
       createdAt: new Date(),
@@ -195,7 +194,7 @@ export async function updateInvoice(invoiceId: string, updates: Partial<SalesInv
     const docRef = doc(db, INVOICES_COLLECTION, invoiceId);
     
     // Filter out undefined values
-    const cleanUpdates: any = { ...updates };
+    const cleanUpdates: Partial<SalesInvoice> = { ...updates };
     Object.keys(cleanUpdates).forEach(key => {
       if (cleanUpdates[key] === undefined) {
         delete cleanUpdates[key];

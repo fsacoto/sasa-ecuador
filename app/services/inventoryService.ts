@@ -89,7 +89,7 @@ export async function addInventoryItemsBulk(items: Omit<InventoryItem, 'id' | 'c
 export async function updateInventoryItem(id: string, updates: Partial<InventoryItem>): Promise<void> {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
-    const { id: _, createdAt, ...updateData } = updates;
+    const { id: _, createdAt: _createdAt, ...updateData } = updates;
     await updateDoc(docRef, updateData);
   } catch (error) {
     console.error('Error updating inventory item:', error);

@@ -1,7 +1,6 @@
 import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy, QueryDocumentSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { CMSContent, ContentStatus } from '../types';
-import type * as FirebaseFirestore from 'firebase/firestore';
 
 const COLLECTION_NAME = 'cmsContent';
 
@@ -159,7 +158,7 @@ export async function addCMSContent(content: Omit<CMSContent, 'id' | 'metadata'>
 export async function updateCMSContent(id: string, updates: Partial<CMSContent>): Promise<void> {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
-    const { id: _, metadata, ...updateData } = updates;
+    const { id: _, metadata: _metadata, ...updateData } = updates;
     
     // Remove undefined values (Firestore doesn't accept undefined)
     const cleanedUpdateData = removeUndefined(updateData as Record<string, unknown>);
