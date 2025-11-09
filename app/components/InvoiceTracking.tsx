@@ -195,7 +195,34 @@ export default function InvoiceTracking() {
 
   const openEditModal = (invoice: SalesInvoice) => {
     setEditingInvoice(invoice);
-    setEditItems([...invoice.items]);
+    
+    // Copy items and enrich with maxQuantity from inventory
+    const enrichedItems = invoice.items.map(item => {
+      // Find the inventory item by SKU
+      const inventoryItem = inventory.find(inv => inv.sku === item.sku);
+      
+      if (inventoryItem) {
+        // Calculate maxQuantity: current stock + original quantity
+        // This allows increasing quantity up to available stock
+        // (original quantity might have been deducted from stock when invoice was created)
+        // For sales role, only use Ecuador stock; otherwise use total stock
+        const currentStock = user?.role === 'sales' 
+          ? inventoryItem.ecuadorStock 
+          : (inventoryItem.ecuadorStock + inventoryItem.usaStock);
+        const maxQuantity = currentStock + item.quantity;
+        
+        return {
+          ...item,
+          maxQuantity: maxQuantity
+        } as SalesInvoiceLine & { maxQuantity?: number };
+      }
+      
+      // If inventory item not found, still include the item but without maxQuantity
+      // This handles cases where items might have been deleted from inventory
+      return item;
+    });
+    
+    setEditItems(enrichedItems);
     setEditDiscountType(invoice.discountType || 'percentage');
     setEditDiscountValue(invoice.discountValue || 0);
     setEditPaymentMethod(invoice.paymentMethod || '');
