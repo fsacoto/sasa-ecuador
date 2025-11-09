@@ -869,13 +869,11 @@ export default function InvoiceTracking() {
   };
 
   const handleDeleteInvoice = (invoice: SalesInvoice) => {
-    // Check if invoice was delivered - if so, items need to be returned to inventory
+    // Always calculate items that could be returned (if invoice was delivered)
     const wasDelivered = invoice.deliveryStatus === 'Delivered' || invoice.deliveryStatus === 'Partially Delivered';
+    const itemsToReturn: Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}> = [];
     
     if (wasDelivered) {
-      // Calculate items to return
-      const itemsToReturn: Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}> = [];
-      
       invoice.items.forEach(item => {
         const inventoryItem = inventory.find(inv => inv.sku === item.sku);
         if (inventoryItem) {
@@ -891,19 +889,12 @@ export default function InvoiceTracking() {
           });
         }
       });
-      
-      if (itemsToReturn.length > 0) {
-        setItemsReturningToStock(itemsToReturn);
-        setInvoiceToDelete(invoice);
-        setShowDeleteModal(true);
-        return;
-      }
     }
     
-    // If not delivered or no items to return, proceed with simple confirmation
-    if (confirm(t('invoiceTracking.deleteInvoiceConfirm'))) {
-      deleteInvoiceAndReturnItems(invoice, []);
-    }
+    // Always show modal with both options
+    setItemsReturningToStock(itemsToReturn);
+    setInvoiceToDelete(invoice);
+    setShowDeleteModal(true);
   };
 
   const deleteInvoiceAndReturnItems = async (invoice: SalesInvoice, itemsToReturn: Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}>) => {
@@ -1750,7 +1741,7 @@ export default function InvoiceTracking() {
 
             <div className="flex gap-2 mt-6">
               <button
-                onClick={() => generatePDF(detailsInvoice)}
+                onClick={() => handleGeneratePDFClick(detailsInvoice)}
                 className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
               >
                 {t('invoiceTracking.generatePdf')}
@@ -1868,12 +1859,12 @@ export default function InvoiceTracking() {
               <h3 className="text-xl font-bold text-red-600">{t('invoiceTracking.deleteInvoice')}</h3>
             </div>
             
-            <p className="text-gray-700 mb-4">
-              {t('invoiceTracking.deleteInvoiceConfirm')}
+            <p className="text-gray-700 mb-6 font-medium">
+              {t('invoiceTracking.deleteInvoiceOptions')}
             </p>
             
             {itemsReturningToStock.length > 0 && (
-              <div className="bg-green-50 rounded-lg p-4 mb-4">
+              <div className="bg-blue-50 rounded-lg p-4 mb-6">
                 <h4 className="font-semibold text-gray-900 mb-3">{t('invoiceTracking.itemsReturningToStock')}</h4>
                 <p className="text-sm text-gray-700 mb-3">{t('invoiceTracking.itemsReturningToStockMessage')}</p>
                 <div className="space-y-2">
@@ -1895,17 +1886,9 @@ export default function InvoiceTracking() {
               </div>
             )}
             
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowDeleteModal(false);
-                  setInvoiceToDelete(null);
-                  setItemsReturningToStock([]);
-                }}
-                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
-              >
-                {t('invoiceTracking.cancel')}
-              </button>
+            {/* Two Options */}
+            <div className="space-y-3 mb-6">
+              {/* Option 1: Reverse and Return */}
               <button
                 onClick={() => {
                   setShowDeleteModal(false);
@@ -1915,11 +1898,40 @@ export default function InvoiceTracking() {
                   setInvoiceToDelete(null);
                   setItemsReturningToStock([]);
                 }}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium"
+                className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-left transition-colors"
               >
-                {t('invoiceTracking.deleteInvoice')}
+                <div className="font-semibold mb-1">{t('invoiceTracking.reverseAndReturn')}</div>
+                <div className="text-sm opacity-90">{t('invoiceTracking.reverseAndReturnDescription')}</div>
+              </button>
+              
+              {/* Option 2: Cancel without affecting */}
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  if (invoiceToDelete) {
+                    deleteInvoiceAndReturnItems(invoiceToDelete, []);
+                  }
+                  setInvoiceToDelete(null);
+                  setItemsReturningToStock([]);
+                }}
+                className="w-full px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-left transition-colors"
+              >
+                <div className="font-semibold mb-1">{t('invoiceTracking.cancelWithoutAffecting')}</div>
+                <div className="text-sm opacity-90">{t('invoiceTracking.cancelWithoutAffectingDescription')}</div>
               </button>
             </div>
+            
+            {/* Cancel Button */}
+            <button
+              onClick={() => {
+                setShowDeleteModal(false);
+                setInvoiceToDelete(null);
+                setItemsReturningToStock([]);
+              }}
+              className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
+            >
+              {t('invoiceTracking.cancel')}
+            </button>
           </div>
         </div>
       )}

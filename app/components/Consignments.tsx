@@ -19,6 +19,7 @@ export default function Consignments() {
   const [consignments, setConsignments] = useState<Consignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedConsignment, setSelectedConsignment] = useState<Consignment | null>(null);
+  const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc' | 'desc'}>({key: 'dateCreated', direction: 'desc'});
   
   // Create consignment state
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
@@ -168,12 +169,12 @@ export default function Consignments() {
 
   const handleCreateConsignment = async () => {
     if (!selectedClient) {
-      alert('Please select a client');
+      alert(t('consignments.pleaseSelectClient'));
       return;
     }
 
     if (consignmentItems.length === 0) {
-      alert('Please add at least one item');
+      alert(t('consignments.pleaseAddItems'));
       return;
     }
 
@@ -227,14 +228,14 @@ export default function Consignments() {
         }
       }
 
-      alert('Consignment created successfully');
+      alert(t('consignments.consignmentCreated'));
       setView('list');
       setSelectedClient(null);
       setConsignmentItems([]);
       loadConsignments();
     } catch (error) {
       console.error('Error creating consignment:', error);
-      alert('Error creating consignment');
+      alert(t('consignments.errorCreating'));
     }
   };
 
@@ -243,7 +244,7 @@ export default function Consignments() {
 
     const hasSales = Object.values(salesQuantities).some(qty => qty > 0);
     if (!hasSales) {
-      alert('Please enter quantities to sell');
+      alert(t('consignments.pleaseEnterQuantitiesToSell'));
       return;
     }
 
@@ -339,7 +340,7 @@ export default function Consignments() {
         });
       }
 
-      alert('Sales registered successfully');
+      alert(t('consignments.salesRegistered'));
       setSalesQuantities({});
       loadConsignments();
       // Reload selected consignment
@@ -350,7 +351,7 @@ export default function Consignments() {
       }
     } catch (error: any) {
       console.error('Error registering sales:', error);
-      alert(error.message || 'Error registering sales');
+      alert(error.message || t('consignments.errorRegisteringSales'));
     }
   };
 
@@ -359,7 +360,7 @@ export default function Consignments() {
 
     const hasReturns = Object.values(returnQuantities).some(qty => qty > 0);
     if (!hasReturns) {
-      alert('Please enter quantities to return');
+      alert(t('consignments.pleaseEnterQuantitiesToReturn'));
       return;
     }
 
@@ -400,7 +401,7 @@ export default function Consignments() {
         }
       }
 
-      alert('Returns registered successfully');
+      alert(t('consignments.returnsRegistered'));
       setReturnQuantities({});
       loadConsignments();
       // Reload selected consignment
@@ -411,7 +412,7 @@ export default function Consignments() {
       }
     } catch (error: any) {
       console.error('Error registering returns:', error);
-      alert(error.message || 'Error registering returns');
+      alert(error.message || t('consignments.errorRegisteringReturns'));
     }
   };
 
@@ -459,13 +460,67 @@ export default function Consignments() {
       setPdfConsignment(null);
     } catch (error) {
       console.error('Error generating PDF:', error);
-      alert('Failed to generate PDF. Please try again.');
+      alert(t('consignments.errorGeneratingPdf'));
       setShowPdfLanguageModal(false);
       setPdfConsignment(null);
     }
   };
 
   const filteredInventory = getFilteredInventory();
+
+  const handleSort = (key: string) => {
+    setSortConfig(current => {
+      if (current.key === key) {
+        return { key, direction: current.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const sortedConsignments = [...consignments].sort((a, b) => {
+    let aVal: string | number | Date | undefined;
+    let bVal: string | number | Date | undefined;
+
+    // Handle special calculated fields
+    if (sortConfig.key === 'totalItemsDelivered') {
+      aVal = calculateTotalItems(a.items);
+      bVal = calculateTotalItems(b.items);
+    } else if (sortConfig.key === 'totalSold') {
+      aVal = calculateTotalSold(a.items);
+      bVal = calculateTotalSold(b.items);
+    } else if (sortConfig.key === 'totalReturned') {
+      aVal = calculateTotalReturned(a.items);
+      bVal = calculateTotalReturned(b.items);
+    } else {
+      aVal = a[sortConfig.key as keyof Consignment];
+      bVal = b[sortConfig.key as keyof Consignment];
+    }
+
+    // Handle string sorting
+    if (typeof aVal === 'string') {
+      aVal = aVal.toLowerCase();
+      bVal = (bVal as string).toLowerCase();
+    }
+
+    // Handle date sorting
+    if (aVal instanceof Date) {
+      aVal = aVal.getTime();
+      bVal = (bVal as Date).getTime();
+    }
+
+    // Handle undefined/null values
+    if (aVal === undefined || aVal === null) return 1;
+    if (bVal === undefined || bVal === null) return -1;
+
+    if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+    if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const SortIcon = ({ columnKey }: { columnKey: string }) => {
+    if (sortConfig.key !== columnKey) return <span className="text-gray-400">↕</span>;
+    return sortConfig.direction === 'asc' ? <span>↑</span> : <span>↓</span>;
+  };
 
   // List View
   if (view === 'list') {
@@ -474,40 +529,96 @@ export default function Consignments() {
         <div className="space-y-6">
         <div className="flex justify-between items-center">
           <div>
-            <h2 className="text-2xl font-semibold text-gray-900">Consignments</h2>
-            <p className="text-sm text-gray-500 mt-1">Manage consignment deliveries and sales</p>
+            <h2 className="text-2xl font-semibold text-gray-900">{t('consignments.title')}</h2>
+            <p className="text-sm text-gray-500 mt-1">{t('consignments.subtitle')}</p>
           </div>
           <button
             onClick={() => setView('create')}
             className="px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors"
           >
-            Create New Consignment
+            {t('consignments.createNew')}
           </button>
         </div>
 
         {loading ? (
-          <div className="text-center py-12">Loading consignments...</div>
+          <div className="text-center py-12">{t('consignments.loading')}</div>
         ) : consignments.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-            <p className="text-gray-500">No consignments found</p>
+            <p className="text-gray-500">{t('consignments.noConsignments')}</p>
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
             <table className="w-full min-w-max">
               <thead className="bg-gray-50 border-b-2 border-gray-200">
                 <tr>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase">Consignment ID</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase">Client Name</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase">Date Created</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase">Status</th>
-                  <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase">Total Items Delivered</th>
-                  <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase">Total Sold</th>
-                  <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase">Total Returned</th>
-                  <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase">Actions</th>
+                  <th 
+                    className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('consignmentId')}
+                  >
+                    <div className="flex items-center gap-2">
+                      {t('consignments.consignmentId')}
+                      <SortIcon columnKey="consignmentId" />
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('clientName')}
+                  >
+                    <div className="flex items-center gap-2">
+                      {t('consignments.clientName')}
+                      <SortIcon columnKey="clientName" />
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('dateCreated')}
+                  >
+                    <div className="flex items-center gap-2">
+                      {t('consignments.dateCreated')}
+                      <SortIcon columnKey="dateCreated" />
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('status')}
+                  >
+                    <div className="flex items-center gap-2">
+                      {t('consignments.status')}
+                      <SortIcon columnKey="status" />
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('totalItemsDelivered')}
+                  >
+                    <div className="flex items-center justify-center gap-2">
+                      {t('consignments.totalItemsDelivered')}
+                      <SortIcon columnKey="totalItemsDelivered" />
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('totalSold')}
+                  >
+                    <div className="flex items-center justify-center gap-2">
+                      {t('consignments.totalSold')}
+                      <SortIcon columnKey="totalSold" />
+                    </div>
+                  </th>
+                  <th 
+                    className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort('totalReturned')}
+                  >
+                    <div className="flex items-center justify-center gap-2">
+                      {t('consignments.totalReturned')}
+                      <SortIcon columnKey="totalReturned" />
+                    </div>
+                  </th>
+                  <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase">{t('consignments.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {consignments.map((consignment) => (
+                {sortedConsignments.map((consignment) => (
                   <tr key={consignment.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="font-mono text-sm font-medium text-[#4f0c1b]">{consignment.consignmentId}</div>
@@ -524,7 +635,9 @@ export default function Consignments() {
                         consignment.status === 'Partially Closed' ? 'bg-yellow-100 text-yellow-800' :
                         'bg-green-100 text-green-800'
                       }`}>
-                        {consignment.status}
+                        {consignment.status === 'Open' ? t('consignments.statusOpen') :
+                         consignment.status === 'Partially Closed' ? t('consignments.statusPartiallyClosed') :
+                         t('consignments.statusClosed')}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
@@ -541,7 +654,7 @@ export default function Consignments() {
                         onClick={() => handleViewDetails(consignment)}
                         className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200"
                       >
-                        View Details
+                        {t('consignments.viewDetails')}
                       </button>
                     </td>
                   </tr>
@@ -598,8 +711,8 @@ export default function Consignments() {
         <div className="space-y-6">
         <div className="flex justify-between items-center">
           <div>
-            <h2 className="text-2xl font-semibold text-gray-900">Create New Consignment</h2>
-            <p className="text-sm text-gray-500 mt-1">Select client and add items to deliver</p>
+            <h2 className="text-2xl font-semibold text-gray-900">{t('consignments.createTitle')}</h2>
+            <p className="text-sm text-gray-500 mt-1">{t('consignments.createSubtitle')}</p>
           </div>
           <button
             onClick={() => {
@@ -609,31 +722,31 @@ export default function Consignments() {
             }}
             className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
           >
-            Cancel
+            {t('consignments.cancel')}
           </button>
         </div>
 
         {/* Client Selection */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Client Information</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('consignments.clientInformation')}</h3>
           {selectedClient ? (
             <div className="space-y-4">
               <div className="flex justify-between items-start">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
                   <div>
-                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Client Name</div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('consignments.clientNameLabel')}</div>
                     <div className="font-semibold text-gray-900">{selectedClient.name}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Country</div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('consignments.country')}</div>
                     <div className="font-medium text-gray-900">{selectedClient.country === 'Ecuador' ? '🇪🇨 Ecuador' : '🇺🇸 USA'}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Address</div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('consignments.address')}</div>
                     <div className="text-gray-700">{selectedClient.address}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">City</div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('consignments.city')}</div>
                     <div className="text-gray-700">{selectedClient.city}</div>
                   </div>
                 </div>
@@ -642,7 +755,7 @@ export default function Consignments() {
                     onClick={() => setSelectedClient(null)}
                     className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
                   >
-                    Change Client
+                    {t('consignments.changeClient')}
                   </button>
                 </div>
               </div>
@@ -668,14 +781,14 @@ export default function Consignments() {
         {/* Items Selection */}
         {selectedClient && (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Items to Deliver</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('consignments.itemsToDeliver')}</h3>
             
             <div className="mb-4 relative" ref={dropdownRef}>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Search SKU</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{t('consignments.searchSku')}</label>
               <input
                 ref={searchInputRef}
                 type="text"
-                placeholder="Search by SKU, name, or description"
+                placeholder={t('consignments.searchSkuPlaceholder')}
                 value={searchTerm}
                 onChange={(e) => {
                   setSearchTerm(e.target.value);
@@ -695,7 +808,7 @@ export default function Consignments() {
                     >
                       <div className="font-mono text-sm font-semibold text-[#4f0c1b]">{product.sku}</div>
                       <div className="text-sm text-gray-600">{product.name}</div>
-                      <div className="text-xs text-gray-500">Stock: {product.ecuadorStock} | {product.category} - {product.line}</div>
+                      <div className="text-xs text-gray-500">{t('consignments.stock')}: {product.ecuadorStock} | {product.category} - {product.line}</div>
                     </div>
                   ))}
                 </div>
@@ -707,10 +820,10 @@ export default function Consignments() {
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b-2 border-gray-200">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Quantity</th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('consignments.sku')}</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('consignments.description')}</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">{t('consignments.quantity')}</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">{t('consignments.actions')}</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -735,7 +848,7 @@ export default function Consignments() {
                                 onChange={(e) => handleQuantityChange(index, parseInt(e.target.value) || 1)}
                                 className="w-20 px-2 py-1 border border-gray-300 rounded text-center"
                               />
-                              <div className="text-xs text-gray-500">Max: {maxQuantity}</div>
+                              <div className="text-xs text-gray-500">{t('consignments.max')}: {maxQuantity}</div>
                             </div>
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap text-center">
@@ -743,7 +856,7 @@ export default function Consignments() {
                               onClick={() => removeItem(index)}
                               className="text-red-600 hover:text-red-700 text-sm font-medium"
                             >
-                              Remove
+                              {t('consignments.remove')}
                             </button>
                           </td>
                         </tr>
@@ -754,7 +867,7 @@ export default function Consignments() {
               </div>
             ) : (
               <div className="text-center py-12 text-gray-500">
-                No items added. Search and add items above.
+                {t('consignments.noItemsAdded')}
               </div>
             )}
 
@@ -764,7 +877,7 @@ export default function Consignments() {
                   onClick={handleCreateConsignment}
                   className="w-full px-6 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium"
                 >
-                  Create Consignment
+                  {t('consignments.createConsignment')}
                 </button>
               </div>
             )}
@@ -819,14 +932,14 @@ export default function Consignments() {
         <div className="flex justify-between items-center">
           <div>
             <h2 className="text-2xl font-semibold text-gray-900">{selectedConsignment.consignmentId}</h2>
-            <p className="text-sm text-gray-500 mt-1">Client: {selectedConsignment.clientName}</p>
+            <p className="text-sm text-gray-500 mt-1">{t('consignments.client')}: {selectedConsignment.clientName}</p>
           </div>
           <div className="flex gap-2">
             <button
               onClick={() => handleGeneratePDFClick(selectedConsignment)}
               className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
             >
-              Generate Consignment Note (PDF)
+              {t('consignments.generatePdf')}
             </button>
             <button
               onClick={() => {
@@ -835,24 +948,24 @@ export default function Consignments() {
               }}
               className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
             >
-              Back to List
+              {t('consignments.backToList')}
             </button>
           </div>
         </div>
 
         {/* Items Delivered Table */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Items Delivered</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('consignments.itemsDelivered')}</h3>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b-2 border-gray-200">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Qty Delivered</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Qty Sold</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Qty Returned</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Remaining</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('consignments.sku')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('consignments.description')}</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">{t('consignments.qtyDelivered')}</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">{t('consignments.qtySold')}</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">{t('consignments.qtyReturned')}</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">{t('consignments.remaining')}</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -888,16 +1001,16 @@ export default function Consignments() {
 
         {/* Register Sales Section */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Register Sales from Consignment</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('consignments.registerSales')}</h3>
           <div className="space-y-4">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-3 py-2 text-left">SKU</th>
-                    <th className="px-3 py-2 text-left">Description</th>
-                    <th className="px-3 py-2 text-center">Available</th>
-                    <th className="px-3 py-2 text-center">Qty Sold</th>
+                    <th className="px-3 py-2 text-left">{t('consignments.sku')}</th>
+                    <th className="px-3 py-2 text-left">{t('consignments.description')}</th>
+                    <th className="px-3 py-2 text-center">{t('consignments.available')}</th>
+                    <th className="px-3 py-2 text-center">{t('consignments.qtySold')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -929,23 +1042,23 @@ export default function Consignments() {
               onClick={handleRegisterSales}
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
             >
-              Register Sales
+              {t('consignments.registerSalesButton')}
             </button>
           </div>
         </div>
 
         {/* Register Returns Section */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Register Returns</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('consignments.registerReturns')}</h3>
           <div className="space-y-4">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-3 py-2 text-left">SKU</th>
-                    <th className="px-3 py-2 text-left">Description</th>
-                    <th className="px-3 py-2 text-center">Available</th>
-                    <th className="px-3 py-2 text-center">Qty Returned</th>
+                    <th className="px-3 py-2 text-left">{t('consignments.sku')}</th>
+                    <th className="px-3 py-2 text-left">{t('consignments.description')}</th>
+                    <th className="px-3 py-2 text-center">{t('consignments.available')}</th>
+                    <th className="px-3 py-2 text-center">{t('consignments.qtyReturned')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
@@ -977,7 +1090,7 @@ export default function Consignments() {
               onClick={handleRegisterReturns}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
-              Register Returns
+              {t('consignments.registerReturnsButton')}
             </button>
           </div>
         </div>
