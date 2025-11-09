@@ -218,7 +218,7 @@ export default function InvoiceTracking() {
       
         // For quantity, validate against max stock
         if (field === 'quantity') {
-          const item = updatedItems[index] as SalesInvoiceLine;
+          const item = updatedItems[index] as SalesInvoiceLine & { maxQuantity?: number };
         if (item.maxQuantity) {
           parsedValue = Math.min(Math.max(1, parsedValue), item.maxQuantity);
           if (parseFloat(String(value)) > item.maxQuantity) {
