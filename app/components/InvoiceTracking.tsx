@@ -521,10 +521,47 @@ export default function InvoiceTracking() {
       return;
     }
 
-    // Show warning for delivery changes that will affect inventory
-    let confirmed = false;
+    // Check if we're reversing a delivery (from Delivered/Partially Delivered to Canceled/Pending)
+    const isReversingDelivery = (invoice.deliveryStatus === 'Delivered' || invoice.deliveryStatus === 'Partially Delivered') 
+      && (status === 'Canceled' || status === 'Pending');
     
-    if (status === 'Delivered' && (invoice.deliveryStatus === 'Pending' || invoice.deliveryStatus === 'Partially Delivered')) {
+    // Check if we're marking as delivered (from Pending/Partially Delivered to Delivered)
+    const isMarkingDelivered = status === 'Delivered' && (invoice.deliveryStatus === 'Pending' || invoice.deliveryStatus === 'Partially Delivered');
+    
+    if (isReversingDelivery) {
+      // Calculate items to return to inventory
+      const itemsToReturn: Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}> = [];
+      
+      invoice.items.forEach(item => {
+        const inventoryItem = inventory.find(inv => inv.sku === item.sku);
+        if (inventoryItem) {
+          const currentStock = inventoryItem.ecuadorStock;
+          // For full delivery reversal, return full quantity. For partial, we'd need to track what was delivered
+          // For now, we'll return the full invoice quantity since we don't track partial deliveries per item
+          const quantityToReturn = item.quantity;
+          const newStock = currentStock + quantityToReturn;
+          
+          itemsToReturn.push({
+            description: item.description,
+            sku: item.sku,
+            quantity: quantityToReturn,
+            currentStock,
+            newStock
+          });
+        }
+      });
+      
+      if (itemsToReturn.length > 0) {
+        setItemsReturningToStock(itemsToReturn);
+        setWarningMessage(t('invoiceTracking.itemsReturningToStockMessage'));
+        setWarningCallback(() => async () => {
+          setShowWarningModal(false);
+          await processDeliveryUpdateWithReturns(invoice, status, itemsToReturn);
+        });
+        setShowWarningModal(true);
+        return;
+      }
+    } else if (isMarkingDelivered) {
       // Create warning message with stock information
       const itemsList = invoice.items.map(item => {
         const inventoryItem = inventory.find(inv => inv.sku === item.sku);
@@ -548,7 +585,7 @@ export default function InvoiceTracking() {
       return;
     } else {
       // For other status changes, use simple confirmation
-      confirmed = confirm(`${t('invoiceTracking.changeDeliveryStatus')} ${status}?`);
+      const confirmed = confirm(`${t('invoiceTracking.changeDeliveryStatus')} ${status}?`);
       if (!confirmed) return;
     }
     
@@ -581,6 +618,37 @@ export default function InvoiceTracking() {
       }
 
       alert(t('invoiceTracking.deliveryStatusUpdated'));
+      loadInvoices();
+    } catch (error) {
+      console.error('Error updating delivery:', error);
+      alert(t('invoiceTracking.errorUpdatingDeliveryStatus'));
+    }
+  };
+
+  const processDeliveryUpdateWithReturns = async (invoice: SalesInvoice, status: string, itemsToReturn: Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}>) => {
+    try {
+      // Return items to inventory first
+      for (const itemReturn of itemsToReturn) {
+        const inventoryItem = inventory.find(inv => inv.sku === itemReturn.sku);
+        if (inventoryItem) {
+          await updateInventoryItem(inventoryItem.id, {
+            ecuadorStock: itemReturn.newStock
+          });
+        }
+      }
+
+      const updateData: Partial<SalesInvoice> = {
+        deliveryStatus: status as SalesInvoice['deliveryStatus'],
+      };
+      
+      // Clear delivery date if canceling
+      if (status === 'Canceled' || status === 'Pending') {
+        updateData.deliveryDate = undefined;
+      }
+
+      await updateInvoice(invoice.id, updateData);
+
+      alert(t('invoiceTracking.deliveryStatusUpdated') + `\n${itemsToReturn.length} item(s) returned to inventory.`);
       loadInvoices();
     } catch (error) {
       console.error('Error updating delivery:', error);
