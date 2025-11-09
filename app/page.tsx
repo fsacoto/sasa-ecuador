@@ -14,9 +14,10 @@ import CMSModule from './components/CMSModuleNew';
 import Clients from './components/Clients';
 import Sales from './components/Sales';
 import InvoiceTracking from './components/InvoiceTracking';
+import Consignments from './components/Consignments';
 import LanguageSelector from './components/LanguageSelector';
 
-type Tab = 'dashboard' | 'inventory-suite' | 'suppliers' | 'purchase-orders' | 'inventory' | 'landed-costs' | 'cms' | 'sales-suite' | 'clients' | 'sales' | 'invoice-tracking';
+type Tab = 'dashboard' | 'inventory-suite' | 'suppliers' | 'purchase-orders' | 'inventory' | 'landed-costs' | 'cms' | 'sales-suite' | 'clients' | 'sales' | 'invoice-tracking' | 'consignments';
 
 function AppContent() {
   const { user, logout, hasPermission, isLoading } = useAuth();
@@ -209,13 +210,13 @@ function AppContent() {
                   <button
                     onClick={() => {/* Keep dropdown open on click */}}
                     className={`relative px-1 py-4 text-sm font-medium transition-colors ${
-                      (activeTab === 'clients' || activeTab === 'sales' || activeTab === 'invoice-tracking')
+                      (activeTab === 'clients' || activeTab === 'sales' || activeTab === 'invoice-tracking' || activeTab === 'consignments')
                         ? 'text-[#4f0c1b]'
                         : 'text-gray-600 hover:text-gray-900'
                     }`}
                   >
                     {tab.label}
-                    {(activeTab === 'clients' || activeTab === 'sales' || activeTab === 'invoice-tracking') && (
+                    {(activeTab === 'clients' || activeTab === 'sales' || activeTab === 'invoice-tracking' || activeTab === 'consignments') && (
                       <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#4f0c1b]" />
                     )}
                   </button>
@@ -256,6 +257,17 @@ function AppContent() {
                           {t('navigation.invoiceTracking')}
                         </button>
                       )}
+                      {(hasPermission('sales.view') || hasPermission('sales.create')) && (
+                        <button
+                          onClick={() => {
+                            setActiveTab('consignments' as Tab);
+                            setShowSalesDropdown(false);
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                        >
+                          Consignments
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -291,6 +303,7 @@ function AppContent() {
         {activeTab === 'clients' && (hasPermission('clients.view') || hasPermission('clients.view.ecuador')) && <Clients />}
         {activeTab === 'sales' && hasPermission('sales.view') && <Sales />}
         {activeTab === 'invoice-tracking' && hasPermission('sales.view') && <InvoiceTracking />}
+        {activeTab === 'consignments' && (hasPermission('sales.view') || hasPermission('sales.create')) && <Consignments />}
       </main>
 
       {/* Footer */}

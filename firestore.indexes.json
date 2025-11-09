@@ -87,6 +87,13 @@
         { "fieldPath": "deliveryStatus", "order": "ASCENDING" },
         { "fieldPath": "date", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "consignments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "dateCreated", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

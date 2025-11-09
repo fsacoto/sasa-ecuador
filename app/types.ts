@@ -59,6 +59,7 @@ export interface InventoryItem {
   line: string;
   ecuadorStock: number;
   usaStock: number;
+  consignmentStock?: number; // Inventory on consignment
   images: string[]; // Array of image URLs or base64 data
   barcode?: string; // Base64 encoded barcode image
   createdAt: Date;
@@ -190,4 +191,28 @@ export interface SalesInvoice {
   paymentMethod?: string;
   paymentComment?: string;
   paymentHistory?: PaymentRecord[];
+}
+
+export type ConsignmentStatus = 'Open' | 'Partially Closed' | 'Closed';
+
+export interface ConsignmentItem {
+  sku: string;
+  description: string;
+  quantityDelivered: number;
+  quantitySold: number;
+  quantityReturned: number;
+  line?: string;
+  category?: string;
+}
+
+export interface Consignment {
+  id: string;
+  consignmentId: string; // Format: CSG-00001
+  clientId: string;
+  clientName: string;
+  clientAddress?: string;
+  items: ConsignmentItem[];
+  status: ConsignmentStatus;
+  dateCreated: Date;
+  createdAt: Date;
 }

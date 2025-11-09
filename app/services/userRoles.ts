@@ -31,6 +31,7 @@ export const PERMISSIONS = {
     'users.manage',
     'clients.view',
     'clients.edit',
+    'clients.create',
     'sales.view',
     'sales.create',
     'sales.invoice.create'

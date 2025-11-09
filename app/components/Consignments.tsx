@@ -1,0 +1,899 @@
+'use client';
+
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Consignment, ConsignmentItem, ConsignmentStatus, Client, InventoryItem, SalesInvoiceLine } from '../types';
+import { getAllConsignments, createConsignment, updateConsignment, deleteConsignment } from '../services/consignmentsService';
+import { getAllClients } from '../services/clientsService';
+import { createInvoice } from '../services/invoicesService';
+import { useInventory } from '../context/InventoryContext';
+import { useAuth } from '../context/AuthContext';
+import { useTranslation } from '../context/TranslationContext';
+import ConsignmentPDF from './ConsignmentPDF';
+
+type View = 'list' | 'create' | 'details';
+
+export default function Consignments() {
+  const { user } = useAuth();
+  const { inventory, updateInventoryItem: updateInventory } = useInventory();
+  const { t } = useTranslation();
+  const [view, setView] = useState<View>('list');
+  const [consignments, setConsignments] = useState<Consignment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedConsignment, setSelectedConsignment] = useState<Consignment | null>(null);
+  
+  // Create consignment state
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [consignmentItems, setConsignmentItems] = useState<Array<{sku: string; description: string; quantity: number; line?: string; category?: string}>>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  
+  // Details view state
+  const [salesQuantities, setSalesQuantities] = useState<{[key: number]: number}>({});
+  const [returnQuantities, setReturnQuantities] = useState<{[key: number]: number}>({});
+  const hasLoadedRef = useRef(false);
+
+  // Create a stable string identifier - always a string, never changes array size
+  const userIdString = (user?.uid || user?.id || '') as string;
+
+  useEffect(() => {
+    // Only load data once when user becomes available
+    if (userIdString && !hasLoadedRef.current) {
+      hasLoadedRef.current = true;
+      loadConsignments();
+      loadClients();
+    }
+  }, [userIdString]); // Always a string, array always has 1 element
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node) &&
+          searchInputRef.current && !searchInputRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const loadConsignments = async () => {
+    try {
+      setLoading(true);
+      const data = await getAllConsignments();
+      setConsignments(data);
+    } catch (error: any) {
+      console.error('Error loading consignments:', error);
+      const errorMessage = error?.message || 'Unknown error';
+      const errorCode = error?.code || 'unknown';
+      console.error('Error details:', { errorMessage, errorCode, error });
+      alert(`Error loading consignments: ${errorMessage} (Code: ${errorCode})\n\nPlease ensure:\n1. You are logged in\n2. Firestore rules have been deployed\n3. Try refreshing the page`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadClients = async () => {
+    try {
+      const country = user?.role === 'sales' ? 'Ecuador' : undefined;
+      const data = await getAllClients(country);
+      setClients(data);
+    } catch (error) {
+      console.error('Error loading clients:', error);
+    }
+  };
+
+  // Get Ecuador inventory only for sales role
+  const getAvailableInventory = () => {
+    if (user?.role === 'sales') {
+      return inventory.filter(item => item.ecuadorStock > 0);
+    }
+    return inventory.filter(item => item.ecuadorStock > 0);
+  };
+
+  // Filter inventory based on search term
+  const getFilteredInventory = () => {
+    if (!searchTerm.trim()) return [];
+    const searchLower = searchTerm.toLowerCase();
+    return getAvailableInventory().filter(item =>
+      item.sku.toLowerCase().includes(searchLower) ||
+      item.name.toLowerCase().includes(searchLower) ||
+      item.description?.toLowerCase().includes(searchLower)
+    ).slice(0, 10);
+  };
+
+  const addProductToConsignment = (product: InventoryItem) => {
+    const newItem = {
+      sku: product.sku,
+      description: product.description || product.name,
+      quantity: 1,
+      line: product.line,
+      category: product.category
+    };
+
+    setConsignmentItems([...consignmentItems, newItem]);
+    setSearchTerm('');
+    setShowDropdown(false);
+  };
+
+  const handleQuantityChange = (index: number, quantity: number) => {
+    const updatedItems = [...consignmentItems];
+    const item = updatedItems[index];
+    const inventoryItem = inventory.find(inv => inv.sku === item.sku);
+    const maxQuantity = inventoryItem?.ecuadorStock || 0;
+    
+    const validQuantity = Math.min(Math.max(1, quantity), maxQuantity);
+    updatedItems[index].quantity = validQuantity;
+    setConsignmentItems(updatedItems);
+    
+    if (quantity > maxQuantity) {
+      alert(`Cannot exceed available stock: ${maxQuantity}`);
+    }
+  };
+
+  const removeItem = (index: number) => {
+    setConsignmentItems(consignmentItems.filter((_, i) => i !== index));
+  };
+
+  const calculateTotalItems = (items: ConsignmentItem[]) => {
+    return items.reduce((sum, item) => sum + item.quantityDelivered, 0);
+  };
+
+  const calculateTotalSold = (items: ConsignmentItem[]) => {
+    return items.reduce((sum, item) => sum + item.quantitySold, 0);
+  };
+
+  const calculateTotalReturned = (items: ConsignmentItem[]) => {
+    return items.reduce((sum, item) => sum + item.quantityReturned, 0);
+  };
+
+  const calculateStatus = (items: ConsignmentItem[]): ConsignmentStatus => {
+    const totalDelivered = calculateTotalItems(items);
+    const totalSold = calculateTotalSold(items);
+    const totalReturned = calculateTotalReturned(items);
+    const totalAccounted = totalSold + totalReturned;
+    
+    if (totalAccounted >= totalDelivered) {
+      return 'Closed';
+    } else if (totalAccounted > 0) {
+      return 'Partially Closed';
+    }
+    return 'Open';
+  };
+
+  const handleCreateConsignment = async () => {
+    if (!selectedClient) {
+      alert('Please select a client');
+      return;
+    }
+
+    if (consignmentItems.length === 0) {
+      alert('Please add at least one item');
+      return;
+    }
+
+    try {
+      // Check if we have enough stock
+      for (const item of consignmentItems) {
+        const inventoryItem = inventory.find(inv => inv.sku === item.sku);
+        if (!inventoryItem || inventoryItem.ecuadorStock < item.quantity) {
+          alert(`Insufficient stock for ${item.sku}. Available: ${inventoryItem?.ecuadorStock || 0}`);
+          return;
+        }
+      }
+
+      // Create consignment items
+      const consignmentItemsData: ConsignmentItem[] = consignmentItems.map(item => ({
+        sku: item.sku,
+        description: item.description,
+        quantityDelivered: item.quantity,
+        quantitySold: 0,
+        quantityReturned: 0,
+        line: item.line,
+        category: item.category
+      }));
+
+      // Get client address
+      const clientAddress = selectedClient.address 
+        ? `${selectedClient.address}, ${selectedClient.city}, ${selectedClient.country}`
+        : '';
+
+      // Create consignment
+      const newConsignment = await createConsignment({
+        clientId: selectedClient.id,
+        clientName: selectedClient.name,
+        clientAddress,
+        items: consignmentItemsData,
+        status: 'Open',
+        dateCreated: new Date()
+      });
+
+      // Move inventory from Ecuador stock to consignment stock
+      for (const item of consignmentItems) {
+        const inventoryItem = inventory.find(inv => inv.sku === item.sku);
+        if (inventoryItem) {
+          const newEcuadorStock = inventoryItem.ecuadorStock - item.quantity;
+          const newConsignmentStock = (inventoryItem.consignmentStock || 0) + item.quantity;
+          
+          await updateInventory(inventoryItem.id, {
+            ecuadorStock: newEcuadorStock,
+            consignmentStock: newConsignmentStock
+          });
+        }
+      }
+
+      alert('Consignment created successfully');
+      setView('list');
+      setSelectedClient(null);
+      setConsignmentItems([]);
+      loadConsignments();
+    } catch (error) {
+      console.error('Error creating consignment:', error);
+      alert('Error creating consignment');
+    }
+  };
+
+  const handleRegisterSales = async () => {
+    if (!selectedConsignment) return;
+
+    const hasSales = Object.values(salesQuantities).some(qty => qty > 0);
+    if (!hasSales) {
+      alert('Please enter quantities to sell');
+      return;
+    }
+
+    try {
+      // Validate quantities
+      const updatedItems = selectedConsignment.items.map((item, index) => {
+        const salesQty = salesQuantities[index] || 0;
+        const availableQty = item.quantityDelivered - item.quantitySold - item.quantityReturned;
+        
+        if (salesQty > availableQty) {
+          throw new Error(`Cannot sell more than available for ${item.sku}. Available: ${availableQty}`);
+        }
+        return { ...item, quantitySold: item.quantitySold + salesQty };
+      });
+
+      // Update consignment
+      const newStatus = calculateStatus(updatedItems);
+      await updateConsignment(selectedConsignment.id, {
+        items: updatedItems,
+        status: newStatus
+      });
+
+      // Move from consignment stock to sold inventory (Ecuador stock)
+      // As per requirement: Move quantity sold from "Inventory on Consignment" → "Sold Inventory (Ecuador)"
+      for (let i = 0; i < selectedConsignment.items.length; i++) {
+        const salesQty = salesQuantities[i] || 0;
+        if (salesQty > 0) {
+          const item = selectedConsignment.items[i];
+          const inventoryItem = inventory.find(inv => inv.sku === item.sku);
+          if (inventoryItem) {
+            const newConsignmentStock = (inventoryItem.consignmentStock || 0) - salesQty;
+            const newEcuadorStock = inventoryItem.ecuadorStock + salesQty;
+            
+            await updateInventory(inventoryItem.id, {
+              consignmentStock: Math.max(0, newConsignmentStock),
+              ecuadorStock: newEcuadorStock
+            });
+          }
+        }
+      }
+
+      // Create invoice for sales
+      const salesItems: SalesInvoiceLine[] = selectedConsignment.items
+        .map((item, index) => {
+          const salesQty = salesQuantities[index] || 0;
+          if (salesQty > 0) {
+            // Calculate unit price from landed cost (with markup)
+            let unitPrice = 25; // Default price
+            const inventoryItem = inventory.find(inv => inv.sku === item.sku);
+            if (inventoryItem && inventoryItem.linkedPurchaseOrders.length > 0) {
+              // Try to get average landed cost
+              const linkedOrders = inventory.filter(inv => 
+                inventoryItem.linkedPurchaseOrders.includes(inv.id)
+              );
+              // For now, use default price
+            }
+            
+            return {
+              sku: item.sku,
+              description: item.description,
+              quantity: salesQty,
+              unitPrice,
+              totalPrice: unitPrice * salesQty,
+              line: item.line,
+              category: item.category
+            };
+          }
+          return null;
+        })
+        .filter((item): item is SalesInvoiceLine => item !== null);
+
+      if (salesItems.length > 0) {
+        const subtotal = salesItems.reduce((sum, item) => sum + item.totalPrice, 0);
+        await createInvoice({
+          invoiceNumber: 'TEMP',
+          clientId: selectedConsignment.clientId,
+          clientName: selectedConsignment.clientName,
+          clientAddress: selectedConsignment.clientAddress || '',
+          items: salesItems,
+          subtotal,
+          discountType: 'percentage',
+          discountValue: 0,
+          discountTotal: 0,
+          grandTotal: subtotal,
+          date: new Date(),
+          notes: `Consignment sale from ${selectedConsignment.consignmentId}`,
+          salesAgent: user?.name || user?.email || '',
+          currency: 'USD',
+          deliveryStatus: 'Delivered',
+          paymentStatus: 'Unpaid',
+          amountPaid: 0,
+          remainingBalance: subtotal
+        });
+      }
+
+      alert('Sales registered successfully');
+      setSalesQuantities({});
+      loadConsignments();
+      // Reload selected consignment
+      const updated = await getAllConsignments();
+      const updatedConsignment = updated.find(c => c.id === selectedConsignment.id);
+      if (updatedConsignment) {
+        setSelectedConsignment(updatedConsignment);
+      }
+    } catch (error: any) {
+      console.error('Error registering sales:', error);
+      alert(error.message || 'Error registering sales');
+    }
+  };
+
+  const handleRegisterReturns = async () => {
+    if (!selectedConsignment) return;
+
+    const hasReturns = Object.values(returnQuantities).some(qty => qty > 0);
+    if (!hasReturns) {
+      alert('Please enter quantities to return');
+      return;
+    }
+
+    try {
+      // Validate quantities
+      const updatedItems = selectedConsignment.items.map((item, index) => {
+        const returnQty = returnQuantities[index] || 0;
+        const availableQty = item.quantityDelivered - item.quantitySold - item.quantityReturned;
+        
+        if (returnQty > availableQty) {
+          throw new Error(`Cannot return more than available for ${item.sku}. Available: ${availableQty}`);
+        }
+        return { ...item, quantityReturned: item.quantityReturned + returnQty };
+      });
+
+      // Update consignment
+      const newStatus = calculateStatus(updatedItems);
+      await updateConsignment(selectedConsignment.id, {
+        items: updatedItems,
+        status: newStatus
+      });
+
+      // Move from consignment stock back to Ecuador stock
+      for (let i = 0; i < selectedConsignment.items.length; i++) {
+        const returnQty = returnQuantities[i] || 0;
+        if (returnQty > 0) {
+          const item = selectedConsignment.items[i];
+          const inventoryItem = inventory.find(inv => inv.sku === item.sku);
+          if (inventoryItem) {
+            const newConsignmentStock = (inventoryItem.consignmentStock || 0) - returnQty;
+            const newEcuadorStock = inventoryItem.ecuadorStock + returnQty;
+            
+            await updateInventory(inventoryItem.id, {
+              consignmentStock: Math.max(0, newConsignmentStock),
+              ecuadorStock: newEcuadorStock
+            });
+          }
+        }
+      }
+
+      alert('Returns registered successfully');
+      setReturnQuantities({});
+      loadConsignments();
+      // Reload selected consignment
+      const updated = await getAllConsignments();
+      const updatedConsignment = updated.find(c => c.id === selectedConsignment.id);
+      if (updatedConsignment) {
+        setSelectedConsignment(updatedConsignment);
+      }
+    } catch (error: any) {
+      console.error('Error registering returns:', error);
+      alert(error.message || 'Error registering returns');
+    }
+  };
+
+  const handleViewDetails = (consignment: Consignment) => {
+    setSelectedConsignment(consignment);
+    setView('details');
+    setSalesQuantities({});
+    setReturnQuantities({});
+  };
+
+  const generatePDF = async (consignment: Consignment) => {
+    try {
+      const { convertImageForPDF } = await import('../utils/imageConverter');
+      const logoUrl = typeof window !== 'undefined' 
+        ? `${window.location.origin}/sasa.png` 
+        : '/sasa.png';
+      const logoBase64 = await convertImageForPDF(logoUrl);
+      
+      const [{ pdf }, { default: ConsignmentPDF }] = await Promise.all([
+        import('@react-pdf/renderer'),
+        import('./ConsignmentPDF')
+      ]);
+
+      const pdfDocument = <ConsignmentPDF consignment={consignment} logoSrc={logoBase64 || logoUrl} />;
+
+      const instance = pdf(pdfDocument);
+      const blob = await instance.toBlob();
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `consignment-${consignment.consignmentId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate PDF. Please try again.');
+    }
+  };
+
+  const filteredInventory = getFilteredInventory();
+
+  // List View
+  if (view === 'list') {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-2xl font-semibold text-gray-900">Consignments</h2>
+            <p className="text-sm text-gray-500 mt-1">Manage consignment deliveries and sales</p>
+          </div>
+          <button
+            onClick={() => setView('create')}
+            className="px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors"
+          >
+            Create New Consignment
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-12">Loading consignments...</div>
+        ) : consignments.length === 0 ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+            <p className="text-gray-500">No consignments found</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+            <table className="w-full min-w-max">
+              <thead className="bg-gray-50 border-b-2 border-gray-200">
+                <tr>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase">Consignment ID</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase">Client Name</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase">Date Created</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase">Status</th>
+                  <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase">Total Items Delivered</th>
+                  <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase">Total Sold</th>
+                  <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase">Total Returned</th>
+                  <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {consignments.map((consignment) => (
+                  <tr key={consignment.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="font-mono text-sm font-medium text-[#4f0c1b]">{consignment.consignmentId}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm font-medium text-gray-900">{consignment.clientName}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-700">{new Date(consignment.dateCreated).toLocaleDateString()}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                        consignment.status === 'Open' ? 'bg-blue-100 text-blue-800' :
+                        consignment.status === 'Partially Closed' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-green-100 text-green-800'
+                      }`}>
+                        {consignment.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <div className="text-sm text-gray-900">{calculateTotalItems(consignment.items)}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <div className="text-sm text-gray-900">{calculateTotalSold(consignment.items)}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <div className="text-sm text-gray-900">{calculateTotalReturned(consignment.items)}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <button
+                        onClick={() => handleViewDetails(consignment)}
+                        className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200"
+                      >
+                        View Details
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Create View
+  if (view === 'create') {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-2xl font-semibold text-gray-900">Create New Consignment</h2>
+            <p className="text-sm text-gray-500 mt-1">Select client and add items to deliver</p>
+          </div>
+          <button
+            onClick={() => {
+              setView('list');
+              setSelectedClient(null);
+              setConsignmentItems([]);
+            }}
+            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+
+        {/* Client Selection */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Client Information</h3>
+          {selectedClient ? (
+            <div className="space-y-4">
+              <div className="flex justify-between items-start">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Client Name</div>
+                    <div className="font-semibold text-gray-900">{selectedClient.name}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Country</div>
+                    <div className="font-medium text-gray-900">{selectedClient.country === 'Ecuador' ? '🇪🇨 Ecuador' : '🇺🇸 USA'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Address</div>
+                    <div className="text-gray-700">{selectedClient.address}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">City</div>
+                    <div className="text-gray-700">{selectedClient.city}</div>
+                  </div>
+                </div>
+                <div className="flex gap-2 ml-4">
+                  <button
+                    onClick={() => setSelectedClient(null)}
+                    className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                  >
+                    Change Client
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {clients.map((client) => (
+                <div
+                  key={client.id}
+                  onClick={() => setSelectedClient(client)}
+                  className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                >
+                  <div className="font-semibold text-gray-900">{client.name}</div>
+                  <div className="text-sm text-gray-500 mt-1">
+                    {client.address}, {client.city}, {client.country}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Items Selection */}
+        {selectedClient && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Items to Deliver</h3>
+            
+            <div className="mb-4 relative" ref={dropdownRef}>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Search SKU</label>
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search by SKU, name, or description"
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setShowDropdown(true);
+                }}
+                onFocus={() => setShowDropdown(true)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              />
+              
+              {showDropdown && filteredInventory.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  {filteredInventory.map((product) => (
+                    <div
+                      key={product.id}
+                      onClick={() => addProductToConsignment(product)}
+                      className="px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
+                    >
+                      <div className="font-mono text-sm font-semibold text-[#4f0c1b]">{product.sku}</div>
+                      <div className="text-sm text-gray-600">{product.name}</div>
+                      <div className="text-xs text-gray-500">Stock: {product.ecuadorStock} | {product.category} - {product.line}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {consignmentItems.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b-2 border-gray-200">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Quantity</th>
+                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {consignmentItems.map((item, index) => {
+                      const inventoryItem = inventory.find(inv => inv.sku === item.sku);
+                      const maxQuantity = inventoryItem?.ecuadorStock || 0;
+                      return (
+                        <tr key={index} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="font-mono text-sm font-medium text-gray-900">{item.sku}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-sm text-gray-900">{item.description}</div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-center">
+                            <div className="flex flex-col items-center gap-1">
+                              <input
+                                type="number"
+                                min="1"
+                                max={maxQuantity}
+                                value={item.quantity}
+                                onChange={(e) => handleQuantityChange(index, parseInt(e.target.value) || 1)}
+                                className="w-20 px-2 py-1 border border-gray-300 rounded text-center"
+                              />
+                              <div className="text-xs text-gray-500">Max: {maxQuantity}</div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-center">
+                            <button
+                              onClick={() => removeItem(index)}
+                              className="text-red-600 hover:text-red-700 text-sm font-medium"
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-12 text-gray-500">
+                No items added. Search and add items above.
+              </div>
+            )}
+
+            {consignmentItems.length > 0 && (
+              <div className="mt-6">
+                <button
+                  onClick={handleCreateConsignment}
+                  className="w-full px-6 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium"
+                >
+                  Create Consignment
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Details View
+  if (view === 'details' && selectedConsignment) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-2xl font-semibold text-gray-900">{selectedConsignment.consignmentId}</h2>
+            <p className="text-sm text-gray-500 mt-1">Client: {selectedConsignment.clientName}</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => generatePDF(selectedConsignment)}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+            >
+              Generate Consignment Note (PDF)
+            </button>
+            <button
+              onClick={() => {
+                setView('list');
+                setSelectedConsignment(null);
+              }}
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              Back to List
+            </button>
+          </div>
+        </div>
+
+        {/* Items Delivered Table */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Items Delivered</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b-2 border-gray-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Qty Delivered</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Qty Sold</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Qty Returned</th>
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Remaining</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {selectedConsignment.items.map((item, index) => {
+                  const remaining = item.quantityDelivered - item.quantitySold - item.quantityReturned;
+                  return (
+                    <tr key={index} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <div className="font-mono text-sm font-medium text-gray-900">{item.sku}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="text-sm text-gray-900">{item.description}</div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-center">
+                        <div className="text-sm text-gray-900">{item.quantityDelivered}</div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-center">
+                        <div className="text-sm text-gray-900">{item.quantitySold}</div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-center">
+                        <div className="text-sm text-gray-900">{item.quantityReturned}</div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-center">
+                        <div className="text-sm font-medium text-gray-900">{remaining}</div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Register Sales Section */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Register Sales from Consignment</h3>
+          <div className="space-y-4">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left">SKU</th>
+                    <th className="px-3 py-2 text-left">Description</th>
+                    <th className="px-3 py-2 text-center">Available</th>
+                    <th className="px-3 py-2 text-center">Qty Sold</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {selectedConsignment.items.map((item, index) => {
+                    const available = item.quantityDelivered - item.quantitySold - item.quantityReturned;
+                    return (
+                      <tr key={index}>
+                        <td className="px-3 py-2 font-mono text-xs">{item.sku}</td>
+                        <td className="px-3 py-2">{item.description}</td>
+                        <td className="px-3 py-2 text-center">{available}</td>
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="number"
+                            min="0"
+                            max={available}
+                            value={salesQuantities[index] || ''}
+                            onChange={(e) => setSalesQuantities({...salesQuantities, [index]: parseInt(e.target.value) || 0})}
+                            className="w-20 px-2 py-1 border border-gray-300 rounded text-center"
+                            disabled={available === 0}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <button
+              onClick={handleRegisterSales}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            >
+              Register Sales
+            </button>
+          </div>
+        </div>
+
+        {/* Register Returns Section */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Register Returns</h3>
+          <div className="space-y-4">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left">SKU</th>
+                    <th className="px-3 py-2 text-left">Description</th>
+                    <th className="px-3 py-2 text-center">Available</th>
+                    <th className="px-3 py-2 text-center">Qty Returned</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {selectedConsignment.items.map((item, index) => {
+                    const available = item.quantityDelivered - item.quantitySold - item.quantityReturned;
+                    return (
+                      <tr key={index}>
+                        <td className="px-3 py-2 font-mono text-xs">{item.sku}</td>
+                        <td className="px-3 py-2">{item.description}</td>
+                        <td className="px-3 py-2 text-center">{available}</td>
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="number"
+                            min="0"
+                            max={available}
+                            value={returnQuantities[index] || ''}
+                            onChange={(e) => setReturnQuantities({...returnQuantities, [index]: parseInt(e.target.value) || 0})}
+                            className="w-20 px-2 py-1 border border-gray-300 rounded text-center"
+                            disabled={available === 0}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <button
+              onClick={handleRegisterReturns}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Register Returns
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
