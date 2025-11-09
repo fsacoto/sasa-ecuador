@@ -92,6 +92,26 @@
     "galleryView": "Gallery View",
     "galleryFields": "Gallery Fields",
     "createCatalog": "Create Catalog",
+    "catalog": {
+      "title": "Product Catalog",
+      "noProductsAvailable": "NO PRODUCTS AVAILABLE",
+      "noImage": "NO IMAGE",
+      "noName": "NO NAME",
+      "noSku": "NO SKU",
+      "generateCatalog": "Generate Catalog",
+      "generating": "Generating...",
+      "selectLanguage": "Language",
+      "english": "English",
+      "spanish": "Spanish",
+      "materialNames": {
+        "goldPlated": "GOLD PLATED",
+        "goldFilled": "GOLD FILLED",
+        "sterlingSilver": "STERLING SILVER",
+        "oroLaminado": "GOLD PLATED",
+        "oroRelleno": "GOLD FILLED",
+        "plata": "STERLING SILVER"
+      }
+    },
     "mustBeLoggedIn": "You must be logged in to generate barcodes. Please refresh the page and try again.",
     "failedToUploadBarcode": "Failed to generate and upload barcode. Please try again.",
     "failedToUploadImages": "Failed to upload images. Please try again.",

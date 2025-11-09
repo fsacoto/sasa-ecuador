@@ -92,6 +92,26 @@
     "galleryView": "Vista de Galería",
     "galleryFields": "Campos de Galería",
     "createCatalog": "Crear Catálogo",
+    "catalog": {
+      "title": "Catálogo de Productos",
+      "noProductsAvailable": "NO HAY PRODUCTOS DISPONIBLES",
+      "noImage": "SIN IMAGEN",
+      "noName": "SIN NOMBRE",
+      "noSku": "SIN SKU",
+      "generateCatalog": "Generar Catálogo",
+      "generating": "Generando...",
+      "selectLanguage": "Idioma",
+      "english": "Inglés",
+      "spanish": "Español",
+      "materialNames": {
+        "goldPlated": "ORO LAMINADO",
+        "goldFilled": "ORO RELLENO",
+        "sterlingSilver": "PLATA ESTERLINA",
+        "oroLaminado": "ORO LAMINADO",
+        "oroRelleno": "ORO RELLENO",
+        "plata": "PLATA ESTERLINA"
+      }
+    },
     "mustBeLoggedIn": "Debe iniciar sesión para generar códigos de barras. Por favor actualice la página e intente nuevamente.",
     "failedToUploadBarcode": "Error al generar y subir código de barras. Por favor intente nuevamente.",
     "failedToUploadImages": "Error al subir imágenes. Por favor intente nuevamente.",

@@ -10,6 +10,7 @@ interface CatalogDownloadButtonProps {
   includeStock: boolean;
   itemsPerPage: number;
   orientation: 'landscape' | 'portrait';
+  locale: 'en' | 'es';
   fileName: string;
 }
 
@@ -19,6 +20,7 @@ export default function CatalogDownloadButton({
   includeStock,
   itemsPerPage,
   orientation,
+  locale,
   fileName,
 }: CatalogDownloadButtonProps) {
   const [isReady, setIsReady] = useState(false);
@@ -93,6 +95,7 @@ export default function CatalogDownloadButton({
           includeStock={includeStock}
           itemsPerPage={itemsPerPage}
           orientation={orientation}
+          locale={locale}
         />
       );
 

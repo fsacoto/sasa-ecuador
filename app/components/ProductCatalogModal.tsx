@@ -3,6 +3,9 @@
 import { useState } from 'react';
 import { InventoryItem } from '../types';
 import CatalogDownloadButton from './CatalogDownloadButton';
+import { useTranslation } from '../context/TranslationContext';
+
+type CatalogLocale = 'en' | 'es';
 
 interface ProductCatalogModalProps {
   inventory: InventoryItem[];
@@ -10,11 +13,13 @@ interface ProductCatalogModalProps {
 }
 
 export default function ProductCatalogModal({ inventory, onClose }: ProductCatalogModalProps) {
+  const { t } = useTranslation();
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
-  const [catalogTitle, setCatalogTitle] = useState('Product Catalog');
+  const [catalogTitle, setCatalogTitle] = useState(t('catalog.title'));
   const [includeStock, setIncludeStock] = useState(false);
   const [itemsPerPage, setItemsPerPage] = useState(4);
   const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape');
+  const [catalogLocale, setCatalogLocale] = useState<CatalogLocale>('en');
   
   // Filter states
   const [filterCategory, setFilterCategory] = useState<string>('all');
@@ -102,7 +107,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
               />
             </div>
 
-            {/* Layout, Orientation & Include Stock */}
+            {/* Layout, Orientation, Language & Include Stock */}
             <div className="flex gap-3">
               <div className="flex-1">
                 <label className="block text-xs font-medium mb-1 text-gray-700">Layout</label>
@@ -128,6 +133,18 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                 >
                   <option value="landscape">Landscape</option>
                   <option value="portrait">Portrait</option>
+                </select>
+              </div>
+
+              <div className="flex-1">
+                <label className="block text-xs font-medium mb-1 text-gray-700">{t('catalog.selectLanguage')}</label>
+                <select
+                  value={catalogLocale}
+                  onChange={(e) => setCatalogLocale(e.target.value as CatalogLocale)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#4f0c1b] focus:border-[#4f0c1b] bg-white text-sm"
+                >
+                  <option value="en">{t('catalog.english')}</option>
+                  <option value="es">{t('catalog.spanish')}</option>
                 </select>
               </div>
               
@@ -378,6 +395,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                   includeStock={includeStock}
                   itemsPerPage={itemsPerPage}
                   orientation={orientation}
+                  locale={catalogLocale}
                   fileName={`${catalogTitle.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`}
                 />
               ) : (

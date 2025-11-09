@@ -2,6 +2,77 @@
 
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { InventoryItem } from '../types';
+import enMessages from '../locales/en.json';
+import esMessages from '../locales/es.json';
+
+type Locale = 'en' | 'es';
+
+const messagesMap: Record<Locale, typeof enMessages> = {
+  en: enMessages,
+  es: esMessages,
+};
+
+// Translation helper function for PDF component
+const translate = (locale: Locale, key: string): string => {
+  const keys = key.split('.');
+  let value: unknown = messagesMap[locale];
+  
+  for (const k of keys) {
+    if (value && typeof value === 'object' && k in value) {
+      value = (value as Record<string, unknown>)[k];
+    } else {
+      // Fallback to English if key not found
+      value = messagesMap.en;
+      for (const fallbackKey of keys) {
+        if (value && typeof value === 'object' && fallbackKey in value) {
+          value = (value as Record<string, unknown>)[fallbackKey];
+        } else {
+          return key; // Return key if not found in fallback either
+        }
+      }
+      break;
+    }
+  }
+  
+  return typeof value === 'string' ? value : key;
+};
+
+// Translate material name based on locale
+const translateMaterialName = (locale: Locale, materialName: string): string => {
+  const materialLower = materialName.toLowerCase();
+  const materialKey = materialLower.replace(/\s+/g, '');
+  
+  // Try to find translation key
+  const materialTranslations = messagesMap[locale].inventory?.catalog?.materialNames as Record<string, string> | undefined;
+  if (materialTranslations) {
+    // Check various possible keys
+    const possibleKeys = [
+      materialKey,
+      materialLower,
+      materialName.toLowerCase(),
+    ];
+    
+    for (const key of possibleKeys) {
+      if (materialTranslations[key]) {
+        return materialTranslations[key];
+      }
+    }
+    
+    // Check for common material name patterns
+    if (materialLower.includes('gold plated') || materialLower.includes('oro laminado')) {
+      return materialTranslations.goldPlated || materialTranslations.oroLaminado || materialName.toUpperCase();
+    }
+    if (materialLower.includes('gold filled') || materialLower.includes('oro relleno')) {
+      return materialTranslations.goldFilled || materialTranslations.oroRelleno || materialName.toUpperCase();
+    }
+    if (materialLower.includes('sterling silver') || materialLower.includes('plata')) {
+      return materialTranslations.sterlingSilver || materialTranslations.plata || materialName.toUpperCase();
+    }
+  }
+  
+  // If no translation found, return uppercase original
+  return materialName.toUpperCase();
+};
 
 // A4 Landscape dimensions at 72 DPI: 842 × 595 px
 // Margin: 32px on all sides
@@ -238,6 +309,7 @@ interface ProductCatalogPDFProps {
   includeStock: boolean;
   itemsPerPage: number;
   orientation: 'landscape' | 'portrait';
+  locale?: Locale;
 }
 
 export default function ProductCatalogPDF({
@@ -246,14 +318,16 @@ export default function ProductCatalogPDF({
   includeStock = false,
   itemsPerPage = 4,
   orientation = 'landscape',
+  locale = 'en',
 }: ProductCatalogPDFProps) {
+  const t = (key: string) => translate(locale, key);
   // Handle empty products
   if (!products || products.length === 0) {
     return (
       <Document>
         <Page size="A4" orientation="landscape" style={styles.page}>
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <Text style={{ fontSize: 14, color: '#666' }}>NO PRODUCTS AVAILABLE</Text>
+            <Text style={{ fontSize: 14, color: '#666' }}>{t('inventory.catalog.noProductsAvailable')}</Text>
           </View>
         </Page>
       </Document>
@@ -301,7 +375,7 @@ export default function ProductCatalogPDF({
                           />
                         ) : (
                           <View style={styles.noImage}>
-                            <Text style={styles.noImageText}>NO IMAGE</Text>
+                            <Text style={styles.noImageText}>{t('inventory.catalog.noImage')}</Text>
                           </View>
                         )}
                       </View>
@@ -310,7 +384,7 @@ export default function ProductCatalogPDF({
                       <View style={styles.textPanel}>
                         {/* 1. Material Badge - Single line, no ellipsis, auto-expand, always gold color */}
                         {product.line && (() => {
-                          const badgeText = product.line.toUpperCase();
+                          const badgeText = translateMaterialName(locale, product.line);
                           const textStyle = getBadgeTextStyle(badgeText);
                           return (
                             <View style={styles.materialBadge}>
@@ -329,7 +403,7 @@ export default function ProductCatalogPDF({
                           style={styles.productName}
                           numberOfLines={1}
                         >
-                          {product.name ? product.name.toUpperCase() : 'NO NAME'}
+                          {product.name ? product.name.toUpperCase() : t('inventory.catalog.noName')}
                         </Text>
 
                         {/* 3. SKU Code - Single line only */}
@@ -337,7 +411,7 @@ export default function ProductCatalogPDF({
                           style={styles.sku}
                           numberOfLines={1}
                         >
-                          {product.sku || 'NO SKU'}
+                          {product.sku || t('inventory.catalog.noSku')}
                         </Text>
 
                         {/* 4. Price Placeholder (empty space) */}
@@ -365,7 +439,7 @@ export default function ProductCatalogPDF({
                           />
                         ) : (
                           <View style={styles.noImage}>
-                            <Text style={styles.noImageText}>NO IMAGE</Text>
+                            <Text style={styles.noImageText}>{t('inventory.catalog.noImage')}</Text>
                           </View>
                         )}
                       </View>
@@ -374,7 +448,7 @@ export default function ProductCatalogPDF({
                       <View style={styles.textPanel}>
                         {/* 1. Material Badge - Single line, no ellipsis, auto-expand, always gold color */}
                         {product.line && (() => {
-                          const badgeText = product.line.toUpperCase();
+                          const badgeText = translateMaterialName(locale, product.line);
                           const textStyle = getBadgeTextStyle(badgeText);
                           return (
                             <View style={styles.materialBadge}>
@@ -393,7 +467,7 @@ export default function ProductCatalogPDF({
                           style={styles.productName}
                           numberOfLines={1}
                         >
-                          {product.name ? product.name.toUpperCase() : 'NO NAME'}
+                          {product.name ? product.name.toUpperCase() : t('inventory.catalog.noName')}
                         </Text>
 
                         {/* 3. SKU Code - Single line only */}
@@ -401,7 +475,7 @@ export default function ProductCatalogPDF({
                           style={styles.sku}
                           numberOfLines={1}
                         >
-                          {product.sku || 'NO SKU'}
+                          {product.sku || t('inventory.catalog.noSku')}
                         </Text>
 
                         {/* 4. Price Placeholder (empty space) */}
