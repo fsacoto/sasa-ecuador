@@ -3,152 +3,170 @@
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { InventoryItem } from '../types';
 
-// Images are pre-converted to JPEG in CatalogDownloadButton for PDF compatibility
+// A4 Landscape dimensions at 72 DPI: 842 × 595 px
+// Margin: 32px on all sides
+// Available content area: 778 × 531 px (842-64 × 595-64)
+// Gap between columns: 24px
+// Gap between rows: 32px
+// Product block width: (778 - 24) / 2 = 377px
+// Product block height: (531 - 32) / 2 = 249.5px ≈ 250px
+// Left panel (image): 377 × 0.7 = 263.9px ≈ 264px
+// Right panel (text): 377 × 0.3 = 113.1px ≈ 113px
 
-// Create sophisticated styles for luxury jewelry catalog
 const styles = StyleSheet.create({
   page: {
-    backgroundColor: '#FAFAF8',
-    padding: 40,
-    paddingTop: 30,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 25,
-    paddingBottom: 15,
-    borderBottom: '0.5pt solid #D4C5B5',
-  },
-  titleContainer: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    maxWidth: '100%',
-    paddingHorizontal: 20,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2B1810',
-    letterSpacing: 1.5,
-    textAlign: 'center',
-    maxWidth: '100%',
-    flexWrap: 'wrap',
-  },
-  catalogSubtext: {
-    fontSize: 8,
-    color: '#9A8774',
-    letterSpacing: 2.5,
-    marginTop: 4,
-    textAlign: 'center',
+    backgroundColor: '#FAF7F2',
+    padding: 32,
+    paddingTop: 32,
+    paddingBottom: 32,
+    width: 842,
+    height: 595,
   },
   grid: {
+    flexDirection: 'column',
+    width: 778, // Available width: 842 - 64 (2×32px margins)
+    height: 531, // Available height: 595 - 64 (2×32px margins)
+  },
+  row: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+    width: 778,
+    height: 249.5, // (531 - 32) / 2 = 249.5px per row
+    marginBottom: 32, // Vertical spacing between rows (32px gap)
+    justifyContent: 'space-between', // Creates 24px gap between columns automatically
   },
-  productCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 2,
-    padding: 0,
-    marginBottom: 12,
-    border: '0.5pt solid #E8E3DC',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+  productBlock: {
+    width: 377, // (778 - 24) / 2 = 377px per product
+    height: 249.5, // (531 - 32) / 2 = 249.5px per product
+    flexDirection: 'row',
   },
-  productCard2: {
-    width: '48%',
-  },
-  productCard4: {
-    width: '23%',
-  },
-  productCard6: {
-    width: '31.5%',
-  },
-  productCard8: {
-    width: '23%',
-  },
-  productCard9: {
-    width: '31.5%',
-  },
-  imageContainer: {
-    width: '100%',
-    height: 200,
-    backgroundColor: '#FCFBF9',
-    position: 'relative',
-  },
-  imageContainer2: {
-    width: '100%',
-    height: 300,
-    backgroundColor: '#FCFBF9',
-    position: 'relative',
+  imagePanel: {
+    width: 264, // 70% of 377px = 263.9px ≈ 264px
+    height: 249.5, // Full block height
+    overflow: 'hidden',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   productImage: {
     width: '100%',
     height: '100%',
-    objectFit: 'contain',
+    objectFit: 'cover',
     objectPosition: 'center',
   },
   noImage: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#F7F5F2',
+    backgroundColor: '#F7F7F7',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
   },
   noImageText: {
-    fontSize: 8,
-    color: '#C9BFB1',
-    letterSpacing: 1.5,
+    fontSize: 10,
+    color: '#999',
+    letterSpacing: 1,
   },
-  infoContainer: {
-    padding: 10,
-    paddingTop: 8,
+  textPanel: {
+    width: 113, // 30% of 377px = 113.1px ≈ 113px - FIXED WIDTH
+    height: 249.5, // Full block height - FIXED HEIGHT
+    paddingLeft: 12,
+    paddingTop: 9, // Top padding: 8-10px (using 9px)
+    paddingRight: 4,
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'flex-start', // Text at top, not centered
+    alignItems: 'flex-start',
+    overflow: 'visible', // Allow badge to expand beyond if needed
+    flexWrap: 'nowrap', // Prevent wrapping of child elements
   },
-  badge: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    backgroundColor: '#4f0c1b',
-    paddingVertical: 4,
-    paddingHorizontal: 9,
-    borderRadius: 2,
+  materialBadge: {
+    paddingTop: 5,
+    paddingRight: 8,
+    paddingBottom: 4,
+    paddingLeft: 8,
+    borderRadius: 9999, // Fully rounded pill shape
+    marginTop: 0, // No extra margin-top (paddingTop handles it)
+    marginBottom: 8, // 8px spacing below badge
+    alignSelf: 'flex-start', // Align left, do NOT center
+    display: 'flex', // Use flex for react-pdf compatibility
+    alignItems: 'center',
+    justifyContent: 'center',
+    // NO width property - let it grow naturally based on content
+    // NO maxWidth - completely removed
+    // NO minWidth - completely removed
+    // NO flexBasis - completely removed
+    backgroundColor: '#E6D089', // Always use same gold color
+    flexShrink: 0, // Prevent shrinking
+    flexGrow: 0, // Prevent growing beyond content
+    flexWrap: 'nowrap', // Prevent wrapping
   },
-  badgeText: {
-    fontSize: 7,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    letterSpacing: 1.2,
+  materialBadgeText: {
+    fontSize: 9, // 9px for shorter text like "GOLD PLATED"
+    fontWeight: 600, // Semibold
+    textTransform: 'uppercase',
+    letterSpacing: 0.12, // Reduced letter spacing for tighter fit
+    fontFamily: 'Helvetica', // Clean sans-serif
+    color: '#5F4A00', // Always use same text color
+    // NO width property - let text determine badge width
+    // NO maxWidth - completely removed
+    flexShrink: 0, // Prevent text from shrinking
+    flexGrow: 0, // Prevent text from growing beyond content
+    // Note: react-pdf doesn't support word-break, overflow-wrap, or hyphens
+    // numberOfLines={1} on Text component handles single-line enforcement
+  },
+  materialBadgeTextSmall: {
+    fontSize: 8, // 8px for longer text like "STERLING SILVER"
+    fontWeight: 600, // Semibold
+    textTransform: 'uppercase',
+    letterSpacing: 0.08, // Minimal letter spacing for maximum fit
+    fontFamily: 'Helvetica', // Clean sans-serif
+    color: '#5F4A00', // Always use same text color
+    // NO width property - let text determine badge width
+    // NO maxWidth - completely removed
+    flexShrink: 0, // Prevent text from shrinking
+    flexGrow: 0, // Prevent text from growing beyond content
+    // Note: react-pdf doesn't support word-break, overflow-wrap, or hyphens
+    // numberOfLines={1} on Text component handles single-line enforcement
   },
   productName: {
-    fontSize: 9,
-    fontWeight: 'bold',
-    color: '#1A120E',
-    marginBottom: 3,
-    lineHeight: 1.3,
+    fontSize: 15, // 14-16px range (using 15px for balance)
+    fontWeight: 'medium',
+    color: '#333333',
+    marginBottom: 8, // 8px spacing below product name (name → SKU)
+    textTransform: 'uppercase',
+    lineHeight: 1.2, // Slightly more breathing room
+    letterSpacing: 0.15, // +1% letter spacing (15px * 0.01 = 0.15)
+    fontFamily: 'Helvetica',
+    maxWidth: '100%',
+    maxHeight: 18, // Single line only: 15px * 1.2 = 18px
+    overflow: 'hidden',
+    whiteSpace: 'nowrap', // Never wrap to second line
+    textOverflow: 'ellipsis', // Truncate if too long (after font reduction)
   },
   sku: {
-    fontSize: 7,
-    color: '#9A8774',
-    marginBottom: 4,
-    letterSpacing: 0.8,
+    fontSize: 11, // 11-12px range (using 11px)
+    fontWeight: 'normal',
+    color: '#333333',
+    marginBottom: 8, // 8px spacing from SKU to price placeholder
+    fontFamily: 'Courier',
+    letterSpacing: 0.22, // +2% letter spacing (11px * 0.02 = 0.22)
+    lineHeight: 1.1, // Tight and compact
+    maxWidth: '100%',
+    overflow: 'hidden',
+    whiteSpace: 'nowrap', // Never wrap to second line
+    textOverflow: 'ellipsis', // Truncate if too long (after font reduction)
   },
-  description: {
-    fontSize: 7,
-    color: '#706659',
-    lineHeight: 1.4,
-    marginTop: 4,
-  },
-  stockInfo: {
-    fontSize: 6,
-    color: '#A89B8C',
-    marginTop: 6,
-    paddingTop: 5,
-    borderTop: '0.5pt solid #EDE8DF',
+  pricePlaceholder: {
+    backgroundColor: '#F7F7F7',
+    borderRadius: 16,
+    height: 26,
+    width: '100%',
+    marginTop: 'auto', // Push to bottom
+    flexShrink: 0, // Don't shrink
   },
   footer: {
     position: 'absolute',
-    bottom: 25,
+    bottom: 20,
     left: 50,
     right: 50,
     flexDirection: 'row',
@@ -162,138 +180,244 @@ const styles = StyleSheet.create({
   },
 });
 
+// Get material badge style based on line type
+const getMaterialBadgeStyle = (line: string | undefined) => {
+  if (!line) {
+    return {
+      backgroundColor: '#E5E5E5',
+      color: '#555555',
+    };
+  }
+
+  const lineLower = line.toLowerCase();
+  
+  if (lineLower.includes('gold plated') || lineLower.includes('oro laminado')) {
+    return {
+      backgroundColor: '#E6D089',
+      color: '#6A5500',
+    };
+  } else if (lineLower.includes('gold filled') || lineLower.includes('oro relleno')) {
+    return {
+      backgroundColor: '#F8D87A',
+      color: '#5F4A00',
+    };
+  } else if (lineLower.includes('sterling silver') || lineLower.includes('plata')) {
+    return {
+      backgroundColor: '#E5E5E5',
+      color: '#555555',
+    };
+  }
+  
+  // Default
+  return {
+    backgroundColor: '#E5E5E5',
+    color: '#555555',
+  };
+};
+
+// Determine badge text style based on text length (auto-shrink logic, no ellipsis)
+const getBadgeTextStyle = (text: string) => {
+  const textLength = text.length;
+  // Badge can expand horizontally with no width limits
+  // Padding: 8px each side = 16px total (reduced for better fit)
+  // Character width estimates: 9px font ≈ 4-5px per char, 8px ≈ 3-4px
+  // "GOLD PLATED" = 11 chars, "GOLD FILLED" = 11 chars, "STERLING SILVER" = 15 chars
+  
+  if (textLength <= 12) {
+    // Shorter text like "GOLD PLATED" - use 9px (badge expands to fit)
+    return styles.materialBadgeText;
+  } else {
+    // Longer text (13+ chars) including "STERLING SILVER" (15 chars) - use 8px
+    return styles.materialBadgeTextSmall;
+  }
+};
+
 interface ProductCatalogPDFProps {
   products: InventoryItem[];
-  catalogTitle: string;
+  catalogTitle?: string;
   includeStock: boolean;
   itemsPerPage: number;
   orientation: 'landscape' | 'portrait';
 }
 
 export default function ProductCatalogPDF({
-  products,
+  products = [],
   catalogTitle,
-  includeStock,
-  itemsPerPage,
-  orientation,
+  includeStock = false,
+  itemsPerPage = 4,
+  orientation = 'landscape',
 }: ProductCatalogPDFProps) {
-  // Truncate title if too long to fit on page
-  const getDisplayTitle = (title: string) => {
-    if (title.length > 25) {
-      // Try to break at word boundary
-      const truncated = title.substring(0, 25);
-      const lastSpace = truncated.lastIndexOf(' ');
-      if (lastSpace > 15) {
-        return title.substring(0, lastSpace) + '...';
-      }
-      return truncated + '...';
-    }
-    return title;
-  };
-
-  // Split products into pages
-  const pages: InventoryItem[][] = [];
-  for (let i = 0; i < products.length; i += itemsPerPage) {
-    pages.push(products.slice(i, i + itemsPerPage));
+  // Handle empty products
+  if (!products || products.length === 0) {
+    return (
+      <Document>
+        <Page size="A4" orientation="landscape" style={styles.page}>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <Text style={{ fontSize: 14, color: '#666' }}>NO PRODUCTS AVAILABLE</Text>
+          </View>
+        </Page>
+      </Document>
+    );
   }
 
-  // Determine card style based on items per page
-  const getCardStyle = () => {
-    switch (itemsPerPage) {
-      case 2:
-        return styles.productCard2;
-      case 4:
-        return styles.productCard4;
-      case 6:
-        return styles.productCard6;
-      case 8:
-        return styles.productCard8;
-      case 9:
-        return styles.productCard9;
-      default:
-        return styles.productCard4;
+  // Split products into pages - up to 4 per page, only create pages with actual products
+  const pages: InventoryItem[][] = [];
+  for (let i = 0; i < products.length; i += 4) {
+    const pageProducts = products.slice(i, i + 4);
+    // Only add page if it has at least one product (no empty pages, no placeholders)
+    if (pageProducts.length > 0) {
+      pages.push(pageProducts);
     }
-  };
-
-  // Determine image container style based on items per page
-  const getImageContainerStyle = () => {
-    switch (itemsPerPage) {
-      case 2:
-        return styles.imageContainer2;
-      default:
-        return styles.imageContainer;
-    }
-  };
-
-  const cardStyle = getCardStyle();
-  const imageContainerStyle = getImageContainerStyle();
+  }
+  
+  // Ensure we don't have any empty pages (safety check)
+  const validPages = pages.filter(page => page.length > 0);
 
   return (
     <Document>
-      {pages.map((pageProducts, pageIndex) => (
-        <Page key={pageIndex} size="A4" orientation={orientation} style={styles.page}>
-          {/* Elegant Header */}
-          <View style={styles.header}>
-            <View style={styles.titleContainer}>
-              <Text style={styles.title}>{getDisplayTitle(catalogTitle).toUpperCase()}</Text>
-              <Text style={styles.catalogSubtext}>FINE JEWELRY COLLECTION</Text>
-            </View>
-          </View>
-
-          {/* Product Grid */}
+      {validPages.map((pageProducts, pageIndex) => (
+        <Page 
+          key={pageIndex} 
+          size="A4" 
+          orientation="landscape" 
+          style={styles.page}
+          wrap={false}
+        >
+          {/* Product Grid - Render only actual products (no placeholders) */}
           <View style={styles.grid}>
-            {pageProducts.map((product) => (
-              <View key={product.id} style={[styles.productCard, cardStyle]}>
-                {/* Product Image */}
-                <View style={imageContainerStyle}>
-                  {product.images && product.images.length > 0 && product.images[0] ? (
-                    <Image
-                      src={product.images[0]}
-                      style={styles.productImage}
-                    />
-                  ) : (
-                    <View style={styles.noImage}>
-                      <Text style={styles.noImageText}>NO IMAGE</Text>
-                    </View>
-                  )}
-                    
-                    {/* Category Badge Overlay */}
-                    {product.category && !product.category.includes('NEEDS REVIEW') && (
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText}>
-                          {product.category.toUpperCase()}
-                        </Text>
+            {/* First Row - Only render if products exist */}
+            {pageProducts.length > 0 && (
+              <View style={styles.row}>
+                {pageProducts.slice(0, 2).map((product) => {
+                  return (
+                    <View key={product.id} style={styles.productBlock}>
+                      {/* LEFT PANEL: Product Image (70% width) */}
+                      <View style={styles.imagePanel}>
+                        {product.images && product.images.length > 0 && product.images[0] ? (
+                          <Image
+                            src={product.images[0]}
+                            style={styles.productImage}
+                            cache={false}
+                          />
+                        ) : (
+                          <View style={styles.noImage}>
+                            <Text style={styles.noImageText}>NO IMAGE</Text>
+                          </View>
+                        )}
                       </View>
-                    )}
-                  </View>
 
-                {/* Product Info */}
-                <View style={styles.infoContainer}>
-                  <Text style={styles.productName}>{product.name}</Text>
-                  <Text style={styles.sku}>{product.sku}</Text>
+                      {/* RIGHT PANEL: Textual Information (30% width) */}
+                      <View style={styles.textPanel}>
+                        {/* 1. Material Badge - Single line, no ellipsis, auto-expand, always gold color */}
+                        {product.line && (() => {
+                          const badgeText = product.line.toUpperCase();
+                          const textStyle = getBadgeTextStyle(badgeText);
+                          return (
+                            <View style={styles.materialBadge}>
+                              <Text 
+                                style={textStyle}
+                                numberOfLines={1}
+                              >
+                                {badgeText}
+                              </Text>
+                            </View>
+                          );
+                        })()}
 
-                  {product.description && (
-                    <Text style={styles.description}>
-                      {product.description.substring(0, 60)}
-                      {product.description.length > 60 ? '...' : ''}
-                    </Text>
-                  )}
+                        {/* 2. Product Name - Single line only */}
+                        <Text 
+                          style={styles.productName}
+                          numberOfLines={1}
+                        >
+                          {product.name ? product.name.toUpperCase() : 'NO NAME'}
+                        </Text>
 
-                  {/* Stock Information */}
-                  {includeStock && (
-                    <Text style={styles.stockInfo}>
-                      In Stock: {product.ecuadorStock + product.usaStock} units available
-                    </Text>
-                  )}
-                </View>
+                        {/* 3. SKU Code - Single line only */}
+                        <Text 
+                          style={styles.sku}
+                          numberOfLines={1}
+                        >
+                          {product.sku || 'NO SKU'}
+                        </Text>
+
+                        {/* 4. Price Placeholder (empty space) */}
+                        <View style={styles.pricePlaceholder} />
+                      </View>
+                    </View>
+                  );
+                })}
               </View>
-            ))}
+            )}
+            
+            {/* Second Row - Only render if 3+ products exist */}
+            {pageProducts.length > 2 && (
+              <View style={[styles.row, { marginBottom: 0 }]}>
+                {pageProducts.slice(2, 4).map((product) => {
+                  return (
+                    <View key={product.id} style={styles.productBlock}>
+                      {/* LEFT PANEL: Product Image (70% width) */}
+                      <View style={styles.imagePanel}>
+                        {product.images && product.images.length > 0 && product.images[0] ? (
+                          <Image
+                            src={product.images[0]}
+                            style={styles.productImage}
+                            cache={false}
+                          />
+                        ) : (
+                          <View style={styles.noImage}>
+                            <Text style={styles.noImageText}>NO IMAGE</Text>
+                          </View>
+                        )}
+                      </View>
+
+                      {/* RIGHT PANEL: Textual Information (30% width) */}
+                      <View style={styles.textPanel}>
+                        {/* 1. Material Badge - Single line, no ellipsis, auto-expand, always gold color */}
+                        {product.line && (() => {
+                          const badgeText = product.line.toUpperCase();
+                          const textStyle = getBadgeTextStyle(badgeText);
+                          return (
+                            <View style={styles.materialBadge}>
+                              <Text 
+                                style={textStyle}
+                                numberOfLines={1}
+                              >
+                                {badgeText}
+                              </Text>
+                            </View>
+                          );
+                        })()}
+
+                        {/* 2. Product Name - Single line only */}
+                        <Text 
+                          style={styles.productName}
+                          numberOfLines={1}
+                        >
+                          {product.name ? product.name.toUpperCase() : 'NO NAME'}
+                        </Text>
+
+                        {/* 3. SKU Code - Single line only */}
+                        <Text 
+                          style={styles.sku}
+                          numberOfLines={1}
+                        >
+                          {product.sku || 'NO SKU'}
+                        </Text>
+
+                        {/* 4. Price Placeholder (empty space) */}
+                        <View style={styles.pricePlaceholder} />
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
           </View>
 
-          {/* Minimal Footer */}
+          {/* Footer */}
           <View style={styles.footer}>
             <Text style={styles.pageNumber}>
-              {pageIndex + 1} / {pages.length}
+              {pageIndex + 1} / {validPages.length}
             </Text>
           </View>
         </Page>

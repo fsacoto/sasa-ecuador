@@ -13,7 +13,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [catalogTitle, setCatalogTitle] = useState('Product Catalog');
   const [includeStock, setIncludeStock] = useState(false);
-  const [itemsPerPage, setItemsPerPage] = useState(6);
+  const [itemsPerPage, setItemsPerPage] = useState(4);
   const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape');
   
   // Filter states

@@ -39,21 +39,67 @@ export async function convertWebPToJPEG(base64Data: string): Promise<string> {
   });
 }
 
-export async function convertImageForPDF(base64Data: string | undefined): Promise<string | null> {
-  if (!base64Data) return null;
+export async function convertImageForPDF(imageUrl: string | undefined): Promise<string | null> {
+  if (!imageUrl) return null;
   
-  // If it's WebP, convert to JPEG
-  if (base64Data.includes('image/webp')) {
-    try {
-      return await convertWebPToJPEG(base64Data);
-    } catch (error) {
-      console.error('Failed to convert WebP to JPEG:', error);
-      return null;
+  // If it's already a base64 data URL, handle it
+  if (imageUrl.startsWith('data:')) {
+    // If it's WebP, convert to JPEG
+    if (imageUrl.includes('image/webp')) {
+      try {
+        return await convertWebPToJPEG(imageUrl);
+      } catch (error) {
+        console.error('Failed to convert WebP to JPEG:', error);
+        return null;
+      }
     }
+    // If it's already JPEG or PNG, return as is
+    return imageUrl;
   }
   
-  // If it's already JPEG or PNG, return as is
-  return base64Data;
+  // If it's a URL (Firebase Storage, HTTP, etc.), use API route to bypass CORS
+  try {
+    // Use the API route to fetch images server-side (bypasses CORS)
+    const apiUrl = `/api/download-image?url=${encodeURIComponent(imageUrl)}`;
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      cache: 'no-cache',
+    });
+    
+    if (!response.ok) {
+      console.warn(`Failed to fetch image via API (${response.status}):`, imageUrl);
+      return null;
+    }
+    
+    const blob = await response.blob();
+    
+    // Convert blob to base64
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        // If it's WebP, convert to JPEG
+        if (blob.type === 'image/webp' || base64String.includes('image/webp')) {
+          convertWebPToJPEG(base64String)
+            .then(resolve)
+            .catch((err) => {
+              console.warn('Failed to convert WebP, using original:', err);
+              resolve(base64String); // Fallback to original if conversion fails
+            });
+        } else {
+          resolve(base64String);
+        }
+      };
+      reader.onerror = () => {
+        console.warn('FileReader error for image:', imageUrl);
+        reject(new Error('Failed to read image blob'));
+      };
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.warn('Error converting image URL to base64:', imageUrl, error);
+    return null;
+  }
 }
 
 export async function convertProductImages(images: string[]): Promise<string[]> {

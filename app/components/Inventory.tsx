@@ -158,6 +158,28 @@ export default function Inventory() {
     }
   };
 
+  // Auto-generate SKU when both category and line are set (for new items only)
+  useEffect(() => {
+    // Skip if editing existing item, SKU was manually edited, or missing category/line
+    if (editingItem || skuManuallyEdited || !formData.category || !formData.line) {
+      return;
+    }
+    
+    // Only generate if SKU is empty
+    if (!formData.sku || formData.sku.trim() === '') {
+      const existingSkus = inventory.map(item => item.sku);
+      const newSku = generateUniqueSKU(formData.category, formData.line, existingSkus);
+      setFormData(prev => {
+        // Only update if SKU is still empty (prevent race conditions)
+        if (!prev.sku || prev.sku.trim() === '') {
+          return { ...prev, sku: newSku };
+        }
+        return prev;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.category, formData.line]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingItem) {
@@ -452,7 +474,10 @@ export default function Inventory() {
           
           {!isReadOnly && (
             <button
-              onClick={() => setIsFormOpen(true)}
+              onClick={() => {
+                resetForm();
+                setIsFormOpen(true);
+              }}
               className="flex items-center gap-2 px-3 py-2 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white rounded-lg hover:shadow-md transition-all duration-200 text-sm shadow-sm"
             >
               <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
