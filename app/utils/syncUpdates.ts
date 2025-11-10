@@ -7,6 +7,8 @@ export function syncPurchaseOrderToInventory(
   inventory: InventoryItem[],
   updateInventoryItem: (id: string, item: Partial<InventoryItem>) => void,
   addInventoryItem: (item: Omit<InventoryItem, 'id' | 'createdAt'>) => void,
+  deleteInventoryItem: (id: string) => void,
+  purchaseOrders: PurchaseOrder[],
   previousSku?: string
 ) {
   // If SKU changed, find inventory item by the old SKU or by linked purchase orders
@@ -24,6 +26,49 @@ export function syncPurchaseOrderToInventory(
     );
   }
 
+  // ACTION: If order is NOT verified, remove it from inventory completely
+  if (updatedOrder.status !== 'Verified') {
+    if (inventoryItem) {
+      // Remove this purchase order from linked orders
+      const updatedLinkedOrders = inventoryItem.linkedPurchaseOrders.filter(
+        orderId => orderId !== updatedOrder.id
+      );
+      
+      // Remove stock that was added by this order
+      const stockQuantity = updatedOrder.quantityReceived || updatedOrder.quantity;
+      const updates: Partial<InventoryItem> = {
+        linkedPurchaseOrders: updatedLinkedOrders,
+      };
+      
+      if (updatedOrder.destinationStock === 'Ecuador') {
+        updates.ecuadorStock = Math.max(0, (inventoryItem.ecuadorStock || 0) - stockQuantity);
+      } else if (updatedOrder.destinationStock === 'USA') {
+        updates.usaStock = Math.max(0, (inventoryItem.usaStock || 0) - stockQuantity);
+      }
+      
+      // Check if item has other verified purchase orders
+      const hasOtherVerifiedOrders = updatedLinkedOrders.some(orderId => {
+        const otherOrder = purchaseOrders.find(o => o.id === orderId);
+        return otherOrder && otherOrder.status === 'Verified';
+      });
+      
+      // If item was originally created from purchase orders (has linked orders)
+      // AND no other verified orders remain, delete it completely
+      if (inventoryItem.linkedPurchaseOrders.length > 0 && !hasOtherVerifiedOrders) {
+        // Item was only created from purchase orders and none are verified anymore - DELETE IT
+        deleteInventoryItem(inventoryItem.id);
+      } else {
+        // Either:
+        // 1. Item is standalone (no linked orders originally) - just remove stock/link
+        // 2. Item has other verified orders - just remove this order's stock/link
+        updateInventoryItem(inventoryItem.id, updates);
+      }
+    }
+    // If order is not verified, don't create or update inventory - EXIT
+    return;
+  }
+
+  // ORDER IS VERIFIED - Create or update inventory item
   if (inventoryItem) {
     // Update existing inventory item
     const updates: Partial<InventoryItem> = {};
@@ -56,15 +101,25 @@ export function syncPurchaseOrderToInventory(
       updates.linkedPurchaseOrders = [...inventoryItem.linkedPurchaseOrders, updatedOrder.id];
     }
 
+    // Update stock when order is verified
+    // Check if this order was already processed (to avoid double-counting)
+    const wasAlreadyLinked = inventoryItem.linkedPurchaseOrders.includes(updatedOrder.id);
+    if (!wasAlreadyLinked) {
+      const stockQuantity = updatedOrder.quantityReceived || updatedOrder.quantity;
+      if (updatedOrder.destinationStock === 'Ecuador') {
+        updates.ecuadorStock = (inventoryItem.ecuadorStock || 0) + stockQuantity;
+      } else if (updatedOrder.destinationStock === 'USA') {
+        updates.usaStock = (inventoryItem.usaStock || 0) + stockQuantity;
+      }
+    }
+
     // Apply updates if any
     if (Object.keys(updates).length > 0) {
       updateInventoryItem(inventoryItem.id, updates);
     }
   } else if (updatedOrder.sku && updatedOrder.description) {
-    // Create new inventory item if it doesn't exist
-    // Only add stock if the order is verified
-    const stockQuantity = updatedOrder.status === 'Verified' ? 
-      (updatedOrder.quantityReceived || updatedOrder.quantity) : 0;
+    // Create new inventory item ONLY when order is verified
+    const stockQuantity = updatedOrder.quantityReceived || updatedOrder.quantity;
     
     addInventoryItem({
       name: updatedOrder.description,

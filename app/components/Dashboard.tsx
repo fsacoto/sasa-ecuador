@@ -14,22 +14,31 @@ export default function Dashboard() {
     let usaValue = 0;
     
     inventory.forEach(item => {
-      // Only count items that have at least one verified purchase order
+      // Match inventory tab logic: show items with verified orders OR standalone items
       const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
         const order = purchaseOrders.find(o => o.id === orderId);
         return order && order.status === 'Verified';
       });
+      const isStandaloneItem = item.linkedPurchaseOrders.length === 0;
       
-      if (!hasVerifiedOrder) return;
+      // Skip items with linked orders but none verified (shouldn't exist, but safety check)
+      if (item.linkedPurchaseOrders.length > 0 && !hasVerifiedOrder) return;
+      
+      // Only count if has verified order OR is standalone
+      if (!hasVerifiedOrder && !isStandaloneItem) return;
       
       const linkedOrders = purchaseOrders.filter(order => 
-        item.linkedPurchaseOrders.includes(order.id)
+        item.linkedPurchaseOrders.includes(order.id) && order.status === 'Verified'
       );
+      
+      // For items with verified orders, use average cost from those orders
+      // For standalone items, use 0 cost (no purchase order data)
       if (linkedOrders.length > 0) {
         const avgCost = linkedOrders.reduce((sum, order) => sum + order.costInUSD, 0) / linkedOrders.length;
         ecuadorValue += avgCost * item.ecuadorStock;
         usaValue += avgCost * item.usaStock;
       }
+      // Standalone items contribute 0 to value (no cost data)
     });
     
     return { ecuador: ecuadorValue, usa: usaValue, total: ecuadorValue + usaValue };
@@ -39,15 +48,58 @@ export default function Dashboard() {
     return getInventoryValueByCountry().total;
   };
 
-  const getTotalStock = () => {
+  const getEcuadorStock = () => {
     return inventory.reduce((sum, item) => {
-      // Only count items that have at least one verified purchase order
+      // Match inventory tab logic: show items with verified orders OR standalone items
       const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
         const order = purchaseOrders.find(o => o.id === orderId);
         return order && order.status === 'Verified';
       });
+      const isStandaloneItem = item.linkedPurchaseOrders.length === 0;
       
-      if (!hasVerifiedOrder) return sum;
+      // Skip items with linked orders but none verified (shouldn't exist, but safety check)
+      if (item.linkedPurchaseOrders.length > 0 && !hasVerifiedOrder) return sum;
+      
+      // Only count if has verified order OR is standalone
+      if (!hasVerifiedOrder && !isStandaloneItem) return sum;
+      
+      return sum + item.ecuadorStock;
+    }, 0);
+  };
+
+  const getUSAStock = () => {
+    return inventory.reduce((sum, item) => {
+      // Match inventory tab logic: show items with verified orders OR standalone items
+      const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
+        const order = purchaseOrders.find(o => o.id === orderId);
+        return order && order.status === 'Verified';
+      });
+      const isStandaloneItem = item.linkedPurchaseOrders.length === 0;
+      
+      // Skip items with linked orders but none verified (shouldn't exist, but safety check)
+      if (item.linkedPurchaseOrders.length > 0 && !hasVerifiedOrder) return sum;
+      
+      // Only count if has verified order OR is standalone
+      if (!hasVerifiedOrder && !isStandaloneItem) return sum;
+      
+      return sum + item.usaStock;
+    }, 0);
+  };
+
+  const getTotalStock = () => {
+    return inventory.reduce((sum, item) => {
+      // Match inventory tab logic: show items with verified orders OR standalone items
+      const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
+        const order = purchaseOrders.find(o => o.id === orderId);
+        return order && order.status === 'Verified';
+      });
+      const isStandaloneItem = item.linkedPurchaseOrders.length === 0;
+      
+      // Skip items with linked orders but none verified (shouldn't exist, but safety check)
+      if (item.linkedPurchaseOrders.length > 0 && !hasVerifiedOrder) return sum;
+      
+      // Only count if has verified order OR is standalone
+      if (!hasVerifiedOrder && !isStandaloneItem) return sum;
       
       return sum + item.ecuadorStock + item.usaStock;
     }, 0);
@@ -55,13 +107,18 @@ export default function Dashboard() {
 
   const getLowStockItems = () => {
     return inventory.filter(item => {
-      // Only include items that have at least one verified purchase order
+      // Match inventory tab logic: show items with verified orders OR standalone items
       const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
         const order = purchaseOrders.find(o => o.id === orderId);
         return order && order.status === 'Verified';
       });
+      const isStandaloneItem = item.linkedPurchaseOrders.length === 0;
       
-      if (!hasVerifiedOrder) return false;
+      // Skip items with linked orders but none verified (shouldn't exist, but safety check)
+      if (item.linkedPurchaseOrders.length > 0 && !hasVerifiedOrder) return false;
+      
+      // Only include if has verified order OR is standalone
+      if (!hasVerifiedOrder && !isStandaloneItem) return false;
       
       return (item.ecuadorStock + item.usaStock) < 10;
     });
@@ -69,13 +126,18 @@ export default function Dashboard() {
 
   const getVerifiedInventoryCount = () => {
     return inventory.filter(item => {
-      // Only count items that have at least one verified purchase order
+      // Match inventory tab logic: show items with verified orders OR standalone items
       const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
         const order = purchaseOrders.find(o => o.id === orderId);
         return order && order.status === 'Verified';
       });
+      const isStandaloneItem = item.linkedPurchaseOrders.length === 0;
       
-      return hasVerifiedOrder;
+      // Skip items with linked orders but none verified (shouldn't exist, but safety check)
+      if (item.linkedPurchaseOrders.length > 0 && !hasVerifiedOrder) return false;
+      
+      // Count if has verified order OR is standalone
+      return hasVerifiedOrder || isStandaloneItem;
     }).length;
   };
 
@@ -102,13 +164,18 @@ export default function Dashboard() {
     const categoryCounts: { [key: string]: number } = {};
     
     inventory.forEach(item => {
-      // Only count items that have at least one verified purchase order
+      // Match inventory tab logic: show items with verified orders OR standalone items
       const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
         const order = purchaseOrders.find(o => o.id === orderId);
         return order && order.status === 'Verified';
       });
+      const isStandaloneItem = item.linkedPurchaseOrders.length === 0;
       
-      if (!hasVerifiedOrder) return;
+      // Skip items with linked orders but none verified (shouldn't exist, but safety check)
+      if (item.linkedPurchaseOrders.length > 0 && !hasVerifiedOrder) return;
+      
+      // Only count if has verified order OR is standalone
+      if (!hasVerifiedOrder && !isStandaloneItem) return;
       
       const category = item.category || t('dashboard.uncategorized');
       categoryCounts[category] = (categoryCounts[category] || 0) + 1;
@@ -222,7 +289,7 @@ export default function Dashboard() {
                   fill="none"
                   stroke="#4f0c1b"
                   strokeWidth="8"
-                  strokeDasharray={`${getTotalStock() > 0 ? (inventory.reduce((sum, item) => sum + item.ecuadorStock, 0) / getTotalStock()) * 251.2 : 0} 251.2`}
+                  strokeDasharray={`${getTotalStock() > 0 ? (getEcuadorStock() / getTotalStock()) * 251.2 : 0} 251.2`}
                   strokeDashoffset="0"
                   className="transition-all duration-1000 ease-out"
                 />
@@ -235,8 +302,8 @@ export default function Dashboard() {
                   fill="none"
                   stroke="#3b82f6"
                   strokeWidth="8"
-                  strokeDasharray={`${getTotalStock() > 0 ? (inventory.reduce((sum, item) => sum + item.usaStock, 0) / getTotalStock()) * 251.2 : 0} 251.2`}
-                  strokeDashoffset={`-${getTotalStock() > 0 ? (inventory.reduce((sum, item) => sum + item.ecuadorStock, 0) / getTotalStock()) * 251.2 : 0}`}
+                  strokeDasharray={`${getTotalStock() > 0 ? (getUSAStock() / getTotalStock()) * 251.2 : 0} 251.2`}
+                  strokeDashoffset={`-${getTotalStock() > 0 ? (getEcuadorStock() / getTotalStock()) * 251.2 : 0}`}
                   className="transition-all duration-1000 ease-out"
                 />
               </svg>
@@ -258,7 +325,7 @@ export default function Dashboard() {
                   <span className="text-sm font-medium text-gray-700">🇪🇨 Ecuador</span>
                 </div>
                 <span className="text-sm font-semibold text-gray-900">
-                  {inventory.reduce((sum, item) => sum + item.ecuadorStock, 0)} units
+                  {getEcuadorStock()} units
                 </span>
               </div>
               
@@ -268,15 +335,15 @@ export default function Dashboard() {
                   <span className="text-sm font-medium text-gray-700">🇺🇸 USA</span>
                 </div>
                 <span className="text-sm font-semibold text-gray-900">
-                  {inventory.reduce((sum, item) => sum + item.usaStock, 0)} units
+                  {getUSAStock()} units
                 </span>
               </div>
               
               {/* Percentage breakdown */}
               <div className="pt-2 border-t border-gray-200">
                 <div className="flex justify-between text-xs text-gray-500">
-                  <span>{t('dashboard.ecuador')}: {getTotalStock() > 0 ? ((inventory.reduce((sum, item) => sum + item.ecuadorStock, 0) / getTotalStock()) * 100).toFixed(1) : 0}%</span>
-                  <span>{t('dashboard.usa')}: {getTotalStock() > 0 ? ((inventory.reduce((sum, item) => sum + item.usaStock, 0) / getTotalStock()) * 100).toFixed(1) : 0}%</span>
+                  <span>{t('dashboard.ecuador')}: {getTotalStock() > 0 ? ((getEcuadorStock() / getTotalStock()) * 100).toFixed(1) : 0}%</span>
+                  <span>{t('dashboard.usa')}: {getTotalStock() > 0 ? ((getUSAStock() / getTotalStock()) * 100).toFixed(1) : 0}%</span>
                 </div>
               </div>
             </div>

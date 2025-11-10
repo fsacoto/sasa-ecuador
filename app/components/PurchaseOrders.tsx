@@ -340,16 +340,15 @@ export default function PurchaseOrders() {
       // Update the purchase order
       const updatedOrder = { ...editingOrder, ...orderData };
       
-      // SAFEGUARD: Handle inventory updates based on status changes
+      // Handle inventory updates based on status changes
       const oldStatus = editingOrder.status;
       const newStatus = formData.status;
       
-      // Moving backwards from Verified - remove inventory
+      // Moving backwards FROM Verified TO non-verified - remove from inventory
       if (oldStatus === 'Verified' && newStatus !== 'Verified') {
-        const quantityToRemove = editingOrder.quantityReceived || updatedOrder.quantity;
         const confirmed = confirm(
           t('purchaseOrders.warningVerifiedStatus')
-            .replace('{quantity}', quantityToRemove.toString())
+            .replace('{quantity}', (editingOrder.quantityReceived || editingOrder.quantity).toString())
             .replace('{destination}', updatedOrder.destinationStock)
         );
         
@@ -357,16 +356,9 @@ export default function PurchaseOrders() {
           return; // Cancel the edit
         }
         
-        const inventoryItem = inventory.find(item => item.sku === updatedOrder.sku);
-        if (inventoryItem) {
-          const stockUpdate: Partial<InventoryItem> = {};
-          if (updatedOrder.destinationStock === 'Ecuador') {
-            stockUpdate.ecuadorStock = Math.max(0, inventoryItem.ecuadorStock - quantityToRemove);
-          } else {
-            stockUpdate.usaStock = Math.max(0, inventoryItem.usaStock - quantityToRemove);
-          }
-          updateInventoryItem(inventoryItem.id, stockUpdate);
-        }
+        // Use sync function to remove order from inventory
+        // This will remove stock and unlink the order
+        syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders);
       }
       // Moving TO Verified - prompt for actual quantity and add to inventory
       else if (oldStatus !== 'Verified' && newStatus === 'Verified') {
@@ -409,48 +401,26 @@ export default function PurchaseOrders() {
         
         // Store the actual quantity received in orderData
         orderData.quantityReceived = actualQuantity;
-        
-        // Add to inventory using actual quantity
-        const inventoryItem = inventory.find(item => item.sku === updatedOrder.sku);
-        if (inventoryItem) {
-          const stockUpdate: Partial<InventoryItem> = {};
-          if (updatedOrder.destinationStock === 'Ecuador') {
-            stockUpdate.ecuadorStock = inventoryItem.ecuadorStock + actualQuantity;
-          } else {
-            stockUpdate.usaStock = inventoryItem.usaStock + actualQuantity;
-          }
-          updateInventoryItem(inventoryItem.id, stockUpdate);
-        }
       }
       
       updatePurchaseOrder(editingOrder.id, orderData);
       
-      // Sync changes to inventory, passing original SKU if it changed
+      // ALWAYS sync to inventory - the sync function handles verified/non-verified logic
+      // If verified: creates/updates inventory
+      // If not verified: removes from inventory
       const previousSku = originalSku !== updatedOrder.sku ? originalSku : undefined;
-      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, previousSku);
+      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku);
     } else {
       // Add the purchase order
       const newOrderId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       const newOrder = { ...orderData, id: newOrderId, createdAt: new Date() };
       addPurchaseOrder(orderData);
 
-      // If creating new item, add it to inventory (with 0 stock - will update when received)
-      if (isCreatingNewItem && formData.sku && formData.category && formData.line) {
-        addInventoryItem({
-          name: formData.description,
-          sku: formData.sku,
-          supplierSKU: formData.supplierSKU,
-          category: formData.category,
-          line: formData.line,
-          description: formData.description,
-          images: formData.images,
-          ecuadorStock: 0, // Start with 0 - will update when order is verified
-          usaStock: 0,
-          linkedPurchaseOrders: [newOrderId],
-        });
-      } else if (formData.sku) {
-        // Sync to existing inventory if needed
-        syncPurchaseOrderToInventory(newOrder, inventory, updateInventoryItem, addInventoryItem);
+      // ALWAYS sync to inventory - the sync function handles verified/non-verified logic
+      // If verified: creates/updates inventory
+      // If not verified: does nothing (no inventory item created)
+      if (formData.sku) {
+        syncPurchaseOrderToInventory(newOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders);
       }
     }
     resetForm();

@@ -13,7 +13,7 @@ interface BulkImportModalProps {
 type ImportStep = 'upload' | 'mapping' | 'preview' | 'complete';
 
 export default function BulkImportModal({ onClose }: BulkImportModalProps) {
-  const { addPurchaseOrdersBulk, inventory, addInventoryItemsBulk, suppliers } = useInventory();
+  const { addPurchaseOrdersBulk, inventory, suppliers } = useInventory();
   const [step, setStep] = useState<ImportStep>('upload');
   const [parsedData, setParsedData] = useState<ParsedRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -178,13 +178,10 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
     
     let warningCount = 0;
     let autoLinkedCount = 0;
-    const existingSkus = inventory.map(item => item.sku);
     const timestamp = Date.now();
     
     // Collect all orders to add in bulk
     const ordersToAdd: Omit<PurchaseOrder, 'id' | 'createdAt'>[] = [];
-    const itemsToAdd: Omit<InventoryItem, 'id' | 'createdAt'>[] = [];
-    const existingSkuSet = new Set(existingSkus);
 
     // First, determine the invoice number for the entire batch
     let batchInvoiceNumber = '';
@@ -330,37 +327,18 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
 
       ordersToAdd.push(orderData);
 
-      // DON'T update inventory immediately - only when order status changes to 'Verified'
-      // Just create new inventory items if needed (with 0 stock until verified)
-      if (!autoLinked && !existingSkuSet.has(internalSku) && internalSku) {
-        // Create new inventory item with 0 stock (will be updated when order is received)
-        itemsToAdd.push({
-          name: description,
-          sku: internalSku,
-          supplierSKU: supplierSKU,
-          category: categoryNeedsReview ? '⚠️ NEEDS REVIEW' : matchedCategory,
-          line: lineNeedsReview ? '⚠️ NEEDS REVIEW' : matchedLine,
-          description: description,
-          images: [],
-          ecuadorStock: 0, // Start with 0 - will update when order is verified
-          usaStock: 0,
-          linkedPurchaseOrders: [],
-        });
-        existingSkuSet.add(internalSku); // Prevent duplicates within this batch
-      }
+      // DO NOT create inventory items during bulk import
+      // Inventory items will ONLY be created when purchase orders are marked as 'Verified'
+      // This ensures inventory only contains items from verified orders
 
       if (needsReview) {
         warningCount++;
       }
     });
 
-    // Add all orders and items in bulk
+    // Add all orders in bulk
+    // Inventory items will be created automatically when orders are marked as 'Verified'
     addPurchaseOrdersBulk(ordersToAdd);
-    if (itemsToAdd.length > 0) {
-      addInventoryItemsBulk(itemsToAdd);
-    }
-    
-    // DON'T update inventory stock yet - will be updated when orders are marked as 'Verified'
 
     setImportResults({ success: ordersToAdd.length, warnings: warningCount, autoLinked: autoLinkedCount });
     setStep('complete');
