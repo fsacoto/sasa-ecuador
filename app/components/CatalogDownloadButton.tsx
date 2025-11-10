@@ -1,8 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { InventoryItem } from '../types';
-import { convertImageForPDF } from '../utils/imageConverter';
 
 interface CatalogDownloadButtonProps {
   products: InventoryItem[];
@@ -23,31 +22,11 @@ export default function CatalogDownloadButton({
   locale,
   fileName,
 }: CatalogDownloadButtonProps) {
-  const [isReady, setIsReady] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load PDF components on mount
-  useEffect(() => {
-    const loadComponents = async () => {
-      try {
-        // Just verify imports work - we'll use them when generating
-        await Promise.all([
-          import('@react-pdf/renderer'),
-          import('./ProductCatalogPDF')
-        ]);
-        setIsReady(true);
-      } catch (err) {
-        console.error('Failed to load PDF components:', err);
-        setError('Failed to load PDF generator');
-      }
-    };
-    loadComponents();
-  }, []);
-
-
   const handleDownload = async () => {
-    if (!isReady || !products || products.length === 0) {
+    if (!products || products.length === 0) {
       return;
     }
 
@@ -55,67 +34,23 @@ export default function CatalogDownloadButton({
       setIsGenerating(true);
       setError(null);
 
-      // Convert images right before generating PDF
-      const convertedProducts = await Promise.all(
-        products.map(async (product) => {
-          if (!product.images || product.images.length === 0) {
-            return product;
-          }
-
-          // Convert each image to base64
-          const convertedImages = await Promise.allSettled(
-            product.images.map(img => convertImageForPDF(img))
-          );
-
-          // Filter out failed conversions but keep successful ones
-          const validImages = convertedImages
-            .filter((result): result is PromiseFulfilledResult<string | null> => 
-              result.status === 'fulfilled' && result.value !== null
-            )
-            .map(result => result.value as string);
-
-          return {
-            ...product,
-            images: validImages,
-          };
-        })
-      );
-
-      // Dynamically import components
-      const [{ pdf }, { default: ProductCatalogPDF }] = await Promise.all([
-        import('@react-pdf/renderer'),
-        import('./ProductCatalogPDF')
-      ]);
-
-      // Create PDF document
-      const pdfDocument = (
-        <ProductCatalogPDF
-          products={convertedProducts}
-          catalogTitle={catalogTitle}
-          includeStock={includeStock}
-          itemsPerPage={itemsPerPage}
-          orientation={orientation}
-          locale={locale}
-        />
-      );
-
-      // Generate blob
-      const instance = pdf(pdfDocument);
-      const blob = await instance.toBlob();
-
-      // Create download link
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      // Dynamically import the PDF generator utility
+      // This isolates all PDF-related imports to avoid chunk loading issues
+      const { generateCatalogPDF } = await import('../utils/pdfGenerator');
+      
+      await generateCatalogPDF({
+        products,
+        catalogTitle,
+        includeStock,
+        itemsPerPage,
+        orientation,
+        locale,
+        fileName,
+      });
 
     } catch (err) {
       console.error('Error generating PDF:', err);
-      setError('Failed to generate PDF');
+      setError('Failed to generate PDF. Please try again.');
     } finally {
       setIsGenerating(false);
     }
@@ -138,23 +73,6 @@ export default function CatalogDownloadButton({
     );
   }
 
-  // Loading state
-  if (!isReady) {
-    return (
-      <button
-        disabled
-        className="px-3 py-1.5 bg-gray-300 text-gray-500 rounded-md font-medium cursor-wait text-xs"
-      >
-        <span className="flex items-center justify-center gap-1">
-          <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          Loading...
-        </span>
-      </button>
-    );
-  }
 
   // No products
   if (!products || products.length === 0) {
