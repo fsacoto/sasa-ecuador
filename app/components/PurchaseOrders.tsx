@@ -11,6 +11,8 @@ import BulkImportModal from './BulkImportModal';
 import BulkDeleteModal from './BulkDeleteModal';
 import { syncPurchaseOrderToInventory, cleanupInventoryAfterOrderDeletion } from '../utils/syncUpdates';
 import { useTranslation } from '../context/TranslationContext';
+import POVerificationModal from './POVerificationModal';
+import { generatePOVerificationPDF } from '../utils/poVerificationPDF';
 
 export default function PurchaseOrders() {
   const { purchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, suppliers, inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem } = useInventory();
@@ -19,6 +21,8 @@ export default function PurchaseOrders() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
+  const [isPOVerificationModalOpen, setIsPOVerificationModalOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [editingOrder, setEditingOrder] = useState<PurchaseOrder | null>(null);
   const [selectedInventoryId, setSelectedInventoryId] = useState<string>('');
   const [isCreatingNewItem, setIsCreatingNewItem] = useState(false);
@@ -212,7 +216,7 @@ export default function PurchaseOrders() {
         }
       }
     }
-  }, [formData.category, formData.line, formData.sku, isCreatingNewItem, editingOrder, inventory, skuManuallyEdited]);
+  }, [formData.category, formData.line, isCreatingNewItem, editingOrder, inventory, skuManuallyEdited]);
 
   // When selecting an existing inventory item, auto-fill fields
   useEffect(() => {
@@ -606,6 +610,61 @@ export default function PurchaseOrders() {
     setIsFormOpen(true);
   };
 
+  // Get unique invoices that have at least one unverified order
+  const getUnverifiedInvoices = () => {
+    const invoiceMap = new Map<string, { orders: PurchaseOrder[], hasUnverified: boolean }>();
+    
+    purchaseOrders.forEach(order => {
+      if (!invoiceMap.has(order.invoice)) {
+        invoiceMap.set(order.invoice, { orders: [], hasUnverified: false });
+      }
+      const invoiceData = invoiceMap.get(order.invoice)!;
+      invoiceData.orders.push(order);
+      if (order.status !== 'Verified') {
+        invoiceData.hasUnverified = true;
+      }
+    });
+    
+    // Return only invoices with unverified orders
+    const unverifiedInvoices: { invoice: string, orders: PurchaseOrder[] }[] = [];
+    invoiceMap.forEach((data, invoice) => {
+      if (data.hasUnverified) {
+        unverifiedInvoices.push({ invoice, orders: data.orders });
+      }
+    });
+    
+    return unverifiedInvoices.sort((a, b) => a.invoice.localeCompare(b.invoice));
+  };
+
+  const handleDownloadVerificationSheet = async (invoiceNumber: string, locale: 'en' | 'es') => {
+    try {
+      // Get all orders for this invoice
+      const invoiceOrders = purchaseOrders.filter(order => order.invoice === invoiceNumber);
+      if (invoiceOrders.length === 0) {
+        alert(t('purchaseOrders.noOrdersFound') || 'No orders found for this invoice.');
+        return;
+      }
+      
+      // Get supplier (should be same for all orders in invoice)
+      const supplierId = invoiceOrders[0].supplierId;
+      const supplier = suppliers.find(s => s.id === supplierId);
+      
+      await generatePOVerificationPDF({
+        orders: invoiceOrders,
+        supplier: supplier || null,
+        invoiceNumber,
+        locale,
+      });
+
+      // Show toast notification
+      setToastMessage(t('purchaseOrders.verificationPDFGenerated') || 'Verification PDF generated successfully.');
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (error) {
+      console.error('Error generating verification sheet:', error);
+      alert(t('purchaseOrders.verificationSheetError') || 'Error generating verification sheet. Please try again.');
+    }
+  };
+
   const totals = calculateTotals();
 
   // Sorting and filtering logic
@@ -794,6 +853,26 @@ export default function PurchaseOrders() {
           <p className="text-sm text-gray-500 mt-1">{t('purchaseOrders.subtitle')}</p>
         </div>
         <div className="flex gap-3">
+          {/* Verification Sheet Button */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                const unverifiedInvoices = getUnverifiedInvoices();
+                if (unverifiedInvoices.length === 0) {
+                  alert(t('purchaseOrders.allOrdersVerified') || 'All purchase orders are already verified.');
+                  return;
+                }
+                setIsPOVerificationModalOpen(true);
+              }}
+              className="flex items-center gap-2 px-3 py-2 border border-blue-300 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 hover:shadow-md transition-all duration-200 text-sm font-medium"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span>{t('purchaseOrders.downloadVerificationSheet')}</span>
+            </button>
+          </div>
+          
           {/* Bulk Operations Dropdown */}
           <div className="relative">
           <button
@@ -2109,6 +2188,18 @@ export default function PurchaseOrders() {
                                   </svg>
                                   {needsReview ? t('purchaseOrders.completeInfo') : t('purchaseOrders.edit')}
                                 </button>
+                                {order.status !== 'Verified' && (
+                                  <button
+                                    onClick={() => handleDownloadVerificationSheet(order)}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 hover:text-blue-800 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md border border-blue-200"
+                                    title={t('purchaseOrders.downloadVerificationSheet') || 'Download Verification Sheet'}
+                                  >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    {t('purchaseOrders.downloadVerificationSheet') || 'Verification Sheet'}
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => {
                                     if (confirm(t('purchaseOrders.deleteConfirm'))) {
@@ -2169,6 +2260,31 @@ export default function PurchaseOrders() {
       {/* Bulk Import Modal */}
       {isBulkImportOpen && (
         <BulkImportModal onClose={() => setIsBulkImportOpen(false)} />
+      )}
+
+      {/* PO Verification Modal */}
+      {isPOVerificationModalOpen && (
+        <POVerificationModal
+          purchaseOrders={purchaseOrders}
+          suppliers={suppliers}
+          onClose={() => setIsPOVerificationModalOpen(false)}
+          onSelect={(invoiceNumber, locale) => {
+            setIsPOVerificationModalOpen(false);
+            handleDownloadVerificationSheet(invoiceNumber, locale);
+          }}
+        />
+      )}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-in slide-in-from-bottom-5">
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span>{toastMessage}</span>
+          </div>
+        </div>
       )}
 
       {/* Bulk Delete Modal */}
