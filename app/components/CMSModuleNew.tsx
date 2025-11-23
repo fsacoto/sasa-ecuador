@@ -7,6 +7,7 @@ import { useCMS } from '../context/CMSContext';
 import { useTranslation } from '../context/TranslationContext';
 import { ContentType, ContentStatus, InventoryItem, CMSContent } from '../types';
 import JSZip from 'jszip';
+import ConfirmDialog from './ui/ConfirmDialog';
 // Removed Firebase Storage imports - using direct URL fetch instead
 
 type ViewMode = 'dashboard' | 'upload' | 'manage' | 'products';
@@ -32,6 +33,13 @@ export default function CMSModuleNew() {
   const [showFilters, setShowFilters] = useState(false);
   const [sortField, setSortField] = useState<string>('createdAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  
+  // Confirmation dialog states
+  const [deleteDraftConfirmOpen, setDeleteDraftConfirmOpen] = useState(false);
+  const [cancelSubmissionConfirmOpen, setCancelSubmissionConfirmOpen] = useState(false);
+  const [deletePublishedConfirmOpen, setDeletePublishedConfirmOpen] = useState(false);
+  const [contentToDelete, setContentToDelete] = useState<CMSContent | null>(null);
+  const [contentToCancel, setContentToCancel] = useState<CMSContent | null>(null);
   
   // Separate state for each content type tab
   type UploadedFile = {
@@ -1773,15 +1781,8 @@ export default function CMSModuleNew() {
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    if (confirm(t('cms.deleteDraftConfirm'))) {
-                                      try {
-                                        deleteContent(item.id);
-                                        alert(t('cms.draftDeleted'));
-                                      } catch (error) {
-                                        console.error('Error deleting draft:', error);
-                                        alert(t('cms.deleteDraftFailed'));
-                                      }
-                                    }
+                                    setContentToDelete(item);
+                                    setDeleteDraftConfirmOpen(true);
                                   }}
                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-300 bg-white text-red-700 hover:bg-red-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
                                 >
@@ -1820,17 +1821,10 @@ export default function CMSModuleNew() {
                                   {t('cms.edit')}
                                 </button>
                                 <button
-                                  onClick={async (e) => {
+                                  onClick={(e) => {
                                     e.stopPropagation();
-                                    if (confirm(t('cms.cancelSubmissionConfirm'))) {
-                                      try {
-                                        await updateContentStatus(item.id, 'draft', user?.id || '');
-                                        alert(t('cms.submissionCancelled'));
-                                      } catch (error) {
-                                        console.error('Error cancelling submission:', error);
-                                        alert(t('cms.cancelSubmissionFailed'));
-                                      }
-                                    }
+                                    setContentToCancel(item);
+                                    setCancelSubmissionConfirmOpen(true);
                                   }}
                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
                                 >
@@ -1887,9 +1881,8 @@ export default function CMSModuleNew() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (confirm(t('cms.deletePublishedConfirm'))) {
-                                    deleteContent(item.id);
-                                  }
+                                  setContentToDelete(item);
+                                  setDeletePublishedConfirmOpen(true);
                                 }}
                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-300 bg-white text-red-700 hover:bg-red-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
                                 title="Only admins can delete published content"
@@ -2541,6 +2534,78 @@ function ContentDetailModal({
           onClose={() => setSelectedVideoUrl(null)}
         />
       )}
+
+      {/* Confirmation Dialogs */}
+      <ConfirmDialog
+        open={deleteDraftConfirmOpen}
+        title={t('common.deleteDraft')}
+        description={t('cms.deleteDraftConfirm')}
+        confirmText={t('common.delete')}
+        cancelText={t('common.cancel')}
+        confirmVariant="danger"
+        onConfirm={async () => {
+          if (contentToDelete) {
+            try {
+              deleteContent(contentToDelete.id);
+              alert(t('cms.draftDeleted'));
+            } catch (error) {
+              console.error('Error deleting draft:', error);
+              alert(t('cms.deleteDraftFailed'));
+            }
+            setContentToDelete(null);
+          }
+          setDeleteDraftConfirmOpen(false);
+        }}
+        onCancel={() => {
+          setDeleteDraftConfirmOpen(false);
+          setContentToDelete(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={cancelSubmissionConfirmOpen}
+        title={t('common.cancelSubmission')}
+        description={t('cms.cancelSubmissionConfirm')}
+        confirmText={t('common.cancelSubmission')}
+        cancelText={t('common.keepSubmitted')}
+        onConfirm={async () => {
+          if (contentToCancel) {
+            try {
+              await updateContentStatus(contentToCancel.id, 'draft', user?.id || '');
+              alert(t('cms.submissionCancelled'));
+            } catch (error) {
+              console.error('Error cancelling submission:', error);
+              alert(t('cms.cancelSubmissionFailed'));
+            }
+            setContentToCancel(null);
+          }
+          setCancelSubmissionConfirmOpen(false);
+        }}
+        onCancel={() => {
+          setCancelSubmissionConfirmOpen(false);
+          setContentToCancel(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={deletePublishedConfirmOpen}
+        title={t('common.deletePublishedContent')}
+        description={t('cms.deletePublishedConfirm')}
+        confirmText={t('common.delete')}
+        cancelText={t('common.cancel')}
+        confirmVariant="danger"
+        onConfirm={() => {
+          if (contentToDelete) {
+            deleteContent(contentToDelete.id);
+            setContentToDelete(null);
+          }
+          setDeletePublishedConfirmOpen(false);
+        }}
+        onCancel={() => {
+          setDeletePublishedConfirmOpen(false);
+          setContentToDelete(null);
+        }}
+      />
     </div>
   );
 }
@@ -5503,6 +5568,78 @@ function ContentView({
           onClose={() => setSelectedVideoUrl(null)}
         />
       )}
+
+      {/* Confirmation Dialogs */}
+      <ConfirmDialog
+        open={deleteDraftConfirmOpen}
+        title={t('common.deleteDraft')}
+        description={t('cms.deleteDraftConfirm')}
+        confirmText={t('common.delete')}
+        cancelText={t('common.cancel')}
+        confirmVariant="danger"
+        onConfirm={async () => {
+          if (contentToDelete) {
+            try {
+              deleteContent(contentToDelete.id);
+              alert(t('cms.draftDeleted'));
+            } catch (error) {
+              console.error('Error deleting draft:', error);
+              alert(t('cms.deleteDraftFailed'));
+            }
+            setContentToDelete(null);
+          }
+          setDeleteDraftConfirmOpen(false);
+        }}
+        onCancel={() => {
+          setDeleteDraftConfirmOpen(false);
+          setContentToDelete(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={cancelSubmissionConfirmOpen}
+        title={t('common.cancelSubmission')}
+        description={t('cms.cancelSubmissionConfirm')}
+        confirmText={t('common.cancelSubmission')}
+        cancelText={t('common.keepSubmitted')}
+        onConfirm={async () => {
+          if (contentToCancel) {
+            try {
+              await updateContentStatus(contentToCancel.id, 'draft', user?.id || '');
+              alert(t('cms.submissionCancelled'));
+            } catch (error) {
+              console.error('Error cancelling submission:', error);
+              alert(t('cms.cancelSubmissionFailed'));
+            }
+            setContentToCancel(null);
+          }
+          setCancelSubmissionConfirmOpen(false);
+        }}
+        onCancel={() => {
+          setCancelSubmissionConfirmOpen(false);
+          setContentToCancel(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={deletePublishedConfirmOpen}
+        title={t('common.deletePublishedContent')}
+        description={t('cms.deletePublishedConfirm')}
+        confirmText={t('common.delete')}
+        cancelText={t('common.cancel')}
+        confirmVariant="danger"
+        onConfirm={() => {
+          if (contentToDelete) {
+            deleteContent(contentToDelete.id);
+            setContentToDelete(null);
+          }
+          setDeletePublishedConfirmOpen(false);
+        }}
+        onCancel={() => {
+          setDeletePublishedConfirmOpen(false);
+          setContentToDelete(null);
+        }}
+      />
     </div>
   );
 }

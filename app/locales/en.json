@@ -38,7 +38,21 @@
     "of": "of",
     "with": "with",
     "multiple": "multiple",
-    "item": "Item"
+    "item": "Item",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "keepSubmitted": "Keep Submitted",
+    "cancelSubmission": "Cancel Submission",
+    "changeStatus": "Change Status",
+    "quantityMismatch": "Quantity Mismatch",
+    "deleteClient": "Delete Client",
+    "deleteSupplier": "Delete Supplier",
+    "deleteInventoryItem": "Delete Inventory Item",
+    "deleteDraft": "Delete Draft",
+    "deletePublishedContent": "Delete Published Content",
+    "deleteAdditionalCost": "Delete Additional Cost",
+    "deletePurchaseOrders": "Delete Purchase Orders",
+    "bulkDeleteWarning": "⚠️ WARNING: This will permanently delete {totalOrders} purchase orders from {invoiceCount} invoices.\n\nThis action cannot be undone!\n\nAre you sure you want to continue?"
   },
   "navigation": {
     "dashboard": "Dashboard",

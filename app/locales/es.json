@@ -38,7 +38,21 @@
     "of": "de",
     "with": "con",
     "multiple": "múltiples",
-    "item": "Artículo"
+    "item": "Artículo",
+    "delete": "Eliminar",
+    "confirm": "Confirmar",
+    "keepSubmitted": "Mantener Enviado",
+    "cancelSubmission": "Cancelar Envío",
+    "changeStatus": "Cambiar Estado",
+    "quantityMismatch": "Diferencia de Cantidad",
+    "deleteClient": "Eliminar Cliente",
+    "deleteSupplier": "Eliminar Proveedor",
+    "deleteInventoryItem": "Eliminar Artículo de Inventario",
+    "deleteDraft": "Eliminar Borrador",
+    "deletePublishedContent": "Eliminar Contenido Publicado",
+    "deleteAdditionalCost": "Eliminar Costo Adicional",
+    "deletePurchaseOrders": "Eliminar Órdenes de Compra",
+    "bulkDeleteWarning": "⚠️ ADVERTENCIA: Esto eliminará permanentemente {totalOrders} órdenes de compra de {invoiceCount} facturas.\n\n¡Esta acción no se puede deshacer!\n\n¿Está seguro de que desea continuar?"
   },
   "navigation": {
     "dashboard": "Panel de Control",

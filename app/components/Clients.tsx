@@ -10,6 +10,7 @@ import {
 } from '../services/clientsService';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../context/TranslationContext';
+import ConfirmDialog from './ui/ConfirmDialog';
 
 export default function Clients() {
   const { user, hasPermission } = useAuth();
@@ -28,6 +29,8 @@ export default function Clients() {
     notes: ''
   });
   const [searchTerm, setSearchTerm] = useState('');
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
   const [filterCountry, setFilterCountry] = useState<'Ecuador' | 'USA' | 'All'>('All');
   const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc' | 'desc'}>({key: 'name', direction: 'asc'});
 
@@ -111,16 +114,23 @@ export default function Clients() {
     }
   };
 
-  const handleDelete = async (client: Client) => {
-    if (!confirm(`${t('clients.deleteConfirm')} ${client.name}?`)) return;
+  const handleDelete = (client: Client) => {
+    setClientToDelete(client);
+    setDeleteConfirmOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!clientToDelete) return;
     
     try {
-      await deleteClient(client.id);
+      await deleteClient(clientToDelete.id);
       loadClients();
+      setClientToDelete(null);
     } catch (error) {
       console.error('Error deleting client:', error);
       alert(t('clients.errorDeleting'));
     }
+    setDeleteConfirmOpen(false);
   };
 
   const filteredClients = clients.filter(client =>
@@ -449,6 +459,20 @@ export default function Clients() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title={t('common.deleteClient')}
+        description={clientToDelete ? `${t('clients.deleteConfirm')} ${clientToDelete.name}?` : ''}
+        confirmText={t('common.delete')}
+        cancelText={t('common.cancel')}
+        confirmVariant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          setDeleteConfirmOpen(false);
+          setClientToDelete(null);
+        }}
+      />
     </div>
   );
 }

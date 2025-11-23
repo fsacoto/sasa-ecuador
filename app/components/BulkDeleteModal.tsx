@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { PurchaseOrder } from '../types';
+import ConfirmDialog from './ui/ConfirmDialog';
+import { useTranslation } from '../context/TranslationContext';
 
 interface BulkDeleteModalProps {
   purchaseOrders: PurchaseOrder[];
@@ -10,6 +12,9 @@ interface BulkDeleteModalProps {
 }
 
 export default function BulkDeleteModal({ purchaseOrders, onClose, onBulkDelete }: BulkDeleteModalProps) {
+  const { t } = useTranslation();
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [pendingInvoices, setPendingInvoices] = useState<string[]>([]);
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterSupplier, setFilterSupplier] = useState<string>('all');
@@ -71,19 +76,8 @@ export default function BulkDeleteModal({ purchaseOrders, onClose, onBulkDelete 
     
     console.log(`Total orders to delete: ${totalOrders} from ${selectedInvoices.length} invoices`);
     
-    const confirmed = confirm(
-      `⚠️ WARNING: This will permanently delete ${totalOrders} purchase orders from ${selectedInvoices.length} invoices.\n\n` +
-      `This action cannot be undone!\n\n` +
-      `Are you sure you want to continue?`
-    );
-
-    if (confirmed) {
-      console.log('User confirmed deletion, calling onBulkDelete');
-      onBulkDelete(selectedInvoices);
-      onClose();
-    } else {
-      console.log('User cancelled deletion');
-    }
+    setPendingInvoices(selectedInvoices);
+    setDeleteConfirmOpen(true);
   };
 
   return (
@@ -230,6 +224,30 @@ export default function BulkDeleteModal({ purchaseOrders, onClose, onBulkDelete 
           </button>
         </div>
       </div>
+
+      {pendingInvoices.length > 0 && (
+        <ConfirmDialog
+          open={deleteConfirmOpen}
+          title={`⚠️ ${t('common.deletePurchaseOrders')}`}
+          description={t('common.bulkDeleteWarning')
+            .replace('{totalOrders}', pendingInvoices.reduce((total, invoice) => total + ordersByInvoice[invoice].length, 0).toString())
+            .replace('{invoiceCount}', pendingInvoices.length.toString())}
+          confirmText={t('common.delete')}
+          cancelText={t('common.cancel')}
+          confirmVariant="danger"
+          onConfirm={() => {
+            console.log('User confirmed deletion, calling onBulkDelete');
+            onBulkDelete(pendingInvoices);
+            setPendingInvoices([]);
+            setDeleteConfirmOpen(false);
+            onClose();
+          }}
+          onCancel={() => {
+            setDeleteConfirmOpen(false);
+            setPendingInvoices([]);
+          }}
+        />
+      )}
     </div>
   );
 }

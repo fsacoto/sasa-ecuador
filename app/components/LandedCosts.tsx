@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { AdditionalCost, AdditionalCostType, LandedCostCalculation } from '../types';
 import { useTranslation } from '../context/TranslationContext';
+import ConfirmDialog from './ui/ConfirmDialog';
 
 export default function LandedCosts() {
   const { 
@@ -20,6 +21,8 @@ export default function LandedCosts() {
   const [selectedInvoice, setSelectedInvoice] = useState<string>('');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingCost, setEditingCost] = useState<AdditionalCost | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [costToDelete, setCostToDelete] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     invoiceNumber: '',
     costs: [
@@ -100,9 +103,16 @@ export default function LandedCosts() {
 
   // Handle delete
   const handleDelete = (id: string) => {
-    if (confirm(t('landedCosts.deleteConfirm'))) {
-      deleteAdditionalCost(id);
+    setCostToDelete(id);
+    setDeleteConfirmOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (costToDelete) {
+      deleteAdditionalCost(costToDelete);
+      setCostToDelete(null);
     }
+    setDeleteConfirmOpen(false);
   };
 
   // Update individual cost field
@@ -441,6 +451,20 @@ export default function LandedCosts() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title={t('common.deleteAdditionalCost')}
+        description={t('landedCosts.deleteConfirm')}
+        confirmText={t('common.delete')}
+        cancelText={t('common.cancel')}
+        confirmVariant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          setDeleteConfirmOpen(false);
+          setCostToDelete(null);
+        }}
+      />
     </div>
   );
 }

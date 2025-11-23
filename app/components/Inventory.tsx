@@ -12,6 +12,7 @@ import { handleMultipleImageUpload, validateImageFile } from '../utils/imageUplo
 import { generateBarcodeFromSKU, generateBarcodeAsFile, isValidBarcodeInput, isBase64Barcode } from '../utils/barcodeGenerator';
 import { uploadImage } from '../services/storageService';
 import { useTranslation } from '../context/TranslationContext';
+import ConfirmDialog from './ui/ConfirmDialog';
 
 export default function Inventory() {
   const { inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, purchaseOrders, updatePurchaseOrder } = useInventory();
@@ -28,6 +29,8 @@ export default function Inventory() {
     : inventory;
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
   const [skuManuallyEdited, setSkuManuallyEdited] = useState(false);
@@ -1378,9 +1381,8 @@ export default function Inventory() {
                               </button>
                               <button
                                 onClick={() => {
-                                  if (confirm('Are you sure you want to delete this inventory item?')) {
-                                    deleteInventoryItem(item.id);
-                                  }
+                                  setItemToDelete(item);
+                                  setDeleteConfirmOpen(true);
                                 }}
                                 className="text-red-600 hover:text-red-700 font-medium transition-colors"
                               >
@@ -1571,6 +1573,26 @@ export default function Inventory() {
           onClose={() => setIsCatalogModalOpen(false)}
         />
       )}
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title={t('common.deleteInventoryItem')}
+        description={t('inventory.deleteConfirm')}
+        confirmText={t('common.delete')}
+        cancelText={t('common.cancel')}
+        confirmVariant="danger"
+        onConfirm={() => {
+          if (itemToDelete) {
+            deleteInventoryItem(itemToDelete.id);
+            setItemToDelete(null);
+          }
+          setDeleteConfirmOpen(false);
+        }}
+        onCancel={() => {
+          setDeleteConfirmOpen(false);
+          setItemToDelete(null);
+        }}
+      />
     </div>
   );
 }

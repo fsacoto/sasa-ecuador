@@ -13,6 +13,7 @@ import { syncPurchaseOrderToInventory, cleanupInventoryAfterOrderDeletion } from
 import { useTranslation } from '../context/TranslationContext';
 import POVerificationModal from './POVerificationModal';
 import { generatePOVerificationPDF } from '../utils/poVerificationPDF';
+import ConfirmDialog from './ui/ConfirmDialog';
 
 export default function PurchaseOrders() {
   const { purchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, suppliers, inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem } = useInventory();
@@ -24,6 +25,14 @@ export default function PurchaseOrders() {
   const [isPOVerificationModalOpen, setIsPOVerificationModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [editingOrder, setEditingOrder] = useState<PurchaseOrder | null>(null);
+  
+  // Confirmation dialog states
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [orderToDelete, setOrderToDelete] = useState<PurchaseOrder | null>(null);
+  const [statusChangeConfirmOpen, setStatusChangeConfirmOpen] = useState(false);
+  const [statusChangeData, setStatusChangeData] = useState<{oldStatus: string, newStatus: string, order: PurchaseOrder, updatedOrder: PurchaseOrder, orderData: any, previousSku?: string} | null>(null);
+  const [quantityMismatchConfirmOpen, setQuantityMismatchConfirmOpen] = useState(false);
+  const [quantityMismatchData, setQuantityMismatchData] = useState<{expected: number, received: number, difference: string, order: PurchaseOrder, actualQuantity: number, orderData?: any, previousSku?: string, statusUpdate?: Partial<PurchaseOrder>} | null>(null);
   const [selectedInventoryId, setSelectedInventoryId] = useState<string>('');
   const [isCreatingNewItem, setIsCreatingNewItem] = useState(false);
   const [exchangeRates, setExchangeRates] = useState<ExchangeRateResponse | null>(null);
@@ -350,19 +359,10 @@ export default function PurchaseOrders() {
       
       // Moving backwards FROM Verified TO non-verified - remove from inventory
       if (oldStatus === 'Verified' && newStatus !== 'Verified') {
-        const confirmed = confirm(
-          t('purchaseOrders.warningVerifiedStatus')
-            .replace('{quantity}', (editingOrder.quantityReceived || editingOrder.quantity).toString())
-            .replace('{destination}', updatedOrder.destinationStock)
-        );
-        
-        if (!confirmed) {
-          return; // Cancel the edit
-        }
-        
-        // Use sync function to remove order from inventory
-        // This will remove stock and unlink the order
-        syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders);
+        const previousSku = originalSku !== updatedOrder.sku ? originalSku : undefined;
+        setStatusChangeData({ oldStatus, newStatus, order: editingOrder, updatedOrder, orderData, previousSku });
+        setStatusChangeConfirmOpen(true);
+        return; // Wait for confirmation
       }
       // Moving TO Verified - prompt for actual quantity and add to inventory
       else if (oldStatus !== 'Verified' && newStatus === 'Verified') {
@@ -391,16 +391,19 @@ export default function PurchaseOrders() {
           const difference = actualQuantity - updatedOrder.quantity;
           const diffText = difference > 0 ? `+${difference} ${t('purchaseOrders.more')}` : `${Math.abs(difference)} ${t('purchaseOrders.less')}`;
           
-          const confirmMismatch = confirm(
-            t('purchaseOrders.quantityMismatch')
-              .replace('{expected}', updatedOrder.quantity.toString())
-              .replace('{received}', actualQuantity.toString())
-              .replace('{difference}', diffText)
-          );
-          
-          if (!confirmMismatch) {
-            return;
-          }
+          orderData.quantityReceived = actualQuantity;
+          const previousSku = originalSku !== updatedOrder.sku ? originalSku : undefined;
+          setQuantityMismatchData({
+            expected: updatedOrder.quantity,
+            received: actualQuantity,
+            difference: diffText,
+            order: updatedOrder,
+            actualQuantity,
+            orderData,
+            previousSku
+          });
+          setQuantityMismatchConfirmOpen(true);
+          return; // Wait for confirmation
         }
         
         // Store the actual quantity received in orderData
@@ -480,29 +483,11 @@ export default function PurchaseOrders() {
     // SAFEGUARD: Prevent moving backwards from Verified without confirmation
     if (oldStatus === 'Verified' && newStatus !== 'Verified') {
       const quantityToRemove = order.quantityReceived || order.quantity;
-      const confirmed = confirm(
-        t('purchaseOrders.warningVerifiedStatusChange')
-          .replace('{status}', newStatus)
-          .replace('{quantity}', quantityToRemove.toString())
-          .replace('{destination}', order.destinationStock)
-      );
-      
-      if (!confirmed) {
-        // User cancelled - don't change status
-        return;
-      }
-      
-      // Remove inventory that was previously added
-      const inventoryItem = inventory.find(item => item.sku === order.sku);
-      if (inventoryItem) {
-        const stockUpdate: Partial<InventoryItem> = {};
-        if (order.destinationStock === 'Ecuador') {
-          stockUpdate.ecuadorStock = Math.max(0, inventoryItem.ecuadorStock - quantityToRemove);
-        } else {
-          stockUpdate.usaStock = Math.max(0, inventoryItem.usaStock - quantityToRemove);
-        }
-        updateInventoryItem(inventoryItem.id, stockUpdate);
-      }
+      const updatedOrder = { ...order, status: newStatus };
+      const statusUpdateData: Partial<PurchaseOrder> = { status: newStatus };
+      setStatusChangeData({ oldStatus, newStatus, order, updatedOrder, orderData: statusUpdateData });
+      setStatusChangeConfirmOpen(true);
+      return; // Wait for confirmation
     }
     
     const statusUpdate: Partial<PurchaseOrder> = { status: newStatus };
@@ -548,16 +533,17 @@ export default function PurchaseOrders() {
         const difference = actualQuantity - order.quantity;
         const diffText = difference > 0 ? `+${difference} ${t('purchaseOrders.more')}` : `${Math.abs(difference)} ${t('purchaseOrders.less')}`;
         
-        const confirmMismatch = confirm(
-          t('purchaseOrders.quantityMismatch')
-            .replace('{expected}', order.quantity.toString())
-            .replace('{received}', actualQuantity.toString())
-            .replace('{difference}', diffText)
-        );
-        
-        if (!confirmMismatch) {
-          return;
-        }
+        statusUpdate.quantityReceived = actualQuantity;
+        setQuantityMismatchData({
+          expected: order.quantity,
+          received: actualQuantity,
+          difference: diffText,
+          order,
+          actualQuantity,
+          statusUpdate
+        });
+        setQuantityMismatchConfirmOpen(true);
+        return; // Wait for confirmation
       }
       
       // Store the actual quantity received
@@ -825,6 +811,112 @@ export default function PurchaseOrders() {
   };
 
   const groupedOrders = getGroupedOrders();
+
+  // Confirmation handlers
+  const handleDeleteConfirm = () => {
+    if (orderToDelete) {
+      cleanupInventoryAfterOrderDeletion([orderToDelete.id], inventory, deleteInventoryItem);
+      deletePurchaseOrder(orderToDelete.id);
+      setOrderToDelete(null);
+    }
+    setDeleteConfirmOpen(false);
+  };
+
+  const handleStatusChangeConfirm = () => {
+    if (!statusChangeData) return;
+    
+    const { oldStatus, newStatus, order, updatedOrder, orderData, previousSku } = statusChangeData;
+    
+    // Remove inventory that was previously added
+    if (oldStatus === 'Verified' && newStatus !== 'Verified') {
+      // Use sync function to remove order from inventory
+      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku);
+    }
+    
+    // Continue with the form submission or status update
+    if (editingOrder && orderData) {
+      updatePurchaseOrder(editingOrder.id, orderData);
+      // ALWAYS sync to inventory - the sync function handles verified/non-verified logic
+      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku);
+      resetForm();
+    } else if (orderData) {
+      // Handle status change from dropdown
+      updatePurchaseOrder(order.id, orderData);
+      
+      // Remove inventory that was previously added
+      const quantityToRemove = order.quantityReceived || order.quantity;
+      const inventoryItem = inventory.find(item => item.sku === order.sku);
+      if (inventoryItem) {
+        const stockUpdate: Partial<InventoryItem> = {};
+        if (order.destinationStock === 'Ecuador') {
+          stockUpdate.ecuadorStock = Math.max(0, inventoryItem.ecuadorStock - quantityToRemove);
+        } else {
+          stockUpdate.usaStock = Math.max(0, inventoryItem.usaStock - quantityToRemove);
+        }
+        updateInventoryItem(inventoryItem.id, stockUpdate);
+      }
+      
+      // Sync changes to inventory after status update
+      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem);
+    }
+    
+    setStatusChangeData(null);
+    setStatusChangeConfirmOpen(false);
+  };
+
+  const handleQuantityMismatchConfirm = () => {
+    if (!quantityMismatchData) return;
+    
+    const { order, actualQuantity, orderData, previousSku, statusUpdate } = quantityMismatchData;
+    
+    // Continue with the form submission or status update
+    if (editingOrder && orderData) {
+      updatePurchaseOrder(editingOrder.id, orderData);
+      const updatedOrder = { ...editingOrder, ...orderData };
+      // ALWAYS sync to inventory - the sync function handles verified/non-verified logic
+      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku);
+      resetForm();
+    } else if (statusUpdate) {
+      // Handle status change from dropdown
+      updatePurchaseOrder(order.id, statusUpdate);
+      
+      // Add to inventory using actual quantity
+      const inventoryItem = inventory.find(item => item.sku === order.sku);
+      if (inventoryItem) {
+        const stockUpdate: Partial<InventoryItem> = {};
+        if (order.destinationStock === 'Ecuador') {
+          stockUpdate.ecuadorStock = inventoryItem.ecuadorStock + actualQuantity;
+        } else {
+          stockUpdate.usaStock = inventoryItem.usaStock + actualQuantity;
+        }
+        updateInventoryItem(inventoryItem.id, stockUpdate);
+      } else {
+        // Create new inventory item
+        const newInventoryItem: Omit<InventoryItem, 'id'> = {
+          sku: order.sku,
+          description: order.description,
+          category: order.category || '',
+          line: order.line || '',
+          images: order.images || [],
+          ecuadorStock: order.destinationStock === 'Ecuador' ? actualQuantity : 0,
+          usaStock: order.destinationStock === 'USA' ? actualQuantity : 0,
+          costPerUnit: order.costPerUnit || 0,
+          currency: order.currency || 'USD',
+          supplierId: order.supplierId,
+          supplierSKU: order.supplierSKU || '',
+          createdAt: new Date(),
+        };
+        addInventoryItem(newInventoryItem);
+      }
+      
+      // Sync changes to inventory after status update
+      const updatedOrder = { ...order, ...statusUpdate };
+      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem);
+    }
+    
+    setQuantityMismatchData(null);
+    setQuantityMismatchConfirmOpen(false);
+  };
 
   const SortIcon = ({ field }: { field: string }) => {
     if (sortField !== field) {
@@ -2027,11 +2119,8 @@ export default function PurchaseOrders() {
                         </button>
                         <button
                           onClick={() => {
-                            if (confirm(t('purchaseOrders.deleteConfirm'))) {
-                                // Clean up orphaned inventory items
-                                cleanupInventoryAfterOrderDeletion([order.id], inventory, deleteInventoryItem);
-                              deletePurchaseOrder(order.id);
-                            }
+                            setOrderToDelete(order);
+                            setDeleteConfirmOpen(true);
                           }}
                             className="flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 hover:text-red-800 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md border border-red-200"
                         >
@@ -2202,11 +2291,8 @@ export default function PurchaseOrders() {
                                 )}
                                 <button
                                   onClick={() => {
-                                    if (confirm(t('purchaseOrders.deleteConfirm'))) {
-                                      // Clean up orphaned inventory items
-                                      cleanupInventoryAfterOrderDeletion([order.id], inventory, deleteInventoryItem);
-                                      deletePurchaseOrder(order.id);
-                                    }
+                                    setOrderToDelete(order);
+                                    setDeleteConfirmOpen(true);
                                   }}
                                   className="flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 hover:text-red-800 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md border border-red-200"
                                 >
@@ -2315,6 +2401,63 @@ export default function PurchaseOrders() {
             cleanupInventoryAfterOrderDeletion(deletedOrderIds, inventory, deleteInventoryItem);
             
             console.log('Bulk delete completed');
+          }}
+        />
+      )}
+
+      {/* Confirmation Dialogs */}
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title={t('common.deletePurchaseOrders')}
+        description={t('purchaseOrders.deleteConfirm')}
+        confirmText={t('common.delete')}
+        cancelText={t('common.cancel')}
+        confirmVariant="danger"
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => {
+          setDeleteConfirmOpen(false);
+          setOrderToDelete(null);
+        }}
+      />
+
+      {statusChangeData && (
+        <ConfirmDialog
+          open={statusChangeConfirmOpen}
+          title={t('common.changeStatus')}
+          description={
+            statusChangeData.oldStatus === 'Verified' && statusChangeData.newStatus !== 'Verified'
+              ? t('purchaseOrders.warningVerifiedStatus')
+                  .replace('{quantity}', (statusChangeData.order.quantityReceived || statusChangeData.order.quantity).toString())
+                  .replace('{destination}', statusChangeData.order.destinationStock)
+              : t('purchaseOrders.warningVerifiedStatusChange')
+                  .replace('{status}', statusChangeData.newStatus)
+                  .replace('{quantity}', (statusChangeData.order.quantityReceived || statusChangeData.order.quantity).toString())
+                  .replace('{destination}', statusChangeData.order.destinationStock)
+          }
+          confirmText={t('common.confirm')}
+          cancelText={t('common.cancel')}
+          onConfirm={handleStatusChangeConfirm}
+          onCancel={() => {
+            setStatusChangeConfirmOpen(false);
+            setStatusChangeData(null);
+          }}
+        />
+      )}
+
+      {quantityMismatchData && (
+        <ConfirmDialog
+          open={quantityMismatchConfirmOpen}
+          title={t('common.quantityMismatch')}
+          description={t('purchaseOrders.quantityMismatch')
+            .replace('{expected}', quantityMismatchData.expected.toString())
+            .replace('{received}', quantityMismatchData.received.toString())
+            .replace('{difference}', quantityMismatchData.difference)}
+          confirmText={t('common.confirm')}
+          cancelText={t('common.cancel')}
+          onConfirm={handleQuantityMismatchConfirm}
+          onCancel={() => {
+            setQuantityMismatchConfirmOpen(false);
+            setQuantityMismatchData(null);
           }}
         />
       )}

@@ -5,6 +5,7 @@ import { useInventory } from '../context/InventoryContext';
 import { Supplier } from '../types';
 import SupplierDetailPanel from './SupplierDetailPanel';
 import { useTranslation } from '../context/TranslationContext';
+import ConfirmDialog from './ui/ConfirmDialog';
 
 export default function Suppliers() {
   const { suppliers, addSupplier, updateSupplier, deleteSupplier } = useInventory();
@@ -28,6 +29,8 @@ export default function Suppliers() {
 
   // Search dropdown state
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(null);
   const searchDropdownRef = useRef<HTMLDivElement>(null);
 
   // Search state
@@ -395,9 +398,8 @@ export default function Suppliers() {
                         </button>
                         <button
                           onClick={() => {
-                            if (confirm(t('suppliers.deleteConfirm'))) {
-                              deleteSupplier(supplier.id);
-                            }
+                            setSupplierToDelete(supplier);
+                            setDeleteConfirmOpen(true);
                           }}
                           className="text-red-600 hover:text-red-700 font-medium transition-colors"
                         >
@@ -420,6 +422,26 @@ export default function Suppliers() {
           onClose={() => setSelectedSupplier(null)}
         />
       )}
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title={t('common.deleteSupplier')}
+        description={supplierToDelete ? t('suppliers.deleteConfirm') : ''}
+        confirmText={t('common.delete')}
+        cancelText={t('common.cancel')}
+        confirmVariant="danger"
+        onConfirm={() => {
+          if (supplierToDelete) {
+            deleteSupplier(supplierToDelete.id);
+            setSupplierToDelete(null);
+          }
+          setDeleteConfirmOpen(false);
+        }}
+        onCancel={() => {
+          setDeleteConfirmOpen(false);
+          setSupplierToDelete(null);
+        }}
+      />
     </div>
   );
 }
