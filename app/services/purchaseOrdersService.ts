@@ -19,7 +19,15 @@ const toPurchaseOrder = (doc: QueryDocumentSnapshot): PurchaseOrder => {
 
 // Helper to convert PurchaseOrder to Firestore data
 const toFirestore = (order: Omit<PurchaseOrder, 'id' | 'createdAt'> | Partial<PurchaseOrder>) => {
-  return order;
+  // Filter out undefined values (Firestore doesn't accept undefined)
+  const cleanOrder: Record<string, any> = {};
+  Object.keys(order).forEach(key => {
+    const value = (order as any)[key];
+    if (value !== undefined) {
+      cleanOrder[key] = value;
+    }
+  });
+  return cleanOrder;
 };
 
 // Get all purchase orders
@@ -114,7 +122,17 @@ export async function updatePurchaseOrder(id: string, updates: Partial<PurchaseO
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
     const { id: _, createdAt: _createdAt, ...updateData } = updates;
-    await updateDoc(docRef, updateData);
+    
+    // Filter out undefined values (Firestore doesn't accept undefined)
+    const cleanUpdates: Record<string, any> = {};
+    Object.keys(updateData).forEach(key => {
+      const value = (updateData as any)[key];
+      if (value !== undefined) {
+        cleanUpdates[key] = value;
+      }
+    });
+    
+    await updateDoc(docRef, cleanUpdates);
   } catch (error) {
     console.error('Error updating purchase order:', error);
     throw error;

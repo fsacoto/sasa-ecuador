@@ -10,6 +10,7 @@ import { getExchangeRates, getExchangeRate, formatLastUpdate, type ExchangeRateR
 import BulkImportModal from './BulkImportModal';
 import BulkDeleteModal from './BulkDeleteModal';
 import BulkStatusChangeModal from './BulkStatusChangeModal';
+import BarcodePrintModal from './BarcodePrintModal';
 import { syncPurchaseOrderToInventory, cleanupInventoryAfterOrderDeletion } from '../utils/syncUpdates';
 import { useTranslation } from '../context/TranslationContext';
 import POVerificationModal from './POVerificationModal';
@@ -25,6 +26,7 @@ export default function PurchaseOrders() {
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [isBulkStatusChangeOpen, setIsBulkStatusChangeOpen] = useState(false);
   const [isPOVerificationModalOpen, setIsPOVerificationModalOpen] = useState(false);
+  const [isBarcodePrintModalOpen, setIsBarcodePrintModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [editingOrder, setEditingOrder] = useState<PurchaseOrder | null>(null);
   
@@ -1240,6 +1242,26 @@ export default function PurchaseOrders() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
               <span>{t('purchaseOrders.downloadVerificationSheet')}</span>
+            </button>
+          </div>
+          
+          {/* Print Barcodes Button */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                const verifiedOrders = purchaseOrders.filter(order => order.status === 'Verified');
+                if (verifiedOrders.length === 0) {
+                  alert(t('purchaseOrders.noVerifiedOrders') || 'No verified orders found. Please verify orders first.');
+                  return;
+                }
+                setIsBarcodePrintModalOpen(true);
+              }}
+              className="flex items-center gap-2 px-3 py-2 border border-green-300 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 hover:shadow-md transition-all duration-200 text-sm font-medium"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              <span>{t('purchaseOrders.printBarcodes') || 'Print Barcodes'}</span>
             </button>
           </div>
           
@@ -2932,6 +2954,61 @@ export default function PurchaseOrders() {
             cleanupInventoryAfterOrderDeletion(deletedOrderIds, inventory, deleteInventoryItem);
             
             console.log('Bulk delete completed');
+          }}
+        />
+      )}
+
+      {/* Barcode Print Modal */}
+      {isBarcodePrintModalOpen && (
+        <BarcodePrintModal
+          purchaseOrders={purchaseOrders}
+          inventory={inventory}
+          onClose={() => setIsBarcodePrintModalOpen(false)}
+          onPrint={async (items, printMode) => {
+            try {
+              // Convert barcode images for PDF compatibility
+              const { convertImageForPDF } = await import('../utils/imageConverter');
+              const convertedItems = await Promise.all(
+                items.map(async (item) => {
+                  if (!item.inventoryItem || !item.inventoryItem.barcode) {
+                    return item;
+                  }
+                  const convertedBarcode = await convertImageForPDF(item.inventoryItem.barcode);
+                  if (convertedBarcode) {
+                    return {
+                      ...item,
+                      inventoryItem: {
+                        ...item.inventoryItem,
+                        barcode: convertedBarcode
+                      }
+                    };
+                  }
+                  return item;
+                })
+              );
+
+              const [{ pdf }, { default: BarcodeLabelPDF }] = await Promise.all([
+                import('@react-pdf/renderer'),
+                import('./BarcodeLabelPDF')
+              ]);
+
+              const pdfDocument = <BarcodeLabelPDF items={convertedItems} />;
+              const instance = pdf(pdfDocument);
+              const blob = await instance.toBlob();
+
+              const url = URL.createObjectURL(blob);
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = `barcodes-${new Date().toISOString().split('T')[0]}.pdf`;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              URL.revokeObjectURL(url);
+              setIsBarcodePrintModalOpen(false);
+            } catch (error) {
+              console.error('Error generating PDF:', error);
+              alert(t('purchaseOrders.barcodePrintError') || 'Error generating barcode labels. Please try again.');
+            }
           }}
         />
       )}
