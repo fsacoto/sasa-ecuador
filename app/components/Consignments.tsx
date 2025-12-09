@@ -8,6 +8,7 @@ import { createInvoice } from '../services/invoicesService';
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../context/TranslationContext';
+import ConfirmDialog from './ui/ConfirmDialog';
 
 type View = 'list' | 'create' | 'details';
 
@@ -38,6 +39,10 @@ export default function Consignments() {
   // PDF language selection modal state
   const [showPdfLanguageModal, setShowPdfLanguageModal] = useState(false);
   const [pdfConsignment, setPdfConsignment] = useState<Consignment | null>(null);
+  
+  // Delete confirmation state
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [consignmentToDelete, setConsignmentToDelete] = useState<Consignment | null>(null);
 
   // Create a stable string identifier - always a string, never changes array size
   const userIdString = (user?.uid || user?.id || '') as string;
@@ -423,6 +428,49 @@ export default function Consignments() {
     setReturnQuantities({});
   };
 
+  const handleDeleteClick = (consignment: Consignment) => {
+    setConsignmentToDelete(consignment);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!consignmentToDelete) return;
+
+    try {
+      // Return all consignment stock back to Ecuador stock
+      for (const item of consignmentToDelete.items) {
+        const inventoryItem = inventory.find(inv => inv.sku === item.sku);
+        if (inventoryItem) {
+          // Calculate how much is still in consignment (not sold or returned)
+          const stillInConsignment = item.quantityDelivered - item.quantitySold - item.quantityReturned;
+          
+          if (stillInConsignment > 0) {
+            const newConsignmentStock = Math.max(0, (inventoryItem.consignmentStock || 0) - stillInConsignment);
+            const newEcuadorStock = inventoryItem.ecuadorStock + stillInConsignment;
+            
+            await updateInventory(inventoryItem.id, {
+              consignmentStock: newConsignmentStock,
+              ecuadorStock: newEcuadorStock
+            });
+          }
+        }
+      }
+
+      // Delete the consignment
+      await deleteConsignment(consignmentToDelete.id);
+      
+      alert(t('consignments.consignmentDeleted') || 'Consignment deleted successfully');
+      setDeleteConfirmOpen(false);
+      setConsignmentToDelete(null);
+      loadConsignments();
+    } catch (error: any) {
+      console.error('Error deleting consignment:', error);
+      alert(error.message || t('consignments.errorDeleting') || 'Error deleting consignment');
+      setDeleteConfirmOpen(false);
+      setConsignmentToDelete(null);
+    }
+  };
+
   const handleGeneratePDFClick = (consignment: Consignment) => {
     setPdfConsignment(consignment);
     setShowPdfLanguageModal(true);
@@ -650,12 +698,27 @@ export default function Consignments() {
                       <div className="text-sm text-gray-900">{calculateTotalReturned(consignment.items)}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <button
-                        onClick={() => handleViewDetails(consignment)}
-                        className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200"
-                      >
-                        {t('consignments.viewDetails')}
-                      </button>
+                      <div className="flex items-center gap-2 justify-center">
+                        <button
+                          onClick={() => handleViewDetails(consignment)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-200 transition-colors"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                          {t('consignments.viewDetails')}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteClick(consignment)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs font-medium hover:bg-red-200 transition-colors"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          {t('consignments.delete') || t('common.delete')}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -664,6 +727,20 @@ export default function Consignments() {
           </div>
         )}
       </div>
+        {/* Delete Confirmation Dialog */}
+        <ConfirmDialog
+          open={deleteConfirmOpen}
+          title={t('consignments.deleteConsignment') || 'Delete Consignment'}
+          description={t('consignments.deleteConfirm') || `Are you sure you want to delete consignment ${consignmentToDelete?.consignmentId}? This will return all unsold items to inventory.`}
+          confirmText={t('common.delete') || 'Delete'}
+          cancelText={t('common.cancel') || 'Cancel'}
+          confirmVariant="danger"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => {
+            setDeleteConfirmOpen(false);
+            setConsignmentToDelete(null);
+          }}
+        />
         {/* PDF Language Selection Modal */}
         {showPdfLanguageModal && pdfConsignment && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">

@@ -9,6 +9,7 @@ import { generateUniqueSKU } from '../utils/skuGenerator';
 import { getExchangeRates, getExchangeRate, formatLastUpdate, type ExchangeRateResponse } from '../utils/currencyApi';
 import BulkImportModal from './BulkImportModal';
 import BulkDeleteModal from './BulkDeleteModal';
+import BulkStatusChangeModal from './BulkStatusChangeModal';
 import { syncPurchaseOrderToInventory, cleanupInventoryAfterOrderDeletion } from '../utils/syncUpdates';
 import { useTranslation } from '../context/TranslationContext';
 import POVerificationModal from './POVerificationModal';
@@ -22,6 +23,7 @@ export default function PurchaseOrders() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
+  const [isBulkStatusChangeOpen, setIsBulkStatusChangeOpen] = useState(false);
   const [isPOVerificationModalOpen, setIsPOVerificationModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [editingOrder, setEditingOrder] = useState<PurchaseOrder | null>(null);
@@ -33,11 +35,22 @@ export default function PurchaseOrders() {
   const [statusChangeData, setStatusChangeData] = useState<{oldStatus: string, newStatus: string, order: PurchaseOrder, updatedOrder: PurchaseOrder, orderData: any, previousSku?: string} | null>(null);
   const [quantityMismatchConfirmOpen, setQuantityMismatchConfirmOpen] = useState(false);
   const [quantityMismatchData, setQuantityMismatchData] = useState<{expected: number, received: number, difference: string, order: PurchaseOrder, actualQuantity: number, orderData?: any, previousSku?: string, statusUpdate?: Partial<PurchaseOrder>} | null>(null);
+  const [verificationModalOpen, setVerificationModalOpen] = useState(false);
+  const [verificationData, setVerificationData] = useState<{order: PurchaseOrder, orderData?: any, previousSku?: string, isEditing?: boolean, updatedOrder?: PurchaseOrder} | null>(null);
+  const [verificationQuantity, setVerificationQuantity] = useState<string>('');
+  const [verificationQuantityGood, setVerificationQuantityGood] = useState<string>('');
+  const [verificationQuantityProblem, setVerificationQuantityProblem] = useState<string>('');
+  const [verificationQuantityNotReceived, setVerificationQuantityNotReceived] = useState<string>('');
+  const [verificationComment, setVerificationComment] = useState<string>('');
+  const [verificationMedia, setVerificationMedia] = useState<File[]>([]);
+  const [verificationMediaUrls, setVerificationMediaUrls] = useState<string[]>([]);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
   const [selectedInventoryId, setSelectedInventoryId] = useState<string>('');
   const [isCreatingNewItem, setIsCreatingNewItem] = useState(false);
   const [exchangeRates, setExchangeRates] = useState<ExchangeRateResponse | null>(null);
   const [isLoadingRates, setIsLoadingRates] = useState(false);
   const [lastRateUpdate, setLastRateUpdate] = useState<string>('');
+  const [exchangeRateManuallySet, setExchangeRateManuallySet] = useState(false);
   const [categoryMode, setCategoryMode] = useState<'select' | 'new'>('select');
   const [supplierNameInput, setSupplierNameInput] = useState<string>('');
   const [supplierInputMode, setSupplierInputMode] = useState<'select' | 'text'>('select');
@@ -55,6 +68,7 @@ export default function PurchaseOrders() {
   const [filterDuplicateSku, setFilterDuplicateSku] = useState<boolean>(false);
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterLine, setFilterLine] = useState<string>('all');
+  const [filterQuantityIssues, setFilterQuantityIssues] = useState<string>('all'); // 'all', 'problems', 'missing', 'both'
   const [showFilters, setShowFilters] = useState(false);
   const [showColumnDropdown, setShowColumnDropdown] = useState(false);
   
@@ -69,6 +83,7 @@ export default function PurchaseOrders() {
   const [groupByField, setGroupByField] = useState<string>('');
   const [showGroupByDropdown, setShowGroupByDropdown] = useState(false);
   const groupByDropdownRef = useRef<HTMLDivElement>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const searchDropdownRef = useRef<HTMLDivElement>(null);
   
   // Bulk operations state
@@ -289,15 +304,30 @@ export default function PurchaseOrders() {
     }
   }, [isFormOpen, exchangeRates, fetchExchangeRates]);
 
-  // Auto-update exchange rate when currency changes
+  // Track previous currency to detect changes
+  const prevCurrencyRef = useRef<string>(formData.currency);
+  
+  // Auto-update exchange rate when currency changes (only if rate hasn't been manually set)
+  // This allows users to manually override the rate for any currency
   useEffect(() => {
-    if (exchangeRates && formData.currency !== 'USD') {
+    // Reset manual flag when currency changes (so new currency gets auto-populated)
+    if (prevCurrencyRef.current !== formData.currency) {
+      setExchangeRateManuallySet(false);
+      prevCurrencyRef.current = formData.currency;
+    }
+    
+    if (exchangeRates && formData.currency !== 'USD' && !exchangeRateManuallySet) {
       const rate = getExchangeRate(formData.currency, 'USD', exchangeRates);
       if (rate !== formData.exchangeRate) {
         setFormData(prev => ({ ...prev, exchangeRate: rate }));
       }
+    } else if (formData.currency === 'USD' && !exchangeRateManuallySet) {
+      // Reset to 1 for USD if not manually set
+      if (formData.exchangeRate !== 1) {
+        setFormData(prev => ({ ...prev, exchangeRate: 1 }));
+      }
     }
-  }, [formData.currency, formData.exchangeRate, exchangeRates]);
+  }, [formData.currency, exchangeRates, exchangeRateManuallySet]);
 
   // Helper function to find or create a supplier by name
   const findOrCreateSupplier = async (supplierName: string): Promise<string> => {
@@ -307,7 +337,7 @@ export default function PurchaseOrders() {
 
     const trimmedName = supplierName.trim();
     
-    // Try to find existing supplier (case-insensitive)
+    // First, check local state (fastest)
     const existingSupplier = suppliers.find(
       s => s.name.toLowerCase() === trimmedName.toLowerCase()
     );
@@ -316,10 +346,19 @@ export default function PurchaseOrders() {
       return existingSupplier.id;
     }
     
-    // Create new supplier if not found
+    // If not in local state, check database directly to avoid duplicates
+    // This is important to prevent race conditions
     try {
+      const { searchSuppliersByName } = await import('../services/suppliersService');
+      const foundSuppliers = await searchSuppliersByName(trimmedName);
+      const dbMatch = foundSuppliers.find(s => s.name.toLowerCase() === trimmedName.toLowerCase());
+      
+      if (dbMatch) {
+        return dbMatch.id;
+      }
+      
+      // Only create if it truly doesn't exist in the database
       // Create supplier via context - it will handle both DB and state update
-      // We need the ID, so we'll create it and then find it in the updated suppliers list
       await addSupplier({
         name: trimmedName,
         email: '',
@@ -329,29 +368,29 @@ export default function PurchaseOrders() {
         notes: 'Auto-created from purchase order',
       });
       
-      // The context should have updated, but React state updates are async
-      // So we'll search the current suppliers array - if not found, we'll use the service directly
-      // to get the ID immediately
-      const updatedSupplier = suppliers.find(
-        s => s.name.toLowerCase() === trimmedName.toLowerCase()
-      );
+      // After creation, search again to get the ID
+      const createdSuppliers = await searchSuppliersByName(trimmedName);
+      const createdMatch = createdSuppliers.find(s => s.name.toLowerCase() === trimmedName.toLowerCase());
       
-      if (updatedSupplier) {
-        return updatedSupplier.id;
-      }
-      
-      // If not found in current state (async update), get it from service
-      const { searchSuppliersByName } = await import('../services/suppliersService');
-      const foundSuppliers = await searchSuppliersByName(trimmedName);
-      const match = foundSuppliers.find(s => s.name.toLowerCase() === trimmedName.toLowerCase());
-      
-      if (match) {
-        return match.id;
+      if (createdMatch) {
+        return createdMatch.id;
       }
       
       throw new Error('Failed to create or find supplier');
     } catch (error) {
       console.error('Error creating supplier:', error);
+      // If creation failed, it might be because it was created by another process
+      // Try one more time to find it
+      try {
+        const { searchSuppliersByName } = await import('../services/suppliersService');
+        const foundSuppliers = await searchSuppliersByName(trimmedName);
+        const match = foundSuppliers.find(s => s.name.toLowerCase() === trimmedName.toLowerCase());
+        if (match) {
+          return match.id;
+        }
+      } catch (retryError) {
+        console.error('Error retrying supplier search:', retryError);
+      }
       throw error;
     }
   };
@@ -441,50 +480,22 @@ export default function PurchaseOrders() {
         setStatusChangeConfirmOpen(true);
         return; // Wait for confirmation
       }
-      // Moving TO Verified - prompt for actual quantity and add to inventory
+      // Moving TO Verified - show modal for actual quantity and add to inventory
       else if (oldStatus !== 'Verified' && newStatus === 'Verified') {
-        const quantityReceived = prompt(
-          t('purchaseOrders.inventoryVerification')
-            .replace('{description}', updatedOrder.description)
-            .replace('{sku}', updatedOrder.sku)
-            .replace('{quantity}', updatedOrder.quantity.toString())
-            .replace('{destination}', updatedOrder.destinationStock),
-          updatedOrder.quantity.toString()
-        );
-        
-        if (quantityReceived === null) {
-          return; // User cancelled
-        }
-        
-        const actualQuantity = parseInt(quantityReceived);
-        
-        if (isNaN(actualQuantity) || actualQuantity < 0) {
-          alert(t('purchaseOrders.invalidQuantity'));
-          return;
-        }
-        
-        // Warn if quantity doesn't match
-        if (actualQuantity !== updatedOrder.quantity) {
-          const difference = actualQuantity - updatedOrder.quantity;
-          const diffText = difference > 0 ? `+${difference} ${t('purchaseOrders.more')}` : `${Math.abs(difference)} ${t('purchaseOrders.less')}`;
-          
-          orderData.quantityReceived = actualQuantity;
-          const previousSku = originalSku !== updatedOrder.sku ? originalSku : undefined;
-          setQuantityMismatchData({
-            expected: updatedOrder.quantity,
-            received: actualQuantity,
-            difference: diffText,
-            order: updatedOrder,
-            actualQuantity,
+        setVerificationData({
+          order: editingOrder,
             orderData,
-            previousSku
-          });
-          setQuantityMismatchConfirmOpen(true);
-          return; // Wait for confirmation
-        }
-        
-        // Store the actual quantity received in orderData
-        orderData.quantityReceived = actualQuantity;
+          previousSku: originalSku !== updatedOrder.sku ? originalSku : undefined,
+          isEditing: true,
+          updatedOrder
+        });
+      setVerificationQuantity(updatedOrder.quantity.toString());
+      setVerificationQuantityGood(updatedOrder.quantityGood?.toString() || updatedOrder.quantity.toString());
+      setVerificationQuantityProblem(updatedOrder.quantityProblem?.toString() || '0');
+      setVerificationQuantityNotReceived(updatedOrder.quantityNotReceived?.toString() || '0');
+      setVerificationComment(updatedOrder.verificationComment || '');
+      setVerificationModalOpen(true);
+      return; // Wait for modal confirmation
       }
       
       updatePurchaseOrder(editingOrder.id, orderData);
@@ -556,6 +567,196 @@ export default function PurchaseOrders() {
     setSkuManuallyEdited(true);
   };
 
+  const handleVerificationConfirm = async () => {
+    if (!verificationData) return;
+
+    const actualQuantity = parseInt(verificationQuantity) || 0;
+    const quantityGood = parseInt(verificationQuantityGood) || 0;
+    const quantityProblem = parseInt(verificationQuantityProblem) || 0;
+    const quantityNotReceived = parseInt(verificationQuantityNotReceived) || 0;
+    const comment = verificationComment.trim();
+    
+    // Validate inputs
+    if (isNaN(actualQuantity) || actualQuantity < 0) {
+      alert(t('purchaseOrders.invalidQuantity'));
+      return;
+    }
+
+    // Validate that quantities add up correctly
+    const totalAccounted = quantityGood + quantityProblem + quantityNotReceived;
+    if (totalAccounted !== actualQuantity) {
+      alert(t('purchaseOrders.quantitiesMustMatch') || `Quantities must add up: Good (${quantityGood}) + Problems (${quantityProblem}) + Not Received (${quantityNotReceived}) = ${totalAccounted}, but Total Received = ${actualQuantity}`);
+      return;
+    }
+
+    const order = verificationData.order;
+    const expectedQuantity = order.quantity;
+    
+    // Upload media files if any
+    let mediaUrls: string[] = [...verificationMediaUrls];
+    if (verificationMedia.length > 0) {
+      setUploadingMedia(true);
+      try {
+        const { uploadMultipleFiles } = await import('../services/storageService');
+        const timestamp = Date.now();
+        const uploadedUrls = await uploadMultipleFiles(
+          verificationMedia,
+          `verification/${order.id}/${timestamp}/`
+        );
+        mediaUrls = [...verificationMediaUrls, ...uploadedUrls];
+      } catch (error) {
+        console.error('Error uploading media:', error);
+        alert(t('purchaseOrders.mediaUploadError') || 'Error uploading media files. Please try again.');
+        setUploadingMedia(false);
+        return;
+      }
+      setUploadingMedia(false);
+    }
+
+    // Close modal first
+    setVerificationModalOpen(false);
+    const data = verificationData;
+    setVerificationData(null);
+    setVerificationQuantity('');
+    setVerificationQuantityGood('');
+    setVerificationQuantityProblem('');
+    setVerificationQuantityNotReceived('');
+    setVerificationComment('');
+    setVerificationMedia([]);
+    setVerificationMediaUrls([]);
+
+    // If editing verification only (not through form), update the order directly
+    if (data.isEditing && data.updatedOrder && !data.orderData) {
+      const updateData: Partial<PurchaseOrder> = {
+        quantityReceived: actualQuantity,
+        quantityGood: quantityGood,
+        quantityProblem: quantityProblem,
+        quantityNotReceived: quantityNotReceived,
+        verificationComment: comment || undefined,
+        verificationMedia: mediaUrls.length > 0 ? mediaUrls : undefined
+      };
+      
+      // Update the order
+      updatePurchaseOrder(data.updatedOrder.id, updateData);
+      
+      // Re-sync inventory with new good quantity
+      // First, we need to adjust inventory based on the difference in good quantity
+      const oldGoodQuantity = data.updatedOrder.quantityGood !== undefined 
+        ? data.updatedOrder.quantityGood 
+        : (data.updatedOrder.quantityReceived || data.updatedOrder.quantity);
+      const quantityDifference = quantityGood - oldGoodQuantity;
+      
+      const inventoryItem = inventory.find(item => item.sku === order.sku);
+      if (inventoryItem && quantityDifference !== 0) {
+        const stockUpdate: Partial<InventoryItem> = {};
+        if (order.destinationStock === 'Ecuador') {
+          stockUpdate.ecuadorStock = Math.max(0, (inventoryItem.ecuadorStock || 0) + quantityDifference);
+        } else {
+          stockUpdate.usaStock = Math.max(0, (inventoryItem.usaStock || 0) + quantityDifference);
+        }
+        updateInventoryItem(inventoryItem.id, stockUpdate);
+      } else if (!inventoryItem && quantityGood > 0) {
+        // Create new inventory item if it doesn't exist and we have good items
+        addInventoryItem({
+          sku: order.sku,
+          name: order.description,
+          description: order.description,
+          category: order.category,
+          line: order.line,
+          images: order.images || [],
+          ecuadorStock: order.destinationStock === 'Ecuador' ? quantityGood : 0,
+          usaStock: order.destinationStock === 'USA' ? quantityGood : 0,
+          consignmentStock: 0,
+          linkedPurchaseOrders: [order.id]
+        });
+      }
+      
+      // Reload to show updated data
+      return;
+    } else if (data.isEditing && data.orderData && data.updatedOrder) {
+      // Editing through form submission flow
+      const orderData = data.orderData;
+      const updatedOrder = data.updatedOrder;
+      
+      // Store verification data
+      orderData.quantityReceived = actualQuantity;
+      orderData.quantityGood = quantityGood;
+      orderData.quantityProblem = quantityProblem;
+      orderData.quantityNotReceived = quantityNotReceived;
+      orderData.verificationComment = comment || undefined;
+      orderData.verificationMedia = mediaUrls.length > 0 ? mediaUrls : undefined;
+      
+      // Warn if total quantity doesn't match expected
+      if (actualQuantity !== expectedQuantity) {
+        const difference = actualQuantity - expectedQuantity;
+        const diffText = difference > 0 ? `+${difference} ${t('purchaseOrders.more')}` : `${Math.abs(difference)} ${t('purchaseOrders.less')}`;
+        
+        setQuantityMismatchData({
+          expected: expectedQuantity,
+          received: actualQuantity,
+          difference: diffText,
+          order: updatedOrder,
+          actualQuantity: quantityGood, // Only good items go to inventory
+          orderData,
+          previousSku: data.previousSku
+        });
+        setQuantityMismatchConfirmOpen(true);
+        return;
+      }
+      
+      // Continue with the update
+      updatePurchaseOrder(updatedOrder.id, orderData);
+      const previousSku = data.previousSku;
+      // Only sync good items to inventory
+      const orderWithGoodQuantity = { ...updatedOrder, ...orderData, quantity: quantityGood, quantityReceived: quantityGood };
+      syncPurchaseOrderToInventory(orderWithGoodQuantity, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku);
+      resetForm();
+    } else {
+      // Handle status change flow
+      const statusUpdate: Partial<PurchaseOrder> = { 
+        status: 'Verified',
+        quantityReceived: actualQuantity,
+        quantityGood: quantityGood,
+        quantityProblem: quantityProblem,
+        quantityNotReceived: quantityNotReceived,
+        verificationComment: comment || undefined,
+        verificationMedia: mediaUrls.length > 0 ? mediaUrls : undefined
+      };
+      
+      if (!order.receivedDate) {
+        statusUpdate.receivedDate = new Date();
+      }
+      if (!order.verifiedDate) {
+        statusUpdate.verifiedDate = new Date();
+      }
+
+      // Warn if total quantity doesn't match expected
+      if (actualQuantity !== expectedQuantity) {
+        const difference = actualQuantity - expectedQuantity;
+        const diffText = difference > 0 ? `+${difference} ${t('purchaseOrders.more')}` : `${Math.abs(difference)} ${t('purchaseOrders.less')}`;
+        
+        setQuantityMismatchData({
+          expected: expectedQuantity,
+          received: actualQuantity,
+          difference: diffText,
+          order,
+          actualQuantity: quantityGood, // Only good items go to inventory
+          statusUpdate
+        });
+        setQuantityMismatchConfirmOpen(true);
+        return;
+      }
+
+      // Update order status
+      updatePurchaseOrder(order.id, statusUpdate);
+
+      // Sync to inventory using only GOOD quantity (not problem items)
+      // The sync function will handle this properly
+      const orderWithGoodQuantity = { ...order, ...statusUpdate, quantity: quantityGood, quantityReceived: quantityGood };
+      syncPurchaseOrderToInventory(orderWithGoodQuantity, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders);
+    }
+  };
+
   const handleStatusChange = (order: PurchaseOrder, newStatus: 'Ordered' | 'Shipped' | 'Received' | 'Verified') => {
     const oldStatus = order.status;
     
@@ -566,9 +767,9 @@ export default function PurchaseOrders() {
       const statusUpdateData: Partial<PurchaseOrder> = { status: newStatus };
       setStatusChangeData({ oldStatus, newStatus, order, updatedOrder, orderData: statusUpdateData });
       setStatusChangeConfirmOpen(true);
-      return; // Wait for confirmation
-    }
-    
+        return; // Wait for confirmation
+      }
+      
     const statusUpdate: Partial<PurchaseOrder> = { status: newStatus };
     
     // Add timestamp dates
@@ -583,69 +784,30 @@ export default function PurchaseOrders() {
       }
     }
     
-    // VERIFICATION: When moving to Verified, prompt for actual quantity received
+    // VERIFICATION: When moving to Verified, show modal for actual quantity received
     if (oldStatus !== 'Verified' && newStatus === 'Verified') {
-      const quantityReceived = prompt(
-        t('purchaseOrders.inventoryVerification')
-          .replace('{description}', order.description)
-          .replace('{sku}', order.sku)
-          .replace('{quantity}', order.quantity.toString())
-          .replace('{destination}', order.destinationStock),
-        order.quantity.toString()
-      );
-      
-      // User cancelled
-      if (quantityReceived === null) {
-        return;
-      }
-      
-      const actualQuantity = parseInt(quantityReceived);
-      
-      // Validate input
-      if (isNaN(actualQuantity) || actualQuantity < 0) {
-        alert(t('purchaseOrders.invalidQuantity'));
-        return;
-      }
-      
-      // Warn if quantity doesn't match
-      if (actualQuantity !== order.quantity) {
-        const difference = actualQuantity - order.quantity;
-        const diffText = difference > 0 ? `+${difference} ${t('purchaseOrders.more')}` : `${Math.abs(difference)} ${t('purchaseOrders.less')}`;
-        
-        statusUpdate.quantityReceived = actualQuantity;
-        setQuantityMismatchData({
-          expected: order.quantity,
-          received: actualQuantity,
-          difference: diffText,
-          order,
-          actualQuantity,
-          statusUpdate
-        });
-        setQuantityMismatchConfirmOpen(true);
-        return; // Wait for confirmation
-      }
-      
-      // Store the actual quantity received
-      statusUpdate.quantityReceived = actualQuantity;
-      
-      // Add to inventory using actual quantity
-      const inventoryItem = inventory.find(item => item.sku === order.sku);
-      if (inventoryItem) {
-        const stockUpdate: Partial<InventoryItem> = {};
-        if (order.destinationStock === 'Ecuador') {
-          stockUpdate.ecuadorStock = inventoryItem.ecuadorStock + actualQuantity;
-        } else {
-          stockUpdate.usaStock = inventoryItem.usaStock + actualQuantity;
-        }
-        updateInventoryItem(inventoryItem.id, stockUpdate);
-      }
+      setVerificationData({
+        order,
+        orderData: statusUpdate,
+        isEditing: false
+      });
+      setVerificationQuantity(order.quantity.toString());
+      setVerificationQuantityGood(order.quantityGood?.toString() || order.quantity.toString());
+      setVerificationQuantityProblem(order.quantityProblem?.toString() || '0');
+      setVerificationQuantityNotReceived(order.quantityNotReceived?.toString() || '0');
+      setVerificationComment(order.verificationComment || '');
+      setVerificationMediaUrls(order.verificationMedia || []);
+      setVerificationMedia([]);
+      setVerificationModalOpen(true);
+      return; // Wait for modal confirmation
     }
     
+    // For non-Verified status changes, update directly
     updatePurchaseOrder(order.id, statusUpdate);
     
     // Sync changes to inventory after status update
     const updatedOrder = { ...order, ...statusUpdate };
-    syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem);
+    syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders);
   };
 
   const handleEdit = (order: PurchaseOrder) => {
@@ -653,6 +815,7 @@ export default function PurchaseOrders() {
     setOriginalSku(order.sku); // Track original SKU for sync purposes
     setSelectedInventoryId(''); // Reset selector for fresh linking option
     setSkuManuallyEdited(false); // Reset SKU manual edit flag to allow regeneration
+    setExchangeRateManuallySet(true); // Preserve existing exchange rate when editing
     setSupplierInputMode('select'); // Reset to select mode when editing
     setSupplierNameInput(''); // Clear text input
     setFormData({
@@ -675,6 +838,24 @@ export default function PurchaseOrders() {
       status: order.status || 'Ordered',
     });
     setIsFormOpen(true);
+  };
+
+  const handleEditVerification = (order: PurchaseOrder) => {
+    // Open verification modal in edit mode for verified orders
+    setVerificationData({
+      order,
+      isEditing: true,
+      updatedOrder: order,
+      orderData: {}
+    });
+    setVerificationQuantity(order.quantityReceived?.toString() || order.quantity.toString());
+    setVerificationQuantityGood(order.quantityGood?.toString() || order.quantityReceived?.toString() || order.quantity.toString());
+    setVerificationQuantityProblem(order.quantityProblem?.toString() || '0');
+    setVerificationQuantityNotReceived(order.quantityNotReceived?.toString() || '0');
+    setVerificationComment(order.verificationComment || '');
+    setVerificationMediaUrls(order.verificationMedia || []);
+    setVerificationMedia([]);
+    setVerificationModalOpen(true);
   };
 
   // Get unique invoices that have at least one unverified order
@@ -785,6 +966,22 @@ export default function PurchaseOrders() {
       // Line filter
       if (filterLine !== 'all' && order.line !== filterLine) {
         return false;
+      }
+      
+      // Quantity issues filter (problems or missing items)
+      if (filterQuantityIssues !== 'all') {
+        const hasProblems = (order.quantityProblem || 0) > 0;
+        const hasMissing = (order.quantityNotReceived || 0) > 0;
+        
+        if (filterQuantityIssues === 'problems' && !hasProblems) {
+          return false;
+        }
+        if (filterQuantityIssues === 'missing' && !hasMissing) {
+          return false;
+        }
+        if (filterQuantityIssues === 'both' && !hasProblems && !hasMissing) {
+          return false;
+        }
       }
       
       return true;
@@ -938,7 +1135,7 @@ export default function PurchaseOrders() {
       }
       
       // Sync changes to inventory after status update
-      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem);
+      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders);
     }
     
     setStatusChangeData(null);
@@ -992,7 +1189,7 @@ export default function PurchaseOrders() {
       
       // Sync changes to inventory after status update
       const updatedOrder = { ...order, ...statusUpdate };
-      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem);
+      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders);
     }
     
     setQuantityMismatchData(null);
@@ -1078,6 +1275,18 @@ export default function PurchaseOrders() {
                   </button>
                   <button
                     onClick={() => {
+                      setIsBulkStatusChangeOpen(true);
+                      setShowBulkDropdown(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors text-blue-600 hover:bg-blue-50"
+                  >
+                    <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    </svg>
+                    {t('purchaseOrders.changeStatus') || 'Change Status'}
+                  </button>
+                  <button
+                    onClick={() => {
                       setIsBulkDeleteOpen(true);
                       setShowBulkDropdown(false);
                     }}
@@ -1119,9 +1328,9 @@ export default function PurchaseOrders() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
             <span className="text-sm font-medium">{t('purchaseOrders.filters')}</span>
-            {(filterStatus !== 'all' || filterSupplier !== 'all' || filterDestination !== 'all' || filterDuplicateSku || filterCategory !== 'all' || filterLine !== 'all') && (
+            {(filterStatus !== 'all' || filterSupplier !== 'all' || filterDestination !== 'all' || filterDuplicateSku || filterCategory !== 'all' || filterLine !== 'all' || filterQuantityIssues !== 'all') && (
               <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
-                {[filterStatus !== 'all', filterSupplier !== 'all', filterDestination !== 'all', filterDuplicateSku, filterCategory !== 'all', filterLine !== 'all'].filter(Boolean).length}
+                {[filterStatus !== 'all', filterSupplier !== 'all', filterDestination !== 'all', filterDuplicateSku, filterCategory !== 'all', filterLine !== 'all', filterQuantityIssues !== 'all'].filter(Boolean).length}
               </span>
             )}
           </button>
@@ -1150,11 +1359,34 @@ export default function PurchaseOrders() {
             <div ref={groupByDropdownRef} className="absolute top-full right-0 mt-2 w-64 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
               <div className="p-4">
                 <div className="text-sm font-medium text-gray-700 mb-3">{t('purchaseOrders.groupByField')}</div>
+                {groupByField && Object.keys(groupedOrders).length > 0 && (
+                  <div className="flex gap-2 mb-3">
+                    <button
+                      onClick={() => {
+                        setExpandedGroups(new Set(Object.keys(groupedOrders)));
+                        setShowGroupByDropdown(false);
+                      }}
+                      className="flex-1 px-3 py-1.5 text-xs bg-green-50 text-green-700 hover:bg-green-100 rounded-lg transition-colors"
+                    >
+                      {t('purchaseOrders.expandAll') || 'Expand All'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setExpandedGroups(new Set());
+                        setShowGroupByDropdown(false);
+                      }}
+                      className="flex-1 px-3 py-1.5 text-xs bg-gray-50 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      {t('purchaseOrders.collapseAll') || 'Collapse All'}
+                    </button>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <button
                     onClick={() => {
                       setGroupByField('');
                       setShowGroupByDropdown(false);
+                      setExpandedGroups(new Set()); // Reset expanded groups when clearing grouping
                     }}
                     className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                       !groupByField ? 'bg-[#4f0c1b] text-white' : 'text-gray-700 hover:bg-gray-50'
@@ -1171,6 +1403,7 @@ export default function PurchaseOrders() {
                       onClick={() => {
                         setGroupByField(field.key);
                         setShowGroupByDropdown(false);
+                        setExpandedGroups(new Set()); // Reset expanded groups when changing grouping
                       }}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                         groupByField === field.key ? 'bg-[#4f0c1b] text-white' : 'text-gray-700 hover:bg-gray-50'
@@ -1390,8 +1623,23 @@ export default function PurchaseOrders() {
               </label>
             </div>
             
+            {/* Quantity Issues Filter */}
+            <div className="mt-3">
+              <label className="block text-xs font-medium text-gray-700 mb-1">{t('purchaseOrders.filterQuantityIssues') || 'Quantity Issues'}</label>
+              <select
+                value={filterQuantityIssues}
+                onChange={(e) => setFilterQuantityIssues(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+              >
+                <option value="all">{t('purchaseOrders.allOrders') || 'All Orders'}</option>
+                <option value="problems">⚠️ {t('purchaseOrders.withProblems') || 'With Problems'}</option>
+                <option value="missing">✗ {t('purchaseOrders.missingItems') || 'Missing Items'}</option>
+                <option value="both">⚠️✗ {t('purchaseOrders.problemsOrMissing') || 'Problems or Missing'}</option>
+              </select>
+            </div>
+            
             {/* Clear filters button */}
-            {(searchQuery || filterStatus !== 'all' || filterSupplier !== 'all' || filterDestination !== 'all' || filterDuplicateSku || filterCategory !== 'all' || filterLine !== 'all') && (
+            {(searchQuery || filterStatus !== 'all' || filterSupplier !== 'all' || filterDestination !== 'all' || filterDuplicateSku || filterCategory !== 'all' || filterLine !== 'all' || filterQuantityIssues !== 'all') && (
               <div className="mt-3 flex justify-end">
                 <button
                   onClick={() => {
@@ -1402,6 +1650,7 @@ export default function PurchaseOrders() {
                     setFilterDuplicateSku(false);
                     setFilterCategory('all');
                     setFilterLine('all');
+                    setFilterQuantityIssues('all');
                   }}
                   className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium text-sm"
                 >
@@ -1523,7 +1772,7 @@ export default function PurchaseOrders() {
                 <div>
                   <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.supplierLabel')}</label>
                   <div className="flex gap-2">
-                    <select
+                  <select
                       value={supplierInputMode === 'select' ? formData.supplierId : ''}
                       onChange={(e) => {
                         if (e.target.value === '__new__') {
@@ -1536,15 +1785,15 @@ export default function PurchaseOrders() {
                         }
                       }}
                       className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent ${supplierInputMode === 'text' ? 'hidden' : ''}`}
-                    >
-                      <option value="">{t('purchaseOrders.selectSupplier')}</option>
-                      {suppliers.map((supplier) => (
-                        <option key={supplier.id} value={supplier.id}>
-                          {supplier.name}
-                        </option>
-                      ))}
+                  >
+                    <option value="">{t('purchaseOrders.selectSupplier')}</option>
+                    {suppliers.map((supplier) => (
+                      <option key={supplier.id} value={supplier.id}>
+                        {supplier.name}
+                      </option>
+                    ))}
                       <option value="__new__">{t('purchaseOrders.addNewSupplier') || '+ Add New Supplier'}</option>
-                    </select>
+                  </select>
                     <input
                       type="text"
                       required
@@ -1847,15 +2096,29 @@ export default function PurchaseOrders() {
                       min="0"
                       step="0.0001"
                       value={formData.exchangeRate}
-                      onChange={(e) => setFormData({ ...formData, exchangeRate: parseFloat(e.target.value) || 1 })}
+                      onChange={(e) => {
+                        setFormData({ ...formData, exchangeRate: parseFloat(e.target.value) || 1 });
+                        setExchangeRateManuallySet(true);
+                      }}
                       className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                     />
                     <button
                       type="button"
-                      onClick={fetchExchangeRates}
-                      disabled={isLoadingRates || formData.currency === 'USD'}
+                      onClick={() => {
+                        if (exchangeRates && formData.currency !== 'USD') {
+                          const rate = getExchangeRate(formData.currency, 'USD', exchangeRates);
+                          setFormData(prev => ({ ...prev, exchangeRate: rate }));
+                          setExchangeRateManuallySet(false);
+                        } else if (formData.currency === 'USD') {
+                          setFormData(prev => ({ ...prev, exchangeRate: 1 }));
+                          setExchangeRateManuallySet(false);
+                        } else {
+                          fetchExchangeRates();
+                        }
+                      }}
+                      disabled={isLoadingRates}
                       className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      title={t('purchaseOrders.refreshExchangeRate')}
+                      title={t('purchaseOrders.refreshExchangeRate') || 'Refresh exchange rate'}
                     >
                       {isLoadingRates ? '...' : '↻'}
                     </button>
@@ -1867,7 +2130,12 @@ export default function PurchaseOrders() {
                   )}
                   {formData.currency === 'USD' && (
                     <p className="text-xs text-gray-500 mt-1">
-                      {t('purchaseOrders.noConversionNeeded')}
+                      {t('purchaseOrders.noConversionNeeded') || 'No conversion needed for USD'}
+                    </p>
+                  )}
+                  {formData.currency !== 'USD' && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      {t('purchaseOrders.rateEditable') || 'You can manually edit the exchange rate'}
                     </p>
                   )}
                 </div>
@@ -2184,12 +2452,31 @@ export default function PurchaseOrders() {
                       )}
                       {!hiddenColumns.has('quantity') && (
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
-                        <div className="flex items-center gap-2 justify-end">
+                        <div className="flex flex-col items-end gap-1">
                           <span className="text-gray-700">{order.quantity}</span>
-                          {order.status === 'Verified' && order.quantityReceived !== undefined && order.quantityReceived !== order.quantity && (
-                            <span className="text-amber-600 text-xs font-medium" title={`${t('purchaseOrders.actuallyReceived')}: ${order.quantityReceived}`}>
-                              (⚠️ {order.quantityReceived})
+                          {order.status === 'Verified' && (
+                            <div className="flex flex-col items-end gap-0.5 text-xs">
+                              {order.quantityGood !== undefined && order.quantityGood > 0 && (
+                                <span className="text-green-600 font-medium" title={t('purchaseOrders.quantityGood') || 'Good'}>
+                                  ✓ {order.quantityGood}
+                                </span>
+                              )}
+                              {order.quantityProblem !== undefined && order.quantityProblem > 0 && (
+                                <span className="text-amber-600 font-medium" title={t('purchaseOrders.quantityProblem') || 'Problems'}>
+                                  ⚠️ {order.quantityProblem}
+                                </span>
+                              )}
+                              {order.quantityNotReceived !== undefined && order.quantityNotReceived > 0 && (
+                                <span className="text-red-600 font-medium" title={t('purchaseOrders.quantityNotReceived') || 'Not Received'}>
+                                  ✗ {order.quantityNotReceived}
+                                </span>
+                              )}
+                              {order.verificationComment && (
+                                <span className="text-gray-500 italic" title={order.verificationComment}>
+                                  💬
                             </span>
+                              )}
+                            </div>
                           )}
                         </div>
                       </td>
@@ -2244,6 +2531,30 @@ export default function PurchaseOrders() {
                             </svg>
                           {needsReview ? t('purchaseOrders.completeInfo') : t('purchaseOrders.edit')}
                         </button>
+                        {order.status === 'Verified' && (
+                          <button
+                            onClick={() => handleEditVerification(order)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-100 text-purple-700 hover:bg-purple-200 hover:text-purple-800 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md border border-purple-200"
+                            title={t('purchaseOrders.editVerification') || 'Edit Verification'}
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            {t('purchaseOrders.editVerification') || 'Edit Verification'}
+                          </button>
+                        )}
+                        {order.status !== 'Verified' && (
+                          <button
+                            onClick={() => handleDownloadVerificationSheet(order)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 hover:text-blue-800 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md border border-blue-200"
+                            title={t('purchaseOrders.downloadVerificationSheet') || 'Download Verification Sheet'}
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            {t('purchaseOrders.downloadVerificationSheet') || 'Verification Sheet'}
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             setOrderToDelete(order);
@@ -2267,6 +2578,19 @@ export default function PurchaseOrders() {
                   const totalOrders = orders.length;
                   const totalValue = orders.reduce((sum, order) => sum + order.totalCostWithDiscount, 0);
                   const hasNeedsReview = orders.some(order => order.category.includes('NEEDS REVIEW') || !order.supplierId);
+                  const isExpanded = expandedGroups.has(groupKey);
+                  
+                  const toggleGroup = () => {
+                    setExpandedGroups(prev => {
+                      const newSet = new Set(prev);
+                      if (newSet.has(groupKey)) {
+                        newSet.delete(groupKey);
+                      } else {
+                        newSet.add(groupKey);
+                      }
+                      return newSet;
+                    });
+                  };
                   
                   return (
                     <React.Fragment key={groupKey}>
@@ -2275,7 +2599,21 @@ export default function PurchaseOrders() {
                         <td colSpan={9 - hiddenColumns.size} className="px-6 py-4">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
+                              <button
+                                onClick={toggleGroup}
+                                className="flex items-center gap-2 text-left hover:opacity-80 transition-opacity"
+                                title={isExpanded ? t('purchaseOrders.collapseGroup') || 'Collapse' : t('purchaseOrders.expandGroup') || 'Expand'}
+                              >
+                                <svg 
+                                  className={`w-5 h-5 text-gray-600 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                                  fill="none" 
+                                  viewBox="0 0 24 24" 
+                                  stroke="currentColor"
+                                >
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
                               <h3 className="text-lg font-semibold text-gray-900">{groupKey}</h3>
+                              </button>
                               <span className="bg-[#4f0c1b] text-white px-2 py-1 rounded-full text-xs font-medium">
                                 {totalOrders} {totalOrders !== 1 ? t('purchaseOrders.orders') : t('purchaseOrders.order')}
                               </span>
@@ -2285,12 +2623,14 @@ export default function PurchaseOrders() {
                                 </span>
                               )}
                             </div>
+                            <div className="flex items-center gap-4">
                             <div className="text-right">
                               <div className="text-sm font-medium text-gray-900">
                                 ${totalValue.toFixed(2)}
                               </div>
                               <div className="text-xs text-gray-500">
                                 {t('purchaseOrders.totalValue')}
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -2298,7 +2638,7 @@ export default function PurchaseOrders() {
                       </tr>
                       
                       {/* Individual Orders - Grouped View Structure (no Invoice column) */}
-                      {orders.map((order, orderIndex) => {
+                      {isExpanded && orders.map((order, orderIndex) => {
                         const supplier = suppliers.find(s => s.id === order.supplierId);
                         const needsReview = order.category.includes('NEEDS REVIEW') || !order.supplierId;
                         return (
@@ -2348,12 +2688,33 @@ export default function PurchaseOrders() {
                             {/* Quantity */}
                             {!hiddenColumns.has('quantity') && (
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                                {order.quantity}
-                                {order.quantityReceived && order.quantityReceived !== order.quantity && (
-                                  <span className="text-amber-600 ml-1">
-                                    (⚠️ {order.quantityReceived})
+                                <div className="flex flex-col items-end gap-0.5">
+                                  <span>{order.quantity}</span>
+                                  {order.status === 'Verified' && (
+                                    <div className="flex flex-col items-end gap-0.5 text-xs">
+                                      {order.quantityGood !== undefined && order.quantityGood > 0 && (
+                                        <span className="text-green-600 font-medium" title={t('purchaseOrders.quantityGood') || 'Good'}>
+                                          ✓ {order.quantityGood}
                                   </span>
                                 )}
+                                      {order.quantityProblem !== undefined && order.quantityProblem > 0 && (
+                                        <span className="text-amber-600 font-medium" title={t('purchaseOrders.quantityProblem') || 'Problems'}>
+                                          ⚠️ {order.quantityProblem}
+                                        </span>
+                                      )}
+                                      {order.quantityNotReceived !== undefined && order.quantityNotReceived > 0 && (
+                                        <span className="text-red-600 font-medium" title={t('purchaseOrders.quantityNotReceived') || 'Not Received'}>
+                                          ✗ {order.quantityNotReceived}
+                                        </span>
+                                      )}
+                                      {order.verificationComment && (
+                                        <span className="text-gray-500 italic" title={order.verificationComment}>
+                                          💬
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
                               </td>
                             )}
                             
@@ -2404,6 +2765,18 @@ export default function PurchaseOrders() {
                                   </svg>
                                   {needsReview ? t('purchaseOrders.completeInfo') : t('purchaseOrders.edit')}
                                 </button>
+                                {order.status === 'Verified' && (
+                                  <button
+                                    onClick={() => handleEditVerification(order)}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-100 text-purple-700 hover:bg-purple-200 hover:text-purple-800 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md border border-purple-200"
+                                    title={t('purchaseOrders.editVerification') || 'Edit Verification'}
+                                  >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    {t('purchaseOrders.editVerification') || 'Edit Verification'}
+                                  </button>
+                                )}
                                 {order.status !== 'Verified' && (
                                   <button
                                     onClick={() => handleDownloadVerificationSheet(order)}
@@ -2488,6 +2861,37 @@ export default function PurchaseOrders() {
         />
       )}
 
+      {/* Bulk Status Change Modal */}
+      {isBulkStatusChangeOpen && (
+        <BulkStatusChangeModal
+          purchaseOrders={purchaseOrders}
+          onClose={() => setIsBulkStatusChangeOpen(false)}
+          onBulkStatusChange={(orderIds, newStatus) => {
+            orderIds.forEach(orderId => {
+              const order = purchaseOrders.find(o => o.id === orderId);
+              if (order) {
+                const statusUpdate: Partial<PurchaseOrder> = { status: newStatus };
+                
+                // Set receivedDate if status is Received and it's not already set
+                if (newStatus === 'Received' && !order.receivedDate) {
+                  statusUpdate.receivedDate = new Date();
+                }
+                
+                updatePurchaseOrder(orderId, statusUpdate);
+                
+                // Sync to inventory if needed (only for non-verified orders)
+                if (order.status !== 'Verified') {
+                  const updatedOrder = { ...order, ...statusUpdate };
+                  syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders);
+                }
+              }
+            });
+            setToastMessage(t('purchaseOrders.statusChangedSuccessfully')?.replace('{count}', orderIds.length.toString()) || `Status changed successfully for ${orderIds.length} order(s)`);
+            setTimeout(() => setToastMessage(null), 3000);
+          }}
+        />
+      )}
+
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-in slide-in-from-bottom-5">
@@ -2530,6 +2934,261 @@ export default function PurchaseOrders() {
             console.log('Bulk delete completed');
           }}
         />
+      )}
+
+      {/* Quantity Verification Modal */}
+      {verificationModalOpen && verificationData && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-lg">
+            <div className="px-6 py-5 border-b border-gray-100">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                  <svg className="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {t('purchaseOrders.inventoryVerificationTitle') || 'Inventory Verification'}
+                </h3>
+              </div>
+              <p className="text-sm text-gray-600 mt-2">
+                {t('purchaseOrders.inventoryVerificationSubtitle') || 'Enter the actual quantity received and counted'}
+              </p>
+            </div>
+            
+            <div className="px-6 py-5 space-y-4">
+              <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-gray-500">{t('purchaseOrders.order') || 'Order'}:</span>
+                    <p className="font-medium text-gray-900 mt-1">{verificationData.order.description}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">{t('purchaseOrders.sku')}:</span>
+                    <p className="font-mono font-medium text-gray-900 mt-1">{verificationData.order.sku}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">{t('purchaseOrders.expectedQuantity') || 'Expected Quantity'}:</span>
+                    <p className="font-medium text-gray-900 mt-1">{verificationData.order.quantity}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">{t('purchaseOrders.destination')}:</span>
+                    <p className="font-medium text-gray-900 mt-1">{verificationData.order.destinationStock}</p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('purchaseOrders.actualQuantityReceived') || 'Total Quantity Received'} *
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={verificationQuantity}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setVerificationQuantity(val);
+                      // Auto-update good quantity if it's the same as total
+                      if (verificationQuantityGood === verificationQuantity || !verificationQuantityGood) {
+                        setVerificationQuantityGood(val);
+                      }
+                    }}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-lg font-medium"
+                    placeholder={verificationData.order.quantity.toString()}
+                    autoFocus
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {t('purchaseOrders.enterActualQuantity') || 'Enter the total quantity you physically received and counted'}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {t('purchaseOrders.quantityGood') || 'Good'} ✓
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={verificationQuantityGood}
+                      onChange={(e) => setVerificationQuantityGood(e.target.value)}
+                      className="w-full px-3 py-2 border border-green-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      placeholder="0"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      {t('purchaseOrders.quantityGoodDesc') || 'Goes to inventory'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {t('purchaseOrders.quantityProblem') || 'Problems'} ⚠️
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={verificationQuantityProblem}
+                      onChange={(e) => setVerificationQuantityProblem(e.target.value)}
+                      className="w-full px-3 py-2 border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                      placeholder="0"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      {t('purchaseOrders.quantityProblemDesc') || 'Damaged/needs repair'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {t('purchaseOrders.quantityNotReceived') || 'Not Received'} ✗
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={verificationQuantityNotReceived}
+                      onChange={(e) => setVerificationQuantityNotReceived(e.target.value)}
+                      className="w-full px-3 py-2 border border-red-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      placeholder="0"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      {t('purchaseOrders.quantityNotReceivedDesc') || 'Never received'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-xs text-blue-800 font-medium mb-1">
+                    {t('purchaseOrders.quantityBreakdown') || 'Breakdown:'}
+                  </p>
+                  <p className="text-sm text-blue-900">
+                    {(() => {
+                      const good = parseInt(verificationQuantityGood || '0');
+                      const problem = parseInt(verificationQuantityProblem || '0');
+                      const notReceived = parseInt(verificationQuantityNotReceived || '0');
+                      const total = parseInt(verificationQuantity || '0');
+                      const sum = good + problem + notReceived;
+                      const isValid = sum === total;
+                      const breakdownText = t('purchaseOrders.quantityBreakdownText')
+                        .replace('{good}', good.toString())
+                        .replace('{problem}', problem.toString())
+                        .replace('{notReceived}', notReceived.toString())
+                        .replace('{total}', sum.toString())
+                        .replace('{received}', total.toString());
+                      return (
+                        <span className={isValid ? 'text-blue-900' : 'text-red-600 font-medium'}>
+                          {breakdownText}
+                          {!isValid && ' ⚠️'}
+                        </span>
+                      );
+                    })()}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('purchaseOrders.verificationComment') || 'Verification Comment'} (Optional)
+                  </label>
+                  <textarea
+                    value={verificationComment}
+                    onChange={(e) => setVerificationComment(e.target.value)}
+                    rows={3}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent resize-none"
+                    placeholder={t('purchaseOrders.verificationCommentPlaceholder') || 'Add notes about problems, damages, missing items, etc...'}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {t('purchaseOrders.verificationCommentDesc') || 'Document any issues, damages, or notes about this verification'}
+                  </p>
+                  
+                  {/* Media Upload Section */}
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {t('purchaseOrders.verificationMedia') || 'Attach Media'} (Optional)
+                    </label>
+                    <div className="space-y-2">
+                      <input
+                        type="file"
+                        accept="image/*,video/*"
+                        multiple
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          setVerificationMedia(prev => [...prev, ...files]);
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm"
+                      />
+                      
+                      {/* Preview uploaded files */}
+                      {(verificationMedia.length > 0 || verificationMediaUrls.length > 0) && (
+                        <div className="grid grid-cols-3 gap-2 mt-2">
+                          {verificationMediaUrls.map((url, index) => (
+                            <div key={`existing-${index}`} className="relative group">
+                              {url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                                <img src={url} alt={`Media ${index + 1}`} className="w-full h-24 object-cover rounded-lg border border-gray-200" />
+                              ) : (
+                                <video src={url} className="w-full h-24 object-cover rounded-lg border border-gray-200" />
+                              )}
+                              <button
+                                onClick={() => setVerificationMediaUrls(prev => prev.filter((_, i) => i !== index))}
+                                className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
+                          ))}
+                          {verificationMedia.map((file, index) => (
+                            <div key={`new-${index}`} className="relative group">
+                              {file.type.startsWith('image/') ? (
+                                <img src={URL.createObjectURL(file)} alt={`Preview ${index + 1}`} className="w-full h-24 object-cover rounded-lg border border-gray-200" />
+                              ) : (
+                                <video src={URL.createObjectURL(file)} className="w-full h-24 object-cover rounded-lg border border-gray-200" />
+                              )}
+                              <button
+                                onClick={() => setVerificationMedia(prev => prev.filter((_, i) => i !== index))}
+                                className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {t('purchaseOrders.verificationMediaDesc') || 'Upload images or videos to document problems, damages, or missing items'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
+              <button
+                onClick={() => {
+                  setVerificationModalOpen(false);
+                  setVerificationData(null);
+                  setVerificationQuantity('');
+                  setVerificationQuantityGood('');
+                  setVerificationQuantityProblem('');
+                  setVerificationQuantityNotReceived('');
+                  setVerificationComment('');
+                  setVerificationMedia([]);
+                  setVerificationMediaUrls([]);
+                }}
+                className="px-4 py-2 rounded-xl text-gray-700 bg-gray-100 hover:bg-gray-200 font-medium transition-colors"
+              >
+                {t('common.cancel') || 'Cancel'}
+              </button>
+              <button
+                onClick={handleVerificationConfirm}
+                className="px-4 py-2 rounded-xl bg-[#4f0c1b] text-white hover:bg-[#3d0a15] font-medium transition-colors"
+              >
+                {t('purchaseOrders.verify') || 'Verify'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Confirmation Dialogs */}

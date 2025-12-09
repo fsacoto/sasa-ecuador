@@ -22,7 +22,7 @@ export function syncPurchaseOrderToInventory(
   // If still not found, try finding by linked purchase orders
   if (!inventoryItem) {
     inventoryItem = inventory.find(item => 
-      item.linkedPurchaseOrders.includes(updatedOrder.id)
+      item.linkedPurchaseOrders && item.linkedPurchaseOrders.includes(updatedOrder.id)
     );
   }
 
@@ -30,7 +30,8 @@ export function syncPurchaseOrderToInventory(
   if (updatedOrder.status !== 'Verified') {
     if (inventoryItem) {
       // Remove this purchase order from linked orders
-      const updatedLinkedOrders = inventoryItem.linkedPurchaseOrders.filter(
+      const linkedOrders = inventoryItem.linkedPurchaseOrders || [];
+      const updatedLinkedOrders = linkedOrders.filter(
         orderId => orderId !== updatedOrder.id
       );
       
@@ -54,7 +55,7 @@ export function syncPurchaseOrderToInventory(
       
       // If item was originally created from purchase orders (has linked orders)
       // AND no other verified orders remain, delete it completely
-      if (inventoryItem.linkedPurchaseOrders.length > 0 && !hasOtherVerifiedOrders) {
+      if (linkedOrders.length > 0 && !hasOtherVerifiedOrders) {
         // Item was only created from purchase orders and none are verified anymore - DELETE IT
         deleteInventoryItem(inventoryItem.id);
       } else {
@@ -97,15 +98,17 @@ export function syncPurchaseOrderToInventory(
     }
 
     // Link this purchase order if not already linked
-    if (!inventoryItem.linkedPurchaseOrders.includes(updatedOrder.id)) {
-      updates.linkedPurchaseOrders = [...inventoryItem.linkedPurchaseOrders, updatedOrder.id];
+    const linkedOrders = inventoryItem.linkedPurchaseOrders || [];
+    if (!linkedOrders.includes(updatedOrder.id)) {
+      updates.linkedPurchaseOrders = [...linkedOrders, updatedOrder.id];
     }
 
     // Update stock when order is verified
     // Check if this order was already processed (to avoid double-counting)
-    const wasAlreadyLinked = inventoryItem.linkedPurchaseOrders.includes(updatedOrder.id);
+    const wasAlreadyLinked = linkedOrders.includes(updatedOrder.id);
     if (!wasAlreadyLinked) {
-      const stockQuantity = updatedOrder.quantityReceived || updatedOrder.quantity;
+      // Use quantityGood if available (items in good condition), otherwise fall back to quantityReceived or quantity
+      const stockQuantity = updatedOrder.quantityGood !== undefined ? updatedOrder.quantityGood : (updatedOrder.quantityReceived || updatedOrder.quantity);
       if (updatedOrder.destinationStock === 'Ecuador') {
         updates.ecuadorStock = (inventoryItem.ecuadorStock || 0) + stockQuantity;
       } else if (updatedOrder.destinationStock === 'USA') {
@@ -119,20 +122,24 @@ export function syncPurchaseOrderToInventory(
     }
   } else if (updatedOrder.sku && updatedOrder.description) {
     // Create new inventory item ONLY when order is verified
-    const stockQuantity = updatedOrder.quantityReceived || updatedOrder.quantity;
+    // Use quantityGood if available (items in good condition), otherwise fall back to quantityReceived or quantity
+    const stockQuantity = updatedOrder.quantityGood !== undefined ? updatedOrder.quantityGood : (updatedOrder.quantityReceived || updatedOrder.quantity);
     
-    addInventoryItem({
-      name: updatedOrder.description,
-      sku: updatedOrder.sku,
-      supplierSKU: updatedOrder.supplierSKU,
-      category: updatedOrder.category || '',
-      line: updatedOrder.line || '',
-      description: updatedOrder.description,
-      images: updatedOrder.images || [],
-      ecuadorStock: updatedOrder.destinationStock === 'Ecuador' ? stockQuantity : 0,
-      usaStock: updatedOrder.destinationStock === 'USA' ? stockQuantity : 0,
-      linkedPurchaseOrders: [updatedOrder.id],
-    });
+    // Only create inventory item if there are good items to add
+    if (stockQuantity > 0) {
+      addInventoryItem({
+        name: updatedOrder.description,
+        sku: updatedOrder.sku,
+        supplierSKU: updatedOrder.supplierSKU,
+        category: updatedOrder.category || '',
+        line: updatedOrder.line || '',
+        description: updatedOrder.description,
+        images: updatedOrder.images || [],
+        ecuadorStock: updatedOrder.destinationStock === 'Ecuador' ? stockQuantity : 0,
+        usaStock: updatedOrder.destinationStock === 'USA' ? stockQuantity : 0,
+        linkedPurchaseOrders: [updatedOrder.id],
+      });
+    }
   }
 }
 
@@ -142,8 +149,9 @@ export function syncInventoryToOrders(
   updatePurchaseOrder: (id: string, order: Partial<PurchaseOrder>) => void
 ) {
   // Find all purchase orders linked to this inventory item
+  const linkedPurchaseOrderIds = updatedItem.linkedPurchaseOrders || [];
   const linkedOrders = purchaseOrders.filter(order => 
-    updatedItem.linkedPurchaseOrders.includes(order.id) || order.sku === updatedItem.sku
+    linkedPurchaseOrderIds.includes(order.id) || order.sku === updatedItem.sku
   );
 
   linkedOrders.forEach(order => {
@@ -176,12 +184,13 @@ export function cleanupInventoryAfterOrderDeletion(
 ) {
   // Find inventory items that are only linked to the deleted orders
   inventory.forEach(item => {
-    const remainingLinkedOrders = item.linkedPurchaseOrders.filter(
+    const linkedOrders = item.linkedPurchaseOrders || [];
+    const remainingLinkedOrders = linkedOrders.filter(
       orderId => !deletedOrderIds.includes(orderId)
     );
     
     // If no remaining linked orders, delete the inventory item
-    if (remainingLinkedOrders.length === 0 && item.linkedPurchaseOrders.length > 0) {
+    if (remainingLinkedOrders.length === 0 && linkedOrders.length > 0) {
       console.log('Deleting orphaned inventory item:', item.sku, item.name);
       deleteInventoryItem(item.id);
     }

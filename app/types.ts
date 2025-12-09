@@ -26,6 +26,11 @@ export interface PurchaseOrder {
   images: string[]; // Array of image URLs or base64 data
   quantity: number;
   quantityReceived?: number; // Actual quantity received after verification
+  quantityGood?: number; // Quantity in good condition (goes to inventory)
+  quantityProblem?: number; // Quantity with problems (damaged, needs repair, etc. - doesn't go to inventory)
+  quantityNotReceived?: number; // Quantity never received
+  verificationComment?: string; // Comment about verification (problems, issues, etc.)
+  verificationMedia?: string[]; // Array of media URLs (images, videos) attached to verification
   destinationStock: 'Ecuador' | 'USA';
   currency: string;
   costPerUnit: number;

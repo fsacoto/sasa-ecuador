@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { parseCSV, detectColumnMapping, cleanNumericValue, ParsedRow } from '../utils/csvParser';
 import { useInventory } from '../context/InventoryContext';
 import { generateUniqueSKU } from '../utils/skuGenerator';
@@ -24,6 +24,9 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
   const [invoicePrefix, setInvoicePrefix] = useState<string>('');
   const [purchaseDate, setPurchaseDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [importResults, setImportResults] = useState<{ success: number; warnings: number; autoLinked?: number }>({ success: 0, warnings: 0, autoLinked: 0 });
+  
+  // Cache to track suppliers being created during import to prevent duplicates
+  const supplierCacheRef = useRef<Map<string, Promise<string>>>(new Map());
 
   // Predefined categories and lines for matching
   const predefinedCategories = ['Necklace', 'Ring', 'Bracelet', 'Set', 'Anklet', 'Earring'];
@@ -33,48 +36,91 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
   const findMatchingSupplier = async (supplierName: string, currency: string = 'USD'): Promise<string> => {
     if (!supplierName || supplierName.trim() === '') return defaultSupplier;
     
-    const trimmedName = supplierName.trim();
+    const trimmedName = supplierName.trim().toLowerCase();
     
-    // Try exact match first
-    const exactMatch = suppliers.find(s => s.name.toLowerCase() === trimmedName.toLowerCase());
-    if (exactMatch) return exactMatch.id;
-    
-    // Try partial match
-    const partialMatch = suppliers.find(s => 
-      s.name.toLowerCase().includes(trimmedName.toLowerCase()) ||
-      trimmedName.toLowerCase().includes(s.name.toLowerCase())
-    );
-    if (partialMatch) return partialMatch.id;
-    
-    // Create new supplier if no match found
-    try {
-      await addSupplier({
-        name: trimmedName,
-        email: '',
-        phone: '',
-        country: '',
-        currency: currency || 'USD',
-        notes: 'Auto-created from bulk import',
-      });
-      
-      // Find the newly created supplier
-      // Since React state updates are async, we'll search the service directly
-      const { searchSuppliersByName } = await import('../services/suppliersService');
-      const foundSuppliers = await searchSuppliersByName(trimmedName);
-      const match = foundSuppliers.find(s => s.name.toLowerCase() === trimmedName.toLowerCase());
-      
-      if (match) {
-        return match.id;
-      }
-      
-      // If still not found, return default
-      console.warn(`Failed to find newly created supplier: ${trimmedName}`);
-      return defaultSupplier;
-    } catch (error) {
-      console.error('Error creating supplier:', error);
-      // Return default on error
-      return defaultSupplier;
+    // Check if we're already creating this supplier (prevent duplicates during bulk import)
+    if (supplierCacheRef.current.has(trimmedName)) {
+      return await supplierCacheRef.current.get(trimmedName)!;
     }
+    
+    // Try exact match first in local state
+    const exactMatch = suppliers.find(s => s.name.toLowerCase() === trimmedName);
+    if (exactMatch) {
+      supplierCacheRef.current.set(trimmedName, Promise.resolve(exactMatch.id));
+      return exactMatch.id;
+    }
+    
+    // Try partial match in local state
+    const partialMatch = suppliers.find(s => 
+      s.name.toLowerCase().includes(trimmedName) ||
+      trimmedName.includes(s.name.toLowerCase())
+    );
+    if (partialMatch) {
+      supplierCacheRef.current.set(trimmedName, Promise.resolve(partialMatch.id));
+      return partialMatch.id;
+    }
+    
+    // Create a promise for supplier creation to prevent duplicates
+    const supplierPromise = (async () => {
+      try {
+        // Check database directly before creating to avoid race conditions
+        const { searchSuppliersByName } = await import('../services/suppliersService');
+        const foundSuppliers = await searchSuppliersByName(trimmedName);
+        const dbMatch = foundSuppliers.find(s => s.name.toLowerCase() === trimmedName);
+        
+        if (dbMatch) {
+          return dbMatch.id;
+        }
+        
+        // Only create if it truly doesn't exist in the database
+        await addSupplier({
+          name: trimmedName,
+          email: '',
+          phone: '',
+          country: '',
+          currency: currency || 'USD',
+          notes: 'Auto-created from bulk import',
+        });
+        
+        // After creation, search again to get the ID
+        const createdSuppliers = await searchSuppliersByName(trimmedName);
+        const createdMatch = createdSuppliers.find(s => s.name.toLowerCase() === trimmedName);
+        
+        if (createdMatch) {
+          return createdMatch.id;
+        }
+        
+        // If creation failed, it might be because it was created by another process
+        // Try one more time to find it
+        const retrySuppliers = await searchSuppliersByName(trimmedName);
+        const retryMatch = retrySuppliers.find(s => s.name.toLowerCase() === trimmedName);
+        if (retryMatch) {
+          return retryMatch.id;
+        }
+        
+        console.warn(`Failed to find newly created supplier: ${trimmedName}`);
+        return defaultSupplier;
+      } catch (error) {
+        console.error('Error creating supplier:', error);
+        // If creation failed, try to find it one more time (might have been created by another process)
+        try {
+          const { searchSuppliersByName } = await import('../services/suppliersService');
+          const foundSuppliers = await searchSuppliersByName(trimmedName);
+          const match = foundSuppliers.find(s => s.name.toLowerCase() === trimmedName);
+          if (match) {
+            return match.id;
+          }
+        } catch (retryError) {
+          console.error('Error retrying supplier search:', retryError);
+        }
+        return defaultSupplier;
+      }
+    })();
+    
+    // Cache the promise so other calls with the same supplier name wait for this one
+    supplierCacheRef.current.set(trimmedName, supplierPromise);
+    
+    return await supplierPromise;
   };
 
   const findMatchingCategory = (categoryName: string): string => {
@@ -204,6 +250,9 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
 
   const handleImport = async () => {
     setStep('preview');
+    
+    // Clear supplier cache at the start of each import
+    supplierCacheRef.current.clear();
     
     let warningCount = 0;
     let autoLinkedCount = 0;
