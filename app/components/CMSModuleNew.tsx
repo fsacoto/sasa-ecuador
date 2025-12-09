@@ -2774,6 +2774,16 @@ function ContentView({
   onContentClick?: (content: CMSContent) => void;
 }) {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const { deleteContent, updateContentStatus } = useCMS();
+  
+  // Confirmation dialog states
+  const [deleteDraftConfirmOpen, setDeleteDraftConfirmOpen] = useState(false);
+  const [cancelSubmissionConfirmOpen, setCancelSubmissionConfirmOpen] = useState(false);
+  const [deletePublishedConfirmOpen, setDeletePublishedConfirmOpen] = useState(false);
+  const [contentToDelete, setContentToDelete] = useState<CMSContent | null>(null);
+  const [contentToCancel, setContentToCancel] = useState<CMSContent | null>(null);
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterLine, setFilterLine] = useState('all');

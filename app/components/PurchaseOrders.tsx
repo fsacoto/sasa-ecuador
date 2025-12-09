@@ -16,7 +16,7 @@ import { generatePOVerificationPDF } from '../utils/poVerificationPDF';
 import ConfirmDialog from './ui/ConfirmDialog';
 
 export default function PurchaseOrders() {
-  const { purchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, suppliers, inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem } = useInventory();
+  const { purchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, suppliers, inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, addSupplier } = useInventory();
   const { t } = useTranslation();
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -39,6 +39,8 @@ export default function PurchaseOrders() {
   const [isLoadingRates, setIsLoadingRates] = useState(false);
   const [lastRateUpdate, setLastRateUpdate] = useState<string>('');
   const [categoryMode, setCategoryMode] = useState<'select' | 'new'>('select');
+  const [supplierNameInput, setSupplierNameInput] = useState<string>('');
+  const [supplierInputMode, setSupplierInputMode] = useState<'select' | 'text'>('select');
   const [lineMode, setLineMode] = useState<'select' | 'new'>('select');
   const [skuManuallyEdited, setSkuManuallyEdited] = useState(false);
   const [originalSku, setOriginalSku] = useState<string>('');
@@ -297,6 +299,63 @@ export default function PurchaseOrders() {
     }
   }, [formData.currency, formData.exchangeRate, exchangeRates]);
 
+  // Helper function to find or create a supplier by name
+  const findOrCreateSupplier = async (supplierName: string): Promise<string> => {
+    if (!supplierName || supplierName.trim() === '') {
+      return '';
+    }
+
+    const trimmedName = supplierName.trim();
+    
+    // Try to find existing supplier (case-insensitive)
+    const existingSupplier = suppliers.find(
+      s => s.name.toLowerCase() === trimmedName.toLowerCase()
+    );
+    
+    if (existingSupplier) {
+      return existingSupplier.id;
+    }
+    
+    // Create new supplier if not found
+    try {
+      // Create supplier via context - it will handle both DB and state update
+      // We need the ID, so we'll create it and then find it in the updated suppliers list
+      await addSupplier({
+        name: trimmedName,
+        email: '',
+        phone: '',
+        country: '',
+        currency: formData.currency || 'USD',
+        notes: 'Auto-created from purchase order',
+      });
+      
+      // The context should have updated, but React state updates are async
+      // So we'll search the current suppliers array - if not found, we'll use the service directly
+      // to get the ID immediately
+      const updatedSupplier = suppliers.find(
+        s => s.name.toLowerCase() === trimmedName.toLowerCase()
+      );
+      
+      if (updatedSupplier) {
+        return updatedSupplier.id;
+      }
+      
+      // If not found in current state (async update), get it from service
+      const { searchSuppliersByName } = await import('../services/suppliersService');
+      const foundSuppliers = await searchSuppliersByName(trimmedName);
+      const match = foundSuppliers.find(s => s.name.toLowerCase() === trimmedName.toLowerCase());
+      
+      if (match) {
+        return match.id;
+      }
+      
+      throw new Error('Failed to create or find supplier');
+    } catch (error) {
+      console.error('Error creating supplier:', error);
+      throw error;
+    }
+  };
+
   const calculateTotals = () => {
     const totalCost = formData.quantity * formData.costPerUnit;
     const totalDiscount = formData.quantity * formData.discountPerUnit;
@@ -329,8 +388,25 @@ export default function PurchaseOrders() {
     };
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Handle supplier: if using text input mode, find or create supplier
+    let finalSupplierId = formData.supplierId;
+    if (supplierInputMode === 'text' && supplierNameInput.trim()) {
+      try {
+        finalSupplierId = await findOrCreateSupplier(supplierNameInput);
+        if (!finalSupplierId) {
+          alert(t('purchaseOrders.supplierRequired') || 'Supplier is required');
+          return;
+        }
+      } catch (error) {
+        console.error('Error handling supplier:', error);
+        alert(t('purchaseOrders.supplierCreationError') || 'Error creating supplier. Please try again.');
+        return;
+      }
+    }
+    
     const totals = calculateTotals();
     
     // Prepare dates based on status
@@ -344,6 +420,7 @@ export default function PurchaseOrders() {
     
     const orderData = {
       ...formData,
+      supplierId: finalSupplierId,
       ...totals,
       ...statusDates,
       purchaseDate: new Date(formData.purchaseDate),
@@ -461,6 +538,8 @@ export default function PurchaseOrders() {
     setLineMode('select');
     setSkuManuallyEdited(false);
     setOriginalSku('');
+    setSupplierNameInput('');
+    setSupplierInputMode('select');
   };
 
   const handleRegenerateSku = () => {
@@ -574,6 +653,8 @@ export default function PurchaseOrders() {
     setOriginalSku(order.sku); // Track original SKU for sync purposes
     setSelectedInventoryId(''); // Reset selector for fresh linking option
     setSkuManuallyEdited(false); // Reset SKU manual edit flag to allow regeneration
+    setSupplierInputMode('select'); // Reset to select mode when editing
+    setSupplierNameInput(''); // Clear text input
     setFormData({
       invoice: order.invoice,
       invoiceLink: order.invoiceLink,
@@ -1441,19 +1522,65 @@ export default function PurchaseOrders() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.supplierLabel')}</label>
-                  <select
-                    required
-                    value={formData.supplierId}
-                    onChange={(e) => setFormData({ ...formData, supplierId: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
-                  >
-                    <option value="">{t('purchaseOrders.selectSupplier')}</option>
-                    {suppliers.map((supplier) => (
-                      <option key={supplier.id} value={supplier.id}>
-                        {supplier.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex gap-2">
+                    <select
+                      value={supplierInputMode === 'select' ? formData.supplierId : ''}
+                      onChange={(e) => {
+                        if (e.target.value === '__new__') {
+                          setSupplierInputMode('text');
+                          setSupplierNameInput('');
+                          setFormData({ ...formData, supplierId: '' });
+                        } else {
+                          setSupplierInputMode('select');
+                          setFormData({ ...formData, supplierId: e.target.value });
+                        }
+                      }}
+                      className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent ${supplierInputMode === 'text' ? 'hidden' : ''}`}
+                    >
+                      <option value="">{t('purchaseOrders.selectSupplier')}</option>
+                      {suppliers.map((supplier) => (
+                        <option key={supplier.id} value={supplier.id}>
+                          {supplier.name}
+                        </option>
+                      ))}
+                      <option value="__new__">{t('purchaseOrders.addNewSupplier') || '+ Add New Supplier'}</option>
+                    </select>
+                    <input
+                      type="text"
+                      required
+                      value={supplierInputMode === 'text' ? supplierNameInput : ''}
+                      onChange={(e) => {
+                        setSupplierNameInput(e.target.value);
+                        setFormData({ ...formData, supplierId: '' });
+                      }}
+                      onBlur={(e) => {
+                        // If user types a name that matches an existing supplier, switch to select mode
+                        const match = suppliers.find(
+                          s => s.name.toLowerCase() === e.target.value.trim().toLowerCase()
+                        );
+                        if (match) {
+                          setSupplierInputMode('select');
+                          setSupplierNameInput('');
+                          setFormData({ ...formData, supplierId: match.id });
+                        }
+                      }}
+                      placeholder={t('purchaseOrders.enterSupplierName') || 'Enter supplier name'}
+                      className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent ${supplierInputMode === 'select' ? 'hidden' : ''}`}
+                    />
+                    {supplierInputMode === 'text' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSupplierInputMode('select');
+                          setSupplierNameInput('');
+                        }}
+                        className="px-3 py-2 text-gray-600 hover:text-gray-800"
+                        title={t('purchaseOrders.cancel') || 'Cancel'}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.supplierSkuLabel')}</label>

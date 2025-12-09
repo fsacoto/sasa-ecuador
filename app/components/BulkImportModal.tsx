@@ -13,7 +13,7 @@ interface BulkImportModalProps {
 type ImportStep = 'upload' | 'mapping' | 'preview' | 'complete';
 
 export default function BulkImportModal({ onClose }: BulkImportModalProps) {
-  const { addPurchaseOrdersBulk, inventory, suppliers } = useInventory();
+  const { addPurchaseOrdersBulk, inventory, suppliers, addSupplier } = useInventory();
   const [step, setStep] = useState<ImportStep>('upload');
   const [parsedData, setParsedData] = useState<ParsedRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -30,22 +30,51 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
   const predefinedLines = ['Gold Plated', 'Gold Filled', 'Sterling Silver'];
 
   // Helper functions to match values with database
-  const findMatchingSupplier = (supplierName: string): string => {
-    if (!supplierName) return defaultSupplier;
+  const findMatchingSupplier = async (supplierName: string, currency: string = 'USD'): Promise<string> => {
+    if (!supplierName || supplierName.trim() === '') return defaultSupplier;
+    
+    const trimmedName = supplierName.trim();
     
     // Try exact match first
-    const exactMatch = suppliers.find(s => s.name.toLowerCase() === supplierName.toLowerCase());
+    const exactMatch = suppliers.find(s => s.name.toLowerCase() === trimmedName.toLowerCase());
     if (exactMatch) return exactMatch.id;
     
     // Try partial match
     const partialMatch = suppliers.find(s => 
-      s.name.toLowerCase().includes(supplierName.toLowerCase()) ||
-      supplierName.toLowerCase().includes(s.name.toLowerCase())
+      s.name.toLowerCase().includes(trimmedName.toLowerCase()) ||
+      trimmedName.toLowerCase().includes(s.name.toLowerCase())
     );
     if (partialMatch) return partialMatch.id;
     
-    // Return default if no match found
-    return defaultSupplier;
+    // Create new supplier if no match found
+    try {
+      await addSupplier({
+        name: trimmedName,
+        email: '',
+        phone: '',
+        country: '',
+        currency: currency || 'USD',
+        notes: 'Auto-created from bulk import',
+      });
+      
+      // Find the newly created supplier
+      // Since React state updates are async, we'll search the service directly
+      const { searchSuppliersByName } = await import('../services/suppliersService');
+      const foundSuppliers = await searchSuppliersByName(trimmedName);
+      const match = foundSuppliers.find(s => s.name.toLowerCase() === trimmedName.toLowerCase());
+      
+      if (match) {
+        return match.id;
+      }
+      
+      // If still not found, return default
+      console.warn(`Failed to find newly created supplier: ${trimmedName}`);
+      return defaultSupplier;
+    } catch (error) {
+      console.error('Error creating supplier:', error);
+      // Return default on error
+      return defaultSupplier;
+    }
   };
 
   const findMatchingCategory = (categoryName: string): string => {
@@ -173,7 +202,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
     reader.readAsText(file);
   };
 
-  const handleImport = () => {
+  const handleImport = async () => {
     setStep('preview');
     
     let warningCount = 0;
@@ -214,7 +243,9 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
         : `IMPORT-${timestamp}`;
     }
 
-    parsedData.forEach((row, index) => {
+    // Process rows and create suppliers as needed
+    for (let index = 0; index < parsedData.length; index++) {
+      const row = parsedData[index];
       // Extract mapped fields
       const mappedData: Record<string, string | number> = {};
       Object.entries(columnMapping).forEach(([csvColumn, dbField]) => {
@@ -229,9 +260,10 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
       const rawCategory = (mappedData.category as string) || '';
       const rawLine = (mappedData.line as string) || '';
       const rawSupplier = (mappedData.supplier as string) || '';
+      const currency = (mappedData.currency as string) || defaultCurrency || 'USD';
       
-      // Match values with database
-      const matchedSupplier = findMatchingSupplier(rawSupplier);
+      // Match values with database (await supplier creation if needed)
+      const matchedSupplier = await findMatchingSupplier(rawSupplier, currency);
       const matchedCategory = findMatchingCategory(rawCategory);
       const matchedLine = findMatchingLine(rawLine);
 
@@ -334,7 +366,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
       if (needsReview) {
         warningCount++;
       }
-    });
+    }
 
     // Add all orders in bulk
     // Inventory items will be created automatically when orders are marked as 'Verified'
