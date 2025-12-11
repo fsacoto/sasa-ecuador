@@ -69,7 +69,7 @@ export async function generatePOVerificationPDF({
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 20; // Reduced margin for more table width
+  const margin = 40; // Horizontal and vertical margins for balanced layout
   const usableWidth = pageWidth - (margin * 2);
   const usableHeight = pageHeight - (margin * 2);
 
@@ -139,13 +139,38 @@ export async function generatePOVerificationPDF({
   const lineHeight = 14;
   const headerHeight = 80;
   const footerHeight = 120; // Increased for signature spacing
-  const tableStartY = 200; // More vertical spacing before table
+  const tableStartY = 160; // Reduced spacing to move table closer to header
   const signatureBlockHeight = 80; // Space reserved for signature on last page
-  const baseRowHeight = 20; // Base row height, will be adjusted dynamically
-  const cellPadding = 8; // Consistent padding for cells
+  const cellPadding = 10; // Horizontal padding for cells
+  const paddingTop = 8; // Top padding for table cells
+  const paddingBottom = 8; // Bottom padding for table cells
+  const ROWS_PER_PAGE = 15; // Exactly 15 data rows per page (constant)
+  const footerBottomMargin = 42; // Bottom margin for footer
+  const gapBetweenTableAndFooter = 25; // Small gap (20-30pt) between last row and footer
   
-  // Calculate table end Y - reserve space for signature on last page
-  const tableEndY = pageHeight - margin - footerHeight;
+  // Calculate available height for the table
+  // availableHeight = pageHeight - topMargin - headerBlockHeight - spaceBetweenHeaderAndTable - footerHeight - bottomMargin - gap
+  const topMargin = margin;
+  const headerBlockHeight = headerHeight;
+  const spaceBetweenHeaderAndTable = tableStartY - (margin + headerBlockHeight);
+  const bottomMargin = footerBottomMargin;
+  
+  // Calculate available vertical space for table rows
+  const availableHeight = pageHeight - topMargin - headerBlockHeight - spaceBetweenHeaderAndTable - footerHeight - bottomMargin - gapBetweenTableAndFooter;
+  
+  // Calculate header row height (includes padding)
+  const headerRowHeight = 24 + paddingTop + paddingBottom; // Base header height + padding
+  
+  // Calculate available space for body rows (excluding header row)
+  const availableRowSpace = availableHeight - headerRowHeight;
+  
+  // Calculate fixed row height to fit exactly 15 rows per page
+  // Add 8 points to make each row bigger
+  const rowHeightIncrease = 8;
+  const fixedRowHeight = (availableRowSpace / ROWS_PER_PAGE) + rowHeightIncrease;
+  
+  // Table end Y for pagination checks
+  const tableEndY = tableStartY + headerRowHeight + (ROWS_PER_PAGE * fixedRowHeight) + gapBetweenTableAndFooter;
 
   // Column widths (sums to usableWidth) - CHECK moved to after QTY RECEIVED
   // Fixed widths for short columns, NOTES gets remaining space
@@ -168,8 +193,7 @@ export async function generatePOVerificationPDF({
   colWidths.notes = usableWidth - usedWidth;
 
   let currentPage = 1;
-  let totalPages = 1; // Will be calculated after row heights
-  const rowHeights: number[] = []; // Array to store calculated row heights
+  let totalPages = 1; // Will be calculated based on ROWS_PER_PAGE
 
   // Helper function to add a new page
   const addNewPage = () => {
@@ -218,7 +242,7 @@ export async function generatePOVerificationPDF({
 
   // Draw table header
   const drawTableHeader = (startY: number) => {
-    const headerRowHeight = baseRowHeight + 4;
+    // Use the headerRowHeight calculated above (includes padding)
     let x = margin;
     
     // Darker background for header
@@ -302,33 +326,9 @@ export async function generatePOVerificationPDF({
     doc.line(margin + usableWidth, startY, margin + usableWidth, startY + headerRowHeight);
   };
 
-  // Calculate row height based on text content
-  const calculateRowHeight = (order: PurchaseOrder): number => {
-    doc.setFontSize(9);
-    const lineSpacing = 10;
-    const minHeight = baseRowHeight;
-    
-    // Calculate height needed for each column
-    const descText = doc.splitTextToSize(order.description || '-', colWidths.description - (cellPadding * 2));
-    const skuText = doc.splitTextToSize(order.sku || '-', colWidths.sku - (cellPadding * 2));
-    const catText = doc.splitTextToSize(order.category || '-', colWidths.category - (cellPadding * 2));
-    const lineText = doc.splitTextToSize(order.line || '-', colWidths.line - (cellPadding * 2));
-    
-    const maxLines = Math.max(
-      descText.length,
-      skuText.length,
-      catText.length,
-      lineText.length,
-      1
-    );
-    
-    return Math.max(minHeight, (maxLines * lineSpacing) + (cellPadding * 2));
-  };
-
-  // Pre-calculate all row heights
-  orders.forEach(order => {
-    rowHeights.push(calculateRowHeight(order));
-  });
+  // Note: We use fixed row height for all rows to ensure exactly 15 rows per page
+  // Text wrapping (noWrap: false equivalent) is handled by splitTextToSize
+  // Vertical alignment (valign: 'middle') is handled in drawTableRow
 
   // Draw table row with dynamic height
   const drawTableRow = (order: PurchaseOrder, rowY: number, globalRowIndex: number, rowHeight: number, isEven: boolean): number => {
@@ -345,34 +345,51 @@ export async function generatePOVerificationPDF({
     doc.setTextColor(51, 51, 51);
 
     let x = margin;
-    const textY = rowY + cellPadding + 9;
+    // Helper function to calculate vertically centered Y position for multi-line text
+    // Uses lineHeight of 1.1-1.2 for proper spacing (valign: 'middle')
+    const getCenteredTextY = (textLines: string[], rowCenterY: number): number => {
+      if (textLines.length === 1) {
+        return rowCenterY + 3; // Single line: center + small offset for baseline
+      }
+      // Multi-line: center the block of text with lineHeight of 1.2
+      const lineHeight = 1.2;
+      const lineSpacing = 10 * lineHeight; // Apply line height multiplier
+      const totalTextHeight = (textLines.length - 1) * lineSpacing;
+      return rowCenterY - (totalTextHeight / 2) + 3;
+    };
     
-    // NO (use global row index for numbering)
-    doc.text(String(globalRowIndex + 1), x + colWidths.no / 2, rowY + rowHeight / 2 + 3, { align: 'center' });
+    const rowCenterY = rowY + rowHeight / 2;
+    
+    // NO (use global row index for numbering) - vertically centered
+    doc.text(String(globalRowIndex + 1), x + colWidths.no / 2, rowCenterY + 3, { align: 'center' });
     x += colWidths.no;
     
-    // SKU - with proper wrapping
+    // SKU - with proper wrapping (noWrap: false), vertically centered
     const skuText = doc.splitTextToSize(order.sku || '-', colWidths.sku - (cellPadding * 2));
-    doc.text(skuText, x + cellPadding, textY);
+    const skuTextY = getCenteredTextY(skuText, rowCenterY);
+    doc.text(skuText, x + cellPadding, skuTextY);
     x += colWidths.sku;
     
-    // DESCRIPTION - with proper wrapping and dynamic height
+    // DESCRIPTION - with proper wrapping (noWrap: false), vertically centered
     const descText = doc.splitTextToSize(order.description || '-', colWidths.description - (cellPadding * 2));
-    doc.text(descText, x + cellPadding, textY);
+    const descTextY = getCenteredTextY(descText, rowCenterY);
+    doc.text(descText, x + cellPadding, descTextY);
     x += colWidths.description;
     
-    // CATEGORY - with proper wrapping
+    // CATEGORY - with proper wrapping (noWrap: false), vertically centered
     const catText = doc.splitTextToSize(order.category || '-', colWidths.category - (cellPadding * 2));
-    doc.text(catText, x + cellPadding, textY);
+    const catTextY = getCenteredTextY(catText, rowCenterY);
+    doc.text(catText, x + cellPadding, catTextY);
     x += colWidths.category;
     
-    // LINE - with proper wrapping
+    // LINE - with proper wrapping (noWrap: false), vertically centered
     const lineText = doc.splitTextToSize(order.line || '-', colWidths.line - (cellPadding * 2));
-    doc.text(lineText, x + cellPadding, textY);
+    const lineTextY = getCenteredTextY(lineText, rowCenterY);
+    doc.text(lineText, x + cellPadding, lineTextY);
     x += colWidths.line;
     
-    // QTY ORDERED
-    doc.text(String(order.quantity), x + colWidths.qtyOrdered / 2, rowY + rowHeight / 2 + 3, { align: 'center' });
+    // QTY ORDERED - vertically centered
+    doc.text(String(order.quantity), x + colWidths.qtyOrdered / 2, rowCenterY + 3, { align: 'center' });
     x += colWidths.qtyOrdered;
     
     // QTY RECEIVED (blank)
@@ -458,77 +475,38 @@ export async function generatePOVerificationPDF({
       doc.line(footerX + 80, footerCurrentY - 5, footerX + 250, footerCurrentY - 5);
     }
 
-    // Page number (centered at bottom)
+    // Page number (centered at bottom, positioned lower with reduced bottom margin)
     doc.setFontSize(9);
     doc.setTextColor(153, 153, 153);
     const pageText = `${t.page} ${currentPage} ${t.of} ${totalPages}`;
-    doc.text(pageText, pageWidth / 2, pageHeight - margin - 10, { align: 'center' });
+    // Position footer lower: reduced bottom margin (42pt) + small top margin (10pt) for spacing
+    const footerTopMargin = 10;
+    doc.text(pageText, pageWidth / 2, pageHeight - footerBottomMargin + footerTopMargin, { align: 'center' });
   };
 
-  // Calculate total pages based on dynamic row heights
-  const headerRowHeight = baseRowHeight + 4;
-  let pageY = tableStartY + headerRowHeight; // Start after header
-  totalPages = 1;
-  
-  // First pass: calculate pages without signature reservation
-  for (let i = 0; i < rowHeights.length; i++) {
-    const rowHeight = rowHeights[i];
-    if (pageY + rowHeight > tableEndY && i > 0) {
-      totalPages++;
-      pageY = tableStartY + headerRowHeight;
-    }
-    pageY += rowHeight;
-  }
-  
-  // Second pass: verify last page has room for signature, add page if needed
-  pageY = tableStartY + headerRowHeight;
-  let currentCalcPage = 1;
-  for (let i = 0; i < rowHeights.length; i++) {
-    const rowHeight = rowHeights[i];
-    const isLastRow = (i === rowHeights.length - 1);
-    const willBeLastPage = (currentCalcPage === totalPages);
-    
-    // On last page with last row, reserve space for signature
-    const effectiveTableEndY = (willBeLastPage && isLastRow)
-      ? tableEndY - signatureBlockHeight
-      : tableEndY;
-    
-    if (pageY + rowHeight > effectiveTableEndY && i > 0) {
-      currentCalcPage++;
-      pageY = tableStartY + headerRowHeight;
-      // If we need a new page for the last row, increment total pages
-      if (isLastRow && currentCalcPage > totalPages) {
-        totalPages = currentCalcPage;
-      }
-    }
-    pageY += rowHeight;
-  }
+  // Calculate total pages based on exactly 15 rows per page
+  // Each page has: 1 header row + up to 15 data rows
+  totalPages = Math.ceil(orders.length / ROWS_PER_PAGE);
 
-  // Generate PDF with dynamic row heights
+  // Generate PDF with exactly 15 rows per page
   drawHeader();
   
   currentY = tableStartY;
   currentPage = 1;
-
+  let rowsOnCurrentPage = 0;
+  
   for (let i = 0; i < orders.length; i++) {
     const order = orders[i];
-    const rowHeight = rowHeights[i];
+    const rowHeight = fixedRowHeight; // Fixed row height for all rows
     const isEven = i % 2 === 0;
 
-    // Check if we need a new page (account for header if needed)
-    const needsHeader = currentY === tableStartY;
-    const spaceNeeded = (needsHeader ? headerRowHeight : 0) + rowHeight;
-    
-    // On last page, reserve space for signature block
-    const effectiveTableEndY = (currentPage === totalPages && i === orders.length - 1) 
-      ? tableEndY - signatureBlockHeight 
-      : tableEndY;
-    
-    if (currentY + spaceNeeded > effectiveTableEndY && i > 0) {
+    // Check if we need a new page (exactly 15 data rows per page)
+    if (rowsOnCurrentPage >= ROWS_PER_PAGE) {
       drawFooter();
       addNewPage();
       currentPage++;
       currentY = tableStartY;
+      rowsOnCurrentPage = 0;
     }
 
     // Draw table header if this is the first row on the page
@@ -537,9 +515,10 @@ export async function generatePOVerificationPDF({
       currentY += headerRowHeight;
     }
 
-    // Draw the row
+    // Draw the data row with fixed height
     drawTableRow(order, currentY, i, rowHeight, isEven);
     currentY += rowHeight;
+    rowsOnCurrentPage++;
   }
 
   // Draw final footer
