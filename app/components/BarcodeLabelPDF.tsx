@@ -5,15 +5,18 @@ import { PurchaseOrder, InventoryItem } from '../types';
 
 // 40mm x 20mm thermal label
 // At 72 DPI: 40mm = 113.39pt, 20mm = 56.69pt
-// Using slightly smaller to account for margins
-const LABEL_WIDTH = 113; // pt
-const LABEL_HEIGHT = 57; // pt
+const PAGE_WIDTH = 113.39; // pt (40mm)
+const PAGE_HEIGHT = 56.69; // pt (20mm)
+const LABEL_WIDTH = 113.39; // pt (40mm)
+const LABEL_HEIGHT = 56.69; // pt (20mm)
 
 const styles = StyleSheet.create({
   page: {
     backgroundColor: '#FFFFFF',
     padding: 0,
     fontFamily: 'Helvetica',
+    width: PAGE_WIDTH,
+    height: PAGE_HEIGHT,
   },
   label: {
     width: LABEL_WIDTH,
@@ -29,19 +32,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    height: 36,
+    height: 30,
     marginBottom: 1,
   },
   barcode: {
-    width: 109,
-    height: 34,
+    width: 105,
+    height: 28,
     objectFit: 'contain',
   },
   nameContainer: {
     paddingHorizontal: 2,
     marginBottom: 1,
-    minHeight: 8,
-    maxHeight: 10,
+    minHeight: 6,
+    maxHeight: 8,
     flex: 1,
   },
   name: {
@@ -79,64 +82,57 @@ interface BarcodeLabelPDFProps {
 }
 
 export default function BarcodeLabelPDF({ items }: BarcodeLabelPDFProps) {
-  // Calculate how many labels per page (A4: 595pt x 842pt)
-  // We'll arrange them in a grid
-  const labelsPerRow = Math.floor(595 / LABEL_WIDTH);
-  const labelsPerColumn = Math.floor(842 / LABEL_HEIGHT);
-  const labelsPerPage = labelsPerRow * labelsPerColumn;
-
-  // Group items into pages
-  const pages: Array<Array<{ order: PurchaseOrder; inventoryItem: InventoryItem | null; quantity: number }>> = [];
-  for (let i = 0; i < items.length; i += labelsPerPage) {
-    pages.push(items.slice(i, i + labelsPerPage));
-  }
+  // Create one page per label (40mm x 20mm)
+  // Expand items based on quantity
+  const expandedItems: Array<{ order: PurchaseOrder; inventoryItem: InventoryItem | null }> = [];
+  items.forEach((item) => {
+    for (let i = 0; i < item.quantity; i++) {
+      expandedItems.push({ order: item.order, inventoryItem: item.inventoryItem });
+    }
+  });
 
   return (
     <Document>
-      {pages.map((pageItems, pageIndex) => (
-        <Page key={pageIndex} size="A4" style={styles.page}>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', padding: 5 }}>
-            {pageItems.map((item, index) => {
-              if (!item.inventoryItem || !item.inventoryItem.barcode) {
-                return null;
-              }
+      {expandedItems.map((item, index) => {
+        if (!item.inventoryItem || !item.inventoryItem.barcode) {
+          return null;
+        }
 
-              const { order, inventoryItem } = item;
-              const name = order.description || inventoryItem.name || '';
-              // Truncate name if too long
-              const truncatedName = name.length > 30 ? name.substring(0, 27) + '...' : name;
+        const { order, inventoryItem } = item;
+        const name = order.description || inventoryItem.name || '';
+        // Truncate name if too long
+        const truncatedName = name.length > 30 ? name.substring(0, 27) + '...' : name;
 
-              return (
-                <View key={`${order.id}-${index}`} style={styles.label}>
-                  {/* Barcode */}
-                  <View style={styles.barcodeContainer}>
-                    <Image
-                      src={inventoryItem.barcode}
-                      style={styles.barcode}
-                      cache={false}
-                    />
-                  </View>
+        return (
+          <Page key={`${order.id}-${index}`} size={[PAGE_WIDTH, PAGE_HEIGHT]} style={styles.page}>
+            <View style={styles.label}>
+              {/* Barcode */}
+              <View style={styles.barcodeContainer}>
+                <Image
+                  src={inventoryItem.barcode}
+                  style={styles.barcode}
+                  cache={false}
+                />
+              </View>
 
-                  {/* Name Section - middle */}
-                  <View style={styles.nameContainer}>
-                    <Text style={styles.name}>{truncatedName}</Text>
-                  </View>
+              {/* Name Section - middle */}
+              <View style={styles.nameContainer}>
+                <Text style={styles.name}>{truncatedName}</Text>
+              </View>
 
-                  {/* Bottom Row: SKU on left, Category/Line on right */}
-                  <View style={styles.bottomRow}>
-                    <Text style={styles.sku}>{order.sku}</Text>
-                    <View style={styles.categoryLineContainer}>
-                      <Text style={styles.categoryLine}>{order.category || inventoryItem.category}</Text>
-                      <Text style={[styles.categoryLine, { marginLeft: 1, marginRight: 1 }]}>•</Text>
-                      <Text style={styles.categoryLine}>{order.line || inventoryItem.line}</Text>
-                    </View>
-                  </View>
+              {/* Bottom Row: SKU on left, Category/Line on right */}
+              <View style={styles.bottomRow}>
+                <Text style={styles.sku}>{order.sku}</Text>
+                <View style={styles.categoryLineContainer}>
+                  <Text style={styles.categoryLine}>{order.category || inventoryItem.category}</Text>
+                  <Text style={[styles.categoryLine, { marginLeft: 1, marginRight: 1 }]}>•</Text>
+                  <Text style={styles.categoryLine}>{order.line || inventoryItem.line}</Text>
                 </View>
-              );
-            })}
-          </View>
-        </Page>
-      ))}
+              </View>
+            </View>
+          </Page>
+        );
+      })}
     </Document>
   );
 }
