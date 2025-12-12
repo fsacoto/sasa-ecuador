@@ -853,7 +853,12 @@
     "delivered": "Delivered",
     "cancelled": "Cancelled",
     "inventoryByCategory": "Inventory by Category",
-    "uncategorized": "Uncategorized"
+    "uncategorized": "Uncategorized",
+    "item": "item",
+    "items": "items",
+    "needAttention": "need attention",
+    "viewAll": "View All",
+    "viewMoreItems": "View {count} more items"
   },
   "cms": {
     "title": "Content management system",

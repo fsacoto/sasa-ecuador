@@ -70,6 +70,23 @@ export default function PurchaseOrders() {
   const [filterDuplicateSku, setFilterDuplicateSku] = useState<boolean>(false);
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterLine, setFilterLine] = useState<string>('all');
+
+  // Load filters from sessionStorage when component mounts (from dashboard navigation)
+  useEffect(() => {
+    const storedFilters = sessionStorage.getItem('dashboardFilters_purchase-orders');
+    if (storedFilters) {
+      try {
+        const filters = JSON.parse(storedFilters);
+        if (filters.filterStatus) {
+          setFilterStatus(filters.filterStatus);
+        }
+        // Clear the stored filters after applying
+        sessionStorage.removeItem('dashboardFilters_purchase-orders');
+      } catch (e) {
+        console.error('Error parsing dashboard filters:', e);
+      }
+    }
+  }, []);
   const [filterQuantityIssues, setFilterQuantityIssues] = useState<string>('all'); // 'all', 'problems', 'missing', 'both'
   const [showFilters, setShowFilters] = useState(false);
   const [showColumnDropdown, setShowColumnDropdown] = useState(false);

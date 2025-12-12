@@ -294,7 +294,15 @@ function AppContent() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-6 lg:px-8 py-10">
-        {activeTab === 'dashboard' && user?.role !== 'marketing' && <Dashboard />}
+        {activeTab === 'dashboard' && user?.role !== 'marketing' && (
+          <Dashboard onNavigate={(tab, filters) => {
+            setActiveTab(tab as Tab);
+            // Store filters in sessionStorage for components to read
+            if (filters) {
+              sessionStorage.setItem(`dashboardFilters_${tab}`, JSON.stringify(filters));
+            }
+          }} />
+        )}
         {activeTab === 'suppliers' && hasPermission('suppliers.view') && <Suppliers />}
         {activeTab === 'purchase-orders' && hasPermission('purchase.view') && <PurchaseOrders />}
         {activeTab === 'inventory' && (hasPermission('inventory.view') || hasPermission('inventory.view.ecuador')) && <Inventory />}

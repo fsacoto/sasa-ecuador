@@ -47,6 +47,30 @@ export default function Inventory() {
   const [filterLine, setFilterLine] = useState<string>('all');
   const [filterCountry, setFilterCountry] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
+
+  // Load filters from sessionStorage when component mounts (from dashboard navigation)
+  useEffect(() => {
+    const storedFilters = sessionStorage.getItem('dashboardFilters_inventory');
+    if (storedFilters) {
+      try {
+        const filters = JSON.parse(storedFilters);
+        if (filters.filterCategory) {
+          setFilterCategory(filters.filterCategory);
+        }
+        if (filters.searchQuery) {
+          setSearchQuery(filters.searchQuery);
+        }
+        if (filters.filterLowStock) {
+          // Low stock filter: show items with total stock < 10
+          // This will be handled in the filter logic
+        }
+        // Clear the stored filters after applying
+        sessionStorage.removeItem('dashboardFilters_inventory');
+      } catch (e) {
+        console.error('Error parsing dashboard filters:', e);
+      }
+    }
+  }, []);
   
   // Search dropdown state
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
@@ -397,6 +421,20 @@ export default function Inventory() {
           item.supplierSKU.toLowerCase().includes(query) ||
           item.description.toLowerCase().includes(query);
         if (!matchesSearch) return false;
+      }
+      
+      // Low stock filter (from dashboard)
+      const storedFilters = sessionStorage.getItem('dashboardFilters_inventory');
+      if (storedFilters) {
+        try {
+          const filters = JSON.parse(storedFilters);
+          if (filters.filterLowStock) {
+            const totalStock = item.ecuadorStock + item.usaStock;
+            if (totalStock >= 10) return false;
+          }
+        } catch (e) {
+          // Ignore parse errors
+        }
       }
       
       // Category filter

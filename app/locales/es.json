@@ -848,7 +848,12 @@
     "delivered": "Entregado",
     "cancelled": "Cancelado",
     "inventoryByCategory": "Inventario por Categoría",
-    "uncategorized": "Sin Categoría"
+    "uncategorized": "Sin Categoría",
+    "item": "artículo",
+    "items": "artículos",
+    "needAttention": "necesitan atención",
+    "viewAll": "Ver Todo",
+    "viewMoreItems": "Ver {count} artículos más"
   },
   "cms": {
     "title": "Sistema de gestión de contenido",
