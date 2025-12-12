@@ -107,7 +107,7 @@ export default function Dashboard({ onNavigate }: DashboardProps = {}) {
       if (item.linkedPurchaseOrders.length > 0 && !hasVerifiedOrder) return false;
       if (!hasVerifiedOrder && !isStandaloneItem) return false;
       
-      return (item.ecuadorStock + item.usaStock) < 10;
+      return (item.ecuadorStock + item.usaStock) <= 2;
     });
   };
 

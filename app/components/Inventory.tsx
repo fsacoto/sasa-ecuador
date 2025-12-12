@@ -430,7 +430,7 @@ export default function Inventory() {
           const filters = JSON.parse(storedFilters);
           if (filters.filterLowStock) {
             const totalStock = item.ecuadorStock + item.usaStock;
-            if (totalStock >= 10) return false;
+            if (totalStock > 2) return false;
           }
         } catch (e) {
           // Ignore parse errors
