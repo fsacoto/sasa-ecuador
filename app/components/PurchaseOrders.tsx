@@ -326,15 +326,21 @@ export default function PurchaseOrders() {
   // Track previous currency to detect changes
   const prevCurrencyRef = useRef<string>(formData.currency);
   
-  // Auto-update exchange rate when currency changes (only if rate hasn't been manually set)
-  // This allows users to manually override the rate for any currency
+  // Auto-update exchange rate when currency changes (only for NEW orders, not when editing)
+  // When editing, preserve the original exchange rate to avoid accounting problems
   useEffect(() => {
+    // Don't auto-update exchange rate when editing an existing order
+    if (editingOrder) {
+      return;
+    }
+    
     // Reset manual flag when currency changes (so new currency gets auto-populated)
     if (prevCurrencyRef.current !== formData.currency) {
       setExchangeRateManuallySet(false);
       prevCurrencyRef.current = formData.currency;
     }
     
+    // Only auto-update for new orders
     if (exchangeRates && formData.currency !== 'USD' && !exchangeRateManuallySet) {
       const rate = getExchangeRate(formData.currency, 'USD', exchangeRates);
       if (rate !== formData.exchangeRate) {
@@ -346,7 +352,7 @@ export default function PurchaseOrders() {
         setFormData(prev => ({ ...prev, exchangeRate: 1 }));
       }
     }
-  }, [formData.currency, exchangeRates, exchangeRateManuallySet]);
+  }, [formData.currency, exchangeRates, exchangeRateManuallySet, editingOrder]);
 
   // Helper function to find or create a supplier by name
   const findOrCreateSupplier = async (supplierName: string): Promise<string> => {
@@ -570,6 +576,7 @@ export default function PurchaseOrders() {
     setOriginalSku('');
     setSupplierNameInput('');
     setSupplierInputMode('select');
+    setExchangeRateManuallySet(false); // Reset flag for new orders
   };
 
   const handleRegenerateSku = () => {
@@ -2091,7 +2098,19 @@ export default function PurchaseOrders() {
                   <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.currency')}</label>
                   <select
                     value={formData.currency}
-                    onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+                    onChange={(e) => {
+                      const newCurrency = e.target.value;
+                      // When editing, preserve exchange rate even if currency changes
+                      // User must manually change exchange rate if they want to update it
+                      if (editingOrder) {
+                        setFormData({ ...formData, currency: newCurrency });
+                        // Keep exchangeRateManuallySet as true to preserve the rate
+                      } else {
+                        // For new orders, allow auto-update of exchange rate
+                        setFormData({ ...formData, currency: newCurrency });
+                        setExchangeRateManuallySet(false); // Allow auto-update for new orders
+                      }
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                   >
                     <option value="USD">USD - US Dollar</option>

@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { parseCSV, detectColumnMapping, cleanNumericValue, ParsedRow } from '../utils/csvParser';
 import { useInventory } from '../context/InventoryContext';
 import { generateUniqueSKU } from '../utils/skuGenerator';
 import { PurchaseOrder, InventoryItem } from '../types';
+import { getExchangeRates, getExchangeRate, type ExchangeRateResponse } from '../utils/currencyApi';
 
 interface BulkImportModalProps {
   onClose: () => void;
@@ -20,17 +21,46 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
   const [columnMapping, setColumnMapping] = useState<{ [key: string]: string }>({});
   const [defaultSupplier, setDefaultSupplier] = useState<string>('');
   const [defaultCurrency, setDefaultCurrency] = useState<string>('USD');
+  const [exchangeRate, setExchangeRate] = useState<number>(1);
+  const [exchangeRateManuallySet, setExchangeRateManuallySet] = useState<boolean>(false);
   const [defaultDestination, setDefaultDestination] = useState<'Ecuador' | 'USA'>('Ecuador');
   const [invoicePrefix, setInvoicePrefix] = useState<string>('');
+  const [invoiceLink, setInvoiceLink] = useState<string>('');
   const [purchaseDate, setPurchaseDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [importResults, setImportResults] = useState<{ success: number; warnings: number; autoLinked?: number }>({ success: 0, warnings: 0, autoLinked: 0 });
   
   // Cache to track suppliers being created during import to prevent duplicates
   const supplierCacheRef = useRef<Map<string, Promise<string>>>(new Map());
 
+  // Exchange rates state
+  const [exchangeRates, setExchangeRates] = useState<ExchangeRateResponse | null>(null);
+
   // Predefined categories and lines for matching
   const predefinedCategories = ['Necklace', 'Ring', 'Bracelet', 'Set', 'Anklet', 'Earring'];
   const predefinedLines = ['Gold Plated', 'Gold Filled', 'Sterling Silver'];
+
+  // Fetch exchange rates when component mounts
+  useEffect(() => {
+    const fetchRates = async () => {
+      const rates = await getExchangeRates('USD');
+      if (rates) {
+        setExchangeRates(rates);
+      }
+    };
+    fetchRates();
+  }, []);
+
+  // Auto-update exchange rate when currency changes (only if rate hasn't been manually set)
+  useEffect(() => {
+    if (exchangeRates && defaultCurrency !== 'USD' && !exchangeRateManuallySet) {
+      const rate = getExchangeRate(defaultCurrency, 'USD', exchangeRates);
+      setExchangeRate(rate);
+    } else if (defaultCurrency === 'USD' && !exchangeRateManuallySet) {
+      // Reset to 1 for USD if not manually set
+      setExchangeRate(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultCurrency, exchangeRates, exchangeRateManuallySet]);
 
   // Helper functions to match values with database
   const findMatchingSupplier = async (supplierName: string, currency: string = 'USD'): Promise<string> => {
@@ -309,7 +339,8 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
       const rawCategory = (mappedData.category as string) || '';
       const rawLine = (mappedData.line as string) || '';
       const rawSupplier = (mappedData.supplier as string) || '';
-      const currency = (mappedData.currency as string) || defaultCurrency || 'USD';
+      // Use the selected currency from the form, not from CSV
+      const currency = defaultCurrency || 'USD';
       
       // Match values with database (await supplier creation if needed)
       const matchedSupplier = await findMatchingSupplier(rawSupplier, currency);
@@ -374,11 +405,16 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
       // Use the batch invoice number for all items
       const invoiceNumber = batchInvoiceNumber;
 
+      // All cost values are in the selected currency
+      // Convert to USD using the selected exchange rate
+      const costPerUnitInUSD = costPerUnit * exchangeRate;
+      const totalCostInUSD = quantity * costPerUnitInUSD;
+
       // Create individual purchase order
       // Use existing item's info if auto-linked
       const orderData = {
         invoice: invoiceNumber,
-        invoiceLink: '',
+        invoiceLink: invoiceLink || '', // Use the invoice link from the form
         supplierId: matchedSupplier || defaultSupplier || '',
         supplierSKU: supplierSKU,
         description: autoLinked && matchedInventoryItem ? matchedInventoryItem.name : description,
@@ -388,20 +424,20 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
         images: autoLinked && matchedInventoryItem ? matchedInventoryItem.images : [],
         quantity: quantity,
         destinationStock: defaultDestination,
-        currency: defaultCurrency,
-        costPerUnit: costPerUnit,
-        totalCost: quantity * costPerUnit,
+        currency: defaultCurrency, // Store the original currency
+        costPerUnit: costPerUnit, // Store cost in original currency
+        totalCost: quantity * costPerUnit, // Store total in original currency
         discountPerUnit: 0,
         totalDiscount: 0,
         costPerUnitWithDiscount: costPerUnit,
         totalCostWithDiscount: quantity * costPerUnit,
-        exchangeRate: 1,
-        costInUSD: quantity * costPerUnit,
+        exchangeRate: exchangeRate, // Store the exchange rate used
+        costInUSD: totalCostInUSD, // Store cost converted to USD
         shippingCost: 0,
         tariffCost: 0,
         otherFees: 0,
-        totalLandedCost: quantity * costPerUnit,
-        landedCostPerUnit: costPerUnit,
+        totalLandedCost: totalCostInUSD, // Store landed cost in USD
+        landedCostPerUnit: costPerUnitInUSD, // Store landed cost per unit in USD
         purchaseDate: new Date(purchaseDate),
         status: 'Ordered' as const,
       };
@@ -533,7 +569,22 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">
+                    Invoice Link <span className="text-gray-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="url"
+                    value={invoiceLink}
+                    onChange={(e) => setInvoiceLink(e.target.value)}
+                    placeholder="https://example.com/invoice.pdf or Google Drive link"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Link to the invoice document (PDF, Google Drive, etc.). This will be applied to all imported purchase orders and linked to inventory items when verified.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mb-4">
                   <div>
                     <label className="block text-sm font-medium mb-1 text-gray-700">Supplier (optional)</label>
                     <select
@@ -550,20 +601,6 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1 text-gray-700">Currency</label>
-                    <select
-                      value={defaultCurrency}
-                      onChange={(e) => setDefaultCurrency(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
-                    >
-                      <option value="USD">USD</option>
-                      <option value="COP">COP</option>
-                      <option value="BRL">BRL</option>
-                      <option value="EUR">EUR</option>
-                      <option value="CNY">CNY</option>
-                    </select>
-                  </div>
-                  <div>
                     <label className="block text-sm font-medium mb-1 text-gray-700">Destination</label>
                     <select
                       value={defaultDestination}
@@ -574,6 +611,76 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                       <option value="USA">USA</option>
                     </select>
                   </div>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+                  <h5 className="text-sm font-semibold text-blue-900 mb-2">Currency & Exchange Rate</h5>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1 text-gray-700">
+                        Currency <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={defaultCurrency}
+                        onChange={(e) => {
+                          setDefaultCurrency(e.target.value);
+                          setExchangeRateManuallySet(false); // Reset manual flag when currency changes
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                      >
+                        <option value="USD">USD - US Dollar</option>
+                        <option value="COP">COP - Colombian Peso</option>
+                        <option value="BRL">BRL - Brazilian Real</option>
+                        <option value="EUR">EUR - Euro</option>
+                        <option value="CNY">CNY - Chinese Yuan</option>
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        All cost values in CSV will be treated as {defaultCurrency}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1 text-gray-700">
+                        Exchange Rate ({defaultCurrency} → USD) <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          step="0.000001"
+                          value={exchangeRate}
+                          onChange={(e) => {
+                            setExchangeRate(parseFloat(e.target.value) || 1);
+                            setExchangeRateManuallySet(true);
+                          }}
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                          placeholder="1.0"
+                        />
+                        {!exchangeRateManuallySet && exchangeRates && defaultCurrency !== 'USD' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const rate = getExchangeRate(defaultCurrency, 'USD', exchangeRates);
+                              setExchangeRate(rate);
+                              setExchangeRateManuallySet(true);
+                            }}
+                            className="px-3 py-2 text-xs bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+                            title="Use current market rate"
+                          >
+                            Use Market Rate
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {defaultCurrency === 'USD' 
+                          ? 'No conversion needed (already USD)'
+                          : `1 ${defaultCurrency} = ${exchangeRate.toFixed(6)} USD`}
+                      </p>
+                    </div>
+                  </div>
+                  {defaultCurrency !== 'USD' && (
+                    <div className="bg-white border border-blue-200 rounded p-2 text-xs text-blue-800">
+                      <strong>Note:</strong> All costs will be converted to USD using this exchange rate. 
+                      Purchase orders will display USD values in the Purchase Orders tab.
+                    </div>
+                  )}
                 </div>
               </div>
 
