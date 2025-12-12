@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Supplier, PurchaseOrder, InventoryItem, AdditionalCost, LandedCostCalculation } from '../types';
+import { Supplier, PurchaseOrder, InventoryItem, InventoryCountry, InventoryTransfer, AdditionalCost, LandedCostCalculation } from '../types';
 import * as suppliersService from '../services/suppliersService';
 import * as purchaseOrdersService from '../services/purchaseOrdersService';
 import * as inventoryService from '../services/inventoryService';
@@ -28,6 +28,19 @@ interface InventoryContextType {
   addInventoryItemsBulk: (items: Omit<InventoryItem, 'id' | 'createdAt'>[]) => Promise<void>;
   updateInventoryItem: (id: string, item: Partial<InventoryItem>) => Promise<void>;
   deleteInventoryItem: (id: string) => Promise<void>;
+  moveInventoryBetweenCountries: (params: {
+    items: Array<{
+      itemId: string;
+      fromCountry: InventoryCountry;
+      toCountry: InventoryCountry;
+      quantity: number;
+    }>;
+    note?: string;
+    movedBy?: { uid: string; name?: string };
+  }) => Promise<void>;
+  inventoryTransfers: InventoryTransfer[];
+  isTransfersLoading: boolean;
+  loadInventoryTransfers: (options?: { itemId?: string; limitCount?: number }) => Promise<void>;
   
   // Additional Costs
   additionalCosts: AdditionalCost[];
@@ -44,6 +57,8 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [inventoryTransfers, setInventoryTransfers] = useState<InventoryTransfer[]>([]);
+  const [isTransfersLoading, setIsTransfersLoading] = useState(false);
   const [additionalCosts, setAdditionalCosts] = useState<AdditionalCost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -55,21 +70,39 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   const loadAllData = async () => {
     try {
       setIsLoading(true);
-      const [suppliersData, ordersData, inventoryData, costsData] = await Promise.all([
+      const [suppliersData, ordersData, inventoryData, transfersData, costsData] = await Promise.allSettled([
         suppliersService.getSuppliers(),
         purchaseOrdersService.getPurchaseOrders(),
         inventoryService.getInventoryItems(),
+        inventoryService.getInventoryTransfers({ limitCount: 200 }).catch(() => []), // Gracefully handle permission errors
         additionalCostsService.getAdditionalCosts()
       ]);
       
-      setSuppliers(suppliersData);
-      setPurchaseOrders(ordersData);
-      setInventory(inventoryData);
-      setAdditionalCosts(costsData);
+      setSuppliers(suppliersData.status === 'fulfilled' ? suppliersData.value : []);
+      setPurchaseOrders(ordersData.status === 'fulfilled' ? ordersData.value : []);
+      setInventory(inventoryData.status === 'fulfilled' ? inventoryData.value : []);
+      setInventoryTransfers(transfersData.status === 'fulfilled' ? transfersData.value : []);
+      setAdditionalCosts(costsData.status === 'fulfilled' ? costsData.value : []);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadInventoryTransfers = async (options?: { itemId?: string; limitCount?: number }) => {
+    try {
+      setIsTransfersLoading(true);
+      const transfers = await inventoryService.getInventoryTransfers({
+        itemId: options?.itemId,
+        limitCount: options?.limitCount ?? 200
+      });
+      setInventoryTransfers(transfers);
+    } catch (error) {
+      console.error('Error loading inventory transfers:', error);
+      throw error;
+    } finally {
+      setIsTransfersLoading(false);
     }
   };
 
@@ -213,6 +246,43 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const moveInventoryBetweenCountries = async (params: {
+    items: Array<{
+      itemId: string;
+      fromCountry: InventoryCountry;
+      toCountry: InventoryCountry;
+      quantity: number;
+    }>;
+    note?: string;
+    movedBy?: { uid: string; name?: string };
+  }) => {
+    try {
+      const result = await inventoryService.moveInventoryBetweenCountries(params);
+      
+      // Update inventory for all items in the transfer
+      setInventory(prev => prev.map(i => {
+        const transferItem = result.items.find(ti => ti.itemId === i.id);
+        if (transferItem) {
+          return {
+            ...i,
+            ecuadorStock: transferItem.resultingEcuadorStock ?? i.ecuadorStock,
+            usaStock: transferItem.resultingUsaStock ?? i.usaStock
+          };
+        }
+        return i;
+      }));
+      
+      setInventoryTransfers(prev => {
+        const next = [result, ...prev];
+        next.sort((a, b) => (b.createdAt?.getTime?.() || 0) - (a.createdAt?.getTime?.() || 0));
+        return next;
+      });
+    } catch (error) {
+      console.error('Error moving inventory between countries:', error);
+      throw error;
+    }
+  };
+
   // Additional Costs operations
   const addAdditionalCost = async (cost: Omit<AdditionalCost, 'id' | 'createdAt'>) => {
     try {
@@ -313,6 +383,10 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         addInventoryItemsBulk,
         updateInventoryItem,
         deleteInventoryItem,
+        moveInventoryBetweenCountries,
+        inventoryTransfers,
+        isTransfersLoading,
+        loadInventoryTransfers,
         additionalCosts,
         addAdditionalCost,
         updateAdditionalCost,

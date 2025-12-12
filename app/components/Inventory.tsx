@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { InventoryItem } from '../types';
 import InventoryDetailPanel from './InventoryDetailPanel';
 import ProductCatalogModal from './ProductCatalogModal';
+import InventoryTransferModal from './InventoryTransferModal';
 import { generateUniqueSKU } from '../utils/skuGenerator';
 import { syncInventoryToOrders } from '../utils/syncUpdates';
 import { handleMultipleImageUpload, validateImageFile } from '../utils/imageUpload';
@@ -33,6 +34,7 @@ export default function Inventory() {
   const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [skuManuallyEdited, setSkuManuallyEdited] = useState(false);
   const [categoryMode, setCategoryMode] = useState<'select' | 'new'>('select');
   const [lineMode, setLineMode] = useState<'select' | 'new'>('select');
@@ -493,6 +495,17 @@ export default function Inventory() {
           <p className="text-sm text-gray-500 mt-1">{t('inventory.subtitle')}</p>
         </div>
         <div className="flex gap-3">
+          {!isReadOnly && (
+            <button
+              onClick={() => setIsTransferModalOpen(true)}
+              className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm"
+            >
+              <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+              </svg>
+              <span className="text-sm font-medium text-gray-700">{t('inventory.transfer.openMove')}</span>
+            </button>
+          )}
           <button
             onClick={() => setIsCatalogModalOpen(true)}
             disabled={inventory.length === 0}
@@ -1571,6 +1584,14 @@ export default function Inventory() {
             return totalStock > 0;
           })}
           onClose={() => setIsCatalogModalOpen(false)}
+        />
+      )}
+
+      {/* Transfer Modal */}
+      {isTransferModalOpen && (
+        <InventoryTransferModal
+          isOpen={isTransferModalOpen}
+          onClose={() => setIsTransferModalOpen(false)}
         />
       )}
 

@@ -37,6 +37,12 @@ service cloud.firestore {
       allow write: if isAuthenticated();
     }
     
+    // Inventory transfer history (internal document)
+    match /inventoryTransfers/{transferId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+    
     // Additional Costs collection
     match /additionalCosts/{costId} {
       allow read: if isAuthenticated();

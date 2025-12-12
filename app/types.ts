@@ -70,6 +70,31 @@ export interface InventoryItem {
   createdAt: Date;
 }
 
+export type InventoryCountry = 'Ecuador' | 'USA';
+
+export interface InventoryTransferItem {
+  itemId: string;
+  sku: string;
+  name: string;
+  quantity: number;
+  fromCountry: InventoryCountry;
+  toCountry: InventoryCountry;
+  resultingEcuadorStock?: number;
+  resultingUsaStock?: number;
+}
+
+export interface InventoryTransfer {
+  id: string;
+  transactionId: string; // Unique identifier for the entire transaction
+  items: InventoryTransferItem[]; // Multiple items in one transaction
+  note?: string;
+  createdAt: Date;
+  createdBy?: {
+    uid: string;
+    name?: string;
+  };
+}
+
 export type AdditionalCostType = 'Shipping' | 'Insurance' | 'Duties' | 'Import Fees' | 'Other';
 
 export interface AdditionalCost {
