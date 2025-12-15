@@ -34,7 +34,8 @@ export const PERMISSIONS = {
     'clients.create',
     'sales.view',
     'sales.create',
-    'sales.invoice.create'
+    'sales.invoice.create',
+    'media.delete'
   ],
   marketing: [
     'inventory.view',

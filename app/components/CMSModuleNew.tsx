@@ -8,6 +8,7 @@ import { useTranslation } from '../context/TranslationContext';
 import { ContentType, ContentStatus, InventoryItem, CMSContent } from '../types';
 import JSZip from 'jszip';
 import ConfirmDialog from './ui/ConfirmDialog';
+import { deleteMediaFile } from '../services/inventoryMediaService';
 // Removed Firebase Storage imports - using direct URL fetch instead
 
 type ViewMode = 'dashboard' | 'upload' | 'manage' | 'products';
@@ -2774,7 +2775,8 @@ function ContentView({
   onContentClick?: (content: CMSContent) => void;
 }) {
   const { t } = useTranslation();
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const { updateInventoryItem } = useInventory();
   const { deleteContent, updateContentStatus } = useCMS();
   
   // Confirmation dialog states
@@ -2807,6 +2809,8 @@ function ContentView({
   const [selectedContentItems, setSelectedContentItems] = useState<Set<string>>(new Set());
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
   const [selectedVideoUrl, setSelectedVideoUrl] = useState<string | null>(null);
+  const [mediaDeleteConfirmOpen, setMediaDeleteConfirmOpen] = useState(false);
+  const [mediaToDelete, setMediaToDelete] = useState<{ url: string; index: number; type: 'images' | 'videos' } | null>(null);
   const [expandedSections, setExpandedSections] = useState<{
     product: boolean;
     collection: boolean;
@@ -4759,6 +4763,73 @@ function ContentView({
           }
         };
 
+        const handleDeleteMedia = (url: string, index: number) => {
+          const isAdmin = user?.role === 'admin' && hasPermission('media.delete');
+          if (!isAdmin) {
+            alert('Only admin users can delete media files');
+            return;
+          }
+          setMediaToDelete({ url, index, type: contentViewerTab });
+          setMediaDeleteConfirmOpen(true);
+        };
+
+        const handleConfirmMediaDelete = async () => {
+          if (!mediaToDelete) return;
+
+          try {
+            // Delete from Firebase Storage
+            await deleteMediaFile(mediaToDelete.url);
+            
+            // Try to remove the URL from inventory item if it exists there
+            const mediaUrl = mediaToDelete.url;
+            const inventoryImages = selectedProductDetail.images || [];
+            const inventoryVideos = selectedProductDetail.images?.filter((img: string) => {
+              const urlLower = img.toLowerCase();
+              return urlLower.includes('/videos/') || 
+                     urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
+                     urlLower.includes('video/');
+            }) || [];
+            
+            const isInInventory = inventoryImages.includes(mediaUrl) || inventoryVideos.includes(mediaUrl);
+            
+            if (isInInventory && selectedProductDetail) {
+              // Remove from inventory item's images array
+              const updatedImages = inventoryImages.filter((img: string) => img !== mediaUrl);
+              // Update inventory item
+              await updateInventoryItem(selectedProductDetail.id, {
+                images: updatedImages
+              });
+              alert('Media file deleted successfully from inventory.');
+            } else {
+              // It might be in CMS content - show message that user should manually update
+              alert('Media file deleted successfully from storage. If this was linked to CMS content, please update it manually.');
+            }
+            
+            // Remove from selected items if it was selected
+            const itemKey = `${mediaToDelete.type}-${mediaToDelete.index}`;
+            const newSelected = new Set(selectedContentItems);
+            newSelected.delete(itemKey);
+            setSelectedContentItems(newSelected);
+            
+            // Close dialog and reset state
+            setMediaDeleteConfirmOpen(false);
+            setMediaToDelete(null);
+            
+            // Close the modal - user can reopen to see updated content
+            setShowContentViewer(false);
+          } catch (error) {
+            console.error('Error deleting media file:', error);
+            alert('Failed to delete media file. Please try again.');
+            setMediaDeleteConfirmOpen(false);
+            setMediaToDelete(null);
+          }
+        };
+
+        const handleCancelMediaDelete = () => {
+          setMediaDeleteConfirmOpen(false);
+          setMediaToDelete(null);
+        };
+
         return (
           <div 
             className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" 
@@ -4893,6 +4964,7 @@ function ContentView({
                       {currentContent.map((url: string, index: number) => {
                         const itemKey = `${contentViewerTab}-${index}`;
                         const isSelected = selectedContentItems.has(itemKey);
+                        const isAdmin = user?.role === 'admin' && hasPermission('media.delete');
                         
                         return (
                           <div
@@ -4920,6 +4992,22 @@ function ContentView({
                                 )}
                               </div>
                             </div>
+
+                            {/* Delete Button (Admin Only) */}
+                            {isAdmin && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteMedia(url, index);
+                                }}
+                                title="Delete media file permanently (Admin only)"
+                                className="absolute top-3 left-3 z-10 w-7 h-7 bg-red-500 text-white rounded-full flex items-center justify-center shadow-lg opacity-80 hover:opacity-100 transition-opacity hover:scale-110"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            )}
 
                             {/* Content */}
                             {contentViewerTab === 'images' ? (
@@ -5017,6 +5105,18 @@ function ContentView({
                 </div>
               )}
             </div>
+
+            {/* Media Delete Confirmation Dialog */}
+            <ConfirmDialog
+              open={mediaDeleteConfirmOpen}
+              title="Delete Media File"
+              description="Are you sure you want to permanently delete this media file? This action cannot be undone. The file will be removed from Firebase Storage."
+              confirmText="Delete Permanently"
+              cancelText="Cancel"
+              confirmVariant="danger"
+              onConfirm={handleConfirmMediaDelete}
+              onCancel={handleCancelMediaDelete}
+            />
           </div>
         );
       })()}

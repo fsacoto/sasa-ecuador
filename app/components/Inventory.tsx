@@ -14,6 +14,7 @@ import { generateBarcodeFromSKU, generateBarcodeAsFile, isValidBarcodeInput, isB
 import { uploadImage } from '../services/storageService';
 import { useTranslation } from '../context/TranslationContext';
 import ConfirmDialog from './ui/ConfirmDialog';
+import { deleteMediaFile } from '../services/inventoryMediaService';
 
 export default function Inventory() {
   const { inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, purchaseOrders, updatePurchaseOrder } = useInventory();
@@ -38,6 +39,8 @@ export default function Inventory() {
   const [skuManuallyEdited, setSkuManuallyEdited] = useState(false);
   const [categoryMode, setCategoryMode] = useState<'select' | 'new'>('select');
   const [lineMode, setLineMode] = useState<'select' | 'new'>('select');
+  const [mediaDeleteConfirmOpen, setMediaDeleteConfirmOpen] = useState(false);
+  const [mediaToDelete, setMediaToDelete] = useState<{ index: number; url: string } | null>(null);
   
   // Sorting and filtering state
   const [sortField, setSortField] = useState<string>('name');
@@ -304,10 +307,53 @@ export default function Inventory() {
   };
 
   const handleRemoveImage = (index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      images: prev.images.filter((_, i) => i !== index)
-    }));
+    const imageUrl = formData.images[index];
+    
+    // Check if user is admin and has permission to delete media
+    const isAdmin = user?.role === 'admin' && hasPermission('media.delete');
+    
+    if (isAdmin) {
+      // Admin users: show confirmation dialog before deleting from storage
+      setMediaToDelete({ index, url: imageUrl });
+      setMediaDeleteConfirmOpen(true);
+    } else {
+      // Non-admin users: just remove from form (doesn't delete from storage)
+      setFormData(prev => ({
+        ...prev,
+        images: prev.images.filter((_, i) => i !== index)
+      }));
+    }
+  };
+
+  const handleConfirmMediaDelete = async () => {
+    if (!mediaToDelete) return;
+
+    try {
+      const { index, url } = mediaToDelete;
+      
+      // Delete from Firebase Storage
+      await deleteMediaFile(url);
+      
+      // Remove from form data
+      setFormData(prev => ({
+        ...prev,
+        images: prev.images.filter((_, i) => i !== index)
+      }));
+      
+      // Close dialog and reset state
+      setMediaDeleteConfirmOpen(false);
+      setMediaToDelete(null);
+    } catch (error) {
+      console.error('Error deleting media file:', error);
+      alert(t('inventory.failedToDeleteMedia') || 'Failed to delete media file. Please try again.');
+      setMediaDeleteConfirmOpen(false);
+      setMediaToDelete(null);
+    }
+  };
+
+  const handleCancelMediaDelete = () => {
+    setMediaDeleteConfirmOpen(false);
+    setMediaToDelete(null);
   };
 
   const handleSkuChange = (newSku: string) => {
@@ -1126,33 +1172,44 @@ export default function Inventory() {
               {/* Image Upload */}
               <div>
                 <label className="block text-sm font-medium mb-2 text-gray-700">{t('inventory.productImages')}</label>
+                {user?.role === 'admin' && hasPermission('media.delete') && (
+                  <p className="text-xs text-gray-500 mb-2">
+                    💡 Admin: Click the red X button on images to permanently delete them from storage
+                  </p>
+                )}
                 
                 {/* Image Grid */}
                 {formData.images.length > 0 && (
                   <div className="grid grid-cols-4 gap-3 mb-3">
-                    {formData.images.map((image, index) => (
-                      <div key={index} className="relative group">
-                        <img
-                          src={image}
-                          alt={`Product ${index + 1}`}
-                          className="w-full h-24 object-cover rounded-lg border-2 border-gray-200"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveImage(index)}
-                          className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                        {index === 0 && (
-                          <div className="absolute bottom-1 left-1 bg-[#4f0c1b] text-white text-xs px-2 py-0.5 rounded">
-                            {t('inventory.main')}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                    {formData.images.map((image, index) => {
+                      const isAdmin = user?.role === 'admin' && hasPermission('media.delete');
+                      return (
+                        <div key={index} className="relative group">
+                          <img
+                            src={image}
+                            alt={`Product ${index + 1}`}
+                            className="w-full h-24 object-cover rounded-lg border-2 border-gray-200"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveImage(index)}
+                            title={isAdmin ? "Delete media file permanently (Admin only)" : "Remove from form"}
+                            className={`absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 transition-opacity shadow-lg ${
+                              isAdmin ? 'opacity-80 hover:opacity-100' : 'opacity-0 group-hover:opacity-100'
+                            }`}
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                          {index === 0 && (
+                            <div className="absolute bottom-1 left-1 bg-[#4f0c1b] text-white text-xs px-2 py-0.5 rounded">
+                              {t('inventory.main')}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
                 
@@ -1651,6 +1708,17 @@ export default function Inventory() {
           setDeleteConfirmOpen(false);
           setItemToDelete(null);
         }}
+      />
+
+      <ConfirmDialog
+        open={mediaDeleteConfirmOpen}
+        title="Delete Media File"
+        description="Are you sure you want to permanently delete this media file? This action cannot be undone. The file will be removed from Firebase Storage."
+        confirmText="Delete Permanently"
+        cancelText="Cancel"
+        confirmVariant="danger"
+        onConfirm={handleConfirmMediaDelete}
+        onCancel={handleCancelMediaDelete}
       />
     </div>
   );
