@@ -1273,11 +1273,6 @@ export default function PurchaseOrders() {
           <div className="relative">
             <button
               onClick={() => {
-                const verifiedOrders = purchaseOrders.filter(order => order.status === 'Verified');
-                if (verifiedOrders.length === 0) {
-                  alert(t('purchaseOrders.noVerifiedOrders') || 'No verified orders found. Please verify orders first.');
-                  return;
-                }
                 setIsBarcodePrintModalOpen(true);
               }}
               className="flex items-center gap-2 px-3 py-2 border border-green-300 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 hover:shadow-md transition-all duration-200 text-sm font-medium"

@@ -26,65 +26,68 @@ const styles = StyleSheet.create({
     borderColor: '#000000',
     display: 'flex',
     flexDirection: 'column',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
   },
-  barcodeContainer: {
+  topRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    height: 30,
-    marginBottom: 1,
-  },
-  barcode: {
-    width: 105,
-    height: 28,
-    objectFit: 'contain',
-  },
-  nameContainer: {
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     paddingHorizontal: 2,
-    marginBottom: 1,
+    marginBottom: 3,
     minHeight: 6,
-    maxHeight: 8,
-    flex: 1,
-  },
-  name: {
-    fontSize: 6,
-    color: '#000000',
-    lineHeight: 1.2,
-    overflow: 'hidden',
-  },
-  bottomRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    paddingHorizontal: 2,
-    marginTop: 'auto',
   },
   sku: {
-    fontSize: 7,
+    fontSize: 6,
     fontWeight: 'bold',
     color: '#000000',
     fontFamily: 'Helvetica-Bold',
+    flexShrink: 0,
   },
   categoryLineContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   categoryLine: {
-    fontSize: 5,
+    fontSize: 4,
     color: '#000000',
     fontWeight: 'bold',
+  },
+  barcodeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 2,
+    marginTop: 1,
+  },
+  barcode: {
+    width: 147, // 40% bigger than 105 (105 * 1.4 = 147)
+    height: 39, // 40% bigger than 28 (28 * 1.4 = 39.2, rounded to 39)
+    objectFit: 'contain',
+  },
+  descriptionContainer: {
+    paddingHorizontal: 3,
+    marginTop: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    maxHeight: 8,
+  },
+  description: {
+    fontSize: 5,
+    color: '#000000',
+    lineHeight: 1.2,
+    textAlign: 'center',
+    overflow: 'hidden',
   },
 });
 
 interface BarcodeLabelPDFProps {
-  items: Array<{ order: PurchaseOrder; inventoryItem: InventoryItem | null; quantity: number }>;
+  items: Array<{ order: PurchaseOrder | null; inventoryItem: InventoryItem; quantity: number }>;
 }
 
 export default function BarcodeLabelPDF({ items }: BarcodeLabelPDFProps) {
   // Create one page per label (40mm x 20mm)
   // Expand items based on quantity
-  const expandedItems: Array<{ order: PurchaseOrder; inventoryItem: InventoryItem | null }> = [];
+  const expandedItems: Array<{ order: PurchaseOrder | null; inventoryItem: InventoryItem }> = [];
   items.forEach((item) => {
     for (let i = 0; i < item.quantity; i++) {
       expandedItems.push({ order: item.order, inventoryItem: item.inventoryItem });
@@ -99,14 +102,31 @@ export default function BarcodeLabelPDF({ items }: BarcodeLabelPDFProps) {
         }
 
         const { order, inventoryItem } = item;
-        const name = order.description || inventoryItem.name || '';
+        const name = order?.description || inventoryItem.name || inventoryItem.description || '';
         // Truncate name if too long
         const truncatedName = name.length > 30 ? name.substring(0, 27) + '...' : name;
+        const sku = order?.sku || inventoryItem.sku || '';
+        const category = order?.category || inventoryItem.category || '';
+        const line = order?.line || inventoryItem.line || '';
+        const itemId = order?.id || inventoryItem.id || `item-${index}`;
 
         return (
-          <Page key={`${order.id}-${index}`} size={[PAGE_WIDTH, PAGE_HEIGHT]} style={styles.page}>
+          <Page key={`${itemId}-${index}`} size={[PAGE_WIDTH, PAGE_HEIGHT]} style={styles.page}>
             <View style={styles.label}>
-              {/* Barcode */}
+              {/* Top Row: SKU on left, Category/Line on right */}
+              <View style={styles.topRow}>
+                {sku && <Text style={styles.sku}>{sku}</Text>}
+                {!sku && <View style={{ width: 1 }} />}
+                {(category || line) && (
+                  <View style={styles.categoryLineContainer}>
+                    {category && <Text style={styles.categoryLine}>{category}</Text>}
+                    {category && line && <Text style={[styles.categoryLine, { marginLeft: 1, marginRight: 1 }]}>•</Text>}
+                    {line && <Text style={styles.categoryLine}>{line}</Text>}
+                  </View>
+                )}
+              </View>
+
+              {/* Barcode - bigger and centered */}
               <View style={styles.barcodeContainer}>
                 <Image
                   src={inventoryItem.barcode}
@@ -115,19 +135,9 @@ export default function BarcodeLabelPDF({ items }: BarcodeLabelPDFProps) {
                 />
               </View>
 
-              {/* Name Section - middle */}
-              <View style={styles.nameContainer}>
-                <Text style={styles.name}>{truncatedName}</Text>
-              </View>
-
-              {/* Bottom Row: SKU on left, Category/Line on right */}
-              <View style={styles.bottomRow}>
-                <Text style={styles.sku}>{order.sku}</Text>
-                <View style={styles.categoryLineContainer}>
-                  <Text style={styles.categoryLine}>{order.category || inventoryItem.category}</Text>
-                  <Text style={[styles.categoryLine, { marginLeft: 1, marginRight: 1 }]}>•</Text>
-                  <Text style={styles.categoryLine}>{order.line || inventoryItem.line}</Text>
-                </View>
+              {/* Description - below barcode, centered, better margins */}
+              <View style={styles.descriptionContainer}>
+                <Text style={styles.description}>{truncatedName}</Text>
               </View>
             </View>
           </Page>
