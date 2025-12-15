@@ -11,7 +11,7 @@ import BulkImportModal from './BulkImportModal';
 import BulkDeleteModal from './BulkDeleteModal';
 import BulkStatusChangeModal from './BulkStatusChangeModal';
 import BarcodePrintModal from './BarcodePrintModal';
-import { syncPurchaseOrderToInventory, cleanupInventoryAfterOrderDeletion } from '../utils/syncUpdates';
+import { syncPurchaseOrderToInventory, cleanupInventoryAfterOrderDeletion, generateBarcodeForInventoryItem } from '../utils/syncUpdates';
 import { useTranslation } from '../context/TranslationContext';
 import POVerificationModal from './POVerificationModal';
 import { generatePOVerificationPDF } from '../utils/poVerificationPDF';
@@ -529,7 +529,7 @@ export default function PurchaseOrders() {
       // If verified: creates/updates inventory
       // If not verified: removes from inventory
       const previousSku = originalSku !== updatedOrder.sku ? originalSku : undefined;
-      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku);
+      await syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku, updatedOrder.status === 'Verified');
     } else {
       // Add the purchase order
       const newOrderId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -540,7 +540,7 @@ export default function PurchaseOrders() {
       // If verified: creates/updates inventory
       // If not verified: does nothing (no inventory item created)
       if (formData.sku) {
-        syncPurchaseOrderToInventory(newOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders);
+        await syncPurchaseOrderToInventory(newOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, undefined, newOrder.status === 'Verified');
       }
     }
     resetForm();
@@ -591,6 +591,39 @@ export default function PurchaseOrders() {
   const handleSkuChange = (newSku: string) => {
     setFormData({ ...formData, sku: newSku });
     setSkuManuallyEdited(true);
+  };
+
+  // Helper function to generate barcodes after sync if order is verified
+  const handleBarcodeGenerationAfterSync = async (barcodesToGenerate: Array<{ sku: string; itemId: string }>, orderStatus: PurchaseOrderStatus) => {
+    if (orderStatus !== 'Verified') return;
+    
+    for (const barcodeInfo of barcodesToGenerate) {
+      if (barcodeInfo.itemId) {
+        // Item already exists, generate barcode immediately
+        generateBarcodeForInventoryItem(barcodeInfo.sku, updateInventoryItem, barcodeInfo.itemId).catch(err => {
+          console.error('Error generating barcode:', err);
+        });
+      } else {
+        // Item was just created, find it by SKU
+        // Try multiple times with increasing delays to handle async state updates
+        let attempts = 0;
+        const maxAttempts = 5;
+        const findAndGenerateBarcode = () => {
+          const newItem = inventory.find(item => item.sku === barcodeInfo.sku);
+          if (newItem) {
+            generateBarcodeForInventoryItem(barcodeInfo.sku, updateInventoryItem, newItem.id).catch(err => {
+              console.error('Error generating barcode:', err);
+            });
+          } else if (attempts < maxAttempts) {
+            attempts++;
+            setTimeout(findAndGenerateBarcode, 200 * attempts); // Exponential backoff
+          } else {
+            console.warn(`Could not find inventory item with SKU ${barcodeInfo.sku} for barcode generation`);
+          }
+        };
+        setTimeout(findAndGenerateBarcode, 100);
+      }
+    }
   };
 
   const handleVerificationConfirm = async () => {
@@ -683,7 +716,7 @@ export default function PurchaseOrders() {
         updateInventoryItem(inventoryItem.id, stockUpdate);
       } else if (!inventoryItem && quantityGood > 0) {
         // Create new inventory item if it doesn't exist and we have good items
-        addInventoryItem({
+        await addInventoryItem({
           sku: order.sku,
           name: order.description,
           description: order.description,
@@ -695,6 +728,21 @@ export default function PurchaseOrders() {
           consignmentStock: 0,
           linkedPurchaseOrders: [order.id]
         });
+        
+        // Generate barcode for the newly created item immediately
+        if (order.sku) {
+          // Wait a moment for state to update, then find and generate barcode
+          setTimeout(async () => {
+            const newInventoryItem = inventory.find(item => item.sku === order.sku);
+            if (newInventoryItem && !newInventoryItem.barcode) {
+              try {
+                await generateBarcodeForInventoryItem(order.sku, updateInventoryItem, newInventoryItem.id);
+              } catch (err) {
+                console.error('Error generating barcode:', err);
+              }
+            }
+          }, 200);
+        }
       }
       
       // Reload to show updated data
@@ -735,7 +783,7 @@ export default function PurchaseOrders() {
       const previousSku = data.previousSku;
       // Only sync good items to inventory
       const orderWithGoodQuantity = { ...updatedOrder, ...orderData, quantity: quantityGood, quantityReceived: quantityGood };
-      syncPurchaseOrderToInventory(orderWithGoodQuantity, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku);
+      await syncPurchaseOrderToInventory(orderWithGoodQuantity, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku, true);
       resetForm();
     } else {
       // Handle status change flow
@@ -777,9 +825,9 @@ export default function PurchaseOrders() {
       updatePurchaseOrder(order.id, statusUpdate);
 
       // Sync to inventory using only GOOD quantity (not problem items)
-      // The sync function will handle this properly
+      // The sync function will handle this properly and generate barcodes immediately
       const orderWithGoodQuantity = { ...order, ...statusUpdate, quantity: quantityGood, quantityReceived: quantityGood };
-      syncPurchaseOrderToInventory(orderWithGoodQuantity, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders);
+      await syncPurchaseOrderToInventory(orderWithGoodQuantity, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, undefined, true);
     }
   };
 
@@ -833,7 +881,7 @@ export default function PurchaseOrders() {
     
     // Sync changes to inventory after status update
     const updatedOrder = { ...order, ...statusUpdate };
-    syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders);
+    await syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, undefined, updatedOrder.status === 'Verified');
   };
 
   const handleEdit = (order: PurchaseOrder) => {
@@ -1134,14 +1182,14 @@ export default function PurchaseOrders() {
     // Remove inventory that was previously added
     if (oldStatus === 'Verified' && newStatus !== 'Verified') {
       // Use sync function to remove order from inventory
-      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku);
+      await syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku, false);
     }
     
     // Continue with the form submission or status update
     if (editingOrder && orderData) {
       updatePurchaseOrder(editingOrder.id, orderData);
       // ALWAYS sync to inventory - the sync function handles verified/non-verified logic
-      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku);
+      await syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku, updatedOrder.status === 'Verified');
       resetForm();
     } else if (orderData) {
       // Handle status change from dropdown
@@ -1161,7 +1209,7 @@ export default function PurchaseOrders() {
       }
       
       // Sync changes to inventory after status update
-      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders);
+      await syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, undefined, updatedOrder.status === 'Verified');
     }
     
     setStatusChangeData(null);
@@ -1178,7 +1226,7 @@ export default function PurchaseOrders() {
       updatePurchaseOrder(editingOrder.id, orderData);
       const updatedOrder = { ...editingOrder, ...orderData };
       // ALWAYS sync to inventory - the sync function handles verified/non-verified logic
-      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku);
+      await syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku, updatedOrder.status === 'Verified');
       resetForm();
     } else if (statusUpdate) {
       // Handle status change from dropdown
@@ -1215,7 +1263,7 @@ export default function PurchaseOrders() {
       
       // Sync changes to inventory after status update
       const updatedOrder = { ...order, ...statusUpdate };
-      syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders);
+      await syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, undefined, updatedOrder.status === 'Verified');
     }
     
     setQuantityMismatchData(null);
@@ -2935,7 +2983,9 @@ export default function PurchaseOrders() {
                 // Sync to inventory if needed (only for non-verified orders)
                 if (order.status !== 'Verified') {
                   const updatedOrder = { ...order, ...statusUpdate };
-                  syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders);
+                  syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, undefined, updatedOrder.status === 'Verified').catch(err => {
+                    console.error('Error syncing to inventory:', err);
+                  });
                 }
               }
             });

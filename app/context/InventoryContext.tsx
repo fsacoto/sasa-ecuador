@@ -24,7 +24,7 @@ interface InventoryContextType {
   
   // Inventory
   inventory: InventoryItem[];
-  addInventoryItem: (item: Omit<InventoryItem, 'id' | 'createdAt'>) => Promise<void>;
+  addInventoryItem: (item: Omit<InventoryItem, 'id' | 'createdAt'>) => Promise<string>;
   addInventoryItemsBulk: (items: Omit<InventoryItem, 'id' | 'createdAt'>[]) => Promise<void>;
   updateInventoryItem: (id: string, item: Partial<InventoryItem>) => Promise<void>;
   deleteInventoryItem: (id: string) => Promise<void>;
@@ -195,7 +195,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   };
 
   // Inventory operations
-  const addInventoryItem = async (item: Omit<InventoryItem, 'id' | 'createdAt'>) => {
+  const addInventoryItem = async (item: Omit<InventoryItem, 'id' | 'createdAt'>): Promise<string> => {
     try {
       const newId = await inventoryService.addInventoryItem(item);
       const newItem: InventoryItem = {
@@ -204,6 +204,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         createdAt: new Date(),
       };
       setInventory(prev => [...prev, newItem]);
+      return newId;
     } catch (error) {
       console.error('Error adding inventory item:', error);
       throw error;

@@ -382,7 +382,13 @@ export default function Inventory() {
   };
 
   const handleGenerateBarcode = async (item: InventoryItem) => {
-      if (!isValidBarcodeInput(item.sku)) {
+    // Prevent regenerating barcode if one already exists
+    if (item.barcode) {
+      alert(t('inventory.barcodeAlreadyExists') || 'Barcode already exists and cannot be changed.');
+      return;
+    }
+    
+    if (!isValidBarcodeInput(item.sku)) {
       alert(t('inventory.invalidSkuFormat'));
       return;
     }
@@ -1437,15 +1443,6 @@ export default function Inventory() {
                                 alt={`Barcode for ${item.sku}`}
                                 className="h-12 w-auto border border-gray-200 rounded"
                               />
-                              <button
-                                onClick={() => handleGenerateBarcode(item)}
-                                className="text-gray-400 hover:text-[#4f0c1b] transition-colors"
-                                title="Regenerate barcode"
-                              >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                              </button>
                             </div>
                           ) : (
                             <button

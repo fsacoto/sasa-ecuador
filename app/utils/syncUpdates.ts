@@ -2,15 +2,54 @@
 
 import { PurchaseOrder, InventoryItem } from '../types';
 
-export function syncPurchaseOrderToInventory(
+// Helper function to generate and upload barcode for an inventory item
+export async function generateBarcodeForInventoryItem(
+  sku: string,
+  updateInventoryItem: (id: string, item: Partial<InventoryItem>) => Promise<void>,
+  itemId: string
+): Promise<void> {
+  try {
+    // Import barcode utilities dynamically to avoid SSR issues
+    const { generateBarcodeAsFile, isValidBarcodeInput } = await import('./barcodeGenerator');
+    const { uploadImage } = await import('../services/storageService');
+    
+    if (!isValidBarcodeInput(sku)) {
+      console.warn(`Invalid SKU format for barcode generation: ${sku}`);
+      return;
+    }
+    
+    // Generate barcode as File
+    const barcodeFile = await generateBarcodeAsFile(sku);
+    
+    // Upload barcode to Firebase Storage
+    const sanitizedSku = sku.replace(/[^a-zA-Z0-9-]/g, '_');
+    const storagePath = `barcodes/${sanitizedSku}.png`;
+    const barcodeUrl = await uploadImage(barcodeFile, storagePath);
+    
+    // Update inventory with the Firebase Storage URL
+    await updateInventoryItem(itemId, { barcode: barcodeUrl });
+  } catch (error) {
+    console.error(`Error generating barcode for SKU ${sku}:`, error);
+    // Don't throw - barcode generation failure shouldn't break the sync process
+  }
+}
+
+export interface BarcodeGenerationInfo {
+  sku: string;
+  itemId: string;
+}
+
+export async function syncPurchaseOrderToInventory(
   updatedOrder: PurchaseOrder,
   inventory: InventoryItem[],
-  updateInventoryItem: (id: string, item: Partial<InventoryItem>) => void,
-  addInventoryItem: (item: Omit<InventoryItem, 'id' | 'createdAt'>) => void,
-  deleteInventoryItem: (id: string) => void,
+  updateInventoryItem: (id: string, item: Partial<InventoryItem>) => Promise<void>,
+  addInventoryItem: (item: Omit<InventoryItem, 'id' | 'createdAt'>) => Promise<string>,
+  deleteInventoryItem: (id: string) => Promise<void>,
   purchaseOrders: PurchaseOrder[],
-  previousSku?: string
-) {
+  previousSku?: string,
+  generateBarcodeImmediately: boolean = true
+): Promise<BarcodeGenerationInfo[]> {
+  const barcodesToGenerate: BarcodeGenerationInfo[] = [];
   // If SKU changed, find inventory item by the old SKU or by linked purchase orders
   let inventoryItem = inventory.find(item => item.sku === updatedOrder.sku);
   
@@ -57,12 +96,12 @@ export function syncPurchaseOrderToInventory(
       // AND no other verified orders remain, delete it completely
       if (linkedOrders.length > 0 && !hasOtherVerifiedOrders) {
         // Item was only created from purchase orders and none are verified anymore - DELETE IT
-        deleteInventoryItem(inventoryItem.id);
+        await deleteInventoryItem(inventoryItem.id);
       } else {
         // Either:
         // 1. Item is standalone (no linked orders originally) - just remove stock/link
         // 2. Item has other verified orders - just remove this order's stock/link
-        updateInventoryItem(inventoryItem.id, updates);
+        await updateInventoryItem(inventoryItem.id, updates);
       }
     }
     // If order is not verified, don't create or update inventory - EXIT
@@ -116,9 +155,22 @@ export function syncPurchaseOrderToInventory(
       }
     }
 
+    // Generate barcode immediately if needed and order is verified
+    if (!inventoryItem.barcode && updatedOrder.sku && updatedOrder.status === 'Verified' && generateBarcodeImmediately) {
+      try {
+        await generateBarcodeForInventoryItem(updatedOrder.sku, updateInventoryItem, inventoryItem.id);
+      } catch (error) {
+        console.error('Error generating barcode for existing item:', error);
+        // Still track it for retry if needed
+        barcodesToGenerate.push({ sku: updatedOrder.sku, itemId: inventoryItem.id });
+      }
+    } else if (!inventoryItem.barcode && updatedOrder.sku) {
+      barcodesToGenerate.push({ sku: updatedOrder.sku, itemId: inventoryItem.id });
+    }
+
     // Apply updates if any
     if (Object.keys(updates).length > 0) {
-      updateInventoryItem(inventoryItem.id, updates);
+      await updateInventoryItem(inventoryItem.id, updates);
     }
   } else if (updatedOrder.sku && updatedOrder.description) {
     // Create new inventory item ONLY when order is verified
@@ -127,7 +179,7 @@ export function syncPurchaseOrderToInventory(
     
     // Only create inventory item if there are good items to add
     if (stockQuantity > 0) {
-      addInventoryItem({
+      const newItem: Omit<InventoryItem, 'id' | 'createdAt'> = {
         name: updatedOrder.description,
         sku: updatedOrder.sku,
         supplierSKU: updatedOrder.supplierSKU,
@@ -138,9 +190,27 @@ export function syncPurchaseOrderToInventory(
         ecuadorStock: updatedOrder.destinationStock === 'Ecuador' ? stockQuantity : 0,
         usaStock: updatedOrder.destinationStock === 'USA' ? stockQuantity : 0,
         linkedPurchaseOrders: [updatedOrder.id],
-      });
+      };
+      
+      // Add the item and get the ID immediately
+      const newItemId = await addInventoryItem(newItem);
+      
+      // Generate barcode immediately if order is verified
+      if (updatedOrder.sku && updatedOrder.status === 'Verified' && generateBarcodeImmediately) {
+        try {
+          await generateBarcodeForInventoryItem(updatedOrder.sku, updateInventoryItem, newItemId);
+        } catch (error) {
+          console.error('Error generating barcode for new item:', error);
+          // Still track it for retry if needed
+          barcodesToGenerate.push({ sku: updatedOrder.sku, itemId: newItemId });
+        }
+      } else if (updatedOrder.sku) {
+        barcodesToGenerate.push({ sku: updatedOrder.sku, itemId: newItemId });
+      }
     }
   }
+  
+  return barcodesToGenerate;
 }
 
 export function syncInventoryToOrders(
