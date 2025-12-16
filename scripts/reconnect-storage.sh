@@ -24,15 +24,15 @@ echo "Bucket Name: $BUCKET_NAME"
 echo "Working directory: $PROJECT_ROOT"
 echo ""
 
-# Verify we're in the project root by checking for firebase.json
-if [ ! -f "firebase.json" ]; then
+# Verify we're in the project root by checking for firebase.json (using absolute path)
+if [ ! -f "$PROJECT_ROOT/firebase.json" ]; then
     echo "❌ Error: firebase.json not found in $PROJECT_ROOT"
     echo "   Please ensure you're running this script from the project root"
     exit 1
 fi
 
-# Verify storage-cors.json exists
-if [ ! -f "storage-cors.json" ]; then
+# Verify storage-cors.json exists (using absolute path)
+if [ ! -f "$PROJECT_ROOT/storage-cors.json" ]; then
     echo "⚠️  Warning: storage-cors.json not found in $PROJECT_ROOT"
     echo "   CORS configuration will need to be done manually"
 fi
@@ -72,7 +72,7 @@ echo ""
 # Step 2: Check if gsutil is available for CORS configuration
 echo "📤 Step 2: Configuring CORS..."
 if command -v gsutil &> /dev/null; then
-    if [ -f "storage-cors.json" ]; then
+    if [ -f "$PROJECT_ROOT/storage-cors.json" ]; then
         echo "   Using gsutil to set CORS configuration..."
         if gsutil cors set "$PROJECT_ROOT/storage-cors.json" gs://${BUCKET_NAME}; then
             echo "✅ CORS configured successfully via gsutil"
