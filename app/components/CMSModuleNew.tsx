@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { useCMS } from '../context/CMSContext';
@@ -319,16 +320,55 @@ export default function CMSModuleNew() {
       ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(file.type)
     );
     
+    // Validate file sizes
+    const maxVideoSize = 100 * 1024 * 1024; // 100MB for videos
+    const maxOtherSize = 50 * 1024 * 1024; // 50MB for other files
+    
+    const validFiles: File[] = [];
+    const invalidFiles: { name: string; reason: string }[] = [];
+    
+    for (const file of mediaFiles) {
+      if (file.type.startsWith('video/')) {
+        if (file.size > maxVideoSize) {
+          invalidFiles.push({ 
+            name: file.name, 
+            reason: `Video file is too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Maximum size is 100MB.` 
+          });
+          continue;
+        }
+      } else {
+        if (file.size > maxOtherSize) {
+          invalidFiles.push({ 
+            name: file.name, 
+            reason: `File is too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Maximum size is 50MB.` 
+          });
+          continue;
+        }
+      }
+      validFiles.push(file);
+    }
+    
+    // Show error for invalid files
+    if (invalidFiles.length > 0) {
+      const errorMessage = invalidFiles.map(f => `${f.name}: ${f.reason}`).join('\n');
+      alert(`Some files were not added:\n\n${errorMessage}`);
+    }
+    
+    if (validFiles.length === 0) {
+      e.target.value = '';
+      return;
+    }
+    
     // For collection type with multiple SKUs, we'll show a modal to select SKU for each batch
     if (uploadType === 'collection' && currentTabState.selectedSKUs.length > 0) {
       // Store files temporarily and show selection UI
-      const newFiles: UploadedFile[] = mediaFiles.map(file => ({ file, linkedSKU: undefined }));
+      const newFiles: UploadedFile[] = validFiles.map(file => ({ file, linkedSKU: undefined }));
       updateCurrentTabState({
         uploadedFiles: [...currentTabState.uploadedFiles, ...newFiles]
       });
     } else {
       // For product or general, or collection with no SKUs, just add files without linking
-      const newFiles: UploadedFile[] = mediaFiles.map(file => ({ file }));
+      const newFiles: UploadedFile[] = validFiles.map(file => ({ file }));
       updateCurrentTabState({
         uploadedFiles: [...currentTabState.uploadedFiles, ...newFiles]
       });
@@ -348,7 +388,7 @@ export default function CMSModuleNew() {
   // Upload files to Firebase Storage (supports images, videos, and other media)
   const convertFilesToBase64 = async (files: File[]): Promise<string[]> => {
     try {
-      const { uploadFile } = await import('../services/storageService');
+      const { uploadFile, uploadVideo, uploadImage } = await import('../services/storageService');
       const downloadURLs: string[] = [];
       
       // Upload each file to the appropriate path based on file type
@@ -357,18 +397,28 @@ export default function CMSModuleNew() {
         const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
         
         let basePath: string;
+        let url: string;
+        
         if (file.type.startsWith('image/')) {
           basePath = 'images/cms/';
+          const filePath = `${basePath}${timestamp}_${sanitizedName}`;
+          // Use uploadImage for proper validation
+          url = await uploadImage(file, filePath);
         } else if (file.type.startsWith('video/')) {
           basePath = 'videos/cms/';
+          const filePath = `${basePath}${timestamp}_${sanitizedName}`;
+          // Use uploadVideo for proper validation (100MB limit)
+          url = await uploadVideo(file, filePath);
         } else if (file.type.startsWith('audio/')) {
           basePath = 'documents/cms/'; // Store audio in documents folder
+          const filePath = `${basePath}${timestamp}_${sanitizedName}`;
+          url = await uploadFile(file, filePath);
         } else {
           basePath = 'documents/cms/'; // PDFs, Word docs, etc.
+          const filePath = `${basePath}${timestamp}_${sanitizedName}`;
+          url = await uploadFile(file, filePath);
         }
         
-        const filePath = `${basePath}${timestamp}_${sanitizedName}`;
-        const url = await uploadFile(file, filePath);
         downloadURLs.push(url);
       }
       
@@ -1217,7 +1267,7 @@ export default function CMSModuleNew() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
                 <span className="text-sm font-medium text-gray-700 mb-1">Click to upload or drag and drop</span>
-                <span className="text-xs text-gray-500">Images, Videos, Audio, PDF, DOC (up to 50MB)</span>
+                <span className="text-xs text-gray-500">Images, Videos, Audio, PDF, DOC (Videos up to 100MB, others up to 50MB)</span>
               </label>
             </div>
             
@@ -2059,6 +2109,26 @@ function ContentDetailModal({
   const { user } = useAuth();
   const { deleteContent, updateContentStatus } = useCMS();
   const [selectedVideoUrl, setSelectedVideoUrl] = useState<string | null>(null);
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+  
+  // Helper function to detect if a URL is a video (more robust)
+  const isVideoUrl = (url: string): boolean => {
+    if (!url) return false;
+    const urlLower = url.toLowerCase();
+    return !!(
+      urlLower.includes('/videos/') || 
+      urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
+      urlLower.includes('video/') ||
+      urlLower.includes('contenttype=video') ||
+      urlLower.match(/video\/mp4|video\/quicktime|video\/webm|video\/x-msvideo/i) ||
+      (urlLower.includes('firebasestorage') && (
+        urlLower.includes('.mov') || 
+        urlLower.includes('.mp4') || 
+        urlLower.includes('.webm') ||
+        urlLower.includes('videos/')
+      ))
+    );
+  };
   const [deleteDraftConfirmOpen, setDeleteDraftConfirmOpen] = useState(false);
   const [cancelSubmissionConfirmOpen, setCancelSubmissionConfirmOpen] = useState(false);
   const [deletePublishedConfirmOpen, setDeletePublishedConfirmOpen] = useState(false);
@@ -2242,32 +2312,21 @@ function ContentDetailModal({
                 
                 {/* Render images, but check if any are actually videos */}
                 {(content.images || []).map((mediaUrl, index) => {
-                  // Check if it's a video by URL pattern or file extension
-                  // Also check for common video MIME types in the URL
-                  // More aggressive detection - check URL more thoroughly
-                  const urlLower = mediaUrl.toLowerCase();
-                  const isVideo = !!(
-                    urlLower.includes('/videos/') || 
-                    urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
-                    urlLower.includes('video/') ||
-                    urlLower.includes('contenttype=video') ||
-                    urlLower.match(/video\/mp4|video\/quicktime|video\/webm|video\/x-msvideo/i) ||
-                    // Check for Firebase Storage video patterns
-                    (urlLower.includes('firebasestorage') && (
-                      urlLower.includes('.mov') || 
-                      urlLower.includes('.mp4') || 
-                      urlLower.includes('.webm') ||
-                      urlLower.includes('videos/')
-                    ))
-                  );
+                  // Use the helper function to detect videos
+                  const isVideo = isVideoUrl(mediaUrl);
                   
                   const handleMediaClick = (e: React.MouseEvent) => {
                     e.stopPropagation();
                     e.preventDefault();
                     console.log('Media clicked:', { mediaUrl, isVideo, index });
-                    // Always open video player modal - let the player handle if it's actually a video
-                    console.log('Opening media player for:', mediaUrl);
-                    setSelectedVideoUrl(mediaUrl);
+                    // Open video player for videos, image viewer for images
+                    if (isVideo) {
+                      console.log('Opening video player for:', mediaUrl);
+                      setSelectedVideoUrl(mediaUrl);
+                    } else {
+                      console.log('Opening image viewer for:', mediaUrl);
+                      setSelectedImageUrl(mediaUrl);
+                    }
                   };
 
                   return (
@@ -2326,25 +2385,12 @@ function ContentDetailModal({
                           onError={(e) => {
                             // If image fails to load, it might be a video
                             console.log('Image failed to load, checking if it is a video:', mediaUrl);
-                            const videoUrl = mediaUrl;
-                            const urlLower = videoUrl.toLowerCase();
-                            const isVideoUrl = !!(
-                              urlLower.includes('/videos/') || 
-                              urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
-                              urlLower.includes('video/') ||
-                              (urlLower.includes('firebasestorage') && (
-                                urlLower.includes('.mov') || 
-                                urlLower.includes('.mp4') || 
-                                urlLower.includes('.webm')
-                              ))
-                            );
-                            if (isVideoUrl) {
+                            if (isVideoUrl(mediaUrl)) {
                               console.log('Detected as video after image load failure, opening player');
-                              setSelectedVideoUrl(videoUrl);
+                              setSelectedVideoUrl(mediaUrl);
                             } else {
-                              // Even if not detected, try opening as video - might work
-                              console.log('Image failed, trying to open as video anyway');
-                              setSelectedVideoUrl(videoUrl);
+                              // If image fails and it's not a video, show error
+                              console.log('Image failed to load and is not a video:', mediaUrl);
                             }
                           }}
                         />
@@ -2535,12 +2581,22 @@ function ContentDetailModal({
         </div>
       </div>
       
-      {/* Video Player Modal */}
-      {selectedVideoUrl && (
+      {/* Video Player Modal - Render via Portal to avoid z-index issues */}
+      {typeof window !== 'undefined' && selectedVideoUrl && createPortal(
         <VideoPlayerModal 
           videoUrl={selectedVideoUrl}
           onClose={() => setSelectedVideoUrl(null)}
-        />
+        />,
+        document.body
+      )}
+
+      {/* Image Viewer Modal - Render via Portal to avoid z-index issues */}
+      {typeof window !== 'undefined' && selectedImageUrl && createPortal(
+        <ImageViewerModal 
+          imageUrl={selectedImageUrl}
+          onClose={() => setSelectedImageUrl(null)}
+        />,
+        document.body
       )}
 
       {/* Confirmation Dialogs */}
@@ -2628,10 +2684,15 @@ function VideoPlayerModal({
 }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [useProxy, setUseProxy] = useState(false);
+  const [proxyUrl, setProxyUrl] = useState<string | null>(null);
 
   useEffect(() => {
     console.log('VideoPlayerModal mounted with URL:', videoUrl);
     setIsLoading(true);
+    setError(null);
+    setUseProxy(false);
+    setProxyUrl(null);
     
     // Small delay to ensure DOM is ready
     const timer = setTimeout(() => {
@@ -2642,6 +2703,11 @@ function VideoPlayerModal({
       clearTimeout(timer);
     };
   }, [videoUrl]);
+
+  // Generate proxy URL for CORS bypass
+  const getProxyUrl = (url: string): string => {
+    return `/api/download-image?url=${encodeURIComponent(url)}`;
+  };
 
   return (
     <div 
@@ -2720,23 +2786,62 @@ function VideoPlayerModal({
               </div>
             )}
             <video
-              key={videoUrl}
-              src={videoUrl}
+              key={useProxy ? proxyUrl : videoUrl}
+              src={useProxy && proxyUrl ? proxyUrl : videoUrl}
               controls
-              autoPlay
+              autoPlay={!useProxy}
               playsInline
+              crossOrigin={useProxy ? undefined : "anonymous"}
               className="w-full h-auto"
               style={{ maxHeight: '85vh', maxWidth: '100%', display: isLoading ? 'none' : 'block' }}
               onError={(e) => {
-                console.error('Video error:', e);
                 const videoElement = e.currentTarget;
                 const error = videoElement.error;
-                if (error) {
-                  console.error('Video error code:', error.code, 'message:', error.message);
-                  setError(`Failed to load video (Error ${error.code}). Please check the URL or try again.`);
-                } else {
-                  setError('Failed to load video. Please check the URL or try again.');
+                
+                // If first attempt failed and we haven't tried proxy yet, try proxy URL
+                if (!useProxy && videoUrl.includes('firebasestorage.googleapis.com')) {
+                  console.log('Direct video load failed, trying proxy URL...');
+                  const proxy = getProxyUrl(videoUrl);
+                  setProxyUrl(proxy);
+                  setUseProxy(true);
+                  setIsLoading(true);
+                  setError(null);
+                  return; // Don't set error yet, try proxy first
                 }
+                
+                let errorMessage = 'Failed to load video.';
+                
+                if (error) {
+                  // Map error codes to user-friendly messages
+                  const errorMessages: { [key: number]: string } = {
+                    1: 'Video loading aborted. The video may have been interrupted.',
+                    2: 'Network error. Please check your internet connection or the video URL may be invalid.',
+                    3: 'Video decoding error. The video file may be corrupted or in an unsupported format.',
+                    4: 'Video source not supported. The video format may not be supported by your browser.',
+                  };
+                  
+                  const errorCode = error.code || 0;
+                  const defaultMessage = error.message || 'Unknown error';
+                  errorMessage = errorMessages[errorCode] || `Failed to load video (Error ${errorCode}: ${defaultMessage}).`;
+                  
+                  // Check if it's a CORS issue
+                  if (videoUrl.includes('firebasestorage.googleapis.com') && !useProxy) {
+                    errorMessage += ' Trying alternative method...';
+                  } else if (videoUrl.includes('firebasestorage.googleapis.com')) {
+                    errorMessage += ' Please ensure CORS is configured in Firebase Storage settings.';
+                  }
+                  
+                  console.error('Video error details:', {
+                    code: error.code,
+                    message: error.message,
+                    videoUrl: videoUrl.substring(0, 100),
+                    useProxy,
+                  });
+                } else {
+                  console.error('Video error (no error object):', videoUrl.substring(0, 100));
+                }
+                
+                setError(errorMessage);
                 setIsLoading(false);
               }}
               onLoadStart={() => {
@@ -2757,11 +2862,119 @@ function VideoPlayerModal({
                 setIsLoading(false);
               }}
             >
-              <source src={videoUrl} type="video/mp4" />
-              <source src={videoUrl} type="video/quicktime" />
-              <source src={videoUrl} type="video/webm" />
+              {(useProxy && proxyUrl) ? (
+                // When using proxy, use single source with proxy URL
+                <source src={proxyUrl} type="video/mp4" />
+              ) : (
+                // Direct sources for direct URL access
+                <>
+                  <source src={videoUrl} type="video/mp4" />
+                  <source src={videoUrl} type="video/quicktime" />
+                  <source src={videoUrl} type="video/webm" />
+                  <source src={videoUrl} type="video/x-msvideo" />
+                  <source src={videoUrl} type="video/x-matroska" />
+                </>
+              )}
               Your browser does not support the video tag.
             </video>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Image Viewer Modal Component
+function ImageViewerModal({ 
+  imageUrl, 
+  onClose 
+}: { 
+  imageUrl: string; 
+  onClose: () => void;
+}) {
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsLoading(true);
+    setError(null);
+  }, [imageUrl]);
+
+  return (
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-95 z-[100] flex items-center justify-center p-4"
+      onClick={onClose}
+      style={{ zIndex: 9999 }}
+    >
+      <div 
+        className="relative w-full max-w-6xl bg-black rounded-lg overflow-hidden shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          className="absolute -top-12 left-0 text-white hover:text-gray-300 transition-colors z-10 bg-black/50 rounded-full p-2"
+          aria-label="Go back"
+        >
+          <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors z-10 bg-black/50 rounded-full p-2"
+          aria-label="Close image"
+        >
+          <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+        
+        {error ? (
+          <div className="p-8 text-center">
+            <div className="text-red-400 mb-4">
+              <svg className="w-16 h-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <p className="text-white text-lg mb-2">Error loading image</p>
+            <p className="text-gray-400 text-sm">{error}</p>
+            <button
+              onClick={onClose}
+              className="mt-4 px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600"
+            >
+              Close
+            </button>
+          </div>
+        ) : (
+          <div className="relative w-full bg-black" style={{ maxHeight: '90vh', minHeight: '400px' }}>
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
+                <div className="text-white text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+                  <p>Loading image...</p>
+                </div>
+              </div>
+            )}
+            <img
+              src={imageUrl}
+              alt="Full size view"
+              className="w-full h-auto max-h-[90vh] object-contain mx-auto"
+              style={{ display: isLoading ? 'none' : 'block' }}
+              onError={(e) => {
+                setError('Failed to load image. Please check the URL or try again.');
+                setIsLoading(false);
+              }}
+              onLoad={() => {
+                setIsLoading(false);
+                setError(null);
+              }}
+            />
           </div>
         )}
       </div>

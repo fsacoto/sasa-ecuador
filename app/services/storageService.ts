@@ -180,10 +180,10 @@ export async function uploadVideo(
     throw new Error('File must be a video');
   }
   
-  // Validate file size (max 50MB for videos)
-  const maxSize = 50 * 1024 * 1024;
+  // Validate file size (max 100MB for videos)
+  const maxSize = 100 * 1024 * 1024;
   if (file.size > maxSize) {
-    throw new Error('Video must be less than 50MB');
+    throw new Error('Video must be less than 100MB');
   }
   
   return uploadFile(file, path, onProgress);

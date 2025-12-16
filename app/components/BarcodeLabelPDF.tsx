@@ -1,10 +1,3 @@
-// This is the PDF component for the barcode labels 
-xsakmsa
-
-c
-asccsa]
-
-cachesas
 'use client';
 
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';

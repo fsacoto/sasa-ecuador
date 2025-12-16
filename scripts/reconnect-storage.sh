@@ -8,12 +8,34 @@ set -e
 PROJECT_ID="sasa-a837d"
 BUCKET_NAME="${PROJECT_ID}.appspot.com"
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get the project root (parent directory of scripts/)
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Change to project root directory
+cd "$PROJECT_ROOT"
+
 echo "🔥 Firebase Storage Reconnection Script"
 echo "========================================"
 echo ""
 echo "Project ID: $PROJECT_ID"
 echo "Bucket Name: $BUCKET_NAME"
+echo "Working directory: $PROJECT_ROOT"
 echo ""
+
+# Verify we're in the project root by checking for firebase.json
+if [ ! -f "firebase.json" ]; then
+    echo "❌ Error: firebase.json not found in $PROJECT_ROOT"
+    echo "   Please ensure you're running this script from the project root"
+    exit 1
+fi
+
+# Verify storage-cors.json exists
+if [ ! -f "storage-cors.json" ]; then
+    echo "⚠️  Warning: storage-cors.json not found in $PROJECT_ROOT"
+    echo "   CORS configuration will need to be done manually"
+fi
 
 # Check if Firebase CLI is installed
 if ! command -v firebase &> /dev/null; then
@@ -50,14 +72,19 @@ echo ""
 # Step 2: Check if gsutil is available for CORS configuration
 echo "📤 Step 2: Configuring CORS..."
 if command -v gsutil &> /dev/null; then
-    echo "   Using gsutil to set CORS configuration..."
-    gsutil cors set storage-cors.json gs://${BUCKET_NAME}
-    if [ $? -eq 0 ]; then
-        echo "✅ CORS configured successfully via gsutil"
+    if [ -f "storage-cors.json" ]; then
+        echo "   Using gsutil to set CORS configuration..."
+        if gsutil cors set "$PROJECT_ROOT/storage-cors.json" gs://${BUCKET_NAME}; then
+            echo "✅ CORS configured successfully via gsutil"
+        else
+            echo "⚠️  Failed to set CORS via gsutil. Please configure manually:"
+            echo "   1. Go to Firebase Console → Storage → Settings → CORS"
+            echo "   2. Copy content from storage-cors.json"
+        fi
     else
-        echo "⚠️  Failed to set CORS via gsutil. Please configure manually:"
+        echo "⚠️  storage-cors.json not found. Please configure CORS manually:"
         echo "   1. Go to Firebase Console → Storage → Settings → CORS"
-        echo "   2. Copy content from storage-cors.json"
+        echo "   2. Add CORS configuration manually"
     fi
 else
     echo "⚠️  gsutil not found. Please configure CORS manually:"
