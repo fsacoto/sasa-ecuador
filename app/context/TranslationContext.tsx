@@ -52,14 +52,14 @@ export function TranslationProvider({ children }: { children: ReactNode }) {
     let value: unknown = messagesMap[locale];
     
     for (const k of keys) {
-      if (value && typeof value === 'object' && k in value) {
-        value = value[k];
+      if (value && typeof value === 'object' && k in value && value !== null) {
+        value = (value as Record<string, unknown>)[k];
       } else {
         // Fallback to English if key not found
         value = messagesMap.en;
         for (const fallbackKey of keys) {
-          if (value && typeof value === 'object' && fallbackKey in value) {
-            value = value[fallbackKey];
+          if (value && typeof value === 'object' && fallbackKey in value && value !== null) {
+            value = (value as Record<string, unknown>)[fallbackKey];
           } else {
             return key; // Return key if not found in fallback either
           }
@@ -83,29 +83,29 @@ export function TranslationProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useTranslation() {
-  const context = useContext(TranslationContext);
-  if (context === undefined) {
-    // Fallback to English translations if context is not available
-    const fallbackT = (key: string): string => {
-      const keys = key.split('.');
-      let value: unknown = messagesMap.en;
-      for (const k of keys) {
-        if (value && typeof value === 'object' && k in value) {
-          value = value[k];
-        } else {
-          return key;
+  export function useTranslation() {
+    const context = useContext(TranslationContext);
+    if (context === undefined) {
+      // Fallback to English translations if context is not available
+      const fallbackT = (key: string): string => {
+        const keys = key.split('.');
+        let value: unknown = messagesMap.en;
+        for (const k of keys) {
+          if (value && typeof value === 'object' && k in value && value !== null) {
+            value = (value as Record<string, unknown>)[k];
+          } else {
+            return key;
+          }
         }
-      }
-      return typeof value === 'string' ? value : key;
-    };
-    return {
-      locale: 'en' as Locale,
-      setLocale: () => {},
-      t: fallbackT,
-      messages: messagesMap.en,
-    };
+        return typeof value === 'string' ? value : key;
+      };
+      return {
+        locale: 'en' as Locale,
+        setLocale: () => {},
+        t: fallbackT,
+        messages: messagesMap.en,
+      };
+    }
+    return context;
   }
-  return context;
-}
 

@@ -147,7 +147,7 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     justifyContent: 'flex-start', // Text at top, not centered
     alignItems: 'flex-start',
-    overflow: 'visible', // Allow badge to expand beyond if needed
+    // overflow: 'visible' removed - not supported in React PDF
     flexWrap: 'nowrap', // Prevent wrapping of child elements
   },
   materialBadge: {
@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
     flexShrink: 0, // Prevent text from shrinking
     flexGrow: 0, // Prevent text from growing beyond content
     // Note: react-pdf doesn't support word-break, overflow-wrap, or hyphens
-    // numberOfLines={1} on Text component handles single-line enforcement
+    //  on Text component handles single-line enforcement
   },
   materialBadgeTextSmall: {
     fontSize: 8, // 8px for longer text like "STERLING SILVER"
@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
     flexShrink: 0, // Prevent text from shrinking
     flexGrow: 0, // Prevent text from growing beyond content
     // Note: react-pdf doesn't support word-break, overflow-wrap, or hyphens
-    // numberOfLines={1} on Text component handles single-line enforcement
+    //  on Text component handles single-line enforcement
   },
   productName: {
     fontSize: 15, // 14-16px range (using 15px for balance)
@@ -390,7 +390,6 @@ export default function ProductCatalogPDF({
                             <View style={styles.materialBadge}>
                               <Text 
                                 style={textStyle}
-                                numberOfLines={1}
                               >
                                 {badgeText}
                               </Text>
@@ -401,7 +400,6 @@ export default function ProductCatalogPDF({
                         {/* 2. Product Name - Single line only */}
                         <Text 
                           style={styles.productName}
-                          numberOfLines={1}
                         >
                           {product.name ? product.name.toUpperCase() : t('inventory.catalog.noName')}
                         </Text>
@@ -409,7 +407,6 @@ export default function ProductCatalogPDF({
                         {/* 3. SKU Code - Single line only */}
                         <Text 
                           style={styles.sku}
-                          numberOfLines={1}
                         >
                           {product.sku || t('inventory.catalog.noSku')}
                         </Text>
@@ -454,7 +451,6 @@ export default function ProductCatalogPDF({
                             <View style={styles.materialBadge}>
                               <Text 
                                 style={textStyle}
-                                numberOfLines={1}
                               >
                                 {badgeText}
                               </Text>
@@ -465,7 +461,6 @@ export default function ProductCatalogPDF({
                         {/* 2. Product Name - Single line only */}
                         <Text 
                           style={styles.productName}
-                          numberOfLines={1}
                         >
                           {product.name ? product.name.toUpperCase() : t('inventory.catalog.noName')}
                         </Text>
@@ -473,7 +468,6 @@ export default function ProductCatalogPDF({
                         {/* 3. SKU Code - Single line only */}
                         <Text 
                           style={styles.sku}
-                          numberOfLines={1}
                         >
                           {product.sku || t('inventory.catalog.noSku')}
                         </Text>

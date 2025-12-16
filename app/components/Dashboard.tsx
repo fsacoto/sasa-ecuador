@@ -316,7 +316,7 @@ export default function Dashboard({ onNavigate }: DashboardProps = {}) {
                 onClick={() => handleNavigate('inventory', { filterLowStock: true })}
                 className="text-sm text-amber-700 hover:text-amber-900 font-medium underline"
               >
-                {t('dashboard.viewMoreItems', { count: lowStockItems.length - 6 })}
+                {t('dashboard.viewMoreItems')?.replace('{count}', String(lowStockItems.length - 6)) || `View ${lowStockItems.length - 6} more items`}
               </button>
             </div>
           )}

@@ -37,7 +37,7 @@ interface InventoryContextType {
     }>;
     note?: string;
     movedBy?: { uid: string; name?: string };
-  }) => Promise<void>;
+  }) => Promise<InventoryTransfer>;
   inventoryTransfers: InventoryTransfer[];
   isTransfersLoading: boolean;
   loadInventoryTransfers: (options?: { itemId?: string; limitCount?: number }) => Promise<void>;
@@ -94,7 +94,6 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     try {
       setIsTransfersLoading(true);
       const transfers = await inventoryService.getInventoryTransfers({
-        itemId: options?.itemId,
         limitCount: options?.limitCount ?? 200
       });
       setInventoryTransfers(transfers);
@@ -278,6 +277,8 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         next.sort((a, b) => (b.createdAt?.getTime?.() || 0) - (a.createdAt?.getTime?.() || 0));
         return next;
       });
+      
+      return result;
     } catch (error) {
       console.error('Error moving inventory between countries:', error);
       throw error;

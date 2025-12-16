@@ -45,7 +45,7 @@ export default function Consignments() {
   const [consignmentToDelete, setConsignmentToDelete] = useState<Consignment | null>(null);
 
   // Create a stable string identifier - always a string, never changes array size
-  const userIdString = (user?.uid || user?.id || '') as string;
+  const userIdString = (user?.id || '') as string;
 
   useEffect(() => {
     // Only load data once when user becomes available
@@ -315,11 +315,11 @@ export default function Consignments() {
               totalPrice: unitPrice * salesQty,
               line: item.line,
               category: item.category
-            };
+            } as SalesInvoiceLine;
           }
           return null;
         })
-        .filter((item): item is SalesInvoiceLine => item !== null);
+        .filter((item): item is SalesInvoiceLine => item !== null) as SalesInvoiceLine[];
 
       if (salesItems.length > 0) {
         const subtotal = salesItems.reduce((sum, item) => sum + item.totalPrice, 0);
@@ -540,8 +540,16 @@ export default function Consignments() {
       aVal = calculateTotalReturned(a.items);
       bVal = calculateTotalReturned(b.items);
     } else {
-      aVal = a[sortConfig.key as keyof Consignment];
-      bVal = b[sortConfig.key as keyof Consignment];
+      const aValue = a[sortConfig.key as keyof Consignment];
+      const bValue = b[sortConfig.key as keyof Consignment];
+      // Exclude items array from direct comparison
+      if (sortConfig.key === 'items') {
+        aVal = 0;
+        bVal = 0;
+      } else {
+        aVal = aValue as string | number | Date | undefined;
+        bVal = bValue as string | number | Date | undefined;
+      }
     }
 
     // Handle string sorting

@@ -247,7 +247,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
       // Switch to history and show the new transaction
       setSelectedTransaction(result);
       setActiveTab('detail');
-      await loadInventoryTransfers({ limitCount: 200 });
+      await loadInventoryTransfers({ limitCount: 200 }).catch(() => {});
     } catch (err) {
       let errorMessage = t('inventory.transfer.validationError');
       
@@ -310,22 +310,22 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
     // Title
     pdf.setFontSize(20);
     pdf.setTextColor(79, 12, 27); // #4f0c1b
-    pdf.setFont(undefined, 'bold');
+    pdf.setFont('helvetica', 'bold');
     pdf.text('Inventory Transfer Document', margin, yPos);
     yPos += 12;
 
     // Document Information Section
     pdf.setFontSize(10);
     pdf.setTextColor(0, 0, 0);
-    pdf.setFont(undefined, 'normal');
+    pdf.setFont('helvetica', 'normal');
     
     const infoStartY = yPos;
     const lineHeight = 6;
     
     // Transaction ID
-    pdf.setFont(undefined, 'bold');
+    pdf.setFont('helvetica', 'bold');
     pdf.text('Transaction ID:', margin, yPos);
-    pdf.setFont(undefined, 'normal');
+    pdf.setFont('helvetica', 'normal');
     pdf.text(transfer.transactionId, margin + 35, yPos);
     yPos += lineHeight;
 
@@ -339,25 +339,25 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
       hour: '2-digit',
       minute: '2-digit'
     });
-    pdf.setFont(undefined, 'bold');
+    pdf.setFont('helvetica', 'bold');
     pdf.text('Date:', margin, yPos);
-    pdf.setFont(undefined, 'normal');
+    pdf.setFont('helvetica', 'normal');
     pdf.text(`${dateStr} at ${timeStr}`, margin + 20, yPos);
     yPos += lineHeight;
 
     // Created By
     if (transfer.createdBy?.name) {
-      pdf.setFont(undefined, 'bold');
+      pdf.setFont('helvetica', 'bold');
       pdf.text('Created By:', margin, yPos);
-      pdf.setFont(undefined, 'normal');
+      pdf.setFont('helvetica', 'normal');
       pdf.text(transfer.createdBy.name, margin + 30, yPos);
       yPos += lineHeight;
     }
 
     // Total Items
-    pdf.setFont(undefined, 'bold');
+    pdf.setFont('helvetica', 'bold');
     pdf.text('Total Items:', margin, yPos);
-    pdf.setFont(undefined, 'normal');
+    pdf.setFont('helvetica', 'normal');
     pdf.text(`${transfer.items.length}`, margin + 32, yPos);
     yPos += lineHeight;
 
@@ -369,7 +369,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
 
     // Items Table Section
     pdf.setFontSize(12);
-    pdf.setFont(undefined, 'bold');
+    pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(79, 12, 27);
     pdf.text('Items Transferred', margin, yPos);
     yPos += 8;
@@ -388,7 +388,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
     
     // Table Headers
     pdf.setFontSize(10);
-    pdf.setFont(undefined, 'bold');
+    pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(255, 255, 255);
     let xPos = tableStartX + 2;
     headers.forEach((header, i) => {
@@ -398,7 +398,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
 
     // Table rows
     pdf.setTextColor(0, 0, 0);
-    pdf.setFont(undefined, 'normal');
+    pdf.setFont('helvetica', 'normal');
     let currentY = tableStartY + rowHeight;
 
     transfer.items.forEach((item, index) => {
@@ -410,7 +410,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
         // Redraw header on new page
         pdf.setFillColor(79, 12, 27);
         pdf.rect(tableStartX, currentY - rowHeight - 2, tableWidth, rowHeight, 'F');
-        pdf.setFont(undefined, 'bold');
+        pdf.setFont('helvetica', 'bold');
         pdf.setTextColor(255, 255, 255);
         xPos = tableStartX + 2;
         headers.forEach((header, i) => {
@@ -418,7 +418,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
           xPos += colWidths[i];
         });
         pdf.setTextColor(0, 0, 0);
-        pdf.setFont(undefined, 'normal');
+        pdf.setFont('helvetica', 'normal');
       }
 
       // Draw row background (alternating)
@@ -473,13 +473,13 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
       yPos += 8;
       
       pdf.setFontSize(11);
-      pdf.setFont(undefined, 'bold');
+      pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(79, 12, 27);
       pdf.text('Note:', margin, yPos);
       yPos += 7;
       
       pdf.setFontSize(10);
-      pdf.setFont(undefined, 'normal');
+      pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(0, 0, 0);
       const noteLines = pdf.splitTextToSize(transfer.note, pageWidth - 2 * margin);
       noteLines.forEach((line: string) => {
@@ -496,7 +496,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
     yPos = pageHeight - 15;
     pdf.setFontSize(8);
     pdf.setTextColor(128, 128, 128);
-    pdf.setFont(undefined, 'normal');
+    pdf.setFont('helvetica', 'normal');
     pdf.text('Generated by SASA Inventory Management System', margin, yPos);
     pdf.text(`Page 1 of ${pdf.getNumberOfPages()}`, pageWidth - margin - 20, yPos, { align: 'right' });
 

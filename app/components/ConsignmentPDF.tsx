@@ -260,8 +260,8 @@ export default function ConsignmentPDF({ consignment, logoSrc = '/sasa.png', loc
   };
 
   // Parse client address
-  const parseAddress = (address: string) => {
-    if (!address) return '';
+  const parseAddress = (address: string): string[] => {
+    if (!address) return [];
     const parts = address.split(', ');
     return parts;
   };

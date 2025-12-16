@@ -166,8 +166,8 @@ export default function Sales() {
 
     try {
       // Invoice number will be auto-generated in createInvoice
-      const newInvoice: Omit<SalesInvoice, 'id' | 'invoiceNumber' | 'createdAt'> = {
-        invoiceNumber: 'TEMP', // Will be replaced with sequential number
+      const newInvoice: Omit<SalesInvoice, 'id' | 'createdAt'> = {
+        invoiceNumber: 'TEMP', // Will be replaced with sequential number in createInvoice
         clientId: selectedClient?.id || '',
         clientName: selectedClient?.name || 'Walk-in Customer',
         clientAddress: selectedClient ? `${selectedClient.address}, ${selectedClient.city}, ${selectedClient.country}` : '',

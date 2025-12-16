@@ -718,6 +718,7 @@ export default function PurchaseOrders() {
         // Create new inventory item if it doesn't exist and we have good items
         await addInventoryItem({
           sku: order.sku,
+          supplierSKU: order.supplierSKU,
           name: order.description,
           description: order.description,
           category: order.category,
@@ -831,7 +832,7 @@ export default function PurchaseOrders() {
     }
   };
 
-  const handleStatusChange = (order: PurchaseOrder, newStatus: 'Ordered' | 'Shipped' | 'Received' | 'Verified') => {
+  const handleStatusChange = async (order: PurchaseOrder, newStatus: 'Ordered' | 'Shipped' | 'Received' | 'Verified') => {
     const oldStatus = order.status;
     
     // SAFEGUARD: Prevent moving backwards from Verified without confirmation
@@ -1174,7 +1175,7 @@ export default function PurchaseOrders() {
     setDeleteConfirmOpen(false);
   };
 
-  const handleStatusChangeConfirm = () => {
+  const handleStatusChangeConfirm = async () => {
     if (!statusChangeData) return;
     
     const { oldStatus, newStatus, order, updatedOrder, orderData, previousSku } = statusChangeData;
@@ -1216,7 +1217,7 @@ export default function PurchaseOrders() {
     setStatusChangeConfirmOpen(false);
   };
 
-  const handleQuantityMismatchConfirm = () => {
+  const handleQuantityMismatchConfirm = async () => {
     if (!quantityMismatchData) return;
     
     const { order, actualQuantity, orderData, previousSku, statusUpdate } = quantityMismatchData;
@@ -1246,16 +1247,16 @@ export default function PurchaseOrders() {
         // Create new inventory item
         const newInventoryItem: Omit<InventoryItem, 'id'> = {
           sku: order.sku,
+          supplierSKU: order.supplierSKU || '',
+          name: order.description,
           description: order.description,
           category: order.category || '',
           line: order.line || '',
           images: order.images || [],
           ecuadorStock: order.destinationStock === 'Ecuador' ? actualQuantity : 0,
           usaStock: order.destinationStock === 'USA' ? actualQuantity : 0,
-          costPerUnit: order.costPerUnit || 0,
-          currency: order.currency || 'USD',
-          supplierId: order.supplierId,
-          supplierSKU: order.supplierSKU || '',
+          consignmentStock: 0,
+          linkedPurchaseOrders: [order.id],
           createdAt: new Date(),
         };
         addInventoryItem(newInventoryItem);
@@ -2646,7 +2647,7 @@ export default function PurchaseOrders() {
                         )}
                         {order.status !== 'Verified' && (
                           <button
-                            onClick={() => handleDownloadVerificationSheet(order)}
+                            onClick={() => handleDownloadVerificationSheet(order.invoice, 'en')}
                             className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 hover:text-blue-800 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md border border-blue-200"
                             title={t('purchaseOrders.downloadVerificationSheet') || 'Download Verification Sheet'}
                           >
@@ -2880,7 +2881,7 @@ export default function PurchaseOrders() {
                                 )}
                                 {order.status !== 'Verified' && (
                                   <button
-                                    onClick={() => handleDownloadVerificationSheet(order)}
+                                    onClick={() => handleDownloadVerificationSheet(order.invoice, 'en')}
                                     className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 hover:text-blue-800 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md border border-blue-200"
                                     title={t('purchaseOrders.downloadVerificationSheet') || 'Download Verification Sheet'}
                                   >

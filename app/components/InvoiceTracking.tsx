@@ -843,8 +843,14 @@ export default function InvoiceTracking() {
   };
 
   const sortedInvoices = [...invoices].sort((a, b) => {
-    let aVal: string | number | Date | undefined = a[sortConfig.key as keyof SalesInvoice];
-    let bVal: string | number | Date | undefined = b[sortConfig.key as keyof SalesInvoice];
+    const aValue = a[sortConfig.key as keyof SalesInvoice];
+    const bValue = b[sortConfig.key as keyof SalesInvoice];
+    // Exclude array properties from direct comparison
+    if (sortConfig.key === 'items' || sortConfig.key === 'paymentHistory') {
+      return 0;
+    }
+    let aVal: string | number | Date | undefined = aValue as string | number | Date | undefined;
+    let bVal: string | number | Date | undefined = bValue as string | number | Date | undefined;
 
     // Handle cell sorting
     if (typeof aVal === 'string') {
@@ -856,6 +862,14 @@ export default function InvoiceTracking() {
     if (aVal instanceof Date) {
       aVal = aVal.getTime();
       bVal = (bVal as Date).getTime();
+    }
+
+    // Handle undefined/null values
+    if (aVal === undefined || aVal === null) {
+      return sortConfig.direction === 'asc' ? -1 : 1;
+    }
+    if (bVal === undefined || bVal === null) {
+      return sortConfig.direction === 'asc' ? 1 : -1;
     }
 
     if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
