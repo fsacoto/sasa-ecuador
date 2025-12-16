@@ -228,6 +228,8 @@ export async function updateCMSContentStatus(
         archivedAt?: Date;
         reviewerId?: string;
         reviewerNotes?: string;
+        resubmissionCount?: number;
+        lastResubmittedAt?: Date;
       } = {
         createdAt: currentData.metadata.createdAt,
         updatedAt: new Date(),
@@ -312,8 +314,8 @@ export async function resubmitRejectedContent(
         archivedAt?: Date;
         reviewerId?: string;
         reviewerNotes?: string;
-        resubmissionCount: number;
-        lastResubmittedAt: Date;
+        resubmissionCount?: number;
+        lastResubmittedAt?: Date;
       } = {
         createdAt: currentData.metadata.createdAt,
         updatedAt: new Date(),

@@ -246,3 +246,13 @@ export interface Consignment {
   dateCreated: Date;
   createdAt: Date;
 }
+
+export interface InventoryMedia {
+  id: string;
+  sku: string;
+  itemId?: string;
+  itemName?: string;
+  images: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}

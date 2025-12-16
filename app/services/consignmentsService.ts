@@ -147,7 +147,7 @@ export async function createConsignment(consignment: Omit<Consignment, 'id' | 'c
     // Generate consignment ID if not provided
     const consignmentId = await getNextConsignmentId();
     
-    const newConsignment: Consignment = {
+    const newConsignment: Omit<Consignment, 'id'> = {
       ...consignment,
       consignmentId,
       createdAt: new Date(),

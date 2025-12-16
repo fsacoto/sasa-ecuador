@@ -108,7 +108,7 @@ export async function getInvoice(invoiceId: string): Promise<SalesInvoice | null
         createdAt: data.createdAt?.toDate() || new Date(),
         deliveryDate: data.deliveryDate?.toDate(),
         paymentDate: data.paymentDate?.toDate(),
-        paymentHistory: data.paymentHistory?.map((p: PaymentRecord & { date?: { toDate?: () => Date } }) => ({...p, date: p.date?.toDate() || new Date()})) || []
+        paymentHistory: data.paymentHistory?.map((p: PaymentRecord & { date?: { toDate?: () => Date } }) => ({...p, date: (p.date && typeof p.date === 'object' && 'toDate' in p.date && typeof p.date.toDate === 'function') ? p.date.toDate() : (p.date instanceof Date ? p.date : new Date())})) || []
       } as SalesInvoice;
     }
     return null;
@@ -163,7 +163,7 @@ export async function createInvoice(invoice: Omit<SalesInvoice, 'id' | 'createdA
     }
     
     // Filter out undefined values
-    const newInvoice: SalesInvoice = {
+    const newInvoice: Omit<SalesInvoice, 'id'> = {
       ...invoice,
       invoiceNumber: invoiceNumber,
       createdAt: new Date(),
@@ -171,8 +171,8 @@ export async function createInvoice(invoice: Omit<SalesInvoice, 'id' | 'createdA
 
     // Remove undefined fields
     Object.keys(newInvoice).forEach(key => {
-      if (newInvoice[key] === undefined) {
-        delete newInvoice[key];
+      if ((newInvoice as Record<string, unknown>)[key] === undefined) {
+        delete (newInvoice as Record<string, unknown>)[key];
       }
     });
 
@@ -181,7 +181,7 @@ export async function createInvoice(invoice: Omit<SalesInvoice, 'id' | 'createdA
     return {
       id: docRef.id,
       ...newInvoice,
-    };
+    } as SalesInvoice;
   } catch (error) {
     console.error('Error creating invoice:', error);
     throw error;
@@ -196,8 +196,8 @@ export async function updateInvoice(invoiceId: string, updates: Partial<SalesInv
     // Filter out undefined values
     const cleanUpdates: Partial<SalesInvoice> = { ...updates };
     Object.keys(cleanUpdates).forEach(key => {
-      if (cleanUpdates[key] === undefined) {
-        delete cleanUpdates[key];
+      if ((cleanUpdates as Record<string, unknown>)[key] === undefined) {
+        delete (cleanUpdates as Record<string, unknown>)[key];
       }
     });
 

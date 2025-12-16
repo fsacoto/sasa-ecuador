@@ -81,8 +81,8 @@ export async function generateCatalogPDF(params: GenerateCatalogPDFParams): Prom
     locale,
   } as React.ComponentProps<typeof ProductCatalogPDF>);
 
-  // Generate blob
-  const instance = pdf(pdfDocument);
+  // Generate blob - cast to any to avoid type issues with React PDF
+  const instance = pdf(pdfDocument as any);
   const blob = await instance.toBlob();
 
   // Create download link
@@ -134,8 +134,8 @@ export async function generatePurchaseOrderVerificationPDF(params: GeneratePurch
     supplier,
   } as React.ComponentProps<typeof PurchaseOrderVerificationPDF>);
 
-  // Generate blob
-  const instance = pdf(pdfDocument);
+  // Generate blob - cast to any to avoid type issues with React PDF
+  const instance = pdf(pdfDocument as any);
   const blob = await instance.toBlob();
 
   // Create download link

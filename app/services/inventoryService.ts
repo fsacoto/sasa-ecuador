@@ -1,6 +1,6 @@
 import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy, limit, QueryDocumentSnapshot, Timestamp, runTransaction, serverTimestamp, DocumentSnapshot } from 'firebase/firestore';
 import { db, auth } from '../utils/firebase';
-import { InventoryItem, InventoryCountry, InventoryTransfer } from '../types';
+import { InventoryItem, InventoryCountry, InventoryTransfer, InventoryTransferItem } from '../types';
 
 const COLLECTION_NAME = 'inventory';
 const TRANSFERS_COLLECTION_NAME = 'inventoryTransfers';

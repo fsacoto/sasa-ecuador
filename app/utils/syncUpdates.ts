@@ -105,7 +105,7 @@ export async function syncPurchaseOrderToInventory(
       }
     }
     // If order is not verified, don't create or update inventory - EXIT
-    return;
+    return [];
   }
 
   // ORDER IS VERIFIED - Create or update inventory item
