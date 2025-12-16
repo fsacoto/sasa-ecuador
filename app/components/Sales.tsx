@@ -7,6 +7,7 @@ import { createInvoice } from '../services/invoicesService';
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../context/TranslationContext';
+import AlertDialog from './ui/AlertDialog';
 
 interface InvoiceLineWithDetails extends SalesInvoiceLine {
   line?: string;
@@ -32,6 +33,14 @@ export default function Sales() {
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash' | 'transfer' | ''>('');
   const [paymentComment, setPaymentComment] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
+  
+  // Alert dialog state
+  const [alertDialog, setAlertDialog] = useState<{open: boolean, title?: string, message: string}>({open: false, message: ''});
+  
+  // Helper function for styled alerts
+  const showAlert = (message: string, title?: string) => {
+    setAlertDialog({ open: true, message, title });
+  };
 
   useEffect(() => {
     loadClients();
@@ -127,7 +136,7 @@ export default function Sales() {
     
       // Show warning if trying to exceed available stock
     if (quantity > item.maxQuantity) {
-      alert(`${t('sales.cannotExceedStock')} ${item.maxQuantity}`);
+      showAlert(`${t('sales.cannotExceedStock')} ${item.maxQuantity}`, 'Stock Limit');
     }
   };
 
@@ -160,7 +169,7 @@ export default function Sales() {
 
   const submitInvoice = async () => {
     if (invoiceItems.length === 0) {
-      alert(t('sales.pleaseAddProducts'));
+      showAlert(t('sales.pleaseAddProducts'), 'Validation Error');
       return;
     }
 
@@ -197,7 +206,10 @@ export default function Sales() {
 
       await createInvoice(newInvoice);
       
-      alert(t('sales.invoiceSubmitted'));
+      showAlert(
+        t('sales.invoiceSubmitted'),
+        'Success'
+      );
       
       // Reset form
       setInvoiceItems([]);
@@ -207,7 +219,7 @@ export default function Sales() {
       setInvoiceDate(new Date().toISOString().split('T')[0]);
     } catch (error) {
       console.error('Error submitting invoice:', error);
-      alert(t('sales.errorSubmitting'));
+      showAlert(t('sales.errorSubmitting'), 'Error');
     }
   };
 
@@ -534,6 +546,14 @@ export default function Sales() {
           </div>
         </div>
       )}
+
+      {/* Alert Dialog */}
+      <AlertDialog
+        open={alertDialog.open}
+        title={alertDialog.title}
+        message={alertDialog.message}
+        onClose={() => setAlertDialog({ open: false, message: '' })}
+      />
     </div>
   );
 }

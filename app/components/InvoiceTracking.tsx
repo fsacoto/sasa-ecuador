@@ -7,6 +7,8 @@ import { getAllClients } from '../services/clientsService';
 import { useAuth } from '../context/AuthContext';
 import { useInventory } from '../context/InventoryContext';
 import { useTranslation } from '../context/TranslationContext';
+import AlertDialog from './ui/AlertDialog';
+import ConfirmDialog from './ui/ConfirmDialog';
 
 export default function InvoiceTracking() {
   const { user } = useAuth();
@@ -71,6 +73,19 @@ export default function InvoiceTracking() {
   // PDF language selection modal state
   const [showPdfLanguageModal, setShowPdfLanguageModal] = useState(false);
   const [pdfInvoice, setPdfInvoice] = useState<SalesInvoice | null>(null);
+
+  // Alert and Confirm dialog state
+  const [alertDialog, setAlertDialog] = useState<{open: boolean, title?: string, message: string}>({open: false, message: ''});
+  const [confirmDialog, setConfirmDialog] = useState<{open: boolean, title?: string, message: string, onConfirm: () => void}>({open: false, message: '', onConfirm: () => {}});
+
+  // Helper functions for styled alerts and confirms
+  const showAlert = (message: string, title?: string) => {
+    setAlertDialog({ open: true, message, title });
+  };
+
+  const showConfirm = (message: string, onConfirm: () => void, title?: string) => {
+    setConfirmDialog({ open: true, message, onConfirm, title });
+  };
 
   useEffect(() => {
     loadInvoices();
@@ -187,7 +202,7 @@ export default function InvoiceTracking() {
       setInvoices(filteredData);
     } catch (error) {
       console.error('Error loading invoices:', error);
-      alert(t('invoiceTracking.errorLoading'));
+      showAlert(t('invoiceTracking.errorLoading'), 'Error');
     } finally {
       setLoading(false);
     }
@@ -253,7 +268,7 @@ export default function InvoiceTracking() {
         if (item.maxQuantity) {
           parsedValue = Math.min(Math.max(1, parsedValue), item.maxQuantity);
           if (parseFloat(String(value)) > item.maxQuantity) {
-            alert(`${t('invoiceTracking.cannotExceedStock')} ${item.maxQuantity}`);
+            showAlert(`${t('invoiceTracking.cannotExceedStock')} ${item.maxQuantity}`, 'Stock Limit');
           }
         }
       }
@@ -308,7 +323,7 @@ export default function InvoiceTracking() {
     if (!editingInvoice) return;
     
     if (editItems.length === 0) {
-      alert(t('invoiceTracking.invoiceMustHaveItem'));
+      showAlert(t('invoiceTracking.invoiceMustHaveItem'), 'Validation Error');
       return;
     }
 
@@ -438,15 +453,15 @@ export default function InvoiceTracking() {
         statusChangedMsg += `\nDelivery status changed to: ${newDeliveryStatus}`;
       }
       if (itemsToReturn.length > 0) {
-        statusChangedMsg += `\n${itemsToReturn.length} item(s) returned to inventory.`;
+        statusChangedMsg += `\n${itemsToReturn.length} ${t('invoiceTracking.itemsReturned') || 'item(s) returned to inventory'}.`;
       }
-      alert(statusChangedMsg);
+      showAlert(statusChangedMsg, 'Success');
       
       closeEditModal();
       loadInvoices();
     } catch (error) {
       console.error('Error updating invoice:', error);
-      alert(t('invoiceTracking.errorUpdating'));
+      showAlert(t('invoiceTracking.errorUpdating'), 'Error');
     }
   };
 
@@ -478,7 +493,7 @@ export default function InvoiceTracking() {
     
     // Don't allow more than the original quantity
     if (quantity > invoice.items[index].quantity) {
-      alert(`${t('invoiceTracking.cannotDeliverMore')} ${invoice.items[index].quantity} ${t('invoiceTracking.units')}`);
+      showAlert(`${t('invoiceTracking.cannotDeliverMore')} ${invoice.items[index].quantity} ${t('invoiceTracking.units')}`, 'Validation Error');
       return;
     }
     
@@ -491,7 +506,7 @@ export default function InvoiceTracking() {
     // Check if at least one item has quantity > 0
     const totalDelivered = Object.values(deliveryItems).reduce((sum, qty) => sum + qty, 0);
     if (totalDelivered === 0) {
-      alert(t('invoiceTracking.pleaseSpecifyQuantities'));
+      showAlert(t('invoiceTracking.pleaseSpecifyQuantities'), 'Validation Error');
       return;
     }
 
@@ -510,7 +525,17 @@ export default function InvoiceTracking() {
       `${t('invoiceTracking.itemsToBeSubtracted')}\n${itemsToSubtract}\n\n` +
       `${t('invoiceTracking.stockLevelsWillBeReduced')}`;
 
-    if (!confirm(warningMessage)) return;
+    showConfirm(
+      warningMessage,
+      () => {
+        processPartialDeliveryConfirmed();
+      },
+      t('invoiceTracking.confirmDelivery') || 'Confirm Delivery'
+    );
+  };
+
+  const processPartialDeliveryConfirmed = async () => {
+    if (!deliveryInvoice) return;
 
     try {
       const updateData: Partial<SalesInvoice> = {
@@ -536,12 +561,12 @@ export default function InvoiceTracking() {
         }
       }
 
-      alert('Partial delivery registered successfully');
+      showAlert(t('invoiceTracking.partialDeliveryRegistered') || 'Partial delivery registered successfully', 'Success');
       closeDeliveryModal();
       loadInvoices();
     } catch (error) {
       console.error('Error updating delivery:', error);
-      alert('Error updating delivery status');
+      showAlert(t('invoiceTracking.errorUpdatingDeliveryStatus'), 'Error');
     }
   };
 
@@ -616,11 +641,15 @@ export default function InvoiceTracking() {
       return;
     } else {
       // For other status changes, use simple confirmation
-      const confirmed = confirm(`${t('invoiceTracking.changeDeliveryStatus')} ${status}?`);
-      if (!confirmed) return;
+      showConfirm(
+        `${t('invoiceTracking.changeDeliveryStatus')} ${status}?`,
+        () => {
+          processDeliveryUpdate(invoice, status);
+        },
+        t('invoiceTracking.confirmStatusChange') || 'Confirm Status Change'
+      );
+      return;
     }
-    
-    await processDeliveryUpdate(invoice, status);
   };
 
   const processDeliveryUpdate = async (invoice: SalesInvoice, status: string) => {
@@ -648,11 +677,11 @@ export default function InvoiceTracking() {
         }
       }
 
-      alert(t('invoiceTracking.deliveryStatusUpdated'));
+      showAlert(t('invoiceTracking.deliveryStatusUpdated'), 'Success');
       loadInvoices();
     } catch (error) {
       console.error('Error updating delivery:', error);
-      alert(t('invoiceTracking.errorUpdatingDeliveryStatus'));
+      showAlert(t('invoiceTracking.errorUpdatingDeliveryStatus'), 'Error');
     }
   };
 
@@ -679,11 +708,11 @@ export default function InvoiceTracking() {
 
       await updateInvoice(invoice.id, updateData);
 
-      alert(t('invoiceTracking.deliveryStatusUpdated') + `\n${itemsToReturn.length} item(s) returned to inventory.`);
+      showAlert(t('invoiceTracking.deliveryStatusUpdated') + `\n${itemsToReturn.length} ${t('invoiceTracking.itemsReturned') || 'item(s) returned to inventory'}.`, 'Success');
       loadInvoices();
     } catch (error) {
       console.error('Error updating delivery:', error);
-      alert(t('invoiceTracking.errorUpdatingDeliveryStatus'));
+      showAlert(t('invoiceTracking.errorUpdatingDeliveryStatus'), 'Error');
     }
   };
 
@@ -699,13 +728,13 @@ export default function InvoiceTracking() {
 
     const payment = parseFloat(paymentAmount);
     if (isNaN(payment) || payment <= 0) {
-      alert(t('invoiceTracking.pleaseEnterValidPayment'));
+      showAlert(t('invoiceTracking.pleaseEnterValidPayment'), 'Validation Error');
       return;
     }
 
     // Allow payment slightly over remaining balance (tolerance for rounding)
     if (payment > paymentInvoice.remainingBalance + 0.01) {
-      alert(`${t('invoiceTracking.paymentCannotExceed')} $${paymentInvoice.remainingBalance.toFixed(2)}`);
+      showAlert(`${t('invoiceTracking.paymentCannotExceed')} $${paymentInvoice.remainingBalance.toFixed(2)}`, 'Validation Error');
       return;
     }
 
@@ -739,39 +768,93 @@ export default function InvoiceTracking() {
       }
 
       await updateInvoice(paymentInvoice.id, updateData);
-      alert(t('invoiceTracking.paymentAdded'));
+      showAlert(t('invoiceTracking.paymentAdded'), 'Success');
       setShowPaymentModal(false);
       loadInvoices();
     } catch (error) {
       console.error('Error adding payment:', error);
-      alert(t('invoiceTracking.errorAddingPayment'));
+      showAlert(t('invoiceTracking.errorAddingPayment'), 'Error');
     }
   };
 
   const handleUpdatePayment = async (invoice: SalesInvoice, status: 'Unpaid' | 'Partially Paid' | 'Paid') => {
-    // Only allow status changes via payment addition
-    if (status === 'Partially Paid' && invoice.paymentStatus === 'Unpaid') {
-      openPaymentModal(invoice);
-      return;
-    }
-    
+    // Don't do anything if status hasn't changed
     if (status === invoice.paymentStatus) return;
 
-    // Allow changing back to Unpaid only
+    // Handle transition to Unpaid (reset all payments)
     if (status === 'Unpaid') {
       try {
         const updateData: Partial<SalesInvoice> = {
           paymentStatus: 'Unpaid',
           amountPaid: 0,
           remainingBalance: invoice.grandTotal,
-          paymentHistory: []
+          paymentHistory: [],
+          paymentDate: undefined
         };
         await updateInvoice(invoice.id, updateData);
         loadInvoices();
       } catch (error) {
         console.error('Error updating payment:', error);
-        alert(t('invoiceTracking.errorUpdatingDeliveryStatus'));
+        showAlert(t('invoiceTracking.errorUpdatingDeliveryStatus'), 'Error');
       }
+      return;
+    }
+
+    // Handle transitions that require adding payment
+    if (status === 'Partially Paid') {
+      // If moving from Unpaid to Partially Paid, open payment modal
+      if (invoice.paymentStatus === 'Unpaid') {
+        openPaymentModal(invoice);
+        return;
+      }
+      // If moving from Paid to Partially Paid, allow direct change
+      // Status will be recalculated based on amountPaid vs grandTotal
+      if (invoice.paymentStatus === 'Paid') {
+        try {
+          // Recalculate status based on current amountPaid
+          const remainingBalance = Math.max(0, invoice.grandTotal - invoice.amountPaid);
+          let newStatus: 'Unpaid' | 'Partially Paid' | 'Paid' = 'Partially Paid';
+          if (invoice.amountPaid === 0) {
+            newStatus = 'Unpaid';
+          } else if (remainingBalance <= 0.01) {
+            newStatus = 'Paid';
+          }
+          
+          const updateData: Partial<SalesInvoice> = {
+            paymentStatus: newStatus,
+            remainingBalance: Math.round(remainingBalance * 100) / 100
+          };
+          await updateInvoice(invoice.id, updateData);
+          loadInvoices();
+        } catch (error) {
+          console.error('Error updating payment:', error);
+          showAlert(t('invoiceTracking.errorUpdatingDeliveryStatus'), 'Error');
+        }
+        return;
+      }
+    }
+
+    // Handle transition to Paid
+    if (status === 'Paid') {
+      // If already fully paid or very close, just update status
+      if (invoice.amountPaid >= invoice.grandTotal - 0.01) {
+        try {
+          const updateData: Partial<SalesInvoice> = {
+            paymentStatus: 'Paid',
+            remainingBalance: 0,
+            paymentDate: invoice.paymentDate || new Date()
+          };
+          await updateInvoice(invoice.id, updateData);
+          loadInvoices();
+        } catch (error) {
+          console.error('Error updating payment:', error);
+          showAlert(t('invoiceTracking.errorUpdatingDeliveryStatus'), 'Error');
+        }
+        return;
+      }
+      // If not fully paid, open payment modal to add remaining payment
+      openPaymentModal(invoice);
+      return;
     }
   };
 
@@ -827,7 +910,7 @@ export default function InvoiceTracking() {
       setPdfInvoice(null);
     } catch (error) {
       console.error('Error generating PDF:', error);
-      alert('Failed to generate PDF. Please try again.');
+      showAlert(t('invoiceTracking.pdfGenerationFailed') || 'Failed to generate PDF. Please try again.', 'Error');
       setShowPdfLanguageModal(false);
       setPdfInvoice(null);
     }
@@ -925,11 +1008,11 @@ export default function InvoiceTracking() {
       
       // Delete the invoice
       await deleteInvoice(invoice.id);
-      alert(t('invoiceTracking.invoiceDeleted'));
+      showAlert(t('invoiceTracking.invoiceDeleted'), 'Success');
       loadInvoices();
     } catch (error) {
       console.error('Error deleting invoice:', error);
-      alert(t('invoiceTracking.errorDeletingInvoice'));
+      showAlert(t('invoiceTracking.errorDeletingInvoice'), 'Error');
     }
   };
 
@@ -1986,6 +2069,26 @@ export default function InvoiceTracking() {
           </div>
         </div>
       )}
+
+      {/* Alert Dialog */}
+      <AlertDialog
+        open={alertDialog.open}
+        title={alertDialog.title}
+        message={alertDialog.message}
+        onClose={() => setAlertDialog({ open: false, message: '' })}
+      />
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        description={confirmDialog.message}
+        onConfirm={() => {
+          confirmDialog.onConfirm();
+          setConfirmDialog({ open: false, message: '', onConfirm: () => {} });
+        }}
+        onCancel={() => setConfirmDialog({ open: false, message: '', onConfirm: () => {} })}
+      />
     </div>
   );
 }

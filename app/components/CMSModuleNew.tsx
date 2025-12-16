@@ -9,6 +9,7 @@ import { useTranslation } from '../context/TranslationContext';
 import { ContentType, ContentStatus, InventoryItem, CMSContent } from '../types';
 import JSZip from 'jszip';
 import ConfirmDialog from './ui/ConfirmDialog';
+import AlertDialog from './ui/AlertDialog';
 import { deleteMediaFile } from '../services/inventoryMediaService';
 // Removed Firebase Storage imports - using direct URL fetch instead
 
@@ -1995,6 +1996,80 @@ export default function CMSModuleNew() {
               }}
             />
           )}
+
+          {/* Delete Draft Confirmation Dialog */}
+          <ConfirmDialog
+            open={deleteDraftConfirmOpen}
+            title="Delete Draft"
+            description={contentToDelete ? `Are you sure you want to delete "${contentToDelete.title}"? This action cannot be undone.` : ''}
+            confirmText={t('common.delete')}
+            cancelText={t('common.cancel')}
+            confirmVariant="danger"
+            onConfirm={async () => {
+              if (contentToDelete) {
+                try {
+                  await deleteContent(contentToDelete.id);
+                  setContentToDelete(null);
+                } catch (error) {
+                  console.error('Error deleting draft:', error);
+                }
+              }
+              setDeleteDraftConfirmOpen(false);
+            }}
+            onCancel={() => {
+              setDeleteDraftConfirmOpen(false);
+              setContentToDelete(null);
+            }}
+          />
+
+          {/* Cancel Submission Confirmation Dialog */}
+          <ConfirmDialog
+            open={cancelSubmissionConfirmOpen}
+            title="Cancel Submission"
+            description={contentToCancel ? `Are you sure you want to cancel the submission of "${contentToCancel.title}"? It will be moved back to draft status.` : ''}
+            confirmText={t('common.cancelSubmission')}
+            cancelText={t('common.keepSubmitted')}
+            onConfirm={async () => {
+              if (contentToCancel) {
+                try {
+                  await updateContentStatus(contentToCancel.id, 'draft', user?.id || '');
+                  setContentToCancel(null);
+                } catch (error) {
+                  console.error('Error cancelling submission:', error);
+                }
+              }
+              setCancelSubmissionConfirmOpen(false);
+            }}
+            onCancel={() => {
+              setCancelSubmissionConfirmOpen(false);
+              setContentToCancel(null);
+            }}
+          />
+
+          {/* Delete Published Content Confirmation Dialog */}
+          <ConfirmDialog
+            open={deletePublishedConfirmOpen}
+            title="Delete Published Content"
+            description={contentToDelete ? `Are you sure you want to permanently delete "${contentToDelete.title}"? This action cannot be undone.` : ''}
+            confirmText={t('common.delete')}
+            cancelText={t('common.cancel')}
+            confirmVariant="danger"
+            onConfirm={async () => {
+              if (contentToDelete) {
+                try {
+                  await deleteContent(contentToDelete.id);
+                  setContentToDelete(null);
+                } catch (error) {
+                  console.error('Error deleting published content:', error);
+                }
+              }
+              setDeletePublishedConfirmOpen(false);
+            }}
+            onCancel={() => {
+              setDeletePublishedConfirmOpen(false);
+              setContentToDelete(null);
+            }}
+          />
         </div>
       )}
     </div>
@@ -2107,9 +2182,36 @@ function ContentDetailModal({
 }) {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const { deleteContent, updateContentStatus } = useCMS();
+  const { deleteContent, updateContentStatus, updateContent } = useCMS();
   const [selectedVideoUrl, setSelectedVideoUrl] = useState<string | null>(null);
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+  const [alertDialog, setAlertDialog] = useState<{ open: boolean; title: string; message: string }>({ open: false, title: '', message: '' });
+  
+  const showAlert = (message: string, title: string = 'Alert') => {
+    setAlertDialog({ open: true, title, message });
+  };
+  
+  // Handle video deletion
+  const handleDeleteVideo = async (videoUrl: string) => {
+    try {
+      // Delete from Firebase Storage
+      await deleteMediaFile(videoUrl);
+      
+      // Remove from content.videos array
+      const updatedVideos = (content.videos || []).filter(v => v !== videoUrl);
+      await updateContent(content.id, {
+        videos: updatedVideos
+      });
+      
+      // Close video player if this video was being played
+      if (selectedVideoUrl === videoUrl) {
+        setSelectedVideoUrl(null);
+      }
+    } catch (error) {
+      console.error('Error deleting video:', error);
+      throw error;
+    }
+  };
   
   // Helper function to detect if a URL is a video (more robust)
   const isVideoUrl = (url: string): boolean => {
@@ -2586,6 +2688,7 @@ function ContentDetailModal({
         <VideoPlayerModal 
           videoUrl={selectedVideoUrl}
           onClose={() => setSelectedVideoUrl(null)}
+          onDelete={handleDeleteVideo}
         />,
         document.body
       )}
@@ -2602,23 +2705,24 @@ function ContentDetailModal({
       {/* Confirmation Dialogs */}
       <ConfirmDialog
         open={deleteDraftConfirmOpen}
-        title={t('common.deleteDraft')}
-        description={t('cms.deleteDraftConfirm')}
+        title="Delete Draft"
+        description={contentToDelete ? `Are you sure you want to delete "${contentToDelete.title}"? This action cannot be undone.` : ''}
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
         confirmVariant="danger"
         onConfirm={async () => {
           if (contentToDelete) {
             try {
-              deleteContent(contentToDelete.id);
-              alert(t('cms.draftDeleted'));
+              await deleteContent(contentToDelete.id);
+              setDeleteDraftConfirmOpen(false);
+              setContentToDelete(null);
+              showAlert(t('cms.draftDeleted'), 'Success');
             } catch (error) {
               console.error('Error deleting draft:', error);
-              alert(t('cms.deleteDraftFailed'));
+              setDeleteDraftConfirmOpen(false);
+              showAlert(t('cms.deleteDraftFailed'), 'Error');
             }
-            setContentToDelete(null);
           }
-          setDeleteDraftConfirmOpen(false);
         }}
         onCancel={() => {
           setDeleteDraftConfirmOpen(false);
@@ -2628,22 +2732,23 @@ function ContentDetailModal({
 
       <ConfirmDialog
         open={cancelSubmissionConfirmOpen}
-        title={t('common.cancelSubmission')}
-        description={t('cms.cancelSubmissionConfirm')}
+        title="Cancel Submission"
+        description={contentToCancel ? `Are you sure you want to cancel the submission of "${contentToCancel.title}"? It will be moved back to draft status.` : ''}
         confirmText={t('common.cancelSubmission')}
         cancelText={t('common.keepSubmitted')}
         onConfirm={async () => {
           if (contentToCancel) {
             try {
               await updateContentStatus(contentToCancel.id, 'draft', user?.id || '');
-              alert(t('cms.submissionCancelled'));
+              setCancelSubmissionConfirmOpen(false);
+              setContentToCancel(null);
+              showAlert(t('cms.submissionCancelled'), 'Success');
             } catch (error) {
               console.error('Error cancelling submission:', error);
-              alert(t('cms.cancelSubmissionFailed'));
+              setCancelSubmissionConfirmOpen(false);
+              showAlert(t('cms.cancelSubmissionFailed'), 'Error');
             }
-            setContentToCancel(null);
           }
-          setCancelSubmissionConfirmOpen(false);
         }}
         onCancel={() => {
           setCancelSubmissionConfirmOpen(false);
@@ -2653,22 +2758,38 @@ function ContentDetailModal({
 
       <ConfirmDialog
         open={deletePublishedConfirmOpen}
-        title={t('common.deletePublishedContent')}
-        description={t('cms.deletePublishedConfirm')}
+        title="Delete Published Content"
+        description={contentToDelete ? `Are you sure you want to permanently delete "${contentToDelete.title}"? This action cannot be undone.` : ''}
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
         confirmVariant="danger"
-        onConfirm={() => {
+        onConfirm={async () => {
           if (contentToDelete) {
-            deleteContent(contentToDelete.id);
-            setContentToDelete(null);
+            try {
+              await deleteContent(contentToDelete.id);
+              setDeletePublishedConfirmOpen(false);
+              setContentToDelete(null);
+              showAlert('Content deleted successfully', 'Success');
+            } catch (error) {
+              console.error('Error deleting published content:', error);
+              setDeletePublishedConfirmOpen(false);
+              showAlert('Failed to delete content', 'Error');
+            }
           }
-          setDeletePublishedConfirmOpen(false);
         }}
         onCancel={() => {
           setDeletePublishedConfirmOpen(false);
           setContentToDelete(null);
         }}
+      />
+
+      {/* Alert Dialog */}
+      <AlertDialog
+        open={alertDialog.open}
+        title={alertDialog.title}
+        message={alertDialog.message}
+        buttonText="OK"
+        onClose={() => setAlertDialog({ open: false, title: '', message: '' })}
       />
     </div>
   );
@@ -2677,15 +2798,22 @@ function ContentDetailModal({
 // Video Player Modal Component
 function VideoPlayerModal({ 
   videoUrl, 
-  onClose 
+  onClose,
+  onDelete
 }: { 
   videoUrl: string; 
   onClose: () => void;
+  onDelete?: (videoUrl: string) => Promise<void>;
 }) {
+  const { user, hasPermission } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [useProxy, setUseProxy] = useState(false);
   const [proxyUrl, setProxyUrl] = useState<string | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  
+  // Check if user can delete (admin only)
+  const canDelete = user?.role === 'admin' && hasPermission('media.delete');
 
   useEffect(() => {
     console.log('VideoPlayerModal mounted with URL:', videoUrl);
@@ -2775,6 +2903,23 @@ function VideoPlayerModal({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>
             </button>
+            
+            {/* Delete button - only show for admin users */}
+            {canDelete && onDelete && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDeleteConfirmOpen(true);
+                }}
+                className="absolute top-4 right-4 z-20 text-white hover:text-red-400 transition-colors bg-black/70 hover:bg-red-900/70 rounded-full p-2 backdrop-blur-sm"
+                aria-label="Delete video"
+                title="Delete video"
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            )}
             
             {isLoading && (
               <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
@@ -2880,6 +3025,31 @@ function VideoPlayerModal({
           </div>
         )}
       </div>
+      
+      {/* Delete Confirmation Dialog */}
+      {canDelete && onDelete && (
+        <ConfirmDialog
+          open={deleteConfirmOpen}
+          title="Delete Video"
+          description="Are you sure you want to permanently delete this video? This action cannot be undone. The file will be removed from Firebase Storage."
+          confirmText="Delete"
+          cancelText="Cancel"
+          confirmVariant="danger"
+          onConfirm={async () => {
+            try {
+              if (onDelete) {
+                await onDelete(videoUrl);
+              }
+              setDeleteConfirmOpen(false);
+              onClose();
+            } catch (error) {
+              console.error('Error deleting video:', error);
+              setDeleteConfirmOpen(false);
+            }
+          }}
+          onCancel={() => setDeleteConfirmOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -2997,7 +3167,7 @@ function ContentView({
   const { t } = useTranslation();
   const { user, hasPermission } = useAuth();
   const { updateInventoryItem } = useInventory();
-  const { deleteContent, updateContentStatus } = useCMS();
+  const { deleteContent, updateContentStatus, updateContent } = useCMS();
   
   // Confirmation dialog states
   const [deleteDraftConfirmOpen, setDeleteDraftConfirmOpen] = useState(false);
@@ -3020,6 +3190,60 @@ function ContentView({
   const [selectedProductDetail, setSelectedProductDetail] = useState<InventoryItem | null>(null);
   const [selectedCollectionDetail, setSelectedCollectionDetail] = useState<CMSContent | null>(null);
   const [selectedGeneralDetail, setSelectedGeneralDetail] = useState<CMSContent | null>(null);
+  
+  // Handle video deletion from video player
+  const handleDeleteVideo = async (videoUrl: string) => {
+    try {
+      // Delete from Firebase Storage
+      await deleteMediaFile(videoUrl);
+      
+      // Try to remove from CMS content if it exists there
+      if (selectedCollectionDetail && selectedCollectionDetail.videos.includes(videoUrl)) {
+        const updatedVideos = selectedCollectionDetail.videos.filter(v => v !== videoUrl);
+        await updateContent(selectedCollectionDetail.id, {
+          videos: updatedVideos
+        });
+        // Update local state
+        setSelectedCollectionDetail({
+          ...selectedCollectionDetail,
+          videos: updatedVideos
+        });
+      } else if (selectedGeneralDetail && selectedGeneralDetail.videos.includes(videoUrl)) {
+        const updatedVideos = selectedGeneralDetail.videos.filter(v => v !== videoUrl);
+        await updateContent(selectedGeneralDetail.id, {
+          videos: updatedVideos
+        });
+        // Update local state
+        setSelectedGeneralDetail({
+          ...selectedGeneralDetail,
+          videos: updatedVideos
+        });
+      } else if (selectedProductDetail) {
+        // It might be in inventory item's images array (videos are stored there too)
+        const inventoryImages = selectedProductDetail.images || [];
+        if (inventoryImages.includes(videoUrl)) {
+          const updatedImages = inventoryImages.filter(img => img !== videoUrl);
+          await updateInventoryItem(selectedProductDetail.id, {
+            images: updatedImages
+          });
+          // Update local state
+          setSelectedProductDetail({
+            ...selectedProductDetail,
+            images: updatedImages
+          });
+        }
+      }
+      
+      // Close video player if this video was being played
+      if (selectedVideoUrl === videoUrl) {
+        setSelectedVideoUrl(null);
+      }
+    } catch (error) {
+      console.error('Error deleting video:', error);
+      throw error;
+    }
+  };
+  
   const [showPhotoGallery, setShowPhotoGallery] = useState(false);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
@@ -5896,6 +6120,7 @@ function ContentView({
         <VideoPlayerModal 
           videoUrl={selectedVideoUrl}
           onClose={() => setSelectedVideoUrl(null)}
+          onDelete={handleDeleteVideo}
         />
       )}
 

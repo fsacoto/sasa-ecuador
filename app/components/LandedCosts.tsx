@@ -5,6 +5,7 @@ import { useInventory } from '../context/InventoryContext';
 import { AdditionalCost, AdditionalCostType, LandedCostCalculation } from '../types';
 import { useTranslation } from '../context/TranslationContext';
 import ConfirmDialog from './ui/ConfirmDialog';
+import AlertDialog from './ui/AlertDialog';
 
 export default function LandedCosts() {
   const { 
@@ -23,6 +24,21 @@ export default function LandedCosts() {
   const [editingCost, setEditingCost] = useState<AdditionalCost | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [costToDelete, setCostToDelete] = useState<string | null>(null);
+  
+  // Alert dialog state
+  const [alertDialog, setAlertDialog] = useState<{open: boolean, title?: string, message: string}>({open: false, message: ''});
+  
+  // Edit description modal state
+  const [editDescriptionModal, setEditDescriptionModal] = useState<{open: boolean, cost: AdditionalCost | null, newDescription: string}>({
+    open: false,
+    cost: null,
+    newDescription: ''
+  });
+  
+  // Helper function for styled alerts
+  const showAlert = (message: string, title?: string) => {
+    setAlertDialog({ open: true, message, title });
+  };
   const [formData, setFormData] = useState({
     invoiceNumber: '',
     costs: [
@@ -55,7 +71,7 @@ export default function LandedCosts() {
     const validCosts = formData.costs.filter(cost => cost.amount > 0);
     
     if (validCosts.length === 0) {
-      alert(t('landedCosts.pleaseEnterCost'));
+      showAlert(t('landedCosts.pleaseEnterCost'), 'Validation Error');
       return;
     }
     
@@ -94,11 +110,26 @@ export default function LandedCosts() {
 
   // Handle edit
   const handleEdit = (cost: AdditionalCost) => {
-    // For individual cost editing, we'll use a simpler approach
-    const newDescription = prompt(t('landedCosts.editDescription'), cost.description);
-    if (newDescription !== null) {
-      updateAdditionalCost(cost.id, { description: newDescription });
+    setEditDescriptionModal({
+      open: true,
+      cost,
+      newDescription: cost.description
+    });
+  };
+
+  // Handle save edited description
+  const handleSaveDescription = () => {
+    if (editDescriptionModal.cost) {
+      updateAdditionalCost(editDescriptionModal.cost.id, { 
+        description: editDescriptionModal.newDescription 
+      });
+      setEditDescriptionModal({ open: false, cost: null, newDescription: '' });
     }
+  };
+
+  // Handle cancel edit
+  const handleCancelEdit = () => {
+    setEditDescriptionModal({ open: false, cost: null, newDescription: '' });
   };
 
   // Handle delete
@@ -465,6 +496,64 @@ export default function LandedCosts() {
           setCostToDelete(null);
         }}
       />
+
+      {/* Alert Dialog */}
+      <AlertDialog
+        open={alertDialog.open}
+        title={alertDialog.title}
+        message={alertDialog.message}
+        onClose={() => setAlertDialog({ open: false, message: '' })}
+      />
+
+      {/* Edit Description Modal */}
+      {editDescriptionModal.open && editDescriptionModal.cost && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-md shadow-lg">
+            <div className="px-6 py-5">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                {t('landedCosts.editDescription')}
+              </h3>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {editDescriptionModal.cost.type} - Description
+                </label>
+                <input
+                  type="text"
+                  value={editDescriptionModal.newDescription}
+                  onChange={(e) => setEditDescriptionModal({
+                    ...editDescriptionModal,
+                    newDescription: e.target.value
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  placeholder="Enter description..."
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleSaveDescription();
+                    } else if (e.key === 'Escape') {
+                      handleCancelEdit();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
+              <button
+                onClick={handleCancelEdit}
+                className="px-4 py-2 rounded-xl text-gray-700 bg-gray-100 hover:bg-gray-200 font-medium transition-colors"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={handleSaveDescription}
+                className="px-4 py-2 rounded-xl bg-[#4f0c1b] text-white hover:bg-[#6b1824] font-medium transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
