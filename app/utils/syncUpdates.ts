@@ -1,36 +1,123 @@
 // Smart update functions to keep Purchase Orders and Inventory in sync
 
-import { PurchaseOrder, InventoryItem } from '../types';
+import { PurchaseOrder, InventoryItem, VerificationIssueRef } from '../types';
 
-// Helper function to generate and upload barcode for an inventory item
+/** Units physically on hand from a verified PO (good + problem); excludes not received. */
+export function verifiedPhysicalStock(order: PurchaseOrder): number {
+  if (order.quantityGood !== undefined || order.quantityProblem !== undefined) {
+    return (order.quantityGood ?? 0) + (order.quantityProblem ?? 0);
+  }
+  return order.quantityReceived ?? order.quantity;
+}
+
+/**
+ * PO list with the order being saved/verified merged in (handles React state lag).
+ */
+export function mergePurchaseOrderSnapshot(
+  purchaseOrders: PurchaseOrder[],
+  authoritative: PurchaseOrder
+): PurchaseOrder[] {
+  const idx = purchaseOrders.findIndex((o) => o.id === authoritative.id);
+  if (idx === -1) {
+    return [...purchaseOrders, authoritative];
+  }
+  return purchaseOrders.map((o) => (o.id === authoritative.id ? { ...o, ...authoritative } : o));
+}
+
+/** Normalize linked PO ids (Firestore or older data may use non-string shapes). */
+export function getLinkedPurchaseOrderIds(item: Pick<InventoryItem, 'linkedPurchaseOrders'>): string[] {
+  const raw = item.linkedPurchaseOrders;
+  if (!raw || !Array.isArray(raw)) return [];
+  return raw
+    .map((entry) => {
+      if (typeof entry === 'string') return entry;
+      if (entry && typeof entry === 'object' && 'id' in entry && typeof (entry as { id: unknown }).id === 'string') {
+        return (entry as { id: string }).id;
+      }
+      return '';
+    })
+    .filter(Boolean);
+}
+
+/**
+ * Build verificationIssues from linked POs that are Verified and have quantityProblem > 0.
+ * Use this for Firestore writes and for UI (PO fields are the source of truth).
+ */
+export function reconcileVerificationIssuesForItem(
+  item: Pick<InventoryItem, 'linkedPurchaseOrders'>,
+  purchaseOrders: PurchaseOrder[]
+): VerificationIssueRef[] {
+  const linked = getLinkedPurchaseOrderIds(item);
+  const out: VerificationIssueRef[] = [];
+  for (const poId of linked) {
+    const order = purchaseOrders.find((o) => o.id === poId);
+    if (!order || String(order.status).trim().toLowerCase() !== 'verified') continue;
+    const qp = Number(order.quantityProblem);
+    if (!Number.isFinite(qp) || qp <= 0) continue;
+    const row: VerificationIssueRef = {
+      purchaseOrderId: poId,
+      quantityProblem: qp,
+      comment: order.verificationComment?.trim() || undefined,
+    };
+    if (order.quantityGood !== undefined && order.quantityGood !== null) {
+      const qg = Number(order.quantityGood);
+      if (Number.isFinite(qg)) {
+        row.quantityGoodAtVerification = qg;
+      }
+    }
+    out.push(row);
+  }
+  return out;
+}
+
+/** Ensure PO has a stored barcode image URL when SKU exists but barcode is missing (e.g. legacy rows). */
+export async function attachBarcodeToPurchaseOrderIfNeeded(
+  order: PurchaseOrder,
+  updatePurchaseOrder: (id: string, item: Partial<PurchaseOrder>) => Promise<void>,
+  options?: { forceRegenerate?: boolean }
+): Promise<PurchaseOrder> {
+  if (!order.sku) return order;
+  if (order.barcode && !options?.forceRegenerate) return order;
+  const url = await ensurePurchaseOrderBarcodeUrl(order.sku);
+  if (!url) return order;
+  await updatePurchaseOrder(order.id, { barcode: url });
+  return { ...order, barcode: url };
+}
+
+export async function ensurePurchaseOrderBarcodeUrl(sku: string): Promise<string | null> {
+  try {
+    const {
+      generateBarcodeAsFile,
+      isValidBarcodeInput,
+      barcodeStorageExtension,
+    } = await import('./barcodeGenerator');
+    const { uploadImage } = await import('../services/storageService');
+    if (!isValidBarcodeInput(sku)) {
+      console.warn(`Missing SKU for barcode generation: ${sku}`);
+      return null;
+    }
+    const barcodeFile = await generateBarcodeAsFile(sku);
+    const sanitizedSku = sku.replace(/[^a-zA-Z0-9-]/g, '_');
+    const ext = barcodeStorageExtension(barcodeFile);
+    const storagePath = `barcodes/${sanitizedSku}.${ext}`;
+    return await uploadImage(barcodeFile, storagePath);
+  } catch (error) {
+    console.error(`Error uploading barcode for SKU ${sku}:`, error);
+    return null;
+  }
+}
+
 export async function generateBarcodeForInventoryItem(
   sku: string,
   updateInventoryItem: (id: string, item: Partial<InventoryItem>) => Promise<void>,
   itemId: string
 ): Promise<void> {
+  const barcodeUrl = await ensurePurchaseOrderBarcodeUrl(sku);
+  if (!barcodeUrl) return;
   try {
-    // Import barcode utilities dynamically to avoid SSR issues
-    const { generateBarcodeAsFile, isValidBarcodeInput } = await import('./barcodeGenerator');
-    const { uploadImage } = await import('../services/storageService');
-    
-    if (!isValidBarcodeInput(sku)) {
-      console.warn(`Invalid SKU format for barcode generation: ${sku}`);
-      return;
-    }
-    
-    // Generate barcode as File
-    const barcodeFile = await generateBarcodeAsFile(sku);
-    
-    // Upload barcode to Firebase Storage
-    const sanitizedSku = sku.replace(/[^a-zA-Z0-9-]/g, '_');
-    const storagePath = `barcodes/${sanitizedSku}.png`;
-    const barcodeUrl = await uploadImage(barcodeFile, storagePath);
-    
-    // Update inventory with the Firebase Storage URL
     await updateInventoryItem(itemId, { barcode: barcodeUrl });
   } catch (error) {
-    console.error(`Error generating barcode for SKU ${sku}:`, error);
-    // Don't throw - barcode generation failure shouldn't break the sync process
+    console.error(`Error saving barcode for SKU ${sku}:`, error);
   }
 }
 
@@ -50,6 +137,8 @@ export async function syncPurchaseOrderToInventory(
   generateBarcodeImmediately: boolean = true
 ): Promise<BarcodeGenerationInfo[]> {
   const barcodesToGenerate: BarcodeGenerationInfo[] = [];
+  const poSnapshot = mergePurchaseOrderSnapshot(purchaseOrders, updatedOrder);
+
   // If SKU changed, find inventory item by the old SKU or by linked purchase orders
   let inventoryItem = inventory.find(item => item.sku === updatedOrder.sku);
   
@@ -60,8 +149,8 @@ export async function syncPurchaseOrderToInventory(
   
   // If still not found, try finding by linked purchase orders
   if (!inventoryItem) {
-    inventoryItem = inventory.find(item => 
-      item.linkedPurchaseOrders && item.linkedPurchaseOrders.includes(updatedOrder.id)
+    inventoryItem = inventory.find((item) =>
+      getLinkedPurchaseOrderIds(item).includes(updatedOrder.id)
     );
   }
 
@@ -69,15 +158,19 @@ export async function syncPurchaseOrderToInventory(
   if (updatedOrder.status !== 'Verified') {
     if (inventoryItem) {
       // Remove this purchase order from linked orders
-      const linkedOrders = inventoryItem.linkedPurchaseOrders || [];
+      const linkedOrders = getLinkedPurchaseOrderIds(inventoryItem);
       const updatedLinkedOrders = linkedOrders.filter(
         orderId => orderId !== updatedOrder.id
       );
       
-      // Remove stock that was added by this order
-      const stockQuantity = updatedOrder.quantityReceived || updatedOrder.quantity;
+      // Remove stock that was added by this order (good + problem when verification split exists)
+      const stockQuantity = verifiedPhysicalStock(updatedOrder);
       const updates: Partial<InventoryItem> = {
         linkedPurchaseOrders: updatedLinkedOrders,
+        verificationIssues: reconcileVerificationIssuesForItem(
+          { linkedPurchaseOrders: updatedLinkedOrders },
+          poSnapshot
+        ),
       };
       
       if (updatedOrder.destinationStock === 'Ecuador') {
@@ -89,7 +182,10 @@ export async function syncPurchaseOrderToInventory(
       // Check if item has other verified purchase orders
       const hasOtherVerifiedOrders = updatedLinkedOrders.some(orderId => {
         const otherOrder = purchaseOrders.find(o => o.id === orderId);
-        return otherOrder && otherOrder.status === 'Verified';
+        return (
+          otherOrder &&
+          String(otherOrder.status).trim().toLowerCase() === 'verified'
+        );
       });
       
       // If item was originally created from purchase orders (has linked orders)
@@ -137,7 +233,7 @@ export async function syncPurchaseOrderToInventory(
     }
 
     // Link this purchase order if not already linked
-    const linkedOrders = inventoryItem.linkedPurchaseOrders || [];
+    const linkedOrders = getLinkedPurchaseOrderIds(inventoryItem);
     if (!linkedOrders.includes(updatedOrder.id)) {
       updates.linkedPurchaseOrders = [...linkedOrders, updatedOrder.id];
     }
@@ -146,8 +242,7 @@ export async function syncPurchaseOrderToInventory(
     // Check if this order was already processed (to avoid double-counting)
     const wasAlreadyLinked = linkedOrders.includes(updatedOrder.id);
     if (!wasAlreadyLinked) {
-      // Use quantityGood if available (items in good condition), otherwise fall back to quantityReceived or quantity
-      const stockQuantity = updatedOrder.quantityGood !== undefined ? updatedOrder.quantityGood : (updatedOrder.quantityReceived || updatedOrder.quantity);
+      const stockQuantity = verifiedPhysicalStock(updatedOrder);
       if (updatedOrder.destinationStock === 'Ecuador') {
         updates.ecuadorStock = (inventoryItem.ecuadorStock || 0) + stockQuantity;
       } else if (updatedOrder.destinationStock === 'USA') {
@@ -155,17 +250,32 @@ export async function syncPurchaseOrderToInventory(
       }
     }
 
-    // Generate barcode immediately if needed and order is verified
-    if (!inventoryItem.barcode && updatedOrder.sku && updatedOrder.status === 'Verified' && generateBarcodeImmediately) {
-      try {
-        await generateBarcodeForInventoryItem(updatedOrder.sku, updateInventoryItem, inventoryItem.id);
-      } catch (error) {
-        console.error('Error generating barcode for existing item:', error);
-        // Still track it for retry if needed
+    const projectedLinked = updates.linkedPurchaseOrders ?? linkedOrders;
+    updates.verificationIssues = reconcileVerificationIssuesForItem(
+      { linkedPurchaseOrders: projectedLinked },
+      poSnapshot
+    );
+
+    if (!inventoryItem.barcode && updatedOrder.sku) {
+      if (updatedOrder.barcode) {
+        updates.barcode = updatedOrder.barcode;
+      } else if (
+        String(updatedOrder.status).trim().toLowerCase() === 'verified' &&
+        generateBarcodeImmediately
+      ) {
+        try {
+          await generateBarcodeForInventoryItem(
+            updatedOrder.sku,
+            updateInventoryItem,
+            inventoryItem.id
+          );
+        } catch (error) {
+          console.error('Error generating barcode for existing item:', error);
+          barcodesToGenerate.push({ sku: updatedOrder.sku, itemId: inventoryItem.id });
+        }
+      } else {
         barcodesToGenerate.push({ sku: updatedOrder.sku, itemId: inventoryItem.id });
       }
-    } else if (!inventoryItem.barcode && updatedOrder.sku) {
-      barcodesToGenerate.push({ sku: updatedOrder.sku, itemId: inventoryItem.id });
     }
 
     // Apply updates if any
@@ -173,11 +283,9 @@ export async function syncPurchaseOrderToInventory(
       await updateInventoryItem(inventoryItem.id, updates);
     }
   } else if (updatedOrder.sku && updatedOrder.description) {
-    // Create new inventory item ONLY when order is verified
-    // Use quantityGood if available (items in good condition), otherwise fall back to quantityReceived or quantity
-    const stockQuantity = updatedOrder.quantityGood !== undefined ? updatedOrder.quantityGood : (updatedOrder.quantityReceived || updatedOrder.quantity);
-    
-    // Only create inventory item if there are good items to add
+    // Create new inventory item ONLY when order is verified (good + problem units on hand)
+    const stockQuantity = verifiedPhysicalStock(updatedOrder);
+
     if (stockQuantity > 0) {
       const newItem: Omit<InventoryItem, 'id' | 'createdAt'> = {
         name: updatedOrder.description,
@@ -190,22 +298,33 @@ export async function syncPurchaseOrderToInventory(
         ecuadorStock: updatedOrder.destinationStock === 'Ecuador' ? stockQuantity : 0,
         usaStock: updatedOrder.destinationStock === 'USA' ? stockQuantity : 0,
         linkedPurchaseOrders: [updatedOrder.id],
+        verificationIssues: reconcileVerificationIssuesForItem(
+          { linkedPurchaseOrders: [updatedOrder.id] },
+          poSnapshot
+        ),
+        ...(updatedOrder.barcode ? { barcode: updatedOrder.barcode } : {}),
       };
-      
-      // Add the item and get the ID immediately
+
       const newItemId = await addInventoryItem(newItem);
-      
-      // Generate barcode immediately if order is verified
-      if (updatedOrder.sku && updatedOrder.status === 'Verified' && generateBarcodeImmediately) {
-        try {
-          await generateBarcodeForInventoryItem(updatedOrder.sku, updateInventoryItem, newItemId);
-        } catch (error) {
-          console.error('Error generating barcode for new item:', error);
-          // Still track it for retry if needed
+
+      if (updatedOrder.sku && !newItem.barcode) {
+        if (
+          String(updatedOrder.status).trim().toLowerCase() === 'verified' &&
+          generateBarcodeImmediately
+        ) {
+          try {
+            await generateBarcodeForInventoryItem(
+              updatedOrder.sku,
+              updateInventoryItem,
+              newItemId
+            );
+          } catch (error) {
+            console.error('Error generating barcode for new item:', error);
+            barcodesToGenerate.push({ sku: updatedOrder.sku, itemId: newItemId });
+          }
+        } else {
           barcodesToGenerate.push({ sku: updatedOrder.sku, itemId: newItemId });
         }
-      } else if (updatedOrder.sku) {
-        barcodesToGenerate.push({ sku: updatedOrder.sku, itemId: newItemId });
       }
     }
   }
@@ -219,7 +338,7 @@ export function syncInventoryToOrders(
   updatePurchaseOrder: (id: string, order: Partial<PurchaseOrder>) => void
 ) {
   // Find all purchase orders linked to this inventory item
-  const linkedPurchaseOrderIds = updatedItem.linkedPurchaseOrders || [];
+  const linkedPurchaseOrderIds = getLinkedPurchaseOrderIds(updatedItem);
   const linkedOrders = purchaseOrders.filter(order => 
     linkedPurchaseOrderIds.includes(order.id) || order.sku === updatedItem.sku
   );
@@ -254,7 +373,7 @@ export function cleanupInventoryAfterOrderDeletion(
 ) {
   // Find inventory items that are only linked to the deleted orders
   inventory.forEach(item => {
-    const linkedOrders = item.linkedPurchaseOrders || [];
+    const linkedOrders = getLinkedPurchaseOrderIds(item);
     const remainingLinkedOrders = linkedOrders.filter(
       orderId => !deletedOrderIds.includes(orderId)
     );

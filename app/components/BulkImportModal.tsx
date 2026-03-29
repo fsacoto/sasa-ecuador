@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { parseCSV, detectColumnMapping, cleanNumericValue, ParsedRow } from '../utils/csvParser';
 import { useInventory } from '../context/InventoryContext';
-import { generateUniqueSKU } from '../utils/skuGenerator';
+import { generateUniqueSKU, collectUsedSkus } from '../utils/skuGenerator';
 import { PurchaseOrder, InventoryItem } from '../types';
 import { getExchangeRates, getExchangeRate, type ExchangeRateResponse } from '../utils/currencyApi';
 
@@ -14,7 +14,7 @@ interface BulkImportModalProps {
 type ImportStep = 'upload' | 'mapping' | 'preview' | 'complete';
 
 export default function BulkImportModal({ onClose }: BulkImportModalProps) {
-  const { addPurchaseOrdersBulk, inventory, suppliers, addSupplier } = useInventory();
+  const { addPurchaseOrdersBulk, inventory, purchaseOrders, suppliers, addSupplier } = useInventory();
   const [step, setStep] = useState<ImportStep>('upload');
   const [parsedData, setParsedData] = useState<ParsedRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -322,6 +322,9 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
         : `IMPORT-${timestamp}`;
     }
 
+    const baseExistingSkus = collectUsedSkus(inventory, purchaseOrders);
+    const allocatedSkus: string[] = [];
+
     // Process rows and create suppliers as needed
     for (let index = 0; index < parsedData.length; index++) {
       const row = parsedData[index];
@@ -365,14 +368,20 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
         autoLinked = true;
         autoLinkedCount++;
       } else if (matchedCategory && matchedLine) {
-        // Generate proper internal SKU based on matched category and line
-        const existingSkus = inventory.map(item => item.sku);
-        internalSku = generateUniqueSKU(matchedCategory, matchedLine, existingSkus);
+        const existingSkus = [...baseExistingSkus, ...allocatedSkus];
+        internalSku = generateUniqueSKU(
+          matchedCategory,
+          matchedLine,
+          supplierSKU.trim() || 'NOSKU',
+          existingSkus
+        );
       } else if (!sku) {
         // Generate a placeholder SKU if missing category/line and no CSV SKU
         internalSku = `IMP${timestamp.toString().slice(-5)}${String(index).padStart(3, '0')}`;
       }
       // If we have a CSV SKU but no category/line, keep the CSV SKU
+
+      allocatedSkus.push(internalSku);
 
       // Determine if this order needs review
       // Only flag for review if critical fields are missing, not category/line

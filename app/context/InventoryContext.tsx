@@ -17,7 +17,7 @@ interface InventoryContextType {
   
   // Purchase Orders
   purchaseOrders: PurchaseOrder[];
-  addPurchaseOrder: (order: Omit<PurchaseOrder, 'id' | 'createdAt'>) => Promise<void>;
+  addPurchaseOrder: (order: Omit<PurchaseOrder, 'id' | 'createdAt'>) => Promise<string>;
   addPurchaseOrdersBulk: (orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]) => Promise<void>;
   updatePurchaseOrder: (id: string, order: Partial<PurchaseOrder>) => Promise<void>;
   deletePurchaseOrder: (id: string) => Promise<void>;
@@ -142,7 +142,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   };
 
   // Purchase Order operations
-  const addPurchaseOrder = async (order: Omit<PurchaseOrder, 'id' | 'createdAt'>) => {
+  const addPurchaseOrder = async (order: Omit<PurchaseOrder, 'id' | 'createdAt'>): Promise<string> => {
     try {
       const newId = await purchaseOrdersService.addPurchaseOrder(order);
       const newOrder: PurchaseOrder = {
@@ -151,6 +151,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         createdAt: new Date(),
       };
       setPurchaseOrders(prev => [...prev, newOrder]);
+      return newId;
     } catch (error) {
       console.error('Error adding purchase order:', error);
       throw error;

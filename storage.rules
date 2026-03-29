@@ -40,6 +40,13 @@ service firebase.storage {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated();
     }
+
+    // Purchase order verification media (see PurchaseOrders.tsx → verification/...)
+    match /verification/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() &&
+                   request.resource.size < 100 * 1024 * 1024;
+    }
     
     // Public read-only access for published content
     match /public/{allPaths=**} {

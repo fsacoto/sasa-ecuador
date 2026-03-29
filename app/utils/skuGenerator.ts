@@ -1,65 +1,94 @@
-// SKU Generator Utility
-// Format: [2 letters from category][1st letter of 1st word of line][1st letter of 2nd word of line][5 random numbers]
-// Example: Category "Necklace" + Line "Gold Plated" = "NEGP12345"
+// SKU: [2 letters category][2 letters from line/material][supplier SKU, alphanumeric]
+// Supplier SKU is the distinct key; collisions get -2, -3, …
 
-export function generateSKU(category: string, line: string): string {
-  // Get first 2 letters of category (uppercase)
+export function sanitizeSupplierSkuPart(supplierSKU: string): string {
+  const raw = (supplierSKU || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  return raw.slice(0, 20);
+}
+
+/** 4-letter prefix: category (2) + line/material (2), same rules as legacy generator. */
+export function buildSkuPrefix(category: string, line: string): string {
   const categoryCode = (category || 'XX')
-    .replace(/[^a-zA-Z]/g, '') // Remove non-letters
+    .replace(/[^a-zA-Z]/g, '')
     .toUpperCase()
-    .padEnd(2, 'X') // Pad with X if too short
+    .padEnd(2, 'X')
     .substring(0, 2);
 
-  // Get first letter of first word and first letter of second word from line
   const lineWords = (line || 'XX XX')
-    .replace(/[^a-zA-Z\s]/g, '') // Remove non-letters except spaces
+    .replace(/[^a-zA-Z\s]/g, '')
     .trim()
     .split(/\s+/)
-    .filter(word => word.length > 0);
+    .filter((word) => word.length > 0);
 
   let lineCode = 'XX';
   if (lineWords.length >= 2) {
-    // First letter of first word + first letter of second word
     lineCode = (lineWords[0].charAt(0) + lineWords[1].charAt(0)).toUpperCase();
   } else if (lineWords.length === 1) {
-    // If only one word, use first two letters
     lineCode = lineWords[0].substring(0, 2).toUpperCase().padEnd(2, 'X');
   }
 
-  // Generate 5 random numbers
-  const randomNumbers = Math.floor(10000 + Math.random() * 90000).toString();
-
-  return `${categoryCode}${lineCode}${randomNumbers}`;
+  return `${categoryCode}${lineCode}`;
 }
 
-// Check if a SKU already exists in the inventory
+/** Full SKU body before uniqueness suffix (no random digits). */
+export function buildSkuBase(category: string, line: string, supplierSKU: string): string {
+  const prefix = buildSkuPrefix(category, line);
+  const sup = sanitizeSupplierSkuPart(supplierSKU);
+  const distinct = sup || 'NOSKU';
+  return `${prefix}${distinct}`;
+}
+
 export function isSkuUnique(sku: string, existingSkus: string[]): boolean {
   return !existingSkus.includes(sku);
 }
 
-// Generate a unique SKU by checking against existing ones
+/**
+ * Unique internal SKU from category, material (line), and supplier SKU.
+ * If supplier SKU is empty, uses NOSKU as placeholder (still unique via -N suffix when needed).
+ */
 export function generateUniqueSKU(
   category: string,
   line: string,
+  supplierSKU: string,
   existingSkus: string[],
-  maxAttempts: number = 10
+  maxAttempts: number = 200
 ): string {
-  let attempts = 0;
-  let sku = generateSKU(category, line);
-
-  // Keep generating until we get a unique one (with max attempts safety)
-  while (!isSkuUnique(sku, existingSkus) && attempts < maxAttempts) {
-    sku = generateSKU(category, line);
-    attempts++;
+  const base = buildSkuBase(category, line, supplierSKU);
+  if (isSkuUnique(base, existingSkus)) return base;
+  let n = 2;
+  while (n <= maxAttempts) {
+    const candidate = `${base}-${n}`;
+    if (isSkuUnique(candidate, existingSkus)) return candidate;
+    n += 1;
   }
-
-  return sku;
+  return `${base}-${Date.now().toString(36).toUpperCase().slice(-8)}`;
 }
 
-// Format SKU for display (optional - adds hyphen for readability)
+/** @deprecated Use generateUniqueSKU with supplierSKU; kept for accidental imports. */
+export function generateSKU(category: string, line: string, supplierSKU: string = ''): string {
+  return buildSkuBase(category, line, supplierSKU);
+}
+
 export function formatSKU(sku: string): string {
   if (sku.length >= 4) {
     return `${sku.substring(0, 4)}-${sku.substring(4)}`;
   }
   return sku;
+}
+
+/** SKUs already used elsewhere (inventory + other POs), for collision checks. */
+export function collectUsedSkus(
+  inventory: { sku: string }[],
+  purchaseOrders: { sku: string; id: string }[],
+  options?: { ignorePurchaseOrderId?: string }
+): string[] {
+  const set = new Set<string>();
+  for (const i of inventory) {
+    if (i.sku) set.add(i.sku);
+  }
+  for (const o of purchaseOrders) {
+    if (options?.ignorePurchaseOrderId && o.id === options.ignorePurchaseOrderId) continue;
+    if (o.sku) set.add(o.sku);
+  }
+  return [...set];
 }

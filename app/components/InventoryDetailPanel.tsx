@@ -3,7 +3,9 @@
 import { useState } from 'react';
 import { InventoryItem, Supplier } from '../types';
 import { useInventory } from '../context/InventoryContext';
+import { useTranslation } from '../context/TranslationContext';
 import { DataRelationships } from '../utils/relationships';
+import { reconcileVerificationIssuesForItem } from '../utils/syncUpdates';
 import SupplierDetailPanel from './SupplierDetailPanel';
 
 interface InventoryDetailPanelProps {
@@ -13,7 +15,14 @@ interface InventoryDetailPanelProps {
 
 export default function InventoryDetailPanel({ item, onClose }: InventoryDetailPanelProps) {
   const { purchaseOrders, inventory, suppliers } = useInventory();
+  const { t } = useTranslation();
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
+
+  const liveVerificationIssues = reconcileVerificationIssuesForItem(
+    { linkedPurchaseOrders: item.linkedPurchaseOrders ?? [] },
+    purchaseOrders
+  );
+  const totalProblemQty = liveVerificationIssues.reduce((s, v) => s + v.quantityProblem, 0);
   
   const linkedOrders = DataRelationships.getPurchaseOrdersForItem(item.id, inventory, purchaseOrders);
   const itemSuppliers = DataRelationships.getSuppliersForItem(item.id, inventory, purchaseOrders, suppliers);
@@ -131,6 +140,53 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
                 </div>
               </div>
             </div>
+
+            {totalProblemQty > 0 && (
+              <div>
+                <h3 className="text-xs font-medium text-amber-800 uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-amber-600" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
+                    <path
+                      fillRule="evenodd"
+                      d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  {t('inventory.verificationProblemTitle')} ({totalProblemQty})
+                </h3>
+                <p className="text-xs text-gray-500 mb-3">{t('inventory.verificationProblemIntro')}</p>
+                <div className="space-y-3">
+                  {liveVerificationIssues.map((issue) => {
+                    const po = purchaseOrders.find((o) => o.id === issue.purchaseOrderId);
+                    return (
+                      <div
+                        key={issue.purchaseOrderId}
+                        className="border border-amber-200 bg-amber-50/80 rounded-lg p-3 space-y-2"
+                      >
+                        <div className="flex flex-wrap justify-between gap-2 text-sm">
+                          <span className="font-semibold text-amber-950">{po?.invoice ?? t('inventory.purchaseOrder')}</span>
+                        </div>
+                        {issue.quantityGoodAtVerification !== undefined ? (
+                          <p className="text-sm font-semibold text-gray-900">
+                            {t('inventory.verificationBreakdownLine')
+                              .replace('{{good}}', String(issue.quantityGoodAtVerification))
+                              .replace('{{problem}}', String(issue.quantityProblem))}
+                          </p>
+                        ) : (
+                          <p className="text-sm font-bold text-amber-900">
+                            {t('inventory.problemQtyLabel')}: {issue.quantityProblem}
+                          </p>
+                        )}
+                        {issue.comment ? (
+                          <p className="text-sm text-gray-800 whitespace-pre-wrap">{issue.comment}</p>
+                        ) : (
+                          <p className="text-sm text-gray-500 italic">{t('inventory.noVerificationComment')}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Value Information */}
             {avgCost > 0 && (

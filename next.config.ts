@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@react-pdf/renderer'],
+  transpilePackages: ['@react-pdf/renderer', 'jsbarcode'],
   eslint: {
     // Temporarily ignore ESLint during builds to allow deployment
     // TODO: Fix ESLint errors and remove this
