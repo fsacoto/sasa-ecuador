@@ -61,19 +61,26 @@ export const PERMISSIONS = {
   ]
 };
 
+/** Firestore may store role with different casing; permissions map is lowercase-only. */
+export function normalizeUserRole(raw: unknown): UserRole {
+  if (typeof raw !== 'string') return 'marketing';
+  const r = raw.toLowerCase().trim();
+  if (r === 'admin' || r === 'marketing' || r === 'sales') return r;
+  return 'marketing';
+}
+
 // Get user role from Firestore
 export async function getUserRole(userId: string): Promise<UserRole> {
   try {
     const userDoc = await getDoc(doc(db, 'users', userId));
     if (userDoc.exists()) {
       const data = userDoc.data();
-      return data.role || 'marketing'; // Default to marketing role
+      return normalizeUserRole(data.role);
     }
   } catch (error) {
     console.error('Error fetching user role:', error);
   }
-  
-  // Fallback: Return default role
+
   return 'marketing';
 }
 

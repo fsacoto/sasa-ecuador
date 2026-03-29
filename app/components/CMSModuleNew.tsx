@@ -148,7 +148,8 @@ export default function CMSModuleNew() {
   });
   const [editUploadedFiles, setEditUploadedFiles] = useState<(File | string)[]>([]);
   const [editSelectedSKUs, setEditSelectedSKUs] = useState<string[]>([]);
-  
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+
   const stats = getContentStats();
   
   // Total content count (for "X of Y" display)
@@ -438,17 +439,22 @@ export default function CMSModuleNew() {
       return;
     }
 
+    if (!hasPermission('cms.edit')) {
+      alert(t('cms.noPermissionToCreate') || 'You do not have permission to create content.');
+      return;
+    }
+
     const state = currentTabState;
 
     if (!state.selectedSKUs.length && uploadType === 'product') {
-      alert('Please select at least one product for this content type.');
+      alert(t('cms.selectProductForContent') || 'Please select at least one product for this content type.');
       return;
     }
 
     // For collection/general types, require title and description
     if (uploadType !== 'product') {
-      if (!state.formData.title || !state.formData.description) {
-        alert('Please fill in title and description.');
+      if (!state.formData.title?.trim() || !state.formData.description?.trim()) {
+        alert(t('cms.fillTitleAndDescription') || 'Please fill in title and description.');
         return;
       }
     }
@@ -463,66 +469,77 @@ export default function CMSModuleNew() {
       const missingSKUs = state.selectedSKUs.filter(sku => !skusWithImages.has(sku));
       
       if (missingSKUs.length > 0) {
-        alert(`Please link at least one image to each selected SKU. Missing links for: ${missingSKUs.join(', ')}`);
+        alert(
+          (t('cms.linkImagePerSku') || 'Please link at least one image to each selected SKU. Missing: {{skus}}').replace(
+            '{{skus}}',
+            missingSKUs.join(', ')
+          )
+        );
         return;
       }
     }
 
-    const fileUrls = state.uploadedFiles.length > 0 
-      ? await convertFilesToBase64(state.uploadedFiles.filter((uf): uf is UploadedFile & { file: File } => uf.file instanceof File).map(uf => uf.file))
-      : [];
+    setIsSavingDraft(true);
+    try {
+      const fileUrls = state.uploadedFiles.length > 0 
+        ? await convertFilesToBase64(state.uploadedFiles.filter((uf): uf is UploadedFile & { file: File } => uf.file instanceof File).map(uf => uf.file))
+        : [];
 
-    // For product type, use product name as title, otherwise use form title
-    const contentTitle = uploadType === 'product' 
-      ? (state.selectedProduct?.name || `Product Content - ${state.selectedSKUs[0]}`)
-      : state.formData.title;
+      // For product type, use product name as title, otherwise use form title
+      const contentTitle = uploadType === 'product' 
+        ? (state.selectedProduct?.name || `Product Content - ${state.selectedSKUs[0]}`)
+        : state.formData.title;
 
-    const hashtagsArray = uploadType === 'product' 
-      ? [] 
-      : state.formData.hashtags.split(',').map(tag => tag.trim()).filter(Boolean);
-    const tagsArray = uploadType === 'product' 
-      ? [] 
-      : state.formData.tags.split(',').map(tag => tag.trim()).filter(Boolean);
+      const hashtagsArray = uploadType === 'product' 
+        ? [] 
+        : state.formData.hashtags.split(',').map(tag => tag.trim()).filter(Boolean);
+      const tagsArray = uploadType === 'product' 
+        ? [] 
+        : state.formData.tags.split(',').map(tag => tag.trim()).filter(Boolean);
 
-    addContent({
-      type: uploadType,
-      title: contentTitle,
-      description: state.formData.description || '',
-      hashtags: hashtagsArray,
-      status: 'draft',
-      statusHistory: [{
-        status: 'draft',
-        timestamp: new Date(),
-        userId: user?.id || '',
-      }],
-      images: fileUrls,
-      videos: [],
-      authorId: user?.id || '',
-      authorName: user?.name || 'Unknown',
-      category: state.formData.category || '',
-      tags: tagsArray,
-      language: state.formData.language,
-      linkedProductIds: state.selectedSKUs,
-    });
+      // status + statusHistory are applied in cmsService.createCMSDraft (via CMSContext.addContent)
+      await addContent({
+        type: uploadType,
+        title: contentTitle.trim(),
+        description: (state.formData.description || '').trim(),
+        hashtags: hashtagsArray,
+        images: fileUrls,
+        videos: [],
+        authorId: user?.id || '',
+        authorName: user?.name || 'Unknown',
+        category: (state.formData.category || '').trim(),
+        tags: tagsArray,
+        language: state.formData.language,
+        linkedProductIds: [...state.selectedSKUs],
+      });
 
-    // Reset form for current tab
-    updateCurrentTabState({
-      formData: {
-        title: '',
-        description: '',
-        hashtags: '',
-        category: '',
-        line: '',
-        tags: '',
-        language: 'en',
-      },
-      uploadedFiles: [],
-      selectedSKUs: [],
-      selectedProduct: null,
-      searchSKU: '',
-      showSKUDropdown: false,
-    });
-    alert('Content created successfully! It is now in draft status.');
+      // Reset form for current tab only after Firestore succeeds
+      updateCurrentTabState({
+        formData: {
+          title: '',
+          description: '',
+          hashtags: '',
+          category: '',
+          line: '',
+          tags: '',
+          language: 'en',
+        },
+        uploadedFiles: [],
+        selectedSKUs: [],
+        selectedProduct: null,
+        searchSKU: '',
+        showSKUDropdown: false,
+      });
+      alert(t('cms.draftCreatedSuccess') || 'Content created successfully! It is now in draft status.');
+    } catch (error) {
+      console.error('Error creating CMS draft:', error);
+      const detail = error instanceof Error ? error.message : String(error);
+      alert(
+        `${t('cms.draftCreateFailed') || 'Could not save draft.'}${detail ? `\n\n${detail}` : ''}`
+      );
+    } finally {
+      setIsSavingDraft(false);
+    }
   };
 
   // Handle edit submit
@@ -1416,6 +1433,7 @@ export default function CMSModuleNew() {
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <div className="flex justify-end gap-3">
               <button
+                type="button"
                 onClick={() => {
                   if (editingContent) {
                     setEditingContent(null);
@@ -1454,10 +1472,16 @@ export default function CMSModuleNew() {
                 {editingContent ? 'Cancel' : 'Clear'}
               </button>
               <button
-                onClick={handleSubmit}
-                className="px-6 py-2.5 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#3d0a15] font-medium transition-all shadow-sm hover:shadow-md"
+                type="button"
+                disabled={isSavingDraft || (!editingContent && !hasPermission('cms.edit'))}
+                onClick={() => void handleSubmit()}
+                className="px-6 py-2.5 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#3d0a15] font-medium transition-all shadow-sm hover:shadow-md disabled:opacity-50 disabled:pointer-events-none disabled:cursor-not-allowed"
               >
-                {editingContent ? t('cms.updateContent') : t('cms.createAsDraft')}
+                {isSavingDraft
+                  ? (t('cms.saving') || 'Saving…')
+                  : editingContent
+                    ? t('cms.updateContent')
+                    : t('cms.createAsDraft')}
               </button>
             </div>
           </div>

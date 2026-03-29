@@ -1,13 +1,13 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { CMSContent, ContentStatus } from '../types';
+import { CMSContent, CMSContentDraftInput, ContentStatus } from '../types';
 import * as cmsService from '../services/cmsService';
 
 interface CMSContextType {
   content: CMSContent[];
   isLoading: boolean;
-  addContent: (content: Omit<CMSContent, 'id' | 'metadata'>) => Promise<void>;
+  addContent: (content: CMSContentDraftInput) => Promise<void>;
   updateContent: (id: string, updates: Partial<CMSContent>) => Promise<void>;
   deleteContent: (id: string) => Promise<void>;
   updateContentStatus: (id: string, status: ContentStatus, userId: string, notes?: string) => Promise<void>;
@@ -48,22 +48,30 @@ export function CMSProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const addContent = async (contentData: Omit<CMSContent, 'id' | 'metadata'>) => {
-    try {
-      const newId = await cmsService.addCMSContent(contentData);
-      const newContent: CMSContent = {
-        ...contentData,
-        id: newId,
-        metadata: {
-          createdAt: new Date(),
-          updatedAt: new Date(),
+  const addContent = async (contentData: CMSContentDraftInput) => {
+    const newId = await cmsService.createCMSDraft(contentData);
+    const now = new Date();
+    const newContent: CMSContent = {
+      ...contentData,
+      id: newId,
+      status: 'draft',
+      statusHistory: [
+        {
+          status: 'draft',
+          timestamp: now,
+          userId: contentData.authorId || '',
         },
-      };
-      setContent((prev) => [...prev, newContent]);
-    } catch (error) {
-      console.error('Error adding CMS content:', error);
-      throw error;
-    }
+      ],
+      metadata: {
+        createdAt: now,
+        updatedAt: now,
+      },
+    };
+    setContent((prev) => [newContent, ...prev]);
+    // Do not await — a hanging full-collection read left the UI stuck on "Saving…"
+    void cmsService.getCMSContent().then(setContent).catch((err) => {
+      console.error('CMS list refresh after create failed (draft was saved):', err);
+    });
   };
 
   const updateContent = async (id: string, updates: Partial<CMSContent>) => {

@@ -176,6 +176,9 @@ export interface CMSContent {
   };
 }
 
+/** Payload for creating new CMS rows; `createCMSDraft` sets status, statusHistory, and metadata. */
+export type CMSContentDraftInput = Omit<CMSContent, 'id' | 'metadata' | 'status' | 'statusHistory'>;
+
 export interface Client {
   id: string;
   name: string;
