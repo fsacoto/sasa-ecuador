@@ -57,15 +57,46 @@ function alternateStoragesForUploadRetry(): FirebaseStorage[] {
 
 async function ensureAuthReadyForStorage(): Promise<void> {
   if (typeof window === 'undefined') return;
-  await auth.authStateReady();
-  const user = auth.currentUser;
-  if (!user) {
-    throw new FirebaseError(
-      'storage/unauthenticated',
-      'You must be signed in to upload or delete files in Storage.'
+  const authMs = 45_000;
+  await withTimeout(
+    (async () => {
+      await auth.authStateReady();
+      const user = auth.currentUser;
+      if (!user) {
+        throw new FirebaseError(
+          'storage/unauthenticated',
+          'You must be signed in to upload or delete files in Storage.'
+        );
+      }
+      await user.getIdToken();
+    })(),
+    authMs,
+    'Authentication timed out while preparing upload. Sign out and sign in again, then retry.'
+  );
+}
+
+/** Avoid indefinite hangs when the network or Firebase never completes. */
+function withTimeout<T>(promise: Promise<T>, ms: number, timeoutMessage: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error(timeoutMessage)), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(id);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(id);
+        reject(e);
+      }
     );
-  }
-  await user.getIdToken();
+  });
+}
+
+/** Longer for big files; caps avoid waiting forever on stalled uploads. */
+function uploadTimeoutMsForFile(file: File): number {
+  const mb = file.size / (1024 * 1024);
+  // ~12s per MB (slow link), min 3m, max 30m
+  return Math.min(30 * 60 * 1000, Math.max(3 * 60 * 1000, mb * 12 * 1000));
 }
 
 /** Logs serverResponse and setup hints when Firebase returns storage/unknown. */
@@ -96,6 +127,9 @@ export type UploadProgressCallback = (progress: number) => void;
  * @param onProgress - Optional callback for upload progress (0-100)
  * @returns Promise with download URL
  */
+/** Resumable uploads are more reliable for multi‑MB files; simple uploadBytes can appear to hang. */
+const RESUMABLE_THRESHOLD_BYTES = 2 * 1024 * 1024;
+
 async function runUploadWithStorage(
   st: FirebaseStorage,
   file: File,
@@ -103,8 +137,9 @@ async function runUploadWithStorage(
   onProgress?: UploadProgressCallback
 ): Promise<string> {
   const storageRef = ref(st, path);
+  const useResumable = file.size >= RESUMABLE_THRESHOLD_BYTES || onProgress != null;
 
-  if (!onProgress) {
+  if (!useResumable) {
     await uploadBytes(storageRef, file);
     return await getDownloadURL(storageRef);
   }
@@ -116,7 +151,7 @@ async function runUploadWithStorage(
       'state_changed',
       (snapshot: UploadTaskSnapshot) => {
         const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        onProgress(progress);
+        onProgress?.(progress);
       },
       (error) => {
         logStorageFailure(error);
@@ -153,7 +188,12 @@ export async function uploadFile(
       if (i > 0) {
         await new Promise((r) => setTimeout(r, 400));
       }
-      const url = await runUploadWithStorage(storages[i], file, path, onProgress);
+      const timeoutMs = uploadTimeoutMsForFile(file);
+      const url = await withTimeout(
+        runUploadWithStorage(storages[i], file, path, onProgress),
+        timeoutMs,
+        `Upload timed out after ${Math.round(timeoutMs / 60000)} min (${file.name}). Check your network, VPN, or ad blockers blocking firebasestorage.googleapis.com. Confirm NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET matches your project bucket.`
+      );
       sessionStorageInstance = storages[i];
       return url;
     } catch (error) {
@@ -248,6 +288,24 @@ export async function uploadImage(
     throw new Error('Image must be less than 5MB');
   }
   
+  return uploadFile(file, path, onProgress);
+}
+
+/**
+ * CMS images under `images/cms/` — Storage rules allow up to 50MB on that path; inventory uses {@link uploadImage} (5MB).
+ */
+export async function uploadCmsImage(
+  file: File,
+  path: string,
+  onProgress?: UploadProgressCallback
+): Promise<string> {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('File must be an image');
+  }
+  const maxSize = 50 * 1024 * 1024;
+  if (file.size > maxSize) {
+    throw new Error('Image must be less than 50MB for CMS');
+  }
   return uploadFile(file, path, onProgress);
 }
 

@@ -7,7 +7,7 @@ import * as cmsService from '../services/cmsService';
 interface CMSContextType {
   content: CMSContent[];
   isLoading: boolean;
-  addContent: (content: CMSContentDraftInput) => Promise<void>;
+  addContent: (content: CMSContentDraftInput) => Promise<string>;
   updateContent: (id: string, updates: Partial<CMSContent>) => Promise<void>;
   deleteContent: (id: string) => Promise<void>;
   updateContentStatus: (id: string, status: ContentStatus, userId: string, notes?: string) => Promise<void>;
@@ -72,6 +72,7 @@ export function CMSProvider({ children }: { children: ReactNode }) {
     void cmsService.getCMSContent().then(setContent).catch((err) => {
       console.error('CMS list refresh after create failed (draft was saved):', err);
     });
+    return newId;
   };
 
   const updateContent = async (id: string, updates: Partial<CMSContent>) => {

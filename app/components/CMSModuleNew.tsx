@@ -11,7 +11,6 @@ import JSZip from 'jszip';
 import ConfirmDialog from './ui/ConfirmDialog';
 import AlertDialog from './ui/AlertDialog';
 import { deleteMediaFile } from '../services/inventoryMediaService';
-// Removed Firebase Storage imports - using direct URL fetch instead
 
 type ViewMode = 'dashboard' | 'upload' | 'manage' | 'products';
 
@@ -149,6 +148,70 @@ export default function CMSModuleNew() {
   const [editUploadedFiles, setEditUploadedFiles] = useState<(File | string)[]>([]);
   const [editSelectedSKUs, setEditSelectedSKUs] = useState<string[]>([]);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
+  /** True while Storage uploads run after the Firestore draft row exists (avoids “stuck” only on media). */
+  const [isAttachingMedia, setIsAttachingMedia] = useState(false);
+
+  /** In-app alerts for upload/create (matches AlertDialog used elsewhere in CMS). */
+  const [uploadFlowAlert, setUploadFlowAlert] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    buttonText?: string;
+  }>({ open: false, title: '', message: '' });
+  const showUploadFlowAlert = (message: string, title: string, buttonText?: string) => {
+    setUploadFlowAlert({ open: true, title, message, ...(buttonText ? { buttonText } : {}) });
+  };
+  const closeUploadFlowAlert = () =>
+    setUploadFlowAlert({ open: false, title: '', message: '' });
+
+  /** Edit from Manage Content opens this modal instead of switching to Upload Media. */
+  const [manageEditModalOpen, setManageEditModalOpen] = useState(false);
+
+  const closeManageEditModal = () => {
+    setManageEditModalOpen(false);
+    setEditingContent(null);
+    setEditFormData({
+      title: '',
+      description: '',
+      hashtags: '',
+      category: '',
+      line: '',
+      tags: '',
+      language: 'en',
+    });
+    setEditUploadedFiles([]);
+    setEditSelectedSKUs([]);
+  };
+
+  const openManageContentEditor = (item: CMSContent) => {
+    const type = item.type;
+    const skus = item.linkedProductIds || [];
+    const product = skus.length ? inventory.find((i) => i.sku === skus[0]) ?? null : null;
+    setUploadType(type);
+    setEditingContent(item);
+    setEditFormData({
+      title: item.title,
+      description: item.description,
+      hashtags: item.hashtags.join(', '),
+      category: item.category,
+      line: '',
+      tags: item.tags.join(', '),
+      language: item.language,
+    });
+    setEditUploadedFiles([...item.images, ...(item.videos || [])]);
+    setEditSelectedSKUs(skus);
+    setTabStates((prev) => ({
+      ...prev,
+      [type]: {
+        ...prev[type],
+        selectedSKUs: skus,
+        selectedProduct: product,
+        searchSKU: '',
+        showSKUDropdown: false,
+      },
+    }));
+    setManageEditModalOpen(true);
+  };
 
   const stats = getContentStats();
   
@@ -353,7 +416,10 @@ export default function CMSModuleNew() {
     // Show error for invalid files
     if (invalidFiles.length > 0) {
       const errorMessage = invalidFiles.map(f => `${f.name}: ${f.reason}`).join('\n');
-      alert(`Some files were not added:\n\n${errorMessage}`);
+      showUploadFlowAlert(
+        `${t('cms.someFilesNotAdded') || 'Some files were not added:'}\n\n${errorMessage}`,
+        t('common.error')
+      );
     }
     
     if (validFiles.length === 0) {
@@ -390,11 +456,12 @@ export default function CMSModuleNew() {
   // Upload files to Firebase Storage (supports images, videos, and other media)
   const convertFilesToBase64 = async (files: File[]): Promise<string[]> => {
     try {
-      const { uploadFile, uploadVideo, uploadImage } = await import('../services/storageService');
+      const { uploadFile, uploadVideo, uploadCmsImage } = await import('../services/storageService');
       const downloadURLs: string[] = [];
       
       // Upload each file to the appropriate path based on file type
-      for (const file of files) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
         const timestamp = Date.now();
         const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
         
@@ -403,21 +470,21 @@ export default function CMSModuleNew() {
         
         if (file.type.startsWith('image/')) {
           basePath = 'images/cms/';
-          const filePath = `${basePath}${timestamp}_${sanitizedName}`;
-          // Use uploadImage for proper validation
-          url = await uploadImage(file, filePath);
+          const filePath = `${basePath}${timestamp}_${i}_${sanitizedName}`;
+          // 50MB cap matches storage.rules `images/cms/` (inventory uses 5MB via uploadImage).
+          url = await uploadCmsImage(file, filePath);
         } else if (file.type.startsWith('video/')) {
           basePath = 'videos/cms/';
-          const filePath = `${basePath}${timestamp}_${sanitizedName}`;
+          const filePath = `${basePath}${timestamp}_${i}_${sanitizedName}`;
           // Use uploadVideo for proper validation (100MB limit)
           url = await uploadVideo(file, filePath);
         } else if (file.type.startsWith('audio/')) {
           basePath = 'documents/cms/'; // Store audio in documents folder
-          const filePath = `${basePath}${timestamp}_${sanitizedName}`;
+          const filePath = `${basePath}${timestamp}_${i}_${sanitizedName}`;
           url = await uploadFile(file, filePath);
         } else {
           basePath = 'documents/cms/'; // PDFs, Word docs, etc.
-          const filePath = `${basePath}${timestamp}_${sanitizedName}`;
+          const filePath = `${basePath}${timestamp}_${i}_${sanitizedName}`;
           url = await uploadFile(file, filePath);
         }
         
@@ -440,21 +507,30 @@ export default function CMSModuleNew() {
     }
 
     if (!hasPermission('cms.edit')) {
-      alert(t('cms.noPermissionToCreate') || 'You do not have permission to create content.');
+      showUploadFlowAlert(
+        t('cms.noPermissionToCreate') || 'You do not have permission to create content.',
+        t('common.error')
+      );
       return;
     }
 
     const state = currentTabState;
 
     if (!state.selectedSKUs.length && uploadType === 'product') {
-      alert(t('cms.selectProductForContent') || 'Please select at least one product for this content type.');
+      showUploadFlowAlert(
+        t('cms.selectProductForContent') || 'Please select at least one product for this content type.',
+        t('common.error')
+      );
       return;
     }
 
     // For collection/general types, require title and description
     if (uploadType !== 'product') {
       if (!state.formData.title?.trim() || !state.formData.description?.trim()) {
-        alert(t('cms.fillTitleAndDescription') || 'Please fill in title and description.');
+        showUploadFlowAlert(
+          t('cms.fillTitleAndDescription') || 'Please fill in title and description.',
+          t('common.error')
+        );
         return;
       }
     }
@@ -469,41 +545,47 @@ export default function CMSModuleNew() {
       const missingSKUs = state.selectedSKUs.filter(sku => !skusWithImages.has(sku));
       
       if (missingSKUs.length > 0) {
-        alert(
+        showUploadFlowAlert(
           (t('cms.linkImagePerSku') || 'Please link at least one image to each selected SKU. Missing: {{skus}}').replace(
             '{{skus}}',
             missingSKUs.join(', ')
-          )
+          ),
+          t('common.error')
         );
         return;
       }
     }
 
     setIsSavingDraft(true);
-    try {
-      const fileUrls = state.uploadedFiles.length > 0 
-        ? await convertFilesToBase64(state.uploadedFiles.filter((uf): uf is UploadedFile & { file: File } => uf.file instanceof File).map(uf => uf.file))
-        : [];
+    setIsAttachingMedia(false);
+    const filesToUpload = state.uploadedFiles
+      .filter((uf): uf is UploadedFile & { file: File } => uf.file instanceof File)
+      .map((uf) => uf.file);
 
-      // For product type, use product name as title, otherwise use form title
-      const contentTitle = uploadType === 'product' 
-        ? (state.selectedProduct?.name || `Product Content - ${state.selectedSKUs[0]}`)
+    // For product type, use product name as title, otherwise use form title
+    const contentTitle =
+      uploadType === 'product'
+        ? state.selectedProduct?.name || `Product Content - ${state.selectedSKUs[0]}`
         : state.formData.title;
 
-      const hashtagsArray = uploadType === 'product' 
-        ? [] 
-        : state.formData.hashtags.split(',').map(tag => tag.trim()).filter(Boolean);
-      const tagsArray = uploadType === 'product' 
-        ? [] 
-        : state.formData.tags.split(',').map(tag => tag.trim()).filter(Boolean);
+    const hashtagsArray =
+      uploadType === 'product'
+        ? []
+        : state.formData.hashtags.split(',').map((tag) => tag.trim()).filter(Boolean);
+    const tagsArray =
+      uploadType === 'product'
+        ? []
+        : state.formData.tags.split(',').map((tag) => tag.trim()).filter(Boolean);
 
-      // status + statusHistory are applied in cmsService.createCMSDraft (via CMSContext.addContent)
-      await addContent({
+    let draftId: string | undefined;
+    try {
+      // Create the Firestore draft first so a slow/hung Storage upload never blocks draft creation.
+      draftId = await addContent({
         type: uploadType,
         title: contentTitle.trim(),
         description: (state.formData.description || '').trim(),
         hashtags: hashtagsArray,
-        images: fileUrls,
+        images: [],
         videos: [],
         authorId: user?.id || '',
         authorName: user?.name || 'Unknown',
@@ -512,6 +594,12 @@ export default function CMSModuleNew() {
         language: state.formData.language,
         linkedProductIds: [...state.selectedSKUs],
       });
+
+      if (filesToUpload.length > 0) {
+        setIsAttachingMedia(true);
+        const fileUrls = await convertFilesToBase64(filesToUpload);
+        await updateContent(draftId, { images: fileUrls });
+      }
 
       // Reset form for current tab only after Firestore succeeds
       updateCurrentTabState({
@@ -530,14 +618,30 @@ export default function CMSModuleNew() {
         searchSKU: '',
         showSKUDropdown: false,
       });
-      alert(t('cms.draftCreatedSuccess') || 'Content created successfully! It is now in draft status.');
+      // Drafts only appear in Manage Content; Products/library views list published items only.
+      setViewMode('manage');
+      setFilterStatus('draft');
+      setShowFilters(true);
+      showUploadFlowAlert(
+        t('cms.draftCreatedSuccess') || 'Content created successfully! It is now in draft status.',
+        t('common.success')
+      );
     } catch (error) {
       console.error('Error creating CMS draft:', error);
       const detail = error instanceof Error ? error.message : String(error);
-      alert(
-        `${t('cms.draftCreateFailed') || 'Could not save draft.'}${detail ? `\n\n${detail}` : ''}`
-      );
+      if (draftId && filesToUpload.length > 0) {
+        showUploadFlowAlert(
+          `${t('cms.draftSavedMediaFailed') || 'Your draft was saved, but uploading or attaching media failed.'}${detail ? `\n\n${detail}` : ''}\n\n${t('cms.openDraftToRetryMedia') || 'Open the draft in Manage Content to try adding media again.'}`,
+          t('common.error')
+        );
+      } else {
+        showUploadFlowAlert(
+          `${t('cms.draftCreateFailed') || 'Could not save draft.'}${detail ? `\n\n${detail}` : ''}`,
+          t('common.error')
+        );
+      }
     } finally {
+      setIsAttachingMedia(false);
       setIsSavingDraft(false);
     }
   };
@@ -549,66 +653,56 @@ export default function CMSModuleNew() {
     // For collection/general types, require title and description
     if (uploadType !== 'product') {
       if (!editFormData.title || !editFormData.description) {
-        alert('Please fill in title and description.');
+        showUploadFlowAlert(
+          t('cms.fillTitleAndDescription') || 'Please fill in title and description.',
+          t('common.error')
+        );
         return;
       }
     }
 
-    // Get new file URLs (only for newly uploaded files)
-    const newFiles = editUploadedFiles.filter((f): f is File => f instanceof File);
-    const existingFiles = editUploadedFiles.filter((f): f is string => typeof f === 'string');
-    const newFileUrls = newFiles.length > 0 
-      ? await convertFilesToBase64(newFiles)
-      : [];
+    try {
+      // Get new file URLs (only for newly uploaded files)
+      const newFiles = editUploadedFiles.filter((f): f is File => f instanceof File);
+      const existingFiles = editUploadedFiles.filter((f): f is string => typeof f === 'string');
+      const newFileUrls = newFiles.length > 0 
+        ? await convertFilesToBase64(newFiles)
+        : [];
 
-    // Combine existing and new images
-    const allImages = [...existingFiles, ...newFileUrls];
+      // Combine existing and new images
+      const allImages = [...existingFiles, ...newFileUrls];
 
-    // For product type, use product name as title, otherwise use form title
-    // Get product from inventory if available
-    const productForSKU = editSelectedSKUs.length > 0 
-      ? inventory.find(item => item.sku === editSelectedSKUs[0])
-      : null;
-    const contentTitle = uploadType === 'product' 
-      ? (productForSKU?.name || `Product Content - ${editSelectedSKUs[0] || 'Unknown'}`)
-      : editFormData.title;
+      // For product type, use product name as title, otherwise use form title
+      // Get product from inventory if available
+      const productForSKU = editSelectedSKUs.length > 0 
+        ? inventory.find(item => item.sku === editSelectedSKUs[0])
+        : null;
+      const contentTitle = uploadType === 'product' 
+        ? (productForSKU?.name || `Product Content - ${editSelectedSKUs[0] || 'Unknown'}`)
+        : editFormData.title;
 
-    const hashtagsArray = uploadType === 'product' 
-      ? [] 
-      : editFormData.hashtags.split(',').map(tag => tag.trim()).filter(Boolean);
-    const tagsArray = uploadType === 'product' 
-      ? [] 
-      : editFormData.tags.split(',').map(tag => tag.trim()).filter(Boolean);
+      const hashtagsArray = uploadType === 'product' 
+        ? [] 
+        : editFormData.hashtags.split(',').map(tag => tag.trim()).filter(Boolean);
+      const tagsArray = uploadType === 'product' 
+        ? [] 
+        : editFormData.tags.split(',').map(tag => tag.trim()).filter(Boolean);
 
-    // Update the content
-    await updateContent(editingContent.id, {
-      title: contentTitle,
-      description: editFormData.description || '',
-      hashtags: hashtagsArray,
-      images: allImages,
-      category: editFormData.category || '',
-      tags: tagsArray,
-      language: editFormData.language,
-      linkedProductIds: editSelectedSKUs,
-    });
+      // Update the content
+      await updateContent(editingContent.id, {
+        title: contentTitle,
+        description: editFormData.description || '',
+        hashtags: hashtagsArray,
+        images: allImages,
+        category: editFormData.category || '',
+        tags: tagsArray,
+        language: editFormData.language,
+        linkedProductIds: editSelectedSKUs,
+      });
 
-    // Reset edit state
-    setEditingContent(null);
-    setEditFormData({
-      title: '',
-      description: '',
-      hashtags: '',
-      category: '',
-      line: '',
-      tags: '',
-      language: 'en',
-    });
-    setEditUploadedFiles([]);
-    setEditSelectedSKUs([]);
-    // Reset tab state selectedProduct
-    updateCurrentTabState({ 
-      selectedProduct: null,
-      formData: {
+      // Reset edit state
+      setEditingContent(null);
+      setEditFormData({
         title: '',
         description: '',
         hashtags: '',
@@ -616,11 +710,37 @@ export default function CMSModuleNew() {
         line: '',
         tags: '',
         language: 'en',
-      },
-      uploadedFiles: [],
-      selectedSKUs: [],
-    });
-    alert('Content updated successfully!');
+      });
+      setEditUploadedFiles([]);
+      setEditSelectedSKUs([]);
+      // Reset tab state selectedProduct
+      updateCurrentTabState({ 
+        selectedProduct: null,
+        formData: {
+          title: '',
+          description: '',
+          hashtags: '',
+          category: '',
+          line: '',
+          tags: '',
+          language: 'en',
+        },
+        uploadedFiles: [],
+        selectedSKUs: [],
+      });
+      setManageEditModalOpen(false);
+      showUploadFlowAlert(
+        t('cms.contentUpdatedSuccess') || 'Content updated successfully!',
+        t('common.success')
+      );
+    } catch (error) {
+      console.error('Error updating CMS content:', error);
+      const detail = error instanceof Error ? error.message : String(error);
+      showUploadFlowAlert(
+        `${t('cms.contentUpdateFailed') || 'Could not update content.'}${detail ? `\n\n${detail}` : ''}`,
+        t('common.error')
+      );
+    }
   };
 
   // Handle edit file upload - accepts images, videos, and other media formats
@@ -651,248 +771,8 @@ export default function CMSModuleNew() {
     updateContentStatus(contentId, 'published', user?.id || '');
   };
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">{t('cms.title')}</h2>
-            <p className="text-gray-600 mt-1">{t('cms.subtitle')}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
-              {hasPermission('cms.edit') ? t('cms.fullAccess') : 'View Only'}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Navigation Tabs */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-2">
-        <div className="flex gap-2">
-          <button
-            onClick={() => setViewMode('dashboard')}
-            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
-              viewMode === 'dashboard'
-                ? 'bg-[#4f0c1b] text-white'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            {t('cms.dashboard')}
-          </button>
-          <button
-            onClick={() => setViewMode('products')}
-            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
-              viewMode === 'products'
-                ? 'bg-[#4f0c1b] text-white'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            {t('cms.content')}
-          </button>
-          <button
-            onClick={() => setViewMode('upload')}
-            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
-              viewMode === 'upload'
-                ? 'bg-[#4f0c1b] text-white'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            {t('cms.uploadContent')}
-          </button>
-          <button
-            onClick={() => setViewMode('manage')}
-            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
-              viewMode === 'manage'
-                ? 'bg-[#4f0c1b] text-white'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            {t('cms.manageContent')}
-          </button>
-        </div>
-      </div>
-
-      {/* Dashboard View */}
-      {viewMode === 'dashboard' && (
-        <div className="space-y-6">
-          {/* Overview Section */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 bg-gradient-to-br from-[#4f0c1b] to-[#3d0a15] rounded-xl flex items-center justify-center shadow-lg">
-                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">{t('cms.contentOverview')}</h3>
-                <p className="text-sm text-gray-500">{t('cms.totalContentItems')}</p>
-              </div>
-              <div className="ml-auto">
-                <div className="text-3xl font-bold text-[#4f0c1b]">{stats.total}</div>
-                <div className="text-xs text-gray-500 mt-1">{t('cms.totalItems')}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Status Cards */}
-          <div>
-            <h3 className="text-base font-semibold text-gray-900 mb-4">{t('cms.contentStatusDistribution')}</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {/* Draft */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">{t('cms.drafts')}</div>
-                      <div className="text-xs text-gray-500">{t('cms.inProgress')}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-900">{stats.draft}</div>
-                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.draft / stats.total) * 100) : 0}%</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Submitted */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">{t('cms.submitted')}</div>
-                      <div className="text-xs text-gray-500">{t('cms.awaitingReview')}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-900">{stats.submitted}</div>
-                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.submitted / stats.total) * 100) : 0}%</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Approved */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">{t('cms.approved')}</div>
-                      <div className="text-xs text-gray-500">{t('cms.readyToPublish')}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-900">{stats.approved}</div>
-                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.approved / stats.total) * 100) : 0}%</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Published */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">{t('cms.published')}</div>
-                      <div className="text-xs text-gray-500">{t('cms.liveContent')}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-900">{stats.published}</div>
-                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.published / stats.total) * 100) : 0}%</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Rejected */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">{t('cms.rejected')}</div>
-                      <div className="text-xs text-gray-500">{t('cms.needsRevision')}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-900">{stats.rejected}</div>
-                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.rejected / stats.total) * 100) : 0}%</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Content View */}
-      {viewMode === 'products' && (
-        <ContentView 
-          key="content-view"
-          content={content}
-          inventory={inventory}
-          handleSelectProduct={(product) => {
-            const currentState = tabStates[uploadType];
-            updateCurrentTabState({
-              selectedProduct: product,
-              selectedSKUs: currentState.selectedSKUs.includes(product.sku) 
-                ? currentState.selectedSKUs 
-                : [...currentState.selectedSKUs, product.sku]
-            });
-            setViewMode('upload');
-          }}
-          onContentClick={(contentItem) => {
-            setSelectedContentDetail(contentItem);
-          }}
-        />
-      )}
-
-      {/* Upload View */}
-      {viewMode === 'upload' && (
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-[#4f0c1b] to-[#3d0a15] rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-gray-900">
-                  {editingContent ? t('cms.editContent') : t('cms.uploadContent')}
-                </h3>
-                <p className="text-sm text-gray-500">
-                  {editingContent ? t('cms.updateYourContentDetails') : t('cms.createNewContent')}
-                </p>
-              </div>
-            </div>
-          </div>
-
+  const renderUploadFormInner = () => (
+    <>
           {/* Content Type Selection */}
           {!editingContent && (
             <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -1436,18 +1316,22 @@ export default function CMSModuleNew() {
                 type="button"
                 onClick={() => {
                   if (editingContent) {
-                    setEditingContent(null);
-                    setEditFormData({
-                      title: '',
-                      description: '',
-                      hashtags: '',
-                      category: '',
-                      line: '',
-                      tags: '',
-                      language: 'en',
-                    });
-                    setEditUploadedFiles([]);
-                    setEditSelectedSKUs([]);
+                    if (manageEditModalOpen) {
+                      closeManageEditModal();
+                    } else {
+                      setEditingContent(null);
+                      setEditFormData({
+                        title: '',
+                        description: '',
+                        hashtags: '',
+                        category: '',
+                        line: '',
+                        tags: '',
+                        language: 'en',
+                      });
+                      setEditUploadedFiles([]);
+                      setEditSelectedSKUs([]);
+                    }
                   } else {
                     updateCurrentTabState({
                       formData: {
@@ -1478,11 +1362,292 @@ export default function CMSModuleNew() {
                 className="px-6 py-2.5 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#3d0a15] font-medium transition-all shadow-sm hover:shadow-md disabled:opacity-50 disabled:pointer-events-none disabled:cursor-not-allowed"
               >
                 {isSavingDraft
-                  ? (t('cms.saving') || 'Saving…')
+                  ? isAttachingMedia
+                    ? (t('cms.uploadingMedia') || 'Uploading media…')
+                    : (t('cms.savingDraft') || 'Saving draft…')
                   : editingContent
                     ? t('cms.updateContent')
                     : t('cms.createAsDraft')}
               </button>
+            </div>
+          </div>
+    </>
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">{t('cms.title')}</h2>
+            <p className="text-gray-600 mt-1">{t('cms.subtitle')}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
+              {hasPermission('cms.edit') ? t('cms.fullAccess') : 'View Only'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Navigation Tabs */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-2">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setViewMode('dashboard')}
+            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+              viewMode === 'dashboard'
+                ? 'bg-[#4f0c1b] text-white'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            {t('cms.dashboard')}
+          </button>
+          <button
+            onClick={() => setViewMode('products')}
+            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+              viewMode === 'products'
+                ? 'bg-[#4f0c1b] text-white'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            {t('cms.content')}
+          </button>
+          <button
+            onClick={() => setViewMode('upload')}
+            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+              viewMode === 'upload'
+                ? 'bg-[#4f0c1b] text-white'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            {t('cms.uploadContent')}
+          </button>
+          <button
+            onClick={() => setViewMode('manage')}
+            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+              viewMode === 'manage'
+                ? 'bg-[#4f0c1b] text-white'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            {t('cms.manageContent')}
+          </button>
+        </div>
+      </div>
+
+      {/* Dashboard View */}
+      {viewMode === 'dashboard' && (
+        <div className="space-y-6">
+          {/* Overview Section */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 bg-gradient-to-br from-[#4f0c1b] to-[#3d0a15] rounded-xl flex items-center justify-center shadow-lg">
+                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">{t('cms.contentOverview')}</h3>
+                <p className="text-sm text-gray-500">{t('cms.totalContentItems')}</p>
+              </div>
+              <div className="ml-auto">
+                <div className="text-3xl font-bold text-[#4f0c1b]">{stats.total}</div>
+                <div className="text-xs text-gray-500 mt-1">{t('cms.totalItems')}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Status Cards */}
+          <div>
+            <h3 className="text-base font-semibold text-gray-900 mb-4">{t('cms.contentStatusDistribution')}</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Draft */}
+              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">{t('cms.drafts')}</div>
+                      <div className="text-xs text-gray-500">{t('cms.inProgress')}</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-gray-900">{stats.draft}</div>
+                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.draft / stats.total) * 100) : 0}%</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Submitted */}
+              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">{t('cms.submitted')}</div>
+                      <div className="text-xs text-gray-500">{t('cms.awaitingReview')}</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-gray-900">{stats.submitted}</div>
+                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.submitted / stats.total) * 100) : 0}%</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Approved */}
+              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">{t('cms.approved')}</div>
+                      <div className="text-xs text-gray-500">{t('cms.readyToPublish')}</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-gray-900">{stats.approved}</div>
+                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.approved / stats.total) * 100) : 0}%</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Published */}
+              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">{t('cms.published')}</div>
+                      <div className="text-xs text-gray-500">{t('cms.liveContent')}</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-gray-900">{stats.published}</div>
+                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.published / stats.total) * 100) : 0}%</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Rejected */}
+              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">{t('cms.rejected')}</div>
+                      <div className="text-xs text-gray-500">{t('cms.needsRevision')}</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-gray-900">{stats.rejected}</div>
+                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.rejected / stats.total) * 100) : 0}%</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Content View */}
+      {viewMode === 'products' && (
+        <ContentView 
+          key="content-view"
+          content={content}
+          inventory={inventory}
+          handleSelectProduct={(product) => {
+            const currentState = tabStates[uploadType];
+            updateCurrentTabState({
+              selectedProduct: product,
+              selectedSKUs: currentState.selectedSKUs.includes(product.sku) 
+                ? currentState.selectedSKUs 
+                : [...currentState.selectedSKUs, product.sku]
+            });
+            setViewMode('upload');
+          }}
+          onContentClick={(contentItem) => {
+            setSelectedContentDetail(contentItem);
+          }}
+        />
+      )}
+
+      {/* Upload View */}
+      {viewMode === 'upload' && (
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-[#4f0c1b] to-[#3d0a15] rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">
+                  {editingContent ? t('cms.editContent') : t('cms.uploadContent')}
+                </h3>
+                <p className="text-sm text-gray-500">
+                  {editingContent ? t('cms.updateYourContentDetails') : t('cms.createNewContent')}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {renderUploadFormInner()}
+        </div>
+      )}
+
+      {/* Edit from Manage Content — same form as Upload, modal overlay */}
+      {viewMode === 'manage' && manageEditModalOpen && editingContent && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={closeManageEditModal}
+        >
+          <div
+            className="bg-gray-50 rounded-2xl shadow-xl border border-gray-200 w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex-shrink-0 flex items-center justify-between gap-4 px-6 py-4 border-b border-gray-200 bg-white rounded-t-2xl">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">{t('cms.editContent')}</h3>
+                <p className="text-sm text-gray-500">{t('cms.updateYourContentDetails')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeManageEditModal}
+                className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-800 transition-colors"
+                aria-label={t('common.close') || 'Close'}
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 min-h-0">
+              <div className="space-y-6">{renderUploadFormInner()}</div>
             </div>
           </div>
         </div>
@@ -1815,20 +1980,7 @@ export default function CMSModuleNew() {
                               <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setEditingContent(item);
-                                    setUploadType(item.type);
-                                    setEditFormData({
-                                      title: item.title,
-                                      description: item.description,
-                                      hashtags: item.hashtags.join(', '),
-                                      category: item.category,
-                                      line: '',
-                                      tags: item.tags.join(', '),
-                                      language: item.language,
-                                    });
-                                    setEditUploadedFiles(item.images.map(img => img));
-                                    setEditSelectedSKUs(item.linkedProductIds || []);
-                                    setViewMode('upload');
+                                    openManageContentEditor(item);
                                   }}
                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
                                 >
@@ -1844,7 +1996,7 @@ export default function CMSModuleNew() {
                                       await updateContentStatus(item.id, 'submitted', user?.id || '');
                                     } catch (error) {
                                       console.error('Error submitting content:', error);
-                                      alert(t('cms.submitContentFailed'));
+                                      showUploadFlowAlert(t('cms.submitContentFailed'), t('common.error'));
                                     }
                                   }}
                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4f0c1b] text-white hover:bg-[#3d0a15] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
@@ -1874,20 +2026,7 @@ export default function CMSModuleNew() {
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setEditingContent(item);
-                                    setUploadType(item.type);
-                                    setEditFormData({
-                                      title: item.title,
-                                      description: item.description,
-                                      hashtags: item.hashtags.join(', '),
-                                      category: item.category,
-                                      line: '',
-                                      tags: item.tags.join(', '),
-                                      language: item.language,
-                                    });
-                                    setEditUploadedFiles(item.images.map(img => img));
-                                    setEditSelectedSKUs(item.linkedProductIds || []);
-                                    setViewMode('upload');
+                                    openManageContentEditor(item);
                                   }}
                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
                                 >
@@ -1970,19 +2109,46 @@ export default function CMSModuleNew() {
                               </button>
                             )}
                             {item.status === 'rejected' && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setResubmitContentId(item.id);
-                                  setResubmitModalOpen(true);
-                                }}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4f0c1b] text-white hover:bg-[#3d0a15] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                                {t('cms.resubmit')}
-                              </button>
+                              <>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openManageContentEditor(item);
+                                  }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                  {t('cms.edit')}
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setResubmitContentId(item.id);
+                                    setResubmitModalOpen(true);
+                                  }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4f0c1b] text-white hover:bg-[#3d0a15] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                  </svg>
+                                  {t('cms.resubmit')}
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setContentToDelete(item);
+                                    setDeleteDraftConfirmOpen(true);
+                                  }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-300 bg-white text-red-700 hover:bg-red-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                  {t('cms.delete')}
+                                </button>
+                              </>
                             )}
                           </div>
                         </td>
@@ -2021,10 +2187,14 @@ export default function CMSModuleNew() {
             />
           )}
 
-          {/* Delete Draft Confirmation Dialog */}
+          {/* Delete Draft / Rejected Content Confirmation Dialog */}
           <ConfirmDialog
             open={deleteDraftConfirmOpen}
-            title="Delete Draft"
+            title={
+              contentToDelete?.status === 'rejected'
+                ? t('cms.deleteContent')
+                : 'Delete Draft'
+            }
             description={contentToDelete ? `Are you sure you want to delete "${contentToDelete.title}"? This action cannot be undone.` : ''}
             confirmText={t('common.delete')}
             cancelText={t('common.cancel')}
@@ -2035,7 +2205,7 @@ export default function CMSModuleNew() {
                   await deleteContent(contentToDelete.id);
                   setContentToDelete(null);
                 } catch (error) {
-                  console.error('Error deleting draft:', error);
+                  console.error('Error deleting content:', error);
                 }
               }
               setDeleteDraftConfirmOpen(false);
@@ -2096,6 +2266,14 @@ export default function CMSModuleNew() {
           />
         </div>
       )}
+
+      <AlertDialog
+        open={uploadFlowAlert.open}
+        title={uploadFlowAlert.title}
+        message={uploadFlowAlert.message}
+        buttonText={uploadFlowAlert.buttonText}
+        onClose={closeUploadFlowAlert}
+      />
     </div>
   );
 }
@@ -2415,9 +2593,7 @@ function ContentDetailModal({
                             video.currentTime = video.duration / 2;
                           }
                         }}
-                        onError={(e) => {
-                          console.error('Video load error:', e);
-                        }}
+                        onError={(e) => logVideoPlaybackIssue('content detail thumbnail (videos array)', e)}
                       />
                       <div 
                         className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors cursor-pointer z-10"
@@ -2484,9 +2660,7 @@ function ContentDetailModal({
                                 video.currentTime = video.duration / 2;
                               }
                             }}
-                            onError={(e) => {
-                              console.error('Video load error:', e);
-                            }}
+                            onError={(e) => logVideoPlaybackIssue('content detail thumbnail (images array)', e)}
                           />
                           <div 
                             className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors cursor-pointer z-10"
@@ -2819,6 +2993,24 @@ function ContentDetailModal({
   );
 }
 
+/** SyntheticEvent logs as `{}` in the console; use MediaError + element state. */
+function logVideoPlaybackIssue(context: string, e: React.SyntheticEvent<HTMLVideoElement, Event>) {
+  const el = e.currentTarget;
+  const me = el.error;
+  const src = el.currentSrc || el.src || '';
+  const info: Record<string, string | number | boolean> = me
+    ? {
+        mediaErrorCode: me.code,
+        mediaErrorMessage: me.message || '(empty)',
+      }
+    : {
+        noMediaErrorObject: 1,
+        networkState: el.networkState,
+        readyState: el.readyState,
+      };
+  console.warn(`[CMS video] ${context}`, { ...info, srcPreview: src.slice(0, 160) });
+}
+
 // Video Player Modal Component
 function VideoPlayerModal({ 
   videoUrl, 
@@ -2840,7 +3032,6 @@ function VideoPlayerModal({
   const canDelete = user?.role === 'admin' && hasPermission('media.delete');
 
   useEffect(() => {
-    console.log('VideoPlayerModal mounted with URL:', videoUrl);
     setIsLoading(true);
     setError(null);
     setUseProxy(false);
@@ -2960,16 +3151,14 @@ function VideoPlayerModal({
               controls
               autoPlay={!useProxy}
               playsInline
-              crossOrigin={useProxy ? undefined : "anonymous"}
               className="w-full h-auto"
               style={{ maxHeight: '85vh', maxWidth: '100%', display: isLoading ? 'none' : 'block' }}
               onError={(e) => {
                 const videoElement = e.currentTarget;
-                const error = videoElement.error;
+                const mediaError = videoElement.error;
                 
                 // If first attempt failed and we haven't tried proxy yet, try proxy URL
                 if (!useProxy && videoUrl.includes('firebasestorage.googleapis.com')) {
-                  console.log('Direct video load failed, trying proxy URL...');
                   const proxy = getProxyUrl(videoUrl);
                   setProxyUrl(proxy);
                   setUseProxy(true);
@@ -2978,9 +3167,11 @@ function VideoPlayerModal({
                   return; // Don't set error yet, try proxy first
                 }
                 
+                logVideoPlaybackIssue('VideoPlayerModal', e);
+                
                 let errorMessage = 'Failed to load video.';
                 
-                if (error) {
+                if (mediaError) {
                   // Map error codes to user-friendly messages
                   const errorMessages: { [key: number]: string } = {
                     1: 'Video loading aborted. The video may have been interrupted.',
@@ -2989,45 +3180,31 @@ function VideoPlayerModal({
                     4: 'Video source not supported. The video format may not be supported by your browser.',
                   };
                   
-                  const errorCode = error.code || 0;
-                  const defaultMessage = error.message || 'Unknown error';
+                  const errorCode = mediaError.code || 0;
+                  const defaultMessage = mediaError.message || 'Unknown error';
                   errorMessage = errorMessages[errorCode] || `Failed to load video (Error ${errorCode}: ${defaultMessage}).`;
                   
-                  // Check if it's a CORS issue
-                  if (videoUrl.includes('firebasestorage.googleapis.com') && !useProxy) {
-                    errorMessage += ' Trying alternative method...';
-                  } else if (videoUrl.includes('firebasestorage.googleapis.com')) {
-                    errorMessage += ' Please ensure CORS is configured in Firebase Storage settings.';
+                  if (videoUrl.includes('firebasestorage.googleapis.com')) {
+                    errorMessage += ' If this persists, confirm Storage CORS allows your app origin (see storage-cors.json).';
                   }
-                  
-                  console.error('Video error details:', {
-                    code: error.code,
-                    message: error.message,
-                    videoUrl: videoUrl.substring(0, 100),
-                    useProxy,
-                  });
                 } else {
-                  console.error('Video error (no error object):', videoUrl.substring(0, 100));
+                  errorMessage += ` (${videoUrl.slice(0, 80)}…)`;
                 }
                 
                 setError(errorMessage);
                 setIsLoading(false);
               }}
               onLoadStart={() => {
-                console.log('Video loadstart');
                 setIsLoading(true);
                 setError(null);
               }}
               onCanPlay={() => {
-                console.log('Video can play');
                 setIsLoading(false);
               }}
               onLoadedData={() => {
-                console.log('Video loaded');
                 setIsLoading(false);
               }}
               onLoadedMetadata={() => {
-                console.log('Video metadata loaded');
                 setIsLoading(false);
               }}
             >

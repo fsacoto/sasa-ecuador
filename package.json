@@ -6,7 +6,9 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "firebase:deploy:storage": "firebase deploy --only storage",
+    "firebase:cors": "echo \"Apply CORS: gsutil cors set storage-cors.json gs://YOUR_BUCKET_ID\" && echo \"Bucket id = Firebase Console → Storage (same as NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET).\""
   },
   "dependencies": {
     "@dataconnect/generated": "link:src/dataconnect-generated",

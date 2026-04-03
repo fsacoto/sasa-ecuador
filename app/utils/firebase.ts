@@ -32,9 +32,20 @@ const firebaseConfig: FirebaseOptions = {
 
 if (storageBucket) {
   firebaseConfig.storageBucket = storageBucket;
+} else if (
+  typeof process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID === "string" &&
+  process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID.length > 0
+) {
+  // Avoid storage/unknown on new projects: default host may not match the real bucket.
+  if (typeof globalThis !== "undefined" && !(globalThis as { __sasaFirebaseBucketWarned?: boolean }).__sasaFirebaseBucketWarned) {
+    (globalThis as { __sasaFirebaseBucketWarned?: boolean }).__sasaFirebaseBucketWarned = true;
+    console.warn(
+      "[Firebase] NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET is unset. Set it to the bucket id from Firebase Console → Storage (e.g. project-id.firebasestorage.app)."
+    );
+  }
 }
 
-// Initialize Firebase (omit storageBucket to use default project-id.appspot.com)
+// Initialize Firebase (omit storageBucket to use SDK default — often wrong for new projects)
 const app = initializeApp(firebaseConfig);
 
 // Initialize Firebase Authentication and get a reference to the service

@@ -5,23 +5,21 @@ Your bucket `sasa-a837d.firebasestorage.app` is ready!
 
 ## 🔧 Final Configuration Steps
 
-### 1. Configure CORS (Required)
-1. In Firebase Console → Storage
-2. Click **Settings** (gear icon) → **CORS configuration**
-3. Paste this JSON:
+### 1. Configure CORS (required for browser uploads)
+The app uploads with the Firebase Web SDK (`PUT` / resumable). CORS must allow those methods, not only `GET`.
 
-```json
-[
-  {
-    "origin": ["http://localhost:3000"],
-    "method": ["GET", "HEAD"],
-    "maxAgeSeconds": 3600,
-    "responseHeader": ["Content-Type", "Authorization"]
-  }
-]
+**Option A — `gsutil` (recommended)**  
+From the repo root (install [Google Cloud SDK](https://cloud.google.com/sdk) if needed):
+
+```bash
+gsutil cors set storage-cors.json gs://YOUR_BUCKET_ID
 ```
 
-4. Click **Save**
+Use the same bucket id as `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` (e.g. `sasa-a837d.firebasestorage.app`).  
+Or run `./scripts/reconnect-storage.sh` after editing `storage-cors.json` to add your production origin.
+
+**Option B — Console**  
+Firebase Console → Storage → **⋮** / bucket settings → CORS, and paste the contents of `storage-cors.json` (add your real production `origin` and remove the placeholder domain).
 
 ### 2. Verify Environment Variable
 Make sure your `.env.local` (or environment variables) has:

@@ -6,7 +6,8 @@
 set -e
 
 PROJECT_ID="sasa-a837d"
-BUCKET_NAME="${PROJECT_ID}.appspot.com"
+# Default bucket for newer Firebase projects (must match NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET).
+BUCKET_NAME="${PROJECT_ID}.firebasestorage.app"
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -74,12 +75,17 @@ echo "📤 Step 2: Configuring CORS..."
 if command -v gsutil &> /dev/null; then
     if [ -f "$PROJECT_ROOT/storage-cors.json" ]; then
         echo "   Using gsutil to set CORS configuration..."
-        if gsutil cors set "$PROJECT_ROOT/storage-cors.json" gs://${BUCKET_NAME}; then
-            echo "✅ CORS configured successfully via gsutil"
+        if gsutil cors set "$PROJECT_ROOT/storage-cors.json" "gs://${BUCKET_NAME}"; then
+            echo "✅ CORS configured successfully on gs://${BUCKET_NAME}"
         else
-            echo "⚠️  Failed to set CORS via gsutil. Please configure manually:"
-            echo "   1. Go to Firebase Console → Storage → Settings → CORS"
-            echo "   2. Copy content from storage-cors.json"
+            echo "⚠️  CORS failed on gs://${BUCKET_NAME}. Trying legacy appspot bucket..."
+            if gsutil cors set "$PROJECT_ROOT/storage-cors.json" "gs://${PROJECT_ID}.appspot.com"; then
+                echo "✅ CORS configured on gs://${PROJECT_ID}.appspot.com — set NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET to match."
+            else
+                echo "⚠️  Failed both buckets. Configure manually:"
+                echo "   gsutil cors set storage-cors.json gs://YOUR_BUCKET_ID"
+                echo "   (Bucket id is in Firebase Console → Storage → Files → bucket dropdown)"
+            fi
         fi
     else
         echo "⚠️  storage-cors.json not found. Please configure CORS manually:"
@@ -113,7 +119,7 @@ echo ""
 echo "✨ Storage reconnection complete!"
 echo ""
 echo "📝 Next steps:"
-echo "   1. Verify your environment variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${BUCKET_NAME}"
+echo "   1. Set NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${BUCKET_NAME} (or your console’s exact bucket id)"
 echo "   2. Test uploading a file through your app"
 echo "   3. Check Firebase Console → Storage to see uploaded files"
 echo ""
