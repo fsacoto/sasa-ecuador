@@ -5,6 +5,7 @@ import {
   uploadBytesResumable,
   getDownloadURL,
   deleteObject,
+  listAll,
   getStorage,
   UploadTaskSnapshot,
   type FirebaseStorage,
@@ -119,6 +120,172 @@ function logStorageFailure(error: unknown): void {
 
 // Upload progress callback type
 export type UploadProgressCallback = (progress: number) => void;
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Path segment + filename base for SKU-keyed Storage objects (alphanumeric, dot, dash, underscore). */
+export function sanitizeSkuForStorageFilename(sku: string): string {
+  const s = sku
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 120);
+  return s || 'item';
+}
+
+/** Normalized extension for Storage keys, e.g. `.jpg`, `.mp4`. */
+export function fileExtensionForStorage(file: File): string {
+  const name = file.name;
+  const dot = name.lastIndexOf('.');
+  if (dot > 0 && dot < name.length - 1) {
+    const ext = name
+      .slice(dot + 1)
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+    if (ext) return `.${ext.slice(0, 10)}`;
+  }
+  const mime = file.type.toLowerCase();
+  if (mime === 'image/jpeg' || mime === 'image/jpg') return '.jpg';
+  if (mime === 'image/png') return '.png';
+  if (mime === 'image/webp') return '.webp';
+  if (mime === 'image/gif') return '.gif';
+  if (mime === 'image/heic') return '.heic';
+  if (mime.startsWith('video/')) {
+    if (mime.includes('mp4')) return '.mp4';
+    if (mime.includes('webm')) return '.webm';
+    if (mime.includes('quicktime')) return '.mov';
+    return '.mp4';
+  }
+  if (mime.startsWith('audio/')) return '.m4a';
+  if (mime === 'application/pdf') return '.pdf';
+  return '.bin';
+}
+
+/**
+ * Max index n where `{base}(?:_n)?.ext` exists in `directoryPath` (n=1 for `base.ext` without _n).
+ */
+async function listPrefixMaxSkuSuffix(
+  st: FirebaseStorage,
+  directoryPath: string,
+  baseName: string,
+  extWithDot: string
+): Promise<number> {
+  const extBare = extWithDot.slice(1).toLowerCase();
+  const dirRef = ref(st, directoryPath);
+  let items;
+  try {
+    items = await listAll(dirRef);
+  } catch {
+    return 0;
+  }
+  const escBase = escapeRegex(baseName);
+  const re = new RegExp(`^${escBase}(?:_(\\d+))?\\.${escapeRegex(extBare)}$`, 'i');
+  let max = 0;
+  for (const item of items.items) {
+    const name = item.name.split('/').pop() || item.name;
+    const m = name.match(re);
+    if (m) {
+      const n = m[1] ? parseInt(m[1], 10) : 1;
+      if (!Number.isNaN(n)) max = Math.max(max, n);
+    }
+  }
+  return max;
+}
+
+/**
+ * Next paths: `{mediaRoot}/by-sku/{segment}/{segment}.ext`, then `{segment}_2.ext`, …
+ */
+async function allocateNumberedPathsInSkuFolder(
+  files: File[],
+  mediaRootNoSlash: string,
+  segment: string
+): Promise<string[]> {
+  await ensureAuthReadyForStorage();
+  const st = sessionStorageInstance ?? storage;
+  const dirPath = `${mediaRootNoSlash}/by-sku/${segment}`;
+  const paths: string[] = [];
+  const extNext = new Map<string, number>();
+
+  for (const file of files) {
+    const ext = fileExtensionForStorage(file);
+    let curMax = extNext.get(ext);
+    if (curMax === undefined) {
+      curMax = await listPrefixMaxSkuSuffix(st, dirPath, segment, ext);
+      extNext.set(ext, curMax);
+    }
+    const next = curMax + 1;
+    extNext.set(ext, next);
+    const filename = next === 1 ? `${segment}${ext}` : `${segment}_${next}${ext}`;
+    paths.push(`${dirPath}/${filename}`);
+  }
+  return paths;
+}
+
+export type CmsMediaPathItem = { file: File; linkedSku?: string };
+
+/**
+ * CMS (and similar): one path per file; SKU-linked files use that SKU as base name; otherwise `defaultFolderSegment` (e.g. general / unlinked).
+ */
+export async function allocateCmsMediaStoragePaths(
+  items: CmsMediaPathItem[],
+  defaultFolderSegment: string
+): Promise<string[]> {
+  await ensureAuthReadyForStorage();
+  const st = sessionStorageInstance ?? storage;
+  const fallbackSeg =
+    defaultFolderSegment.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64) || 'unlinked';
+
+  const paths: string[] = new Array(items.length);
+  type GroupKey = string;
+  const extNextByGroup = new Map<GroupKey, Map<string, number>>();
+
+  function mediaRoot(file: File): string {
+    if (file.type.startsWith('image/')) return 'images/cms';
+    if (file.type.startsWith('video/')) return 'videos/cms';
+    return 'documents/cms';
+  }
+
+  for (let i = 0; i < items.length; i++) {
+    const file = items[i].file;
+    const rawSku = items[i].linkedSku?.trim();
+    const segment = rawSku ? sanitizeSkuForStorageFilename(rawSku) : fallbackSeg;
+    const root = mediaRoot(file);
+    const dirPath = `${root}/by-sku/${segment}`;
+    const key = `${root}|${segment}`;
+    let extMap = extNextByGroup.get(key);
+    if (!extMap) {
+      extMap = new Map<string, number>();
+      extNextByGroup.set(key, extMap);
+    }
+    const ext = fileExtensionForStorage(file);
+    let curMax = extMap.get(ext);
+    if (curMax === undefined) {
+      curMax = await listPrefixMaxSkuSuffix(st, dirPath, segment, ext);
+      extMap.set(ext, curMax);
+    }
+    const next = curMax + 1;
+    extMap.set(ext, next);
+    const filename = next === 1 ? `${segment}${ext}` : `${segment}_${next}${ext}`;
+    paths[i] = `${dirPath}/${filename}`;
+  }
+  return paths;
+}
+
+/** Inventory product images: `{basePath}/by-sku/{sku}/{sku}.ext`, `{sku}_2.ext`, … */
+export async function allocateInventoryImageStoragePaths(
+  files: File[],
+  basePath: string,
+  skuRaw: string
+): Promise<string[]> {
+  const sku = sanitizeSkuForStorageFilename(skuRaw);
+  if (!skuRaw.trim()) {
+    throw new Error('SKU is required to name inventory images');
+  }
+  return allocateNumberedPathsInSkuFolder(files, basePath.replace(/\/$/, ''), sku);
+}
 
 /**
  * Upload a file to Firebase Storage
@@ -316,18 +483,21 @@ export async function uploadCmsImage(
  * @param onProgress - Optional progress callback
  * @returns Promise with array of download URLs
  */
+export type UploadMultipleImagesOptions = { sku?: string };
+
 export async function uploadMultipleImages(
   files: File[],
   basePath: string,
-  onProgress?: UploadProgressCallback
+  onProgress?: UploadProgressCallback,
+  options?: UploadMultipleImagesOptions
 ): Promise<string[]> {
   // Filter and validate images
-  const imageFiles = files.filter(file => file.type.startsWith('image/'));
-  
+  const imageFiles = files.filter((file) => file.type.startsWith('image/'));
+
   if (imageFiles.length === 0) {
     throw new Error('No valid image files provided');
   }
-  
+
   // Validate file sizes
   const maxSize = 5 * 1024 * 1024;
   for (const file of imageFiles) {
@@ -335,7 +505,30 @@ export async function uploadMultipleImages(
       throw new Error(`Image ${file.name} must be less than 5MB`);
     }
   }
-  
+
+  const sku = options?.sku?.trim();
+  if (sku) {
+    const paths = await allocateInventoryImageStoragePaths(imageFiles, basePath, sku);
+    const totalFiles = imageFiles.length;
+    const downloadURLs: string[] = [];
+    let uploadedFiles = 0;
+    for (let i = 0; i < imageFiles.length; i++) {
+      const url = await uploadImage(imageFiles[i], paths[i], (progress) => {
+        if (onProgress) {
+          const overallProgress =
+            (uploadedFiles / totalFiles) * 100 + progress / totalFiles;
+          onProgress(overallProgress);
+        }
+      });
+      downloadURLs.push(url);
+      uploadedFiles++;
+      if (onProgress) {
+        onProgress((uploadedFiles / totalFiles) * 100);
+      }
+    }
+    return downloadURLs;
+  }
+
   return uploadMultipleFiles(imageFiles, basePath, onProgress);
 }
 

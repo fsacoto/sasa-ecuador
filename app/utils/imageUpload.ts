@@ -19,16 +19,20 @@ export function convertImageToBase64(file: File): Promise<string> {
  * @param onProgress - Optional progress callback
  * @returns Array of Firebase Storage download URLs
  */
+export type HandleMultipleImageUploadOptions = { sku?: string };
+
 export async function handleMultipleImageUpload(
   files: FileList | File[],
   pathPrefix: string = 'images/',
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
+  options?: HandleMultipleImageUploadOptions
 ): Promise<string[]> {
   try {
     const fileArray = files instanceof FileList ? Array.from(files) : files;
-    
-    // Use Firebase Storage
-    return await uploadMultipleImages(fileArray, pathPrefix, onProgress);
+
+    return await uploadMultipleImages(fileArray, pathPrefix, onProgress, {
+      sku: options?.sku?.trim() || undefined,
+    });
   } catch (error) {
     console.error('Error uploading images to Firebase Storage:', error);
     throw error;

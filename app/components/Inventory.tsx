@@ -314,6 +314,13 @@ export default function Inventory() {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
+    const skuTrim = formData.sku?.trim();
+    if (!skuTrim) {
+      alert(t('inventory.skuRequiredForImageUpload'));
+      e.target.value = '';
+      return;
+    }
+
     // Validate all files first
     for (let i = 0; i < files.length; i++) {
       const validation = validateImageFile(files[i]);
@@ -324,8 +331,9 @@ export default function Inventory() {
     }
 
     try {
-      // Upload to Firebase Storage
-      const newImages = await handleMultipleImageUpload(files, 'images/inventory/');
+      const newImages = await handleMultipleImageUpload(files, 'images/inventory/', undefined, {
+        sku: skuTrim,
+      });
       setFormData(prev => ({ ...prev, images: [...prev.images, ...newImages] }));
     } catch (error) {
       console.error('Error uploading images:', error);
@@ -1344,6 +1352,9 @@ export default function Inventory() {
             <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
+                  #
+                </th>
                 {!hiddenColumns.has('name') && (
                   <th 
                     onClick={() => handleSort('name')}
@@ -1436,17 +1447,20 @@ export default function Inventory() {
             <tbody className="divide-y divide-gray-100">
               {filteredAndSortedInventory.length === 0 ? (
                 <tr>
-                  <td colSpan={getVisibleColumnCount()} className="px-6 py-12 text-center text-sm text-gray-500">
+                  <td colSpan={getVisibleColumnCount() + 1} className="px-6 py-12 text-center text-sm text-gray-500">
                     {filteredInventory.length === 0 
                       ? t('inventory.noItemsYet')
                       : t('inventory.noItemsMatchFilters')}
                   </td>
                 </tr>
               ) : (
-                filteredAndSortedInventory.map((item) => {
+                filteredAndSortedInventory.map((item, index) => {
                   const needsReview = item.category.includes('NEEDS REVIEW');
                   return (
                     <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${needsReview ? 'bg-amber-50/30' : ''}`}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                        {index + 1}
+                      </td>
                       {!hiddenColumns.has('name') && (
                         <td className="px-6 py-4">
                           <div
@@ -1638,6 +1652,20 @@ export default function Inventory() {
             </tbody>
           </table>
         </div>
+        <div className="bg-gray-50 border-t border-gray-200 px-6 py-3 flex items-center justify-between text-sm text-gray-600">
+          <div className="flex items-center gap-4">
+            <span>
+              {t('purchaseOrders.showing')}{' '}
+              <span className="font-semibold text-gray-900">{filteredAndSortedInventory.length}</span>{' '}
+              {t('purchaseOrders.of')}{' '}
+              <span className="font-semibold text-gray-900">{filteredInventory.length}</span>{' '}
+              {t('inventory.footerItems')}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <span>{t('inventory.tableRowNumbersHint')}</span>
+          </div>
+        </div>
       </div>
       )}
 
@@ -1817,6 +1845,20 @@ export default function Inventory() {
                 })}
               </div>
             )}
+          </div>
+          <div className="bg-gray-50 border-t border-gray-200 px-6 py-3 flex items-center justify-between text-sm text-gray-600">
+            <div className="flex items-center gap-4">
+              <span>
+                {t('purchaseOrders.showing')}{' '}
+                <span className="font-semibold text-gray-900">{filteredAndSortedInventory.length}</span>{' '}
+                {t('purchaseOrders.of')}{' '}
+                <span className="font-semibold text-gray-900">{filteredInventory.length}</span>{' '}
+                {t('inventory.footerItems')}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <span>{t('inventory.footerCountsHint')}</span>
+            </div>
           </div>
         </div>
       )}

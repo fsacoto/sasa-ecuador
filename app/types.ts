@@ -157,6 +157,8 @@ export interface CMSContent {
     notes?: string;
   }[];
   images: string[];
+  /** Parallel to `images` (same length): internal SKU each file was tied to at upload; empty string if none. For Storage browse, paths use `images/cms/by-sku/{sanitizedSku}/…`. */
+  imageLinkedSkus?: string[];
   videos: string[];
   authorId: string;
   authorName: string;

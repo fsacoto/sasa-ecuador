@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { CMSContent, CMSContentDraftInput, ContentStatus } from '../types';
 import * as cmsService from '../services/cmsService';
 
@@ -14,6 +14,8 @@ interface CMSContextType {
   resubmitRejectedContent: (id: string, userId: string, changesNotes: string) => Promise<void>;
   getContentByStatus: (status: ContentStatus) => CMSContent[];
   getContentBySKU: (sku: string) => CMSContent[];
+  /** Re-fetch all CMS rows from Firestore (no global loading flag; for fresh merges e.g. inventory gallery). */
+  refreshCMS: () => Promise<void>;
   getContentStats: () => {
     total: number;
     draft: number;
@@ -47,6 +49,15 @@ export function CMSProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     }
   };
+
+  const refreshCMS = useCallback(async () => {
+    try {
+      const data = await cmsService.getCMSContent();
+      setContent(data);
+    } catch (error) {
+      console.error('Error refreshing CMS content:', error);
+    }
+  }, []);
 
   const addContent = async (contentData: CMSContentDraftInput) => {
     const newId = await cmsService.createCMSDraft(contentData);
@@ -201,7 +212,10 @@ export function CMSProvider({ children }: { children: ReactNode }) {
   };
 
   const getContentBySKU = (sku: string) => {
-    return content.filter((item) => item.linkedProductIds.includes(sku));
+    const n = sku.trim().toLowerCase();
+    return content.filter((item) =>
+      (item.linkedProductIds || []).some((id) => id.trim().toLowerCase() === n)
+    );
   };
 
   const getContentStats = () => {
@@ -228,6 +242,7 @@ export function CMSProvider({ children }: { children: ReactNode }) {
         resubmitRejectedContent,
         getContentByStatus,
         getContentBySKU,
+        refreshCMS,
         getContentStats,
       }}
     >

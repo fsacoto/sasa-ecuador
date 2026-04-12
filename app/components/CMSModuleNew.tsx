@@ -11,12 +11,48 @@ import JSZip from 'jszip';
 import ConfirmDialog from './ui/ConfirmDialog';
 import AlertDialog from './ui/AlertDialog';
 import { deleteMediaFile } from '../services/inventoryMediaService';
+import { mergeCmsImageUploadsIntoInventory } from '../utils/cmsInventorySync';
+
+type CmsMediaUploadItem = { file: File; linkedSku?: string };
+
+/**
+ * Uploads CMS media under `…/cms/by-sku/{sku}/` with filenames `{sku}.ext`, `{sku}_2.ext`, …
+ * Returns download URLs and parallel SKU labels for Firestore (`imageLinkedSkus`).
+ */
+async function uploadCmsMediaToStorage(
+  items: CmsMediaUploadItem[],
+  defaultFolderSegment: string
+): Promise<{ urls: string[]; imageLinkedSkus: string[] }> {
+  const { uploadFile, uploadVideo, uploadCmsImage, allocateCmsMediaStoragePaths } = await import(
+    '../services/storageService'
+  );
+  const paths = await allocateCmsMediaStoragePaths(items, defaultFolderSegment);
+  const urls: string[] = [];
+  const imageLinkedSkus: string[] = [];
+
+  for (let i = 0; i < items.length; i++) {
+    const { file, linkedSku } = items[i];
+    const filePath = paths[i];
+    let url: string;
+    if (file.type.startsWith('image/')) {
+      url = await uploadCmsImage(file, filePath);
+    } else if (file.type.startsWith('video/')) {
+      url = await uploadVideo(file, filePath);
+    } else {
+      url = await uploadFile(file, filePath);
+    }
+    urls.push(url);
+    imageLinkedSkus.push(linkedSku?.trim() ?? '');
+  }
+
+  return { urls, imageLinkedSkus };
+}
 
 type ViewMode = 'dashboard' | 'upload' | 'manage' | 'products';
 
 export default function CMSModuleNew() {
   const { user, hasPermission } = useAuth();
-  const { inventory } = useInventory();
+  const { inventory, updateInventoryItem } = useInventory();
   const { t } = useTranslation();
   const { 
     content, 
@@ -453,49 +489,16 @@ export default function CMSModuleNew() {
     updateCurrentTabState({ uploadedFiles: newFiles });
   };
 
-  // Upload files to Firebase Storage (supports images, videos, and other media)
-  const convertFilesToBase64 = async (files: File[]): Promise<string[]> => {
-    try {
-      const { uploadFile, uploadVideo, uploadCmsImage } = await import('../services/storageService');
-      const downloadURLs: string[] = [];
-      
-      // Upload each file to the appropriate path based on file type
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const timestamp = Date.now();
-        const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-        
-        let basePath: string;
-        let url: string;
-        
-        if (file.type.startsWith('image/')) {
-          basePath = 'images/cms/';
-          const filePath = `${basePath}${timestamp}_${i}_${sanitizedName}`;
-          // 50MB cap matches storage.rules `images/cms/` (inventory uses 5MB via uploadImage).
-          url = await uploadCmsImage(file, filePath);
-        } else if (file.type.startsWith('video/')) {
-          basePath = 'videos/cms/';
-          const filePath = `${basePath}${timestamp}_${i}_${sanitizedName}`;
-          // Use uploadVideo for proper validation (100MB limit)
-          url = await uploadVideo(file, filePath);
-        } else if (file.type.startsWith('audio/')) {
-          basePath = 'documents/cms/'; // Store audio in documents folder
-          const filePath = `${basePath}${timestamp}_${i}_${sanitizedName}`;
-          url = await uploadFile(file, filePath);
-        } else {
-          basePath = 'documents/cms/'; // PDFs, Word docs, etc.
-          const filePath = `${basePath}${timestamp}_${i}_${sanitizedName}`;
-          url = await uploadFile(file, filePath);
-        }
-        
-        downloadURLs.push(url);
-      }
-      
-      return downloadURLs;
-    } catch (error) {
-      console.error('Error uploading files:', error);
-      throw error;
-    }
+  /** SKU for Firestore + Storage folder; Storage path uses sanitized SKU via uploadCmsMediaToStorage. */
+  const resolveLinkedSkuForNewUpload = (
+    uf: UploadedFile,
+    type: ContentType,
+    selectedSKUs: string[]
+  ): string | undefined => {
+    if (uf.linkedSKU?.trim()) return uf.linkedSKU.trim();
+    if (type === 'product' && selectedSKUs[0]) return selectedSKUs[0];
+    if (type === 'collection' && selectedSKUs.length === 1) return selectedSKUs[0];
+    return undefined;
   };
 
   // Submit content
@@ -558,9 +561,14 @@ export default function CMSModuleNew() {
 
     setIsSavingDraft(true);
     setIsAttachingMedia(false);
-    const filesToUpload = state.uploadedFiles
+    const mediaUploadItems: CmsMediaUploadItem[] = state.uploadedFiles
       .filter((uf): uf is UploadedFile & { file: File } => uf.file instanceof File)
-      .map((uf) => uf.file);
+      .map((uf) => ({
+        file: uf.file,
+        linkedSku: resolveLinkedSkuForNewUpload(uf, uploadType, state.selectedSKUs),
+      }));
+
+    const defaultStorageFolder = uploadType === 'general' ? 'general' : 'unlinked';
 
     // For product type, use product name as title, otherwise use form title
     const contentTitle =
@@ -595,10 +603,28 @@ export default function CMSModuleNew() {
         linkedProductIds: [...state.selectedSKUs],
       });
 
-      if (filesToUpload.length > 0) {
+      if (mediaUploadItems.length > 0) {
         setIsAttachingMedia(true);
-        const fileUrls = await convertFilesToBase64(filesToUpload);
-        await updateContent(draftId, { images: fileUrls });
+        const { urls, imageLinkedSkus } = await uploadCmsMediaToStorage(
+          mediaUploadItems,
+          defaultStorageFolder
+        );
+        await updateContent(draftId, { images: urls, imageLinkedSkus });
+        try {
+          await mergeCmsImageUploadsIntoInventory(
+            mediaUploadItems,
+            urls,
+            inventory,
+            updateInventoryItem
+          );
+        } catch (syncErr) {
+          console.error('CMS → inventory image sync failed:', syncErr);
+          showUploadFlowAlert(
+            t('cms.inventoryImageSyncFailed') ||
+              'Content was saved, but copying images to Inventory failed. You can add them manually or try again.',
+            t('common.error')
+          );
+        }
       }
 
       // Reset form for current tab only after Firestore succeeds
@@ -629,7 +655,7 @@ export default function CMSModuleNew() {
     } catch (error) {
       console.error('Error creating CMS draft:', error);
       const detail = error instanceof Error ? error.message : String(error);
-      if (draftId && filesToUpload.length > 0) {
+      if (draftId && mediaUploadItems.length > 0) {
         showUploadFlowAlert(
           `${t('cms.draftSavedMediaFailed') || 'Your draft was saved, but uploading or attaching media failed.'}${detail ? `\n\n${detail}` : ''}\n\n${t('cms.openDraftToRetryMedia') || 'Open the draft in Manage Content to try adding media again.'}`,
           t('common.error')
@@ -665,12 +691,31 @@ export default function CMSModuleNew() {
       // Get new file URLs (only for newly uploaded files)
       const newFiles = editUploadedFiles.filter((f): f is File => f instanceof File);
       const existingFiles = editUploadedFiles.filter((f): f is string => typeof f === 'string');
-      const newFileUrls = newFiles.length > 0 
-        ? await convertFilesToBase64(newFiles)
-        : [];
+
+      const resolveEditLinkedSku = (): string | undefined => {
+        if (uploadType === 'product' && editSelectedSKUs[0]) return editSelectedSKUs[0];
+        if (uploadType === 'collection' && editSelectedSKUs.length === 1) return editSelectedSKUs[0];
+        return undefined;
+      };
+
+      const editDefaultFolder = uploadType === 'general' ? 'general' : 'unlinked';
+      const newUploadItems: CmsMediaUploadItem[] = newFiles.map((file) => ({
+        file,
+        linkedSku: resolveEditLinkedSku(),
+      }));
+
+      const newUploadResult =
+        newUploadItems.length > 0
+          ? await uploadCmsMediaToStorage(newUploadItems, editDefaultFolder)
+          : { urls: [] as string[], imageLinkedSkus: [] as string[] };
+
+      const existingLinkedPadded = existingFiles.map(
+        (_, i) => editingContent.imageLinkedSkus?.[i] ?? ''
+      );
 
       // Combine existing and new images
-      const allImages = [...existingFiles, ...newFileUrls];
+      const allImages = [...existingFiles, ...newUploadResult.urls];
+      const imageLinkedSkus = [...existingLinkedPadded, ...newUploadResult.imageLinkedSkus];
 
       // For product type, use product name as title, otherwise use form title
       // Get product from inventory if available
@@ -694,11 +739,30 @@ export default function CMSModuleNew() {
         description: editFormData.description || '',
         hashtags: hashtagsArray,
         images: allImages,
+        imageLinkedSkus,
         category: editFormData.category || '',
         tags: tagsArray,
         language: editFormData.language,
         linkedProductIds: editSelectedSKUs,
       });
+
+      if (newUploadItems.length > 0) {
+        try {
+          await mergeCmsImageUploadsIntoInventory(
+            newUploadItems,
+            newUploadResult.urls,
+            inventory,
+            updateInventoryItem
+          );
+        } catch (syncErr) {
+          console.error('CMS → inventory image sync failed (edit):', syncErr);
+          showUploadFlowAlert(
+            t('cms.inventoryImageSyncFailed') ||
+              'Content was saved, but copying new images to Inventory failed. You can add them manually or try again.',
+            t('common.error')
+          );
+        }
+      }
 
       // Reset edit state
       setEditingContent(null);
