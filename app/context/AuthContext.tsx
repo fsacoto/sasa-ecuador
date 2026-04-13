@@ -9,7 +9,7 @@ import {
 } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
 import { auth } from '../utils/firebase';
-import { getUserRole, getPermissionsForRole, createUserDocument } from '../services/userRoles';
+import { getPermissionsForRole, createUserDocument, resolveUserRoleFromFirestoreSnapshot } from '../services/userRoles';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 
@@ -53,7 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           
           // Get user data from Firestore (role and name)
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          const role = await getUserRole(firebaseUser.uid);
+          const role = resolveUserRoleFromFirestoreSnapshot(firebaseUser.uid, userDoc);
           const userName = userDoc.exists() && userDoc.data().name 
             ? userDoc.data().name 
             : (firebaseUser.displayName || getUserDisplayName(email));

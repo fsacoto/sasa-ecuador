@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { useAuth } from './AuthContext';
 import { CMSContent, CMSContentDraftInput, ContentStatus } from '../types';
 import * as cmsService from '../services/cmsService';
 
@@ -30,15 +31,11 @@ interface CMSContextType {
 const CMSContext = createContext<CMSContextType | undefined>(undefined);
 
 export function CMSProvider({ children }: { children: ReactNode }) {
+  const { user, isLoading: authLoading } = useAuth();
   const [content, setContent] = useState<CMSContent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load content from Firestore on mount
-  useEffect(() => {
-    loadContent();
-  }, []);
-
-  const loadContent = async () => {
+  const loadContent = useCallback(async () => {
     try {
       setIsLoading(true);
       const data = await cmsService.getCMSContent();
@@ -48,7 +45,17 @@ export function CMSProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      setContent([]);
+      setIsLoading(false);
+      return;
+    }
+    void loadContent();
+  }, [user?.id, authLoading, loadContent]);
 
   const refreshCMS = useCallback(async () => {
     try {

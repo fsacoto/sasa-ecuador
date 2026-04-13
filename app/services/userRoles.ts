@@ -1,5 +1,8 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, type DocumentSnapshot } from 'firebase/firestore';
 import { db } from '../utils/firebase';
+
+/** Firebase Auth UIDs that should always have admin role (Firestore `users/{uid}` is updated on login). */
+const ADMIN_USER_IDS = new Set<string>(['gqDGyqvjHoT9Rtx238A2xPGcVa73']);
 
 export type UserRole = 'admin' | 'marketing' | 'sales';
 
@@ -61,6 +64,18 @@ export const PERMISSIONS = {
   ]
 };
 
+/** Resolve role from an already-fetched `users/{userId}` document (avoids a duplicate Firestore read after login). */
+export function resolveUserRoleFromFirestoreSnapshot(
+  userId: string,
+  userDoc: DocumentSnapshot
+): UserRole {
+  if (ADMIN_USER_IDS.has(userId)) return 'admin';
+  if (userDoc.exists()) {
+    return normalizeUserRole(userDoc.data()?.role);
+  }
+  return 'marketing';
+}
+
 /** Firestore may store role with different casing; permissions map is lowercase-only. */
 export function normalizeUserRole(raw: unknown): UserRole {
   if (typeof raw !== 'string') return 'marketing';
@@ -71,6 +86,7 @@ export function normalizeUserRole(raw: unknown): UserRole {
 
 // Get user role from Firestore
 export async function getUserRole(userId: string): Promise<UserRole> {
+  if (ADMIN_USER_IDS.has(userId)) return 'admin';
   try {
     const userDoc = await getDoc(doc(db, 'users', userId));
     if (userDoc.exists()) {
@@ -114,13 +130,17 @@ export async function createUserDocument(userId: string, email: string, displayN
     const emailLower = email.toLowerCase();
     
     // Check for specific users
+    const isAdminByUid = ADMIN_USER_IDS.has(userId);
     const isAdminUser = emailLower === 'fernandosacoto@gmail.com' || (emailLower.includes('sacoto') && emailLower !== 'josesacoto1@gmail.com');
     const isJoseSacoto = emailLower === 'josesacoto1@gmail.com';
     
     let userName: string;
     let userRole: UserRole;
     
-    if (isAdminUser) {
+    if (isAdminByUid) {
+      userName = displayName || email.split('@')[0];
+      userRole = 'admin';
+    } else if (isAdminUser) {
       userName = 'Fernando Sacoto';
       userRole = 'admin';
     } else if (isJoseSacoto) {
@@ -154,7 +174,8 @@ export async function createUserDocument(userId: string, email: string, displayN
     } else {
       // User exists, update name and role if needed to ensure they match
       const existingData = userDoc.data();
-      const needsUpdate = 
+      const needsUpdate =
+        (isAdminByUid && existingData.role !== 'admin') ||
         (isAdminUser && (existingData.name !== 'Fernando Sacoto' || existingData.role !== 'admin')) ||
         (isJoseSacoto && (existingData.name !== 'Jose Sacoto' || existingData.role !== 'marketing'));
       

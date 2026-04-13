@@ -1,6 +1,14 @@
 import type { NextConfig } from "next";
+import path from "path";
+import { fileURLToPath } from "url";
+
+// Lockfile in a parent folder (e.g. ~/package-lock.json) makes Turbopack pick the wrong root; pin it to this app.
+const turbopackRoot = path.dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    root: turbopackRoot,
+  },
   transpilePackages: ['@react-pdf/renderer', 'jsbarcode'],
   images: {
     remotePatterns: [
