@@ -1503,134 +1503,101 @@ export default function CMSModuleNew() {
 
       {/* Dashboard View */}
       {viewMode === 'dashboard' && (
-        <div className="space-y-6">
-          {/* Overview Section */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 bg-gradient-to-br from-[#4f0c1b] to-[#3d0a15] rounded-xl flex items-center justify-center shadow-lg">
-                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">{t('cms.contentOverview')}</h3>
-                <p className="text-sm text-gray-500">{t('cms.totalContentItems')}</p>
-              </div>
-              <div className="ml-auto">
-                <div className="text-3xl font-bold text-[#4f0c1b]">{stats.total}</div>
-                <div className="text-xs text-gray-500 mt-1">{t('cms.totalItems')}</div>
-              </div>
+        <div className="space-y-8">
+          {/* Overview — vertical metric card; gallery icon in soft tile (matches dashboard reference) */}
+          <div className="rounded-2xl border border-gray-200/90 bg-white p-6 text-left transition-all duration-200 hover:border-gray-300 hover:shadow-sm">
+            <div className="mb-4 flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-gray-200/90 bg-gray-50">
+              <svg
+                className="h-6 w-6 text-gray-600"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+                aria-hidden
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
+              </svg>
             </div>
+            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">{t('cms.contentOverview')}</p>
+            <p className="mb-3 text-sm font-medium text-gray-500">{t('cms.totalContentItems')}</p>
+            <p className="text-3xl font-semibold tabular-nums tracking-tight text-gray-900">{stats.total}</p>
+            <p className="mt-2 text-xs font-medium uppercase tracking-wide text-gray-500">{t('cms.totalItems')}</p>
           </div>
 
-          {/* Status Cards */}
+          {/* Status metrics — same vertical layout as main dashboard cards */}
           <div>
-            <h3 className="text-base font-semibold text-gray-900 mb-4">{t('cms.contentStatusDistribution')}</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {/* Draft */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            <p className="mb-4 text-xs font-medium uppercase tracking-wide text-gray-500">
+              {t('cms.contentStatusDistribution')}
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              {(
+                [
+                  {
+                    key: 'draft',
+                    count: stats.draft,
+                    label: t('cms.drafts'),
+                    sub: t('cms.inProgress'),
+                    path: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
+                  },
+                  {
+                    key: 'submitted',
+                    count: stats.submitted,
+                    label: t('cms.submitted'),
+                    sub: t('cms.awaitingReview'),
+                    path: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
+                  },
+                  {
+                    key: 'approved',
+                    count: stats.approved,
+                    label: t('cms.approved'),
+                    sub: t('cms.readyToPublish'),
+                    path: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+                  },
+                  {
+                    key: 'published',
+                    count: stats.published,
+                    label: t('cms.published'),
+                    sub: t('cms.liveContent'),
+                    path: 'M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12',
+                  },
+                  {
+                    key: 'rejected',
+                    count: stats.rejected,
+                    label: t('cms.rejected'),
+                    sub: t('cms.needsRevision'),
+                    path: 'M6 18L18 6M6 6l12 12',
+                  },
+                ] as const
+              ).map((row) => {
+                const pct = stats.total > 0 ? Math.round((row.count / stats.total) * 100) : 0;
+                return (
+                  <div
+                    key={row.key}
+                    className="rounded-2xl border border-gray-200/90 bg-white p-6 text-left transition-all duration-200 hover:border-gray-300 hover:shadow-sm"
+                  >
+                    <div className="mb-4">
+                      <svg
+                        className="h-5 w-5 text-gray-500"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={1.5}
+                        aria-hidden
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d={row.path} />
                       </svg>
                     </div>
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">{t('cms.drafts')}</div>
-                      <div className="text-xs text-gray-500">{t('cms.inProgress')}</div>
-                    </div>
+                    <p className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">{row.label}</p>
+                    <p className="mb-3 text-sm font-medium text-gray-500">{row.sub}</p>
+                    <p className="text-3xl font-semibold tabular-nums tracking-tight text-gray-900">{row.count}</p>
+                    <p className="mt-2 text-sm font-medium tabular-nums text-gray-500">{pct}%</p>
                   </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-900">{stats.draft}</div>
-                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.draft / stats.total) * 100) : 0}%</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Submitted */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">{t('cms.submitted')}</div>
-                      <div className="text-xs text-gray-500">{t('cms.awaitingReview')}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-900">{stats.submitted}</div>
-                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.submitted / stats.total) * 100) : 0}%</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Approved */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">{t('cms.approved')}</div>
-                      <div className="text-xs text-gray-500">{t('cms.readyToPublish')}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-900">{stats.approved}</div>
-                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.approved / stats.total) * 100) : 0}%</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Published */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">{t('cms.published')}</div>
-                      <div className="text-xs text-gray-500">{t('cms.liveContent')}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-900">{stats.published}</div>
-                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.published / stats.total) * 100) : 0}%</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Rejected */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">{t('cms.rejected')}</div>
-                      <div className="text-xs text-gray-500">{t('cms.needsRevision')}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-900">{stats.rejected}</div>
-                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.rejected / stats.total) * 100) : 0}%</div>
-                  </div>
-                </div>
-              </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1664,9 +1631,9 @@ export default function CMSModuleNew() {
           {/* Header */}
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-[#4f0c1b] to-[#3d0a15] rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-50">
+                <svg className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
               </div>
               <div>

@@ -258,7 +258,7 @@ export default function Sales() {
                 </div>
                 <div>
                   <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('sales.country')}</div>
-                  <div className="font-medium text-gray-900">{selectedClient.country === 'Ecuador' ? '🇪🇨 Ecuador' : '🇺🇸 USA'}</div>
+                  <div className="font-medium text-gray-900">{selectedClient.country === 'Ecuador' ? 'Ecuador' : 'USA'}</div>
                 </div>
                 <div>
                   <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('sales.address')}</div>

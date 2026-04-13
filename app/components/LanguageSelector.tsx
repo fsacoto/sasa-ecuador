@@ -14,8 +14,8 @@ export default function LanguageSelector({ variant = 'default' }: LanguageSelect
   const isDark = variant === 'dark';
 
   const languages = [
-    { code: 'en' as const, name: t('language.english'), flag: '🇺🇸' },
-    { code: 'es' as const, name: t('language.spanish'), flag: '🇪🇸' }
+    { code: 'en' as const, name: t('language.english') },
+    { code: 'es' as const, name: t('language.spanish') },
   ];
 
   const currentLanguage = languages.find(lang => lang.code === locale) || languages[0];
@@ -36,7 +36,13 @@ export default function LanguageSelector({ variant = 'default' }: LanguageSelect
         }`}
         aria-label={t('language.selectLanguage')}
       >
-        <span className="text-lg">{currentLanguage.flag}</span>
+        <span
+          className={`text-xs font-semibold uppercase tracking-wide sm:hidden ${
+            isDark ? 'text-zinc-400' : 'text-gray-500'
+          }`}
+        >
+          {currentLanguage.code}
+        </span>
         <span className="hidden sm:inline">{currentLanguage.name}</span>
         <svg
           className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
@@ -65,7 +71,6 @@ export default function LanguageSelector({ variant = 'default' }: LanguageSelect
                     : 'text-gray-700 hover:bg-gray-50'
                 }`}
               >
-                <span className="text-lg">{language.flag}</span>
                 <span>{language.name}</span>
                 {locale === language.code && (
                   <svg className="w-4 h-4 ml-auto" fill="currentColor" viewBox="0 0 20 20">

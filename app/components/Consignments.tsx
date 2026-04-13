@@ -768,17 +768,15 @@ export default function Consignments() {
               <div className="space-y-3 mb-6">
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'en')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left"
                 >
-                  <span>{t('language.english')}</span>
-                  <span>🇺🇸</span>
+                  {t('language.english')}
                 </button>
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'es')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left"
                 >
-                  <span>{t('language.spanish')}</span>
-                  <span>🇪🇸</span>
+                  {t('language.spanish')}
                 </button>
               </div>
 
@@ -841,7 +839,7 @@ export default function Consignments() {
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('consignments.country')}</div>
-                    <div className="font-medium text-gray-900">{selectedClient.country === 'Ecuador' ? '🇪🇨 Ecuador' : '🇺🇸 USA'}</div>
+                    <div className="font-medium text-gray-900">{selectedClient.country === 'Ecuador' ? 'Ecuador' : 'USA'}</div>
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('consignments.address')}</div>
@@ -996,17 +994,15 @@ export default function Consignments() {
               <div className="space-y-3 mb-6">
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'en')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left"
                 >
-                  <span>{t('language.english')}</span>
-                  <span>🇺🇸</span>
+                  {t('language.english')}
                 </button>
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'es')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left"
                 >
-                  <span>{t('language.spanish')}</span>
-                  <span>🇪🇸</span>
+                  {t('language.spanish')}
                 </button>
               </div>
 
@@ -1215,17 +1211,15 @@ export default function Consignments() {
               <div className="space-y-3 mb-6">
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'en')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left"
                 >
-                  <span>{t('language.english')}</span>
-                  <span>🇺🇸</span>
+                  {t('language.english')}
                 </button>
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'es')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left"
                 >
-                  <span>{t('language.spanish')}</span>
-                  <span>🇪🇸</span>
+                  {t('language.spanish')}
                 </button>
               </div>
 

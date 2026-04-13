@@ -881,6 +881,13 @@
   },
   "dashboard": {
     "title": "Panel de Control",
+    "greetingMorning": "Buenos días, {name}!",
+    "greetingAfternoon": "Buenas tardes, {name}!",
+    "greetingEvening": "Buenas noches, {name}!",
+    "greetingDefaultName": "amigo",
+    "varianceThisMonth": "este mes",
+    "varianceNew": "Nuevo",
+    "varianceStockSuffix": "vs mes anterior · unidades verificadas",
     "overview": "Resumen de sus operaciones de inventario",
     "totalItems": "Total de Artículos",
     "totalValue": "Valor Total",
@@ -890,6 +897,9 @@
     "totalSuppliers": "Total de Proveedores",
     "purchaseOrders": "Órdenes de Compra",
     "inventoryItems": "Artículos de Inventario",
+    "inventoryAddedThisMonthZero": "0 agregados este mes",
+    "inventoryAddedThisMonthOne": "+1 agregado este mes",
+    "inventoryAddedThisMonthMany": "+{count} agregados este mes",
     "totalStock": "Stock Total",
     "stockByLocation": "Stock por Ubicación",
     "totalUnits": "Total de Unidades",
@@ -915,7 +925,7 @@
     "viewMoreItems": "Ver {count} artículos más"
   },
   "cms": {
-    "title": "Sistema de gestión de contenido",
+    "title": "Sistema de Gestión de Contenido",
     "titleColumn": "Título",
     "subtitle": "Subir y gestionar contenido de marketing",
     "fullAccess": "Acceso Completo",

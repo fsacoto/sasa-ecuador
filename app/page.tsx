@@ -769,8 +769,8 @@ function AppContent() {
                 </p>
                 {(
                   [
-                    { code: 'en' as const, name: t('language.english'), flag: '🇺🇸' },
-                    { code: 'es' as const, name: t('language.spanish'), flag: '🇪🇸' },
+                    { code: 'en' as const, name: t('language.english') },
+                    { code: 'es' as const, name: t('language.spanish') },
                   ] as const
                 ).map((lang) => (
                   <button
@@ -787,7 +787,6 @@ function AppContent() {
                         : 'text-gray-700 hover:bg-gray-50'
                     }`}
                   >
-                    <span className="text-base leading-none">{lang.flag}</span>
                     <span>{lang.name}</span>
                     {locale === lang.code && (
                       <svg className="ml-auto h-3.5 w-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden>

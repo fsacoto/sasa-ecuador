@@ -271,17 +271,17 @@ export default function Suppliers() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
                   >
                     <option value="">{t('suppliers.selectCountry')}</option>
-                    <option value="USA">🇺🇸 USA</option>
-                    <option value="Ecuador">🇪🇨 Ecuador</option>
-                    <option value="Colombia">🇨🇴 Colombia</option>
-                    <option value="Brazil">🇧🇷 Brazil</option>
-                    <option value="China">🇨🇳 China</option>
-                    <option value="India">🇮🇳 India</option>
-                    <option value="Thailand">🇹🇭 Thailand</option>
-                    <option value="Italy">🇮🇹 Italy</option>
-                    <option value="Spain">🇪🇸 Spain</option>
-                    <option value="Mexico">🇲🇽 Mexico</option>
-                    <option value="Peru">🇵🇪 Peru</option>
+                    <option value="USA">USA</option>
+                    <option value="Ecuador">Ecuador</option>
+                    <option value="Colombia">Colombia</option>
+                    <option value="Brazil">Brazil</option>
+                    <option value="China">China</option>
+                    <option value="India">India</option>
+                    <option value="Thailand">Thailand</option>
+                    <option value="Italy">Italy</option>
+                    <option value="Spain">Spain</option>
+                    <option value="Mexico">Mexico</option>
+                    <option value="Peru">Peru</option>
                     <option value="Other">{t('suppliers.other')}</option>
                   </select>
                 </div>

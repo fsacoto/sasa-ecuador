@@ -227,7 +227,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                   onChange={(e) => setFilterEcuadorStock(e.target.checked)}
                   className="w-3 h-3 rounded border-gray-300 text-[#4f0c1b] focus:ring-[#4f0c1b]"
                 />
-                <span className="text-xs font-medium text-gray-700">🇪🇨 Ecuador</span>
+                <span className="text-xs font-medium text-gray-700">Ecuador</span>
               </label>
             </div>
 
@@ -240,7 +240,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                   onChange={(e) => setFilterUsaStock(e.target.checked)}
                   className="w-3 h-3 rounded border-gray-300 text-[#4f0c1b] focus:ring-[#4f0c1b]"
                 />
-                <span className="text-xs font-medium text-gray-700">🇺🇸 USA</span>
+                <span className="text-xs font-medium text-gray-700">USA</span>
               </label>
             </div>
           </div>
@@ -355,8 +355,8 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                               <h5 className="font-semibold text-gray-900 text-xs line-clamp-2 leading-tight">{item.name}</h5>
                               <p className="text-xs text-gray-500 font-mono">{item.sku}</p>
                               <div className="flex items-center gap-1 text-xs">
-                                <span className="text-gray-600">🇪🇨 {item.ecuadorStock}</span>
-                                <span className="text-gray-600">🇺🇸 {item.usaStock}</span>
+                                <span className="text-gray-600">EC {item.ecuadorStock}</span>
+                                <span className="text-gray-600">USA {item.usaStock}</span>
                               </div>
                             </div>
                           </button>
