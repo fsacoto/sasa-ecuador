@@ -1111,12 +1111,22 @@
     "comments": "Comments"
   },
   "login": {
-    "title": "SASA Inventory Management",
+    "title": "SASA Business Hub",
+    "welcomeBack": "Welcome back",
+    "signInSubtitle": "Sign in to SASA Business Hub",
     "email": "Email",
     "password": "Password",
+    "signIn": "Sign in",
+    "signingIn": "Signing in...",
     "login": "Login",
     "loginError": "Invalid email or password",
-    "loginRequired": "You must be logged in"
+    "loginRequired": "You must be logged in",
+    "forgotPassword": "Forgot password?",
+    "sendingReset": "Sending…",
+    "resetEmailSent": "Check your email for a link to reset your password.",
+    "resetEmailFailed": "Could not send reset email. Check the address and try again.",
+    "emailRequiredForReset": "Enter your email above, then try again.",
+    "footerCompany": "© 2026 SASA Enterprises LLC. All rights reserved."
   },
   "alerts": {
     "deleteConfirm": "Are you sure you want to delete this item?",

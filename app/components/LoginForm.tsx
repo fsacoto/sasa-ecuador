@@ -2,99 +2,160 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useTranslation } from '../context/TranslationContext';
 
 export default function LoginForm() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const { login, isLoading } = useAuth();
+  const [successMessage, setSuccessMessage] = useState('');
+  const [resetSending, setResetSending] = useState(false);
+  const { login, resetPassword, isLoading } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
+    setSuccessMessage('');
+
     const success = await login(email, password);
     if (!success) {
-      setError('Invalid email or password');
+      setError(t('login.loginError'));
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    setError('');
+    setSuccessMessage('');
+    if (!email.trim()) {
+      setError(t('login.emailRequiredForReset'));
+      return;
+    }
+    setResetSending(true);
+    const ok = await resetPassword(email);
+    setResetSending(false);
+    if (ok) {
+      setSuccessMessage(t('login.resetEmailSent'));
+    } else {
+      setError(t('login.resetEmailFailed'));
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <div className="mx-auto h-16 w-16 flex items-center justify-center">
-            <img src="/sasa.png" alt="SASA" className="h-12 w-12" />
+    <div className="min-h-screen flex flex-col bg-white">
+      <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 py-12">
+        <div className="w-full max-w-md space-y-8">
+          <div className="text-center">
+            <div className="mx-auto mb-6 flex h-32 w-32 shrink-0 items-center justify-center">
+              <img
+                src="/sasa.png"
+                alt=""
+                width={128}
+                height={128}
+                className="max-h-32 max-w-32 h-auto w-auto object-contain"
+              />
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
+              {t('login.welcomeBack')}
+            </h1>
+            <p className="mt-2 text-sm text-gray-500">{t('login.signInSubtitle')}</p>
           </div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            SASA Inventory Management
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Sign in to access your dashboard
-          </p>
-        </div>
-        
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="rounded-md shadow-sm -space-y-px">
-            <div>
+
+          <form className="space-y-5" onSubmit={handleSubmit}>
+            <div className="space-y-3">
               <label htmlFor="email" className="sr-only">
-                Email
+                {t('login.email')}
               </label>
               <input
                 id="email"
                 name="email"
                 type="email"
+                autoComplete="email"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-[#4f0c1b] focus:border-[#4f0c1b] focus:z-10 sm:text-sm"
-                placeholder="Email"
+                className="block w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 shadow-sm focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-400"
+                placeholder={t('login.email')}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
-            </div>
-            <div>
               <label htmlFor="password" className="sr-only">
-                Password
+                {t('login.password')}
               </label>
               <input
                 id="password"
                 name="password"
                 type="password"
+                autoComplete="current-password"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-[#4f0c1b] focus:border-[#4f0c1b] focus:z-10 sm:text-sm"
-                placeholder="Password"
+                className="block w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 shadow-sm focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-400"
+                placeholder={t('login.password')}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
-          </div>
 
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-md p-3">
-              <p className="text-sm text-red-600">{error}</p>
-            </div>
-          )}
+            {error && (
+              <div className="rounded-md border border-red-100 bg-red-50 px-3 py-2">
+                <p className="text-sm text-red-600">{error}</p>
+              </div>
+            )}
+            {successMessage && (
+              <div className="rounded-md border border-green-100 bg-green-50 px-3 py-2">
+                <p className="text-sm text-green-700">{successMessage}</p>
+              </div>
+            )}
 
-          <div>
             <button
               type="submit"
               disabled={isLoading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-[#4f0c1b] hover:bg-[#3d0a15] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#4f0c1b] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+              className="w-full rounded-lg bg-black py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isLoading ? (
-                <div className="flex items-center">
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                <span className="inline-flex items-center justify-center gap-2">
+                  <svg
+                    className="h-4 w-4 animate-spin text-white"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    aria-hidden
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
                   </svg>
-                  Signing in...
-                </div>
+                  {t('login.signingIn')}
+                </span>
               ) : (
-                'Sign in'
+                t('login.signIn')
               )}
             </button>
-          </div>
-        </form>
+
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={handleForgotPassword}
+                disabled={resetSending}
+                className="text-sm font-medium text-gray-700 underline-offset-2 hover:text-gray-900 hover:underline disabled:opacity-50"
+              >
+                {resetSending ? t('login.sendingReset') : t('login.forgotPassword')}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
+
+      <footer className="shrink-0 border-t border-transparent py-6 text-center">
+        <p className="text-xs text-gray-400">{t('login.footerCompany')}</p>
+      </footer>
     </div>
   );
 }

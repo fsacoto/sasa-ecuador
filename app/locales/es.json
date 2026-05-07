@@ -1106,12 +1106,22 @@
     "comments": "Comentarios"
   },
   "login": {
-    "title": "Sistema de Gestión de Inventario SASA",
+    "title": "SASA Business Hub",
+    "welcomeBack": "Bienvenido de nuevo",
+    "signInSubtitle": "Acceda a SASA Business Hub",
     "email": "Correo Electrónico",
     "password": "Contraseña",
+    "signIn": "Iniciar sesión",
+    "signingIn": "Iniciando sesión...",
     "login": "Iniciar Sesión",
     "loginError": "Correo electrónico o contraseña inválidos",
-    "loginRequired": "Debe iniciar sesión"
+    "loginRequired": "Debe iniciar sesión",
+    "forgotPassword": "¿Olvidó su contraseña?",
+    "sendingReset": "Enviando…",
+    "resetEmailSent": "Revise su correo para el enlace de restablecimiento.",
+    "resetEmailFailed": "No se pudo enviar el correo. Verifique la dirección e intente de nuevo.",
+    "emailRequiredForReset": "Ingrese su correo arriba e intente de nuevo.",
+    "footerCompany": "© 2026 SASA Enterprises LLC. Todos los derechos reservados."
   },
   "alerts": {
     "deleteConfirm": "¿Está seguro de que desea eliminar este elemento?",
