@@ -7,11 +7,13 @@ import { InventoryItem } from '../types';
 import InventoryDetailPanel from './InventoryDetailPanel';
 import ProductCatalogModal from './ProductCatalogModal';
 import InventoryTransferModal from './InventoryTransferModal';
-import { generateUniqueSKU } from '../utils/skuGenerator';
-import { syncInventoryToOrders } from '../utils/syncUpdates';
+import { generateUniqueSKU, collectUsedSkus } from '../utils/skuGenerator';
+import {
+  syncInventoryToOrders,
+  reconcileVerificationIssuesForItem,
+} from '../utils/syncUpdates';
 import { handleMultipleImageUpload, validateImageFile } from '../utils/imageUpload';
-import { generateBarcodeFromSKU, generateBarcodeAsFile, isValidBarcodeInput, isBase64Barcode } from '../utils/barcodeGenerator';
-import { uploadImage } from '../services/storageService';
+import { generateBarcodeFromSKU, isValidBarcodeInput } from '../utils/barcodeGenerator';
 import { useTranslation } from '../context/TranslationContext';
 import ConfirmDialog from './ui/ConfirmDialog';
 import { deleteMediaFile } from '../services/inventoryMediaService';
@@ -34,6 +36,7 @@ export default function Inventory() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+  const [verificationIssuesModalItem, setVerificationIssuesModalItem] = useState<InventoryItem | null>(null);
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [skuManuallyEdited, setSkuManuallyEdited] = useState(false);
@@ -49,6 +52,7 @@ export default function Inventory() {
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterLine, setFilterLine] = useState<string>('all');
   const [filterCountry, setFilterCountry] = useState<string>('all');
+  const [showProblemsOnly, setShowProblemsOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
   // Load filters from sessionStorage when component mounts (from dashboard navigation)
@@ -187,45 +191,71 @@ export default function Inventory() {
     images: [] as string[],
   });
 
-  // Manual SKU generation function - only called when explicitly needed
+  const [supplierSkuStable, setSupplierSkuStable] = useState('');
+  const supplierDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (supplierDebounceRef.current) clearTimeout(supplierDebounceRef.current);
+    supplierDebounceRef.current = setTimeout(() => {
+      setSupplierSkuStable((formData.supplierSKU || '').trim());
+    }, 450);
+    return () => {
+      if (supplierDebounceRef.current) clearTimeout(supplierDebounceRef.current);
+    };
+  }, [formData.supplierSKU]);
+
   const generateSkuIfNeeded = () => {
-    // Only generate SKU for new items (not editing existing ones)
-    if (!editingItem && !skuManuallyEdited && formData.category && formData.line && (!formData.sku || formData.sku.trim() === '')) {
-      const existingSkus = inventory.map(item => item.sku);
-      const newSku = generateUniqueSKU(formData.category, formData.line, existingSkus);
-      setFormData(prev => ({ ...prev, sku: newSku }));
+    const sup = (formData.supplierSKU || '').trim();
+    if (
+      !editingItem &&
+      !skuManuallyEdited &&
+      formData.category &&
+      formData.line &&
+      sup &&
+      (!formData.sku || formData.sku.trim() === '')
+    ) {
+      const pool = collectUsedSkus(inventory, purchaseOrders).filter((s) => s !== formData.sku);
+      const newSku = generateUniqueSKU(formData.category, formData.line, sup, pool);
+      setFormData((prev) => ({ ...prev, sku: newSku }));
     }
   };
 
-  // Auto-generate SKU when both category and line are set (for new items only)
   useEffect(() => {
-    // Skip if editing existing item, SKU was manually edited, or missing category/line
     if (editingItem || skuManuallyEdited || !formData.category || !formData.line) {
       return;
     }
-    
-    // Only generate if SKU is empty
-    if (!formData.sku || formData.sku.trim() === '') {
-      const existingSkus = inventory.map(item => item.sku);
-      const newSku = generateUniqueSKU(formData.category, formData.line, existingSkus);
-      setFormData(prev => {
-        // Only update if SKU is still empty (prevent race conditions)
-        if (!prev.sku || prev.sku.trim() === '') {
-          return { ...prev, sku: newSku };
-        }
-        return prev;
-      });
+    if (!supplierSkuStable) {
+      setFormData((prev) => (prev.sku ? { ...prev, sku: '' } : prev));
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.category, formData.line]);
+    const pool = collectUsedSkus(inventory, purchaseOrders);
+    const newSku = generateUniqueSKU(
+      formData.category,
+      formData.line,
+      supplierSkuStable,
+      pool
+    );
+    setFormData((prev) => ({ ...prev, sku: newSku }));
+  }, [
+    supplierSkuStable,
+    formData.category,
+    formData.line,
+    editingItem,
+    inventory,
+    purchaseOrders,
+    skuManuallyEdited,
+  ]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingItem) {
-      // Update the inventory item
-      const updatedItem = { ...editingItem, ...formData };
-      updateInventoryItem(editingItem.id, formData);
-      
+      const verificationIssues = reconcileVerificationIssuesForItem(
+        { linkedPurchaseOrders: formData.linkedPurchaseOrders },
+        purchaseOrders
+      );
+      const payload = { ...formData, verificationIssues };
+      const updatedItem = { ...editingItem, ...payload };
+      updateInventoryItem(editingItem.id, payload);
+
       // Sync changes to linked purchase orders
       syncInventoryToOrders(updatedItem, purchaseOrders, updatePurchaseOrder);
     } else {
@@ -284,6 +314,13 @@ export default function Inventory() {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
+    const skuTrim = formData.sku?.trim();
+    if (!skuTrim) {
+      alert(t('inventory.skuRequiredForImageUpload'));
+      e.target.value = '';
+      return;
+    }
+
     // Validate all files first
     for (let i = 0; i < files.length; i++) {
       const validation = validateImageFile(files[i]);
@@ -294,8 +331,9 @@ export default function Inventory() {
     }
 
     try {
-      // Upload to Firebase Storage
-      const newImages = await handleMultipleImageUpload(files, 'images/inventory/');
+      const newImages = await handleMultipleImageUpload(files, 'images/inventory/', undefined, {
+        sku: skuTrim,
+      });
       setFormData(prev => ({ ...prev, images: [...prev.images, ...newImages] }));
     } catch (error) {
       console.error('Error uploading images:', error);
@@ -362,12 +400,18 @@ export default function Inventory() {
   };
 
   const handleRegenerateSku = () => {
-    if (formData.category && formData.line) {
-      const existingSkus = inventory.map(item => item.sku).filter(sku => sku !== formData.sku);
-      const newSku = generateUniqueSKU(formData.category, formData.line, existingSkus);
-      setFormData({ ...formData, sku: newSku });
-      setSkuManuallyEdited(false);
+    const sup = (formData.supplierSKU || '').trim();
+    if (!formData.category || !formData.line || !sup) {
+      alert(
+        t('inventory.skuNeedsCategoryLineSupplier') ||
+          'Set category, material (line), and supplier SKU to generate an internal SKU.'
+      );
+      return;
     }
+    const pool = collectUsedSkus(inventory, purchaseOrders).filter((s) => s !== formData.sku);
+    const newSku = generateUniqueSKU(formData.category, formData.line, sup, pool);
+    setFormData({ ...formData, sku: newSku });
+    setSkuManuallyEdited(false);
   };
 
   const handlePurchaseOrderToggle = (orderId: string) => {
@@ -377,57 +421,35 @@ export default function Inventory() {
     setFormData({ ...formData, linkedPurchaseOrders: linkedOrders });
   };
 
+  /** Prefer linked verified POs (source of truth), not only cached verificationIssues on the item. */
+  const getLiveVerificationIssues = (item: InventoryItem) =>
+    reconcileVerificationIssuesForItem(
+      { linkedPurchaseOrders: item.linkedPurchaseOrders ?? [] },
+      purchaseOrders
+    );
+
+  const getTotalProblemQty = (item: InventoryItem) =>
+    getLiveVerificationIssues(item).reduce((sum, v) => sum + v.quantityProblem, 0);
+
+  const inventoryWithProblemsCount = filteredInventory.filter(
+    (item) => getTotalProblemQty(item) > 0
+  ).length;
+
   const getTotalStock = (item: InventoryItem) => {
     return item.ecuadorStock + item.usaStock;
   };
 
-  const handleGenerateBarcode = async (item: InventoryItem) => {
-    // Prevent regenerating barcode if one already exists
-    if (item.barcode) {
-      alert(t('inventory.barcodeAlreadyExists') || 'Barcode already exists and cannot be changed.');
-      return;
-    }
-    
+  const handleGenerateBarcode = (item: InventoryItem) => {
     if (!isValidBarcodeInput(item.sku)) {
       alert(t('inventory.invalidSkuFormat'));
       return;
     }
-    
+
     try {
-      // Check authentication state
-      const { auth } = await import('../utils/firebase');
-      console.log('Current auth user:', auth.currentUser);
-      
-      if (!auth.currentUser) {
-        alert(t('inventory.mustBeLoggedIn'));
-        return;
-      }
-      
-      // Check if we need to migrate from base64 to Firebase Storage
-      const needsMigration = item.barcode && isBase64Barcode(item.barcode);
-      
-      if (needsMigration) {
-        console.log(`Migrating barcode for SKU ${item.sku} from base64 to Firebase Storage`);
-      }
-      
-      // Generate barcode as File
-      const barcodeFile = await generateBarcodeAsFile(item.sku);
-      
-      // Upload barcode to Firebase Storage
-      const sanitizedSku = item.sku.replace(/[^a-zA-Z0-9-]/g, '_');
-      const storagePath = `barcodes/${sanitizedSku}.png`;
-      console.log('Uploading barcode to path:', storagePath);
-      const barcodeUrl = await uploadImage(barcodeFile, storagePath);
-      console.log('Barcode uploaded successfully:', barcodeUrl);
-      
-      // Update inventory with the Firebase Storage URL
-      updateInventoryItem(item.id, { barcode: barcodeUrl });
-      
-      if (needsMigration) {
-        console.log(`Barcode migrated successfully for SKU ${item.sku}`);
-      }
+      const barcodeImage = generateBarcodeFromSKU(item.sku);
+      void updateInventoryItem(item.id, { barcode: barcodeImage });
     } catch (error) {
-      alert(t('inventory.failedToUploadBarcode'));
+      alert(t('inventory.barcodeGenerationFailed'));
       console.error('Barcode generation error:', error);
     }
   };
@@ -451,9 +473,10 @@ export default function Inventory() {
       
       // Show all items - the sync actions ensure only verified items exist
       // But keep a safety check for items with linked orders that aren't verified
-      if (item.linkedPurchaseOrders.length > 0) {
-        const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
-          const order = purchaseOrders.find(o => o.id === orderId);
+      const linkedIds = item.linkedPurchaseOrders ?? [];
+      if (linkedIds.length > 0) {
+        const hasVerifiedOrder = linkedIds.some((orderId) => {
+          const order = purchaseOrders.find((o) => o.id === orderId);
           return order && order.status === 'Verified';
         });
         // Safety: Hide items with linked orders but none verified (shouldn't happen with actions)
@@ -511,6 +534,10 @@ export default function Inventory() {
           return false;
         }
       }
+
+      if (showProblemsOnly && getTotalProblemQty(item) === 0) {
+        return false;
+      }
       
       return true;
     })
@@ -567,11 +594,11 @@ export default function Inventory() {
       );
     }
     return sortDirection === 'asc' ? (
-      <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
       </svg>
     ) : (
-      <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
       </svg>
     );
@@ -590,7 +617,7 @@ export default function Inventory() {
               onClick={() => setIsTransferModalOpen(true)}
               className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm"
             >
-              <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
               </svg>
               <span className="text-sm font-medium text-gray-700">{t('inventory.transfer.openMove')}</span>
@@ -601,7 +628,7 @@ export default function Inventory() {
             disabled={inventory.length === 0}
             className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             <span className="text-sm font-medium text-gray-700">{t('inventory.createCatalog')}</span>
@@ -613,7 +640,7 @@ export default function Inventory() {
                 resetForm();
                 setIsFormOpen(true);
               }}
-              className="flex items-center gap-2 px-3 py-2 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white rounded-lg hover:shadow-md transition-all duration-200 text-sm shadow-sm"
+              className="flex items-center gap-2 px-3 py-2 bg-[#515151] hover:bg-[#000000] text-white rounded-lg hover:shadow-md transition-all duration-200 text-sm shadow-sm"
             >
               <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -625,7 +652,7 @@ export default function Inventory() {
       </div>
 
       {/* View Controls */}
-      <div className="flex items-center justify-end gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-3">
         {/* View Mode Toggle */}
         <div className="relative">
           <button
@@ -653,7 +680,7 @@ export default function Inventory() {
                     setShowViewDropdown(false);
                   }}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                    viewMode === 'grid' ? 'bg-[#4f0c1b] text-white' : 'text-gray-700 hover:bg-gray-50'
+                    viewMode === 'grid' ? 'bg-[#515151] text-white' : 'text-gray-700 hover:bg-gray-50'
                   }`}
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -667,7 +694,7 @@ export default function Inventory() {
                     setShowViewDropdown(false);
                   }}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                    viewMode === 'gallery' ? 'bg-[#4f0c1b] text-white' : 'text-gray-700 hover:bg-gray-50'
+                    viewMode === 'gallery' ? 'bg-[#515151] text-white' : 'text-gray-700 hover:bg-gray-50'
                   }`}
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -717,12 +744,12 @@ export default function Inventory() {
                               setGalleryFields(prev => new Set([...prev, field.key]));
                             }
                           }}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:ring-offset-2 ${
-                            galleryFields.has(field.key) ? 'bg-[#4f0c1b]' : 'bg-gray-300'
+                          className={`toggle-switch relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#515151] focus:ring-offset-2 ${
+                            galleryFields.has(field.key) ? 'toggle-switch-on' : 'toggle-switch-off'
                           }`}
                         >
                           <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            className={`toggle-knob inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
                               galleryFields.has(field.key) ? 'translate-x-6' : 'translate-x-1'
                             }`}
                           />
@@ -736,12 +763,41 @@ export default function Inventory() {
           </div>
         )}
 
+        <button
+          type="button"
+          onClick={() => setShowProblemsOnly((v) => !v)}
+          className={`flex items-center gap-2 px-3 py-2 border rounded-lg hover:shadow-md transition-all duration-200 text-sm ${
+            showProblemsOnly
+              ? 'border-amber-500 bg-amber-50 text-amber-950 ring-1 ring-amber-400'
+              : 'border-gray-300 hover:bg-gray-50 text-gray-700'
+          }`}
+          title={t('inventory.showProblemsOnlyHint')}
+        >
+          <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
+            <path
+              fillRule="evenodd"
+              d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+              clipRule="evenodd"
+            />
+          </svg>
+          <span className="text-sm font-medium whitespace-nowrap">{t('inventory.showProblemsOnly')}</span>
+          {inventoryWithProblemsCount > 0 && (
+            <span
+              className={`text-xs px-1.5 py-0.5 rounded-full font-bold tabular-nums ${
+                showProblemsOnly ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-900'
+              }`}
+            >
+              {inventoryWithProblemsCount}
+            </span>
+          )}
+        </button>
+
         {/* Filter Button */}
         <div className="relative">
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
-              showFilters ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
+              showFilters ? 'bg-[#515151] text-white border-[#515151]' : ''
             }`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -795,12 +851,12 @@ export default function Inventory() {
                               setHiddenColumns(prev => new Set([...prev, column.key]));
                             }
                           }}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:ring-offset-2 ${
-                            hiddenColumns.has(column.key) ? 'bg-gray-300' : 'bg-[#4f0c1b]'
+                          className={`toggle-switch relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#515151] focus:ring-offset-2 ${
+                            hiddenColumns.has(column.key) ? 'toggle-switch-off' : 'toggle-switch-on'
                           }`}
                         >
                           <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            className={`toggle-knob inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
                               hiddenColumns.has(column.key) ? 'translate-x-1' : 'translate-x-6'
                             }`}
                           />
@@ -835,7 +891,7 @@ export default function Inventory() {
                     placeholder={t('inventory.searchPlaceholder')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                   <svg className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -858,7 +914,7 @@ export default function Inventory() {
                 <select
                   value={filterCategory}
                   onChange={(e) => setFilterCategory(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">{t('inventory.allCategories')}</option>
                   {predefinedCategories.map(cat => (
@@ -876,7 +932,7 @@ export default function Inventory() {
                 <select
                   value={filterLine}
                   onChange={(e) => setFilterLine(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">{t('inventory.allLines')}</option>
                   {predefinedLines.map(line => (
@@ -894,7 +950,7 @@ export default function Inventory() {
                 <select
                   value={filterCountry}
                   onChange={(e) => setFilterCountry(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">All Countries</option>
                   <option value="ecuador">Ecuador Only</option>
@@ -905,7 +961,11 @@ export default function Inventory() {
             </div>
             
             {/* Clear filters button */}
-            {(searchQuery || filterCategory !== 'all' || filterLine !== 'all' || filterCountry !== 'all') && (
+            {(searchQuery ||
+              filterCategory !== 'all' ||
+              filterLine !== 'all' ||
+              filterCountry !== 'all' ||
+              showProblemsOnly) && (
               <div className="mt-3 flex justify-end">
                 <button
                   onClick={() => {
@@ -913,8 +973,9 @@ export default function Inventory() {
                     setFilterCategory('all');
                     setFilterLine('all');
                     setFilterCountry('all');
+                    setShowProblemsOnly(false);
                   }}
-                  className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium text-sm"
+                  className="text-[#515151] hover:text-[#000000] font-medium text-sm"
                 >
                   {t('inventory.clearAllFilters')}
                 </button>
@@ -963,7 +1024,7 @@ export default function Inventory() {
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
               </div>
 
@@ -973,7 +1034,7 @@ export default function Inventory() {
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
               </div>
 
@@ -995,7 +1056,7 @@ export default function Inventory() {
                             setTimeout(() => generateSkuIfNeeded(), 0);
                           }
                         }}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                       >
                         <option value="">{t('inventory.selectCategory')}</option>
                         {predefinedCategories.map(cat => (
@@ -1025,7 +1086,7 @@ export default function Inventory() {
                           setTimeout(() => generateSkuIfNeeded(), 0);
                         }}
                         placeholder={t('inventory.enterNewCategory')}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                         autoFocus
                       />
                       <button
@@ -1055,7 +1116,7 @@ export default function Inventory() {
                             setTimeout(() => generateSkuIfNeeded(), 0);
                           }
                         }}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                       >
                         <option value="">{t('inventory.selectLine')}</option>
                         {predefinedLines.map(line => (
@@ -1085,7 +1146,7 @@ export default function Inventory() {
                           setTimeout(() => generateSkuIfNeeded(), 0);
                         }}
                         placeholder={t('inventory.enterNewLine')}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                         autoFocus
                       />
                       <button
@@ -1109,17 +1170,17 @@ export default function Inventory() {
                     value={formData.sku}
                     onChange={(e) => handleSkuChange(e.target.value)}
                     placeholder={t('inventory.autoGeneratedSku')}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent bg-white font-mono"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent bg-white font-mono"
                     readOnly={!!editingItem}
                   />
                   <button
                     type="button"
                     onClick={handleRegenerateSku}
                     disabled={!!editingItem || !formData.category || !formData.line}
-                    className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-white hover:border-[#4f0c1b] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                    className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-white hover:border-[#515151] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                     title={t('inventory.regenerateSku')}
                   >
-                    <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
                   </button>
@@ -1146,7 +1207,7 @@ export default function Inventory() {
                   value={formData.supplierSKU}
                   onChange={(e) => setFormData({ ...formData, supplierSKU: e.target.value })}
                   placeholder={t('inventory.supplierSkuPlaceholder')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
               </div>
 
@@ -1159,7 +1220,7 @@ export default function Inventory() {
                     min="0"
                     value={formData.ecuadorStock}
                     onChange={(e) => setFormData({ ...formData, ecuadorStock: parseInt(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
                 <div>
@@ -1170,7 +1231,7 @@ export default function Inventory() {
                     min="0"
                     value={formData.usaStock}
                     onChange={(e) => setFormData({ ...formData, usaStock: parseInt(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
               </div>
@@ -1209,7 +1270,7 @@ export default function Inventory() {
                             </svg>
                           </button>
                           {index === 0 && (
-                            <div className="absolute bottom-1 left-1 bg-[#4f0c1b] text-white text-xs px-2 py-0.5 rounded">
+                            <div className="absolute bottom-1 left-1 bg-[#515151] text-white text-xs px-2 py-0.5 rounded">
                               {t('inventory.main')}
                             </div>
                           )}
@@ -1220,7 +1281,7 @@ export default function Inventory() {
                 )}
                 
                 {/* Upload Button */}
-                <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-[#4f0c1b] hover:bg-gray-50 cursor-pointer transition-all">
+                <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-[#515151] hover:bg-gray-50 cursor-pointer transition-all">
                   <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
@@ -1251,7 +1312,7 @@ export default function Inventory() {
                             type="checkbox"
                             checked={formData.linkedPurchaseOrders.includes(order.id)}
                             onChange={() => handlePurchaseOrderToggle(order.id)}
-                            className="rounded border-gray-300 text-[#4f0c1b] focus:ring-[#4f0c1b]"
+                            className="rounded border-gray-300 text-[#515151] focus:ring-[#515151]"
                           />
                           <span className="text-sm text-gray-700">
                             {order.invoice} - {order.description} ({order.quantity} units)
@@ -1275,7 +1336,7 @@ export default function Inventory() {
               <button
                 type="submit"
                 onClick={handleSubmit}
-                className="flex-1 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
+                className="flex-1 bg-[#515151] hover:bg-[#000000] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
               >
                 {editingItem ? t('inventory.update') : t('inventory.add')} {t('common.item')}
               </button>
@@ -1291,6 +1352,9 @@ export default function Inventory() {
             <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
+                  #
+                </th>
                 {!hiddenColumns.has('name') && (
                   <th 
                     onClick={() => handleSort('name')}
@@ -1383,22 +1447,33 @@ export default function Inventory() {
             <tbody className="divide-y divide-gray-100">
               {filteredAndSortedInventory.length === 0 ? (
                 <tr>
-                  <td colSpan={getVisibleColumnCount()} className="px-6 py-12 text-center text-sm text-gray-500">
+                  <td colSpan={getVisibleColumnCount() + 1} className="px-6 py-12 text-center text-sm text-gray-500">
                     {filteredInventory.length === 0 
                       ? t('inventory.noItemsYet')
                       : t('inventory.noItemsMatchFilters')}
                   </td>
                 </tr>
               ) : (
-                filteredAndSortedInventory.map((item) => {
+                filteredAndSortedInventory.map((item, index) => {
                   const needsReview = item.category.includes('NEEDS REVIEW');
                   return (
                     <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${needsReview ? 'bg-amber-50/30' : ''}`}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                        {index + 1}
+                      </td>
                       {!hiddenColumns.has('name') && (
                         <td className="px-6 py-4">
-                          <button
+                          <div
+                            role="button"
+                            tabIndex={0}
                             onClick={() => setSelectedItem(item)}
-                            className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                setSelectedItem(item);
+                              }
+                            }}
+                            className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity cursor-pointer rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[#515151] focus-visible:ring-offset-2"
                           >
                             {item.images && item.images.length > 0 ? (
                               <div className="relative">
@@ -1408,7 +1483,7 @@ export default function Inventory() {
                                   className="w-12 h-12 object-cover rounded-lg border border-gray-200" 
                                 />
                                 {item.images.length > 1 && (
-                                  <div className="absolute -bottom-1 -right-1 bg-[#4f0c1b] text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-medium">
+                                  <div className="absolute -bottom-1 -right-1 bg-[#515151] text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-medium">
                                     {item.images.length}
                                   </div>
                                 )}
@@ -1420,15 +1495,40 @@ export default function Inventory() {
                                 </svg>
                               </div>
                             )}
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-[#4f0c1b] hover:underline">{item.name}</span>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-[#515151] hover:underline">{item.name}</span>
                               {needsReview && (
                                 <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
                                   {t('inventory.needsReview')}
                                 </span>
                               )}
+                              {getTotalProblemQty(item) > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setVerificationIssuesModalItem(item);
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 text-amber-900 px-2 py-0.5 text-xs font-semibold hover:bg-amber-100 transition-colors max-w-[10rem]"
+                                  title={t('inventory.verificationProblemHint')}
+                                >
+                                  <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
+                                    <path
+                                      fillRule="evenodd"
+                                      d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                                      clipRule="evenodd"
+                                    />
+                                  </svg>
+                                  <span className="text-left leading-tight">
+                                    {t('inventory.includesProblemUnits').replace(
+                                      '{{count}}',
+                                      String(getTotalProblemQty(item))
+                                    )}
+                                  </span>
+                                </button>
+                              )}
                             </div>
-                          </button>
+                          </div>
                         </td>
                       )}
                       {!hiddenColumns.has('sku') && (
@@ -1438,16 +1538,35 @@ export default function Inventory() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                           {item.barcode ? (
                             <div className="flex items-center gap-2">
-                              <img 
-                                src={item.barcode} 
+                              <img
+                                src={item.barcode}
                                 alt={`Barcode for ${item.sku}`}
                                 className="h-12 w-auto border border-gray-200 rounded"
                               />
+                              {!isReadOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleGenerateBarcode(item)}
+                                  className="text-gray-400 hover:text-[#515151] transition-colors"
+                                  title={t('inventory.regenerateBarcode') || 'Regenerate barcode'}
+                                >
+                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                    />
+                                  </svg>
+                                </button>
+                              )}
                             </div>
                           ) : (
                             <button
+                              type="button"
+                              disabled={isReadOnly}
                               onClick={() => handleGenerateBarcode(item)}
-                              className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium text-sm transition-colors flex items-center gap-1"
+                              className="text-[#515151] hover:text-[#000000] font-medium text-sm transition-colors flex items-center gap-1 disabled:opacity-50 disabled:pointer-events-none"
                             >
                               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1472,7 +1591,36 @@ export default function Inventory() {
                         <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-700">{item.usaStock}</td>
                       )}
                       {!hiddenColumns.has('totalStock') && (
-                        <td className="px-6 py-4 whitespace-nowrap text-center font-semibold text-gray-900">{getTotalStock(item)}</td>
+                        <td className="px-6 py-4 text-center align-middle">
+                          <div className="flex flex-col items-center justify-center gap-1.5">
+                            <span className="text-lg font-semibold text-gray-900 tabular-nums">
+                              {getTotalStock(item)}
+                            </span>
+                            <span className="text-[10px] uppercase tracking-wide text-gray-400 font-medium">
+                              {t('inventory.totalOnHandShort')}
+                            </span>
+                            {getTotalProblemQty(item) > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setVerificationIssuesModalItem(item)}
+                                className="inline-flex items-center justify-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-950 hover:bg-amber-100 transition-colors shadow-sm"
+                                title={t('inventory.verificationProblemHint')}
+                              >
+                                <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
+                                  <path
+                                    fillRule="evenodd"
+                                    d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                                    clipRule="evenodd"
+                                  />
+                                </svg>
+                                {t('inventory.includesProblemUnits').replace(
+                                  '{{count}}',
+                                  String(getTotalProblemQty(item))
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       )}
                       {!hiddenColumns.has('actions') && (
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
@@ -1480,7 +1628,7 @@ export default function Inventory() {
                             <>
                               <button
                                 onClick={() => handleEdit(item)}
-                                className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium mr-4 transition-colors"
+                                className="text-[#515151] hover:text-[#000000] font-medium mr-4 transition-colors"
                               >
                                 {needsReview ? 'Complete Info' : 'Edit'}
                               </button>
@@ -1504,6 +1652,20 @@ export default function Inventory() {
             </tbody>
           </table>
         </div>
+        <div className="bg-gray-50 border-t border-gray-200 px-6 py-3 flex items-center justify-between text-sm text-gray-600">
+          <div className="flex items-center gap-4">
+            <span>
+              {t('purchaseOrders.showing')}{' '}
+              <span className="font-semibold text-gray-900">{filteredAndSortedInventory.length}</span>{' '}
+              {t('purchaseOrders.of')}{' '}
+              <span className="font-semibold text-gray-900">{filteredInventory.length}</span>{' '}
+              {t('inventory.footerItems')}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <span>{t('inventory.tableRowNumbersHint')}</span>
+          </div>
+        </div>
       </div>
       )}
 
@@ -1524,7 +1686,30 @@ export default function Inventory() {
                 {filteredAndSortedInventory.map((item) => {
                   const needsReview = item.category.includes('NEEDS REVIEW');
                   return (
-                    <div key={item.id} className={`group relative bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-lg transition-all duration-200 hover:border-[#4f0c1b] ${needsReview ? 'ring-2 ring-amber-200' : ''}`}>
+                    <div key={item.id} className={`group relative bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-lg transition-all duration-200 hover:border-[#515151] ${needsReview ? 'ring-2 ring-amber-200' : ''}`}>
+                      {getTotalProblemQty(item) > 0 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setVerificationIssuesModalItem(item);
+                          }}
+                          className="absolute top-2 left-2 z-20 inline-flex items-center gap-1 rounded-full bg-amber-500 text-white px-2 py-1 text-[10px] font-bold shadow-md hover:bg-amber-600 transition-colors max-w-[7.5rem] leading-tight text-left"
+                          title={t('inventory.verificationProblemHint')}
+                        >
+                          <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
+                            <path
+                              fillRule="evenodd"
+                              d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                          {t('inventory.includesProblemUnits').replace(
+                            '{{count}}',
+                            String(getTotalProblemQty(item))
+                          )}
+                        </button>
+                      )}
                       {/* Image Section */}
                       <div className="aspect-square relative overflow-hidden bg-gray-100">
                         {item.images && item.images.length > 0 && !imageErrors.has(`${item.id}-${item.images[0]}`) ? (
@@ -1546,7 +1731,7 @@ export default function Inventory() {
                               loading="lazy"
                             />
                             {item.images.length > 1 && (
-                              <div className="absolute top-2 right-2 bg-[#4f0c1b] text-white text-xs w-6 h-6 rounded-full flex items-center justify-center font-medium z-10">
+                              <div className="absolute top-2 right-2 bg-[#515151] text-white text-xs w-6 h-6 rounded-full flex items-center justify-center font-medium z-10">
                                 {item.images.length}
                               </div>
                             )}
@@ -1564,14 +1749,14 @@ export default function Inventory() {
                           <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex gap-2 pointer-events-auto">
                             <button
                               onClick={() => setSelectedItem(item)}
-                              className="bg-white text-[#4f0c1b] px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shadow-lg"
+                              className="bg-white text-[#515151] px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shadow-lg"
                             >
                               View
                             </button>
                             {!isReadOnly && (
                               <button
                                 onClick={() => handleEdit(item)}
-                                className="bg-[#4f0c1b] text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-[#3d0a15] transition-colors shadow-lg"
+                                className="bg-[#515151] text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-[#000000] transition-colors shadow-lg"
                               >
                                 Edit
                               </button>
@@ -1585,7 +1770,7 @@ export default function Inventory() {
                         {/* Name */}
                         {galleryFields.has('name') && (
                           <div>
-                            <h3 className="font-medium text-[#4f0c1b] text-sm truncate">{item.name}</h3>
+                            <h3 className="font-medium text-[#515151] text-sm truncate">{item.name}</h3>
                             {needsReview && (
                               <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
                                 {t('inventory.needsReview')}
@@ -1627,8 +1812,13 @@ export default function Inventory() {
                               </span>
                             )}
                               {galleryFields.has('totalStock') && (
-                                <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded-full font-medium">
+                                <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded-full font-medium inline-flex items-center gap-1">
                                   Total: {item.ecuadorStock + item.usaStock}
+                                  {getTotalProblemQty(item) > 0 && (
+                                    <span className="text-amber-700" title={t('inventory.verificationProblemHint')}>
+                                      ({getTotalProblemQty(item)} {t('inventory.problemUnitsShort')})
+                                    </span>
+                                  )}
                                 </span>
                               )}
                           </div>
@@ -1655,6 +1845,89 @@ export default function Inventory() {
                 })}
               </div>
             )}
+          </div>
+          <div className="bg-gray-50 border-t border-gray-200 px-6 py-3 flex items-center justify-between text-sm text-gray-600">
+            <div className="flex items-center gap-4">
+              <span>
+                {t('purchaseOrders.showing')}{' '}
+                <span className="font-semibold text-gray-900">{filteredAndSortedInventory.length}</span>{' '}
+                {t('purchaseOrders.of')}{' '}
+                <span className="font-semibold text-gray-900">{filteredInventory.length}</span>{' '}
+                {t('inventory.footerItems')}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <span>{t('inventory.footerCountsHint')}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {verificationIssuesModalItem && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="verification-issues-title"
+          onClick={() => setVerificationIssuesModalItem(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[85vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between gap-3">
+              <h3 id="verification-issues-title" className="font-semibold text-gray-900">
+                {t('inventory.verificationProblemTitle')}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setVerificationIssuesModalItem(null)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100"
+                aria-label={t('common.close')}
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-5 overflow-y-auto space-y-4">
+              <p className="text-sm text-gray-600">
+                <span className="font-medium text-gray-900">{verificationIssuesModalItem.name}</span>
+                <span className="text-gray-400"> · {verificationIssuesModalItem.sku}</span>
+              </p>
+              <p className="text-xs text-gray-500">{t('inventory.verificationProblemIntro')}</p>
+              {getLiveVerificationIssues(verificationIssuesModalItem).map((issue) => {
+                const po = purchaseOrders.find((o) => o.id === issue.purchaseOrderId);
+                return (
+                  <div
+                    key={issue.purchaseOrderId}
+                    className="border border-amber-200 bg-amber-50/80 rounded-lg p-4 space-y-2"
+                  >
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <span className="text-sm font-semibold text-amber-950">
+                        {po?.invoice ?? t('inventory.purchaseOrder')}
+                      </span>
+                    </div>
+                    {issue.quantityGoodAtVerification !== undefined ? (
+                      <p className="text-sm font-semibold text-gray-900">
+                        {t('inventory.verificationBreakdownLine')
+                          .replace('{{good}}', String(issue.quantityGoodAtVerification))
+                          .replace('{{problem}}', String(issue.quantityProblem))}
+                      </p>
+                    ) : (
+                      <p className="text-sm font-bold text-amber-900">
+                        {t('inventory.problemQtyLabel')}: {issue.quantityProblem}
+                      </p>
+                    )}
+                    {issue.comment ? (
+                      <p className="text-sm text-gray-800 whitespace-pre-wrap">{issue.comment}</p>
+                    ) : (
+                      <p className="text-sm text-gray-500 italic">{t('inventory.noVerificationComment')}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

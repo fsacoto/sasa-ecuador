@@ -219,7 +219,7 @@ const styles = StyleSheet.create({
     fontWeight: 'normal',
     color: '#333333',
     marginBottom: 8, // 8px spacing from SKU to price placeholder
-    fontFamily: 'Courier',
+    fontFamily: 'Helvetica',
     letterSpacing: 0.22, // +2% letter spacing (11px * 0.02 = 0.22)
     lineHeight: 1.1, // Tight and compact
     maxWidth: '100%',

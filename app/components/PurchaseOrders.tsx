@@ -5,13 +5,21 @@ import React from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { PurchaseOrder, Supplier, InventoryItem, PurchaseOrderStatus } from '../types';
 import SupplierDetailPanel from './SupplierDetailPanel';
-import { generateUniqueSKU } from '../utils/skuGenerator';
+import { generateUniqueSKU, collectUsedSkus } from '../utils/skuGenerator';
 import { getExchangeRates, getExchangeRate, formatLastUpdate, type ExchangeRateResponse } from '../utils/currencyApi';
 import BulkImportModal from './BulkImportModal';
 import BulkDeleteModal from './BulkDeleteModal';
 import BulkStatusChangeModal from './BulkStatusChangeModal';
 import BarcodePrintModal from './BarcodePrintModal';
-import { syncPurchaseOrderToInventory, cleanupInventoryAfterOrderDeletion, generateBarcodeForInventoryItem } from '../utils/syncUpdates';
+import {
+  syncPurchaseOrderToInventory,
+  cleanupInventoryAfterOrderDeletion,
+  generateBarcodeForInventoryItem,
+  mergePurchaseOrderSnapshot,
+  reconcileVerificationIssuesForItem,
+  verifiedPhysicalStock,
+  attachBarcodeToPurchaseOrderIfNeeded,
+} from '../utils/syncUpdates';
 import { useTranslation } from '../context/TranslationContext';
 import POVerificationModal from './POVerificationModal';
 import { generatePOVerificationPDF } from '../utils/poVerificationPDF';
@@ -230,38 +238,68 @@ export default function PurchaseOrders() {
     status: 'Ordered' as 'Ordered' | 'Shipped' | 'Received' | 'Verified',
   });
 
-  // Auto-generate SKU when creating new item or when category/line changes during edit
+  /** Debounce supplier SKU so the internal SKU does not change on every keystroke. */
+  const [supplierSkuStable, setSupplierSkuStable] = useState('');
+  const supplierDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (isCreatingNewItem && formData.category && formData.line && !editingOrder && !skuManuallyEdited) {
-      const existingSkus = inventory.map(item => item.sku);
-      const newSku = generateUniqueSKU(formData.category, formData.line, existingSkus);
-      setFormData(prev => ({ ...prev, sku: newSku }));
+    if (supplierDebounceRef.current) clearTimeout(supplierDebounceRef.current);
+    supplierDebounceRef.current = setTimeout(() => {
+      setSupplierSkuStable((formData.supplierSKU || '').trim());
+    }, 450);
+    return () => {
+      if (supplierDebounceRef.current) clearTimeout(supplierDebounceRef.current);
+    };
+  }, [formData.supplierSKU]);
+
+  // Auto-generate SKU from category + line (material) + supplier SKU
+  useEffect(() => {
+    if (!supplierSkuStable) {
+      if (isCreatingNewItem && !editingOrder && !skuManuallyEdited) {
+        setFormData((prev) => (prev.sku ? { ...prev, sku: '' } : prev));
+      }
+      return;
     }
-    // Auto-regenerate during edit if category/line changed and SKU wasn't manually edited
+
+    const existingSkus = collectUsedSkus(inventory, purchaseOrders, {
+      ignorePurchaseOrderId: editingOrder?.id,
+    });
+
+    if (isCreatingNewItem && formData.category && formData.line && !editingOrder && !skuManuallyEdited) {
+      const newSku = generateUniqueSKU(
+        formData.category,
+        formData.line,
+        supplierSkuStable,
+        existingSkus
+      );
+      setFormData((prev) => ({ ...prev, sku: newSku }));
+    }
+
     if (editingOrder && formData.category && formData.line && !skuManuallyEdited) {
-      // Check if category or line changed from original values
       const categoryChanged = formData.category !== editingOrder.category;
       const lineChanged = formData.line !== editingOrder.line;
-      
-      if (categoryChanged || lineChanged) {
-        console.log('SKU regeneration triggered:', {
-          originalCategory: editingOrder.category,
-          newCategory: formData.category,
-          originalLine: editingOrder.line,
-          newLine: formData.line,
-          categoryChanged,
-          lineChanged
-        });
-        
-      const existingSkus = inventory.map(item => item.sku).filter(sku => sku !== editingOrder.sku);
-      const newSku = generateUniqueSKU(formData.category, formData.line, existingSkus);
-      if (newSku !== formData.sku) {
-          console.log('SKU updated from', formData.sku, 'to', newSku);
-        setFormData(prev => ({ ...prev, sku: newSku }));
-        }
+      const supplierChanged =
+        supplierSkuStable !== (editingOrder.supplierSKU || '').trim();
+
+      if (categoryChanged || lineChanged || supplierChanged) {
+        const newSku = generateUniqueSKU(
+          formData.category,
+          formData.line,
+          supplierSkuStable,
+          existingSkus
+        );
+        setFormData((prev) => (prev.sku !== newSku ? { ...prev, sku: newSku } : prev));
       }
     }
-  }, [formData.category, formData.line, isCreatingNewItem, editingOrder, inventory, skuManuallyEdited]);
+  }, [
+    supplierSkuStable,
+    formData.category,
+    formData.line,
+    isCreatingNewItem,
+    editingOrder,
+    inventory,
+    purchaseOrders,
+    skuManuallyEdited,
+  ]);
 
   // When selecting an existing inventory item, auto-fill fields
   useEffect(() => {
@@ -523,24 +561,47 @@ export default function PurchaseOrders() {
       return; // Wait for modal confirmation
       }
       
-      updatePurchaseOrder(editingOrder.id, orderData);
-      
-      // ALWAYS sync to inventory - the sync function handles verified/non-verified logic
-      // If verified: creates/updates inventory
-      // If not verified: removes from inventory
-      const previousSku = originalSku !== updatedOrder.sku ? originalSku : undefined;
-      await syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku, updatedOrder.status === 'Verified');
-    } else {
-      // Add the purchase order
-      const newOrderId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      const newOrder = { ...orderData, id: newOrderId, createdAt: new Date() };
-      addPurchaseOrder(orderData);
+      await updatePurchaseOrder(editingOrder.id, orderData);
 
-      // ALWAYS sync to inventory - the sync function handles verified/non-verified logic
-      // If verified: creates/updates inventory
-      // If not verified: does nothing (no inventory item created)
-      if (formData.sku) {
-        await syncPurchaseOrderToInventory(newOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, undefined, newOrder.status === 'Verified');
+      let orderForSync: PurchaseOrder = { ...editingOrder, ...orderData } as PurchaseOrder;
+      const skuChanged = Boolean(originalSku && originalSku !== orderForSync.sku);
+      orderForSync = await attachBarcodeToPurchaseOrderIfNeeded(
+        orderForSync,
+        updatePurchaseOrder,
+        { forceRegenerate: skuChanged }
+      );
+
+      const previousSku = originalSku !== orderForSync.sku ? originalSku : undefined;
+      await syncPurchaseOrderToInventory(
+        orderForSync,
+        inventory,
+        updateInventoryItem,
+        addInventoryItem,
+        deleteInventoryItem,
+        purchaseOrders,
+        previousSku,
+        orderForSync.status === 'Verified'
+      );
+    } else {
+      const newId = await addPurchaseOrder(orderData as Omit<PurchaseOrder, 'id' | 'createdAt'>);
+      let orderForSync: PurchaseOrder = {
+        ...(orderData as Omit<PurchaseOrder, 'id' | 'createdAt'>),
+        id: newId,
+        createdAt: new Date(),
+      } as PurchaseOrder;
+
+      if (orderForSync.sku) {
+        orderForSync = await attachBarcodeToPurchaseOrderIfNeeded(orderForSync, updatePurchaseOrder);
+        await syncPurchaseOrderToInventory(
+          orderForSync,
+          inventory,
+          updateInventoryItem,
+          addInventoryItem,
+          deleteInventoryItem,
+          purchaseOrders,
+          undefined,
+          orderForSync.status === 'Verified'
+        );
       }
     }
     resetForm();
@@ -580,12 +641,20 @@ export default function PurchaseOrders() {
   };
 
   const handleRegenerateSku = () => {
-    if (formData.category && formData.line) {
-      const existingSkus = inventory.map(item => item.sku).filter(sku => sku !== formData.sku);
-      const newSku = generateUniqueSKU(formData.category, formData.line, existingSkus);
-      setFormData({ ...formData, sku: newSku });
-      setSkuManuallyEdited(false);
+    const sup = (formData.supplierSKU || '').trim();
+    if (!formData.category || !formData.line || !sup) {
+      alert(
+        t('purchaseOrders.skuNeedsCategoryLineSupplier') ||
+          'Set category, material (line), and supplier SKU to generate an internal SKU.'
+      );
+      return;
     }
+    const pool = collectUsedSkus(inventory, purchaseOrders, {
+      ignorePurchaseOrderId: editingOrder?.id,
+    }).filter((s) => s !== formData.sku);
+    const newSku = generateUniqueSKU(formData.category, formData.line, sup, pool);
+    setFormData({ ...formData, sku: newSku });
+    setSkuManuallyEdited(false);
   };
 
   const handleSkuChange = (newSku: string) => {
@@ -695,54 +764,58 @@ export default function PurchaseOrders() {
         verificationMedia: mediaUrls.length > 0 ? mediaUrls : undefined
       };
       
-      // Update the order
-      updatePurchaseOrder(data.updatedOrder.id, updateData);
-      
-      // Re-sync inventory with new good quantity
-      // First, we need to adjust inventory based on the difference in good quantity
-      const oldGoodQuantity = data.updatedOrder.quantityGood !== undefined 
-        ? data.updatedOrder.quantityGood 
-        : (data.updatedOrder.quantityReceived || data.updatedOrder.quantity);
-      const quantityDifference = quantityGood - oldGoodQuantity;
-      
-      const inventoryItem = inventory.find(item => item.sku === order.sku);
-      if (inventoryItem && quantityDifference !== 0) {
-        const stockUpdate: Partial<InventoryItem> = {};
-        if (order.destinationStock === 'Ecuador') {
-          stockUpdate.ecuadorStock = Math.max(0, (inventoryItem.ecuadorStock || 0) + quantityDifference);
-        } else {
-          stockUpdate.usaStock = Math.max(0, (inventoryItem.usaStock || 0) + quantityDifference);
+      await updatePurchaseOrder(data.updatedOrder.id, updateData);
+
+      let mergedPo: PurchaseOrder = {
+        ...data.updatedOrder,
+        ...updateData,
+      } as PurchaseOrder;
+      mergedPo = await attachBarcodeToPurchaseOrderIfNeeded(mergedPo, updatePurchaseOrder);
+
+      const poSnap = mergePurchaseOrderSnapshot(purchaseOrders, mergedPo);
+
+      const oldPhysical = verifiedPhysicalStock(data.updatedOrder);
+      const newPhysical = quantityGood + quantityProblem;
+      const physicalDifference = newPhysical - oldPhysical;
+
+      const inventoryItem = inventory.find((item) => item.sku === mergedPo.sku);
+      if (inventoryItem) {
+        const stockUpdate: Partial<InventoryItem> = {
+          verificationIssues: reconcileVerificationIssuesForItem(
+            { linkedPurchaseOrders: inventoryItem.linkedPurchaseOrders },
+            poSnap
+          ),
+        };
+        if (physicalDifference !== 0) {
+          if (order.destinationStock === 'Ecuador') {
+            stockUpdate.ecuadorStock = Math.max(0, (inventoryItem.ecuadorStock || 0) + physicalDifference);
+          } else {
+            stockUpdate.usaStock = Math.max(0, (inventoryItem.usaStock || 0) + physicalDifference);
+          }
         }
-        updateInventoryItem(inventoryItem.id, stockUpdate);
-      } else if (!inventoryItem && quantityGood > 0) {
-        // Create new inventory item if it doesn't exist and we have good items
-        await addInventoryItem({
-          sku: order.sku,
-          supplierSKU: order.supplierSKU,
-          name: order.description,
-          description: order.description,
-          category: order.category,
-          line: order.line,
-          images: order.images || [],
-          ecuadorStock: order.destinationStock === 'Ecuador' ? quantityGood : 0,
-          usaStock: order.destinationStock === 'USA' ? quantityGood : 0,
+        await updateInventoryItem(inventoryItem.id, stockUpdate);
+      } else if (newPhysical > 0) {
+        const newItemPayload: Omit<InventoryItem, 'id' | 'createdAt'> = {
+          sku: mergedPo.sku,
+          supplierSKU: mergedPo.supplierSKU,
+          name: mergedPo.description,
+          description: mergedPo.description,
+          category: mergedPo.category,
+          line: mergedPo.line,
+          images: mergedPo.images || [],
+          ecuadorStock: mergedPo.destinationStock === 'Ecuador' ? newPhysical : 0,
+          usaStock: mergedPo.destinationStock === 'USA' ? newPhysical : 0,
           consignmentStock: 0,
-          linkedPurchaseOrders: [order.id]
-        });
-        
-        // Generate barcode for the newly created item immediately
-        if (order.sku) {
-          // Wait a moment for state to update, then find and generate barcode
-          setTimeout(async () => {
-            const newInventoryItem = inventory.find(item => item.sku === order.sku);
-            if (newInventoryItem && !newInventoryItem.barcode) {
-              try {
-                await generateBarcodeForInventoryItem(order.sku, updateInventoryItem, newInventoryItem.id);
-              } catch (err) {
-                console.error('Error generating barcode:', err);
-              }
-            }
-          }, 200);
+          linkedPurchaseOrders: [mergedPo.id],
+          verificationIssues: reconcileVerificationIssuesForItem(
+            { linkedPurchaseOrders: [mergedPo.id] },
+            poSnap
+          ),
+          ...(mergedPo.barcode ? { barcode: mergedPo.barcode } : {}),
+        };
+        const newItemId = await addInventoryItem(newItemPayload);
+        if (mergedPo.sku && !mergedPo.barcode) {
+          await generateBarcodeForInventoryItem(mergedPo.sku, updateInventoryItem, newItemId);
         }
       }
       
@@ -779,12 +852,28 @@ export default function PurchaseOrders() {
         return;
       }
       
-      // Continue with the update
-      updatePurchaseOrder(updatedOrder.id, orderData);
+      await updatePurchaseOrder(updatedOrder.id, orderData);
       const previousSku = data.previousSku;
-      // Only sync good items to inventory
-      const orderWithGoodQuantity = { ...updatedOrder, ...orderData, quantity: quantityGood, quantityReceived: quantityGood };
-      await syncPurchaseOrderToInventory(orderWithGoodQuantity, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku, true);
+      let orderWithGoodQuantity: PurchaseOrder = {
+        ...updatedOrder,
+        ...orderData,
+        quantity: quantityGood,
+        quantityReceived: quantityGood,
+      } as PurchaseOrder;
+      orderWithGoodQuantity = await attachBarcodeToPurchaseOrderIfNeeded(
+        orderWithGoodQuantity,
+        updatePurchaseOrder
+      );
+      await syncPurchaseOrderToInventory(
+        orderWithGoodQuantity,
+        inventory,
+        updateInventoryItem,
+        addInventoryItem,
+        deleteInventoryItem,
+        purchaseOrders,
+        previousSku,
+        true
+      );
       resetForm();
     } else {
       // Handle status change flow
@@ -822,13 +911,28 @@ export default function PurchaseOrders() {
         return;
       }
 
-      // Update order status
-      updatePurchaseOrder(order.id, statusUpdate);
+      await updatePurchaseOrder(order.id, statusUpdate);
 
-      // Sync to inventory using only GOOD quantity (not problem items)
-      // The sync function will handle this properly and generate barcodes immediately
-      const orderWithGoodQuantity = { ...order, ...statusUpdate, quantity: quantityGood, quantityReceived: quantityGood };
-      await syncPurchaseOrderToInventory(orderWithGoodQuantity, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, undefined, true);
+      let orderWithGoodQuantity: PurchaseOrder = {
+        ...order,
+        ...statusUpdate,
+        quantity: quantityGood,
+        quantityReceived: quantityGood,
+      } as PurchaseOrder;
+      orderWithGoodQuantity = await attachBarcodeToPurchaseOrderIfNeeded(
+        orderWithGoodQuantity,
+        updatePurchaseOrder
+      );
+      await syncPurchaseOrderToInventory(
+        orderWithGoodQuantity,
+        inventory,
+        updateInventoryItem,
+        addInventoryItem,
+        deleteInventoryItem,
+        purchaseOrders,
+        undefined,
+        true
+      );
     }
   };
 
@@ -877,12 +981,25 @@ export default function PurchaseOrders() {
       return; // Wait for modal confirmation
     }
     
-    // For non-Verified status changes, update directly
-    updatePurchaseOrder(order.id, statusUpdate);
-    
-    // Sync changes to inventory after status update
-    const updatedOrder = { ...order, ...statusUpdate };
-    await syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, undefined, updatedOrder.status === 'Verified');
+    await updatePurchaseOrder(order.id, statusUpdate);
+
+    let updatedOrder: PurchaseOrder = { ...order, ...statusUpdate } as PurchaseOrder;
+    if (String(updatedOrder.status).trim().toLowerCase() === 'verified') {
+      updatedOrder = await attachBarcodeToPurchaseOrderIfNeeded(
+        updatedOrder,
+        updatePurchaseOrder
+      );
+    }
+    await syncPurchaseOrderToInventory(
+      updatedOrder,
+      inventory,
+      updateInventoryItem,
+      addInventoryItem,
+      deleteInventoryItem,
+      purchaseOrders,
+      undefined,
+      updatedOrder.status === 'Verified'
+    );
   };
 
   const handleEdit = (order: PurchaseOrder) => {
@@ -1188,17 +1305,27 @@ export default function PurchaseOrders() {
     
     // Continue with the form submission or status update
     if (editingOrder && orderData) {
-      updatePurchaseOrder(editingOrder.id, orderData);
-      // ALWAYS sync to inventory - the sync function handles verified/non-verified logic
-      await syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku, updatedOrder.status === 'Verified');
+      await updatePurchaseOrder(editingOrder.id, orderData);
+      let o: PurchaseOrder = { ...editingOrder, ...orderData } as PurchaseOrder;
+      if (String(o.status).trim().toLowerCase() === 'verified') {
+        o = await attachBarcodeToPurchaseOrderIfNeeded(o, updatePurchaseOrder);
+      }
+      await syncPurchaseOrderToInventory(
+        o,
+        inventory,
+        updateInventoryItem,
+        addInventoryItem,
+        deleteInventoryItem,
+        purchaseOrders,
+        previousSku,
+        o.status === 'Verified'
+      );
       resetForm();
     } else if (orderData) {
-      // Handle status change from dropdown
-      updatePurchaseOrder(order.id, orderData);
-      
-      // Remove inventory that was previously added
+      await updatePurchaseOrder(order.id, orderData);
+
       const quantityToRemove = order.quantityReceived || order.quantity;
-      const inventoryItem = inventory.find(item => item.sku === order.sku);
+      const inventoryItem = inventory.find((item) => item.sku === order.sku);
       if (inventoryItem) {
         const stockUpdate: Partial<InventoryItem> = {};
         if (order.destinationStock === 'Ecuador') {
@@ -1208,9 +1335,21 @@ export default function PurchaseOrders() {
         }
         updateInventoryItem(inventoryItem.id, stockUpdate);
       }
-      
-      // Sync changes to inventory after status update
-      await syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, undefined, updatedOrder.status === 'Verified');
+
+      let o: PurchaseOrder = { ...order, ...orderData } as PurchaseOrder;
+      if (String(o.status).trim().toLowerCase() === 'verified') {
+        o = await attachBarcodeToPurchaseOrderIfNeeded(o, updatePurchaseOrder);
+      }
+      await syncPurchaseOrderToInventory(
+        o,
+        inventory,
+        updateInventoryItem,
+        addInventoryItem,
+        deleteInventoryItem,
+        purchaseOrders,
+        undefined,
+        o.status === 'Verified'
+      );
     }
     
     setStatusChangeData(null);
@@ -1224,14 +1363,28 @@ export default function PurchaseOrders() {
     
     // Continue with the form submission or status update
     if (editingOrder && orderData) {
-      updatePurchaseOrder(editingOrder.id, orderData);
-      const updatedOrder = { ...editingOrder, ...orderData };
-      // ALWAYS sync to inventory - the sync function handles verified/non-verified logic
-      await syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku, updatedOrder.status === 'Verified');
+      await updatePurchaseOrder(editingOrder.id, orderData);
+      let updatedOrder: PurchaseOrder = { ...editingOrder, ...orderData } as PurchaseOrder;
+      if (String(updatedOrder.status).trim().toLowerCase() === 'verified') {
+        updatedOrder = await attachBarcodeToPurchaseOrderIfNeeded(
+          updatedOrder,
+          updatePurchaseOrder
+        );
+      }
+      await syncPurchaseOrderToInventory(
+        updatedOrder,
+        inventory,
+        updateInventoryItem,
+        addInventoryItem,
+        deleteInventoryItem,
+        purchaseOrders,
+        previousSku,
+        updatedOrder.status === 'Verified'
+      );
       resetForm();
     } else if (statusUpdate) {
       // Handle status change from dropdown
-      updatePurchaseOrder(order.id, statusUpdate);
+      await updatePurchaseOrder(order.id, statusUpdate);
       
       // Add to inventory using actual quantity
       const inventoryItem = inventory.find(item => item.sku === order.sku);
@@ -1245,7 +1398,7 @@ export default function PurchaseOrders() {
         updateInventoryItem(inventoryItem.id, stockUpdate);
       } else {
         // Create new inventory item
-        const newInventoryItem: Omit<InventoryItem, 'id'> = {
+        const newInventoryItem: Omit<InventoryItem, 'id' | 'createdAt'> = {
           sku: order.sku,
           supplierSKU: order.supplierSKU || '',
           name: order.description,
@@ -1257,14 +1410,26 @@ export default function PurchaseOrders() {
           usaStock: order.destinationStock === 'USA' ? actualQuantity : 0,
           consignmentStock: 0,
           linkedPurchaseOrders: [order.id],
-          createdAt: new Date(),
+          ...(order.barcode ? { barcode: order.barcode } : {}),
         };
         addInventoryItem(newInventoryItem);
       }
-      
-      // Sync changes to inventory after status update
-      const updatedOrder = { ...order, ...statusUpdate };
-      await syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, undefined, updatedOrder.status === 'Verified');
+
+      let updatedOrder: PurchaseOrder = { ...order, ...statusUpdate } as PurchaseOrder;
+      updatedOrder = await attachBarcodeToPurchaseOrderIfNeeded(
+        updatedOrder,
+        updatePurchaseOrder
+      );
+      await syncPurchaseOrderToInventory(
+        updatedOrder,
+        inventory,
+        updateInventoryItem,
+        addInventoryItem,
+        deleteInventoryItem,
+        purchaseOrders,
+        undefined,
+        updatedOrder.status === 'Verified'
+      );
     }
     
     setQuantityMismatchData(null);
@@ -1280,11 +1445,11 @@ export default function PurchaseOrders() {
       );
     }
     return sortDirection === 'asc' ? (
-      <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
       </svg>
     ) : (
-      <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
       </svg>
     );
@@ -1358,7 +1523,7 @@ export default function PurchaseOrders() {
                     }}
                     className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors text-gray-700 hover:bg-gray-50"
                   >
-                    <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
                     </svg>
                     {t('purchaseOrders.importOrders')}
@@ -1394,7 +1559,7 @@ export default function PurchaseOrders() {
 
           <button
             onClick={() => setIsFormOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow-md active:scale-95"
+            className="flex items-center gap-2 px-4 py-2 bg-[#515151] hover:bg-[#000000] text-white rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow-md active:scale-95"
           >
             <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -1411,7 +1576,7 @@ export default function PurchaseOrders() {
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
-              showFilters ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
+              showFilters ? 'bg-[#515151] text-white border-[#515151]' : ''
             }`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1431,7 +1596,7 @@ export default function PurchaseOrders() {
           <button
             onClick={() => setShowGroupByDropdown(!showGroupByDropdown)}
             className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
-              groupByField ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
+              groupByField ? 'bg-[#515151] text-white border-[#515151]' : ''
             }`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1479,7 +1644,7 @@ export default function PurchaseOrders() {
                       setExpandedGroups(new Set()); // Reset expanded groups when clearing grouping
                     }}
                     className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                      !groupByField ? 'bg-[#4f0c1b] text-white' : 'text-gray-700 hover:bg-gray-50'
+                      !groupByField ? 'bg-[#515151] text-white' : 'text-gray-700 hover:bg-gray-50'
                     }`}
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1496,7 +1661,7 @@ export default function PurchaseOrders() {
                         setExpandedGroups(new Set()); // Reset expanded groups when changing grouping
                       }}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                        groupByField === field.key ? 'bg-[#4f0c1b] text-white' : 'text-gray-700 hover:bg-gray-50'
+                        groupByField === field.key ? 'bg-[#515151] text-white' : 'text-gray-700 hover:bg-gray-50'
                       }`}
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1552,12 +1717,12 @@ export default function PurchaseOrders() {
                             setHiddenColumns(prev => new Set([...prev, column.key]));
                           }
                         }}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:ring-offset-2 ${
-                          hiddenColumns.has(column.key) ? 'bg-gray-300' : 'bg-[#4f0c1b]'
+                        className={`toggle-switch relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#515151] focus:ring-offset-2 ${
+                          hiddenColumns.has(column.key) ? 'toggle-switch-off' : 'toggle-switch-on'
                         }`}
                       >
                         <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          className={`toggle-knob inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
                             hiddenColumns.has(column.key) ? 'translate-x-1' : 'translate-x-6'
                           }`}
                         />
@@ -1591,7 +1756,7 @@ export default function PurchaseOrders() {
                     placeholder={t('purchaseOrders.searchPlaceholder')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                   <svg className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -1614,7 +1779,7 @@ export default function PurchaseOrders() {
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">{t('purchaseOrders.allStatus')}</option>
                   <option value="Ordered">📦 {t('purchaseOrders.ordered')}</option>
@@ -1630,7 +1795,7 @@ export default function PurchaseOrders() {
                 <select
                   value={filterSupplier}
                   onChange={(e) => setFilterSupplier(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">{t('purchaseOrders.allSuppliers')}</option>
                   {suppliers.map(supplier => (
@@ -1645,7 +1810,7 @@ export default function PurchaseOrders() {
                 <select
                   value={filterDestination}
                   onChange={(e) => setFilterDestination(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">{t('purchaseOrders.allDestinations')}</option>
                   <option value="Ecuador">{t('purchaseOrders.ecuador')}</option>
@@ -1659,7 +1824,7 @@ export default function PurchaseOrders() {
                 <select
                   value={filterCategory}
                   onChange={(e) => setFilterCategory(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">{t('purchaseOrders.allCategories')}</option>
                   {predefinedCategories.map(cat => (
@@ -1681,7 +1846,7 @@ export default function PurchaseOrders() {
                 <select
                   value={filterLine}
                   onChange={(e) => setFilterLine(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">{t('purchaseOrders.allLines')}</option>
                   {predefinedLines.map(line => (
@@ -1705,7 +1870,7 @@ export default function PurchaseOrders() {
                   type="checkbox"
                   checked={filterDuplicateSku}
                   onChange={(e) => setFilterDuplicateSku(e.target.checked)}
-                  className="w-4 h-4 text-[#4f0c1b] border-gray-300 rounded focus:ring-[#4f0c1b] focus:ring-2"
+                  className="w-4 h-4 text-[#515151] border-gray-300 rounded focus:ring-[#515151] focus:ring-2"
                 />
                 <span className="text-gray-700">
                   {t('purchaseOrders.duplicateSkus')} ({duplicateSkus.length} {t('purchaseOrders.sku')}s {t('common.with')} {t('common.multiple')} {t('purchaseOrders.items')})
@@ -1719,7 +1884,7 @@ export default function PurchaseOrders() {
               <select
                 value={filterQuantityIssues}
                 onChange={(e) => setFilterQuantityIssues(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
               >
                 <option value="all">{t('purchaseOrders.allOrders') || 'All Orders'}</option>
                 <option value="problems">⚠️ {t('purchaseOrders.withProblems') || 'With Problems'}</option>
@@ -1742,7 +1907,7 @@ export default function PurchaseOrders() {
                     setFilterLine('all');
                     setFilterQuantityIssues('all');
                   }}
-                  className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium text-sm"
+                  className="text-[#515151] hover:text-[#000000] font-medium text-sm"
                 >
                   {t('purchaseOrders.clearAllFilters')}
                 </button>
@@ -1794,7 +1959,7 @@ export default function PurchaseOrders() {
                     <select
                       value={selectedInventoryId}
                       onChange={(e) => setSelectedInventoryId(e.target.value)}
-                      className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent bg-white text-sm"
+                      className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent bg-white text-sm"
                     >
                       <option value="">
                         {editingOrder ? t('purchaseOrders.keepCurrentCreateNew') : t('purchaseOrders.selectExistingOrCreate')}
@@ -1829,7 +1994,7 @@ export default function PurchaseOrders() {
                     </p>
                   )}
                   {isCreatingNewItem && (
-                    <p className="text-xs text-[#4f0c1b] mt-1.5 font-medium">
+                    <p className="text-xs text-[#515151] mt-1.5 font-medium">
                       {t('purchaseOrders.newProductWillBeAdded')}
                     </p>
                   )}
@@ -1844,7 +2009,7 @@ export default function PurchaseOrders() {
                     required
                     value={formData.invoice}
                     onChange={(e) => setFormData({ ...formData, invoice: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
                 <div>
@@ -1853,7 +2018,7 @@ export default function PurchaseOrders() {
                     type="url"
                     value={formData.invoiceLink}
                     onChange={(e) => setFormData({ ...formData, invoiceLink: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
               </div>
@@ -1874,7 +2039,7 @@ export default function PurchaseOrders() {
                           setFormData({ ...formData, supplierId: e.target.value });
                         }
                       }}
-                      className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent ${supplierInputMode === 'text' ? 'hidden' : ''}`}
+                      className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent ${supplierInputMode === 'text' ? 'hidden' : ''}`}
                   >
                     <option value="">{t('purchaseOrders.selectSupplier')}</option>
                     {suppliers.map((supplier) => (
@@ -1904,7 +2069,7 @@ export default function PurchaseOrders() {
                         }
                       }}
                       placeholder={t('purchaseOrders.enterSupplierName') || 'Enter supplier name'}
-                      className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent ${supplierInputMode === 'select' ? 'hidden' : ''}`}
+                      className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent ${supplierInputMode === 'select' ? 'hidden' : ''}`}
                     />
                     {supplierInputMode === 'text' && (
                       <button
@@ -1927,7 +2092,7 @@ export default function PurchaseOrders() {
                     type="text"
                     value={formData.supplierSKU}
                     onChange={(e) => setFormData({ ...formData, supplierSKU: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
               </div>
@@ -1945,7 +2110,7 @@ export default function PurchaseOrders() {
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     placeholder={isCreatingNewItem ? t('purchaseOrders.productNamePlaceholder') : t('purchaseOrders.orderDescription')}
                     disabled={!!(selectedInventoryId && selectedInventoryId !== 'new' && !editingOrder)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
                   />
                 </div>
 
@@ -1973,7 +2138,7 @@ export default function PurchaseOrders() {
                             setFormData({ ...formData, category: e.target.value });
                           }
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                       >
                         <option value="">{t('purchaseOrders.select')}</option>
                         {predefinedCategories.map(cat => (
@@ -1998,7 +2163,7 @@ export default function PurchaseOrders() {
                           value={formData.category}
                           onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                           placeholder={t('purchaseOrders.newCategory')}
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                           autoFocus
                         />
                         <button
@@ -2034,7 +2199,7 @@ export default function PurchaseOrders() {
                             setFormData({ ...formData, line: e.target.value });
                           }
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                       >
                         <option value="">{t('purchaseOrders.select')}</option>
                         {predefinedLines.map(line => (
@@ -2059,7 +2224,7 @@ export default function PurchaseOrders() {
                           value={formData.line}
                           onChange={(e) => setFormData({ ...formData, line: e.target.value })}
                           placeholder={t('purchaseOrders.newLine')}
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                           autoFocus
                         />
                         <button
@@ -2084,17 +2249,17 @@ export default function PurchaseOrders() {
                         onChange={(e) => handleSkuChange(e.target.value)}
                         placeholder={isCreatingNewItem ? t('purchaseOrders.auto') : ''}
                         disabled={!!(selectedInventoryId && selectedInventoryId !== 'new' && !editingOrder)}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 font-mono text-sm"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 font-mono text-sm"
                       />
                       {(isCreatingNewItem || editingOrder) && (
                         <button
                           type="button"
                           onClick={handleRegenerateSku}
                           disabled={!formData.category || !formData.line}
-                          className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-white hover:border-[#4f0c1b] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                          className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-white hover:border-[#515151] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                           title={t('purchaseOrders.regenerateSkuFromCategory')}
                         >
-                          <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                           </svg>
                         </button>
@@ -2108,7 +2273,7 @@ export default function PurchaseOrders() {
                   </p>
                 )}
                 {editingOrder && formData.category && formData.line && (
-                  <p className="text-xs text-[#4f0c1b]">
+                  <p className="text-xs text-[#515151]">
                     {t('purchaseOrders.tipUpdateCategory')}
                   </p>
                 )}
@@ -2123,7 +2288,7 @@ export default function PurchaseOrders() {
                     min="0"
                     value={formData.quantity}
                     onChange={(e) => setFormData({ ...formData, quantity: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
                 <div>
@@ -2132,7 +2297,7 @@ export default function PurchaseOrders() {
                     required
                     value={formData.destinationStock}
                     onChange={(e) => setFormData({ ...formData, destinationStock: e.target.value as 'Ecuador' | 'USA' })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   >
                     <option value="Ecuador">Ecuador</option>
                     <option value="USA">USA</option>
@@ -2155,7 +2320,7 @@ export default function PurchaseOrders() {
                         setExchangeRateManuallySet(false); // Allow auto-update for new orders
                       }
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   >
                     <option value="USD">USD - US Dollar</option>
                     <option value="COP">COP - Colombian Peso</option>
@@ -2176,7 +2341,7 @@ export default function PurchaseOrders() {
                     step="0.01"
                     value={formData.costPerUnit}
                     onChange={(e) => setFormData({ ...formData, costPerUnit: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
                 <div>
@@ -2187,7 +2352,7 @@ export default function PurchaseOrders() {
                     step="0.01"
                     value={formData.discountPerUnit}
                     onChange={(e) => setFormData({ ...formData, discountPerUnit: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
                 <div>
@@ -2202,7 +2367,7 @@ export default function PurchaseOrders() {
                         setFormData({ ...formData, exchangeRate: parseFloat(e.target.value) || 1 });
                         setExchangeRateManuallySet(true);
                       }}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                     />
                     <button
                       type="button"
@@ -2245,8 +2410,8 @@ export default function PurchaseOrders() {
 
 
               {/* Cost Summary */}
-              <div className="bg-white border-2 border-[#4f0c1b] rounded-lg p-4">
-                <h4 className="font-semibold mb-3 text-[#4f0c1b]">{t('purchaseOrders.costSummary')}</h4>
+              <div className="bg-white border-2 border-[#515151] rounded-lg p-4">
+                <h4 className="font-semibold mb-3 text-[#515151]">{t('purchaseOrders.costSummary')}</h4>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between text-gray-600">
                     <span>{t('purchaseOrders.productCost')} ({formData.currency}):</span>
@@ -2262,7 +2427,7 @@ export default function PurchaseOrders() {
                       <span>${totals.costInUSD.toFixed(2)}</span>
                     </div>
                   </div>
-                  <div className="bg-[#4f0c1b] text-white rounded-lg p-3 mt-3">
+                  <div className="bg-[#515151] text-white rounded-lg p-3 mt-3">
                     <div className="flex justify-between font-semibold">
                       <span>{t('purchaseOrders.costPerUnitLabel')}</span>
                       <span>${(totals.costInUSD / formData.quantity).toFixed(2)}</span>
@@ -2281,7 +2446,7 @@ export default function PurchaseOrders() {
                   required
                   value={formData.purchaseDate}
                   onChange={(e) => setFormData({ ...formData, purchaseDate: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   {t('purchaseOrders.productImagesManaged')}
@@ -2300,7 +2465,7 @@ export default function PurchaseOrders() {
               <button
                 type="submit"
                 onClick={handleSubmit}
-                className="flex-1 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
+                className="flex-1 bg-[#515151] hover:bg-[#000000] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
               >
                 {editingOrder ? t('purchaseOrders.updatePurchaseOrder') : t('purchaseOrders.addPurchaseOrder')}
               </button>
@@ -2537,7 +2702,7 @@ export default function PurchaseOrders() {
                         {supplier ? (
                           <button
                             onClick={() => setSelectedSupplier(supplier)}
-                            className="text-[#4f0c1b] hover:text-[#3d0a15] hover:underline transition-colors font-medium"
+                            className="text-[#515151] hover:text-[#000000] hover:underline transition-colors font-medium"
                           >
                             {supplier.name}
                           </button>
@@ -2592,7 +2757,7 @@ export default function PurchaseOrders() {
                           <select
                             value={order.status || 'Ordered'}
                             onChange={(e) => handleStatusChange(order, e.target.value as PurchaseOrderStatus)}
-                            className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:ring-2 focus:ring-[#4f0c1b] ${
+                            className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:ring-2 focus:ring-[#515151] ${
                               order.status === 'Verified' ? 'bg-green-100 text-green-800 font-bold' :
                               order.status === 'Received' ? 'bg-blue-100 text-blue-800' :
                               order.status === 'Shipped' ? 'bg-purple-100 text-purple-800' :
@@ -2622,11 +2787,7 @@ export default function PurchaseOrders() {
                         <div className="flex items-center gap-2 justify-center">
                         <button
                           onClick={() => handleEdit(order)}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md ${
-                              needsReview 
-                                ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300' 
-                                : 'bg-[#4f0c1b] text-white hover:bg-[#3d0a15] shadow-sm'
-                            }`}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
                           >
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -2636,7 +2797,7 @@ export default function PurchaseOrders() {
                         {order.status === 'Verified' && (
                           <button
                             onClick={() => handleEditVerification(order)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-100 text-purple-700 hover:bg-purple-200 hover:text-purple-800 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md border border-purple-200"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
                             title={t('purchaseOrders.editVerification') || 'Edit Verification'}
                           >
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2648,7 +2809,7 @@ export default function PurchaseOrders() {
                         {order.status !== 'Verified' && (
                           <button
                             onClick={() => handleDownloadVerificationSheet(order.invoice, 'en')}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 hover:text-blue-800 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md border border-blue-200"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
                             title={t('purchaseOrders.downloadVerificationSheet') || 'Download Verification Sheet'}
                           >
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2662,7 +2823,7 @@ export default function PurchaseOrders() {
                             setOrderToDelete(order);
                             setDeleteConfirmOpen(true);
                           }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 hover:text-red-800 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md border border-red-200"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
                         >
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -2716,7 +2877,7 @@ export default function PurchaseOrders() {
                                 </svg>
                               <h3 className="text-lg font-semibold text-gray-900">{groupKey}</h3>
                               </button>
-                              <span className="bg-[#4f0c1b] text-white px-2 py-1 rounded-full text-xs font-medium">
+                              <span className="bg-[#515151] text-white px-2 py-1 rounded-full text-xs font-medium">
                                 {totalOrders} {totalOrders !== 1 ? t('purchaseOrders.orders') : t('purchaseOrders.order')}
                               </span>
                               {hasNeedsReview && (
@@ -2757,7 +2918,7 @@ export default function PurchaseOrders() {
                                   {supplier ? (
                                     <button
                                       onClick={() => setSelectedSupplier(supplier)}
-                                      className="text-[#4f0c1b] hover:text-[#3d0a15] hover:underline transition-colors font-medium"
+                                      className="text-[#515151] hover:text-[#000000] hover:underline transition-colors font-medium"
                                     >
                                       {supplier.name}
                                     </button>
@@ -2856,11 +3017,7 @@ export default function PurchaseOrders() {
                               <div className="flex items-center gap-2 justify-center">
                                 <button
                                   onClick={() => handleEdit(order)}
-                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md ${
-                                    needsReview 
-                                      ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300' 
-                                      : 'bg-[#4f0c1b] text-white hover:bg-[#3d0a15] shadow-sm'
-                                  }`}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
                                 >
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -2870,7 +3027,7 @@ export default function PurchaseOrders() {
                                 {order.status === 'Verified' && (
                                   <button
                                     onClick={() => handleEditVerification(order)}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-100 text-purple-700 hover:bg-purple-200 hover:text-purple-800 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md border border-purple-200"
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
                                     title={t('purchaseOrders.editVerification') || 'Edit Verification'}
                                   >
                                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2882,7 +3039,7 @@ export default function PurchaseOrders() {
                                 {order.status !== 'Verified' && (
                                   <button
                                     onClick={() => handleDownloadVerificationSheet(order.invoice, 'en')}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 hover:text-blue-800 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md border border-blue-200"
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
                                     title={t('purchaseOrders.downloadVerificationSheet') || 'Download Verification Sheet'}
                                   >
                                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2896,7 +3053,7 @@ export default function PurchaseOrders() {
                                     setOrderToDelete(order);
                                     setDeleteConfirmOpen(true);
                                   }}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-700 hover:bg-red-200 hover:text-red-800 rounded-lg font-medium text-sm transition-all duration-200 hover:shadow-md border border-red-200"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
                                 >
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -3052,20 +3209,30 @@ export default function PurchaseOrders() {
               const { convertImageForPDF } = await import('../utils/imageConverter');
               const convertedItems = await Promise.all(
                 items.map(async (item) => {
-                  if (!item.inventoryItem || !item.inventoryItem.barcode) {
+                  const rawUrl =
+                    item.inventoryItem?.barcode?.trim() ||
+                    item.order?.barcode?.trim() ||
+                    '';
+                  if (!rawUrl) {
                     return item;
                   }
-                  const convertedBarcode = await convertImageForPDF(item.inventoryItem.barcode);
+                  const convertedBarcode = await convertImageForPDF(rawUrl);
                   if (convertedBarcode) {
                     return {
                       ...item,
                       inventoryItem: {
                         ...item.inventoryItem,
-                        barcode: convertedBarcode
-                      }
+                        barcode: convertedBarcode,
+                      },
                     };
                   }
-                  return item;
+                  return {
+                    ...item,
+                    inventoryItem: {
+                      ...item.inventoryItem,
+                      barcode: rawUrl,
+                    },
+                  };
                 })
               );
 
@@ -3154,7 +3321,7 @@ export default function PurchaseOrders() {
                         setVerificationQuantityGood(val);
                       }
                     }}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-lg font-medium"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-lg font-medium"
                     placeholder={verificationData.order.quantity.toString()}
                     autoFocus
                   />
@@ -3250,7 +3417,7 @@ export default function PurchaseOrders() {
                     value={verificationComment}
                     onChange={(e) => setVerificationComment(e.target.value)}
                     rows={3}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent resize-none"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent resize-none"
                     placeholder={t('purchaseOrders.verificationCommentPlaceholder') || 'Add notes about problems, damages, missing items, etc...'}
                   />
                   <p className="text-xs text-gray-500 mt-1">
@@ -3271,7 +3438,7 @@ export default function PurchaseOrders() {
                           const files = Array.from(e.target.files || []);
                           setVerificationMedia(prev => [...prev, ...files]);
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm"
                       />
                       
                       {/* Preview uploaded files */}
@@ -3341,7 +3508,7 @@ export default function PurchaseOrders() {
               </button>
               <button
                 onClick={handleVerificationConfirm}
-                className="px-4 py-2 rounded-xl bg-[#4f0c1b] text-white hover:bg-[#3d0a15] font-medium transition-colors"
+                className="px-4 py-2 rounded-xl bg-[#515151] text-white hover:bg-[#000000] font-medium transition-colors"
               >
                 {t('purchaseOrders.verify') || 'Verify'}
               </button>

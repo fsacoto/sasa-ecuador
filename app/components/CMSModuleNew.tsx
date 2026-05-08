@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { useCMS } from '../context/CMSContext';
@@ -8,14 +9,50 @@ import { useTranslation } from '../context/TranslationContext';
 import { ContentType, ContentStatus, InventoryItem, CMSContent } from '../types';
 import JSZip from 'jszip';
 import ConfirmDialog from './ui/ConfirmDialog';
+import AlertDialog from './ui/AlertDialog';
 import { deleteMediaFile } from '../services/inventoryMediaService';
-// Removed Firebase Storage imports - using direct URL fetch instead
+import { mergeCmsImageUploadsIntoInventory } from '../utils/cmsInventorySync';
+
+type CmsMediaUploadItem = { file: File; linkedSku?: string };
+
+/**
+ * Uploads CMS media under `…/cms/by-sku/{sku}/` with filenames `{sku}.ext`, `{sku}_2.ext`, …
+ * Returns download URLs and parallel SKU labels for Firestore (`imageLinkedSkus`).
+ */
+async function uploadCmsMediaToStorage(
+  items: CmsMediaUploadItem[],
+  defaultFolderSegment: string
+): Promise<{ urls: string[]; imageLinkedSkus: string[] }> {
+  const { uploadFile, uploadVideo, uploadCmsImage, allocateCmsMediaStoragePaths } = await import(
+    '../services/storageService'
+  );
+  const paths = await allocateCmsMediaStoragePaths(items, defaultFolderSegment);
+  const urls: string[] = [];
+  const imageLinkedSkus: string[] = [];
+
+  for (let i = 0; i < items.length; i++) {
+    const { file, linkedSku } = items[i];
+    const filePath = paths[i];
+    let url: string;
+    if (file.type.startsWith('image/')) {
+      url = await uploadCmsImage(file, filePath);
+    } else if (file.type.startsWith('video/')) {
+      url = await uploadVideo(file, filePath);
+    } else {
+      url = await uploadFile(file, filePath);
+    }
+    urls.push(url);
+    imageLinkedSkus.push(linkedSku?.trim() ?? '');
+  }
+
+  return { urls, imageLinkedSkus };
+}
 
 type ViewMode = 'dashboard' | 'upload' | 'manage' | 'products';
 
 export default function CMSModuleNew() {
   const { user, hasPermission } = useAuth();
-  const { inventory } = useInventory();
+  const { inventory, updateInventoryItem } = useInventory();
   const { t } = useTranslation();
   const { 
     content, 
@@ -146,7 +183,72 @@ export default function CMSModuleNew() {
   });
   const [editUploadedFiles, setEditUploadedFiles] = useState<(File | string)[]>([]);
   const [editSelectedSKUs, setEditSelectedSKUs] = useState<string[]>([]);
-  
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  /** True while Storage uploads run after the Firestore draft row exists (avoids “stuck” only on media). */
+  const [isAttachingMedia, setIsAttachingMedia] = useState(false);
+
+  /** In-app alerts for upload/create (matches AlertDialog used elsewhere in CMS). */
+  const [uploadFlowAlert, setUploadFlowAlert] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    buttonText?: string;
+  }>({ open: false, title: '', message: '' });
+  const showUploadFlowAlert = (message: string, title: string, buttonText?: string) => {
+    setUploadFlowAlert({ open: true, title, message, ...(buttonText ? { buttonText } : {}) });
+  };
+  const closeUploadFlowAlert = () =>
+    setUploadFlowAlert({ open: false, title: '', message: '' });
+
+  /** Edit from Manage Content opens this modal instead of switching to Upload Media. */
+  const [manageEditModalOpen, setManageEditModalOpen] = useState(false);
+
+  const closeManageEditModal = () => {
+    setManageEditModalOpen(false);
+    setEditingContent(null);
+    setEditFormData({
+      title: '',
+      description: '',
+      hashtags: '',
+      category: '',
+      line: '',
+      tags: '',
+      language: 'en',
+    });
+    setEditUploadedFiles([]);
+    setEditSelectedSKUs([]);
+  };
+
+  const openManageContentEditor = (item: CMSContent) => {
+    const type = item.type;
+    const skus = item.linkedProductIds || [];
+    const product = skus.length ? inventory.find((i) => i.sku === skus[0]) ?? null : null;
+    setUploadType(type);
+    setEditingContent(item);
+    setEditFormData({
+      title: item.title,
+      description: item.description,
+      hashtags: item.hashtags.join(', '),
+      category: item.category,
+      line: '',
+      tags: item.tags.join(', '),
+      language: item.language,
+    });
+    setEditUploadedFiles([...item.images, ...(item.videos || [])]);
+    setEditSelectedSKUs(skus);
+    setTabStates((prev) => ({
+      ...prev,
+      [type]: {
+        ...prev[type],
+        selectedSKUs: skus,
+        selectedProduct: product,
+        searchSKU: '',
+        showSKUDropdown: false,
+      },
+    }));
+    setManageEditModalOpen(true);
+  };
+
   const stats = getContentStats();
   
   // Total content count (for "X of Y" display)
@@ -172,11 +274,11 @@ export default function CMSModuleNew() {
       );
     }
     return sortDirection === 'asc' ? (
-      <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
       </svg>
     ) : (
-      <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
       </svg>
     );
@@ -319,16 +421,58 @@ export default function CMSModuleNew() {
       ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(file.type)
     );
     
+    // Validate file sizes
+    const maxVideoSize = 100 * 1024 * 1024; // 100MB for videos
+    const maxOtherSize = 50 * 1024 * 1024; // 50MB for other files
+    
+    const validFiles: File[] = [];
+    const invalidFiles: { name: string; reason: string }[] = [];
+    
+    for (const file of mediaFiles) {
+      if (file.type.startsWith('video/')) {
+        if (file.size > maxVideoSize) {
+          invalidFiles.push({ 
+            name: file.name, 
+            reason: `Video file is too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Maximum size is 100MB.` 
+          });
+          continue;
+        }
+      } else {
+        if (file.size > maxOtherSize) {
+          invalidFiles.push({ 
+            name: file.name, 
+            reason: `File is too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Maximum size is 50MB.` 
+          });
+          continue;
+        }
+      }
+      validFiles.push(file);
+    }
+    
+    // Show error for invalid files
+    if (invalidFiles.length > 0) {
+      const errorMessage = invalidFiles.map(f => `${f.name}: ${f.reason}`).join('\n');
+      showUploadFlowAlert(
+        `${t('cms.someFilesNotAdded') || 'Some files were not added:'}\n\n${errorMessage}`,
+        t('common.error')
+      );
+    }
+    
+    if (validFiles.length === 0) {
+      e.target.value = '';
+      return;
+    }
+    
     // For collection type with multiple SKUs, we'll show a modal to select SKU for each batch
     if (uploadType === 'collection' && currentTabState.selectedSKUs.length > 0) {
       // Store files temporarily and show selection UI
-      const newFiles: UploadedFile[] = mediaFiles.map(file => ({ file, linkedSKU: undefined }));
+      const newFiles: UploadedFile[] = validFiles.map(file => ({ file, linkedSKU: undefined }));
       updateCurrentTabState({
         uploadedFiles: [...currentTabState.uploadedFiles, ...newFiles]
       });
     } else {
       // For product or general, or collection with no SKUs, just add files without linking
-      const newFiles: UploadedFile[] = mediaFiles.map(file => ({ file }));
+      const newFiles: UploadedFile[] = validFiles.map(file => ({ file }));
       updateCurrentTabState({
         uploadedFiles: [...currentTabState.uploadedFiles, ...newFiles]
       });
@@ -345,38 +489,16 @@ export default function CMSModuleNew() {
     updateCurrentTabState({ uploadedFiles: newFiles });
   };
 
-  // Upload files to Firebase Storage (supports images, videos, and other media)
-  const convertFilesToBase64 = async (files: File[]): Promise<string[]> => {
-    try {
-      const { uploadFile } = await import('../services/storageService');
-      const downloadURLs: string[] = [];
-      
-      // Upload each file to the appropriate path based on file type
-      for (const file of files) {
-        const timestamp = Date.now();
-        const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-        
-        let basePath: string;
-        if (file.type.startsWith('image/')) {
-          basePath = 'images/cms/';
-        } else if (file.type.startsWith('video/')) {
-          basePath = 'videos/cms/';
-        } else if (file.type.startsWith('audio/')) {
-          basePath = 'documents/cms/'; // Store audio in documents folder
-        } else {
-          basePath = 'documents/cms/'; // PDFs, Word docs, etc.
-        }
-        
-        const filePath = `${basePath}${timestamp}_${sanitizedName}`;
-        const url = await uploadFile(file, filePath);
-        downloadURLs.push(url);
-      }
-      
-      return downloadURLs;
-    } catch (error) {
-      console.error('Error uploading files:', error);
-      throw error;
-    }
+  /** SKU for Firestore + Storage folder; Storage path uses sanitized SKU via uploadCmsMediaToStorage. */
+  const resolveLinkedSkuForNewUpload = (
+    uf: UploadedFile,
+    type: ContentType,
+    selectedSKUs: string[]
+  ): string | undefined => {
+    if (uf.linkedSKU?.trim()) return uf.linkedSKU.trim();
+    if (type === 'product' && selectedSKUs[0]) return selectedSKUs[0];
+    if (type === 'collection' && selectedSKUs.length === 1) return selectedSKUs[0];
+    return undefined;
   };
 
   // Submit content
@@ -387,17 +509,31 @@ export default function CMSModuleNew() {
       return;
     }
 
+    if (!hasPermission('cms.edit')) {
+      showUploadFlowAlert(
+        t('cms.noPermissionToCreate') || 'You do not have permission to create content.',
+        t('common.error')
+      );
+      return;
+    }
+
     const state = currentTabState;
 
     if (!state.selectedSKUs.length && uploadType === 'product') {
-      alert('Please select at least one product for this content type.');
+      showUploadFlowAlert(
+        t('cms.selectProductForContent') || 'Please select at least one product for this content type.',
+        t('common.error')
+      );
       return;
     }
 
     // For collection/general types, require title and description
     if (uploadType !== 'product') {
-      if (!state.formData.title || !state.formData.description) {
-        alert('Please fill in title and description.');
+      if (!state.formData.title?.trim() || !state.formData.description?.trim()) {
+        showUploadFlowAlert(
+          t('cms.fillTitleAndDescription') || 'Please fill in title and description.',
+          t('common.error')
+        );
         return;
       }
     }
@@ -412,66 +548,128 @@ export default function CMSModuleNew() {
       const missingSKUs = state.selectedSKUs.filter(sku => !skusWithImages.has(sku));
       
       if (missingSKUs.length > 0) {
-        alert(`Please link at least one image to each selected SKU. Missing links for: ${missingSKUs.join(', ')}`);
+        showUploadFlowAlert(
+          (t('cms.linkImagePerSku') || 'Please link at least one image to each selected SKU. Missing: {{skus}}').replace(
+            '{{skus}}',
+            missingSKUs.join(', ')
+          ),
+          t('common.error')
+        );
         return;
       }
     }
 
-    const fileUrls = state.uploadedFiles.length > 0 
-      ? await convertFilesToBase64(state.uploadedFiles.filter((uf): uf is UploadedFile & { file: File } => uf.file instanceof File).map(uf => uf.file))
-      : [];
+    setIsSavingDraft(true);
+    setIsAttachingMedia(false);
+    const mediaUploadItems: CmsMediaUploadItem[] = state.uploadedFiles
+      .filter((uf): uf is UploadedFile & { file: File } => uf.file instanceof File)
+      .map((uf) => ({
+        file: uf.file,
+        linkedSku: resolveLinkedSkuForNewUpload(uf, uploadType, state.selectedSKUs),
+      }));
+
+    const defaultStorageFolder = uploadType === 'general' ? 'general' : 'unlinked';
 
     // For product type, use product name as title, otherwise use form title
-    const contentTitle = uploadType === 'product' 
-      ? (state.selectedProduct?.name || `Product Content - ${state.selectedSKUs[0]}`)
-      : state.formData.title;
+    const contentTitle =
+      uploadType === 'product'
+        ? state.selectedProduct?.name || `Product Content - ${state.selectedSKUs[0]}`
+        : state.formData.title;
 
-    const hashtagsArray = uploadType === 'product' 
-      ? [] 
-      : state.formData.hashtags.split(',').map(tag => tag.trim()).filter(Boolean);
-    const tagsArray = uploadType === 'product' 
-      ? [] 
-      : state.formData.tags.split(',').map(tag => tag.trim()).filter(Boolean);
+    const hashtagsArray =
+      uploadType === 'product'
+        ? []
+        : state.formData.hashtags.split(',').map((tag) => tag.trim()).filter(Boolean);
+    const tagsArray =
+      uploadType === 'product'
+        ? []
+        : state.formData.tags.split(',').map((tag) => tag.trim()).filter(Boolean);
 
-    addContent({
-      type: uploadType,
-      title: contentTitle,
-      description: state.formData.description || '',
-      hashtags: hashtagsArray,
-      status: 'draft',
-      statusHistory: [{
-        status: 'draft',
-        timestamp: new Date(),
-        userId: user?.id || '',
-      }],
-      images: fileUrls,
-      videos: [],
-      authorId: user?.id || '',
-      authorName: user?.name || 'Unknown',
-      category: state.formData.category || '',
-      tags: tagsArray,
-      language: state.formData.language,
-      linkedProductIds: state.selectedSKUs,
-    });
+    let draftId: string | undefined;
+    try {
+      // Create the Firestore draft first so a slow/hung Storage upload never blocks draft creation.
+      draftId = await addContent({
+        type: uploadType,
+        title: contentTitle.trim(),
+        description: (state.formData.description || '').trim(),
+        hashtags: hashtagsArray,
+        images: [],
+        videos: [],
+        authorId: user?.id || '',
+        authorName: user?.name || 'Unknown',
+        category: (state.formData.category || '').trim(),
+        tags: tagsArray,
+        language: state.formData.language,
+        linkedProductIds: [...state.selectedSKUs],
+      });
 
-    // Reset form for current tab
-    updateCurrentTabState({
-      formData: {
-        title: '',
-        description: '',
-        hashtags: '',
-        category: '',
-        line: '',
-        tags: '',
-        language: 'en',
-      },
-      uploadedFiles: [],
-      selectedSKUs: [],
-      selectedProduct: null,
-      searchSKU: '',
-      showSKUDropdown: false,
-    });
-    alert('Content created successfully! It is now in draft status.');
+      if (mediaUploadItems.length > 0) {
+        setIsAttachingMedia(true);
+        const { urls, imageLinkedSkus } = await uploadCmsMediaToStorage(
+          mediaUploadItems,
+          defaultStorageFolder
+        );
+        await updateContent(draftId, { images: urls, imageLinkedSkus });
+        try {
+          await mergeCmsImageUploadsIntoInventory(
+            mediaUploadItems,
+            urls,
+            inventory,
+            updateInventoryItem
+          );
+        } catch (syncErr) {
+          console.error('CMS → inventory image sync failed:', syncErr);
+          showUploadFlowAlert(
+            t('cms.inventoryImageSyncFailed') ||
+              'Content was saved, but copying images to Inventory failed. You can add them manually or try again.',
+            t('common.error')
+          );
+        }
+      }
+
+      // Reset form for current tab only after Firestore succeeds
+      updateCurrentTabState({
+        formData: {
+          title: '',
+          description: '',
+          hashtags: '',
+          category: '',
+          line: '',
+          tags: '',
+          language: 'en',
+        },
+        uploadedFiles: [],
+        selectedSKUs: [],
+        selectedProduct: null,
+        searchSKU: '',
+        showSKUDropdown: false,
+      });
+      // Drafts only appear in Manage Content; Products/library views list published items only.
+      setViewMode('manage');
+      setFilterStatus('draft');
+      setShowFilters(true);
+      showUploadFlowAlert(
+        t('cms.draftCreatedSuccess') || 'Content created successfully! It is now in draft status.',
+        t('common.success')
+      );
+    } catch (error) {
+      console.error('Error creating CMS draft:', error);
+      const detail = error instanceof Error ? error.message : String(error);
+      if (draftId && mediaUploadItems.length > 0) {
+        showUploadFlowAlert(
+          `${t('cms.draftSavedMediaFailed') || 'Your draft was saved, but uploading or attaching media failed.'}${detail ? `\n\n${detail}` : ''}\n\n${t('cms.openDraftToRetryMedia') || 'Open the draft in Manage Content to try adding media again.'}`,
+          t('common.error')
+        );
+      } else {
+        showUploadFlowAlert(
+          `${t('cms.draftCreateFailed') || 'Could not save draft.'}${detail ? `\n\n${detail}` : ''}`,
+          t('common.error')
+        );
+      }
+    } finally {
+      setIsAttachingMedia(false);
+      setIsSavingDraft(false);
+    }
   };
 
   // Handle edit submit
@@ -481,66 +679,94 @@ export default function CMSModuleNew() {
     // For collection/general types, require title and description
     if (uploadType !== 'product') {
       if (!editFormData.title || !editFormData.description) {
-        alert('Please fill in title and description.');
+        showUploadFlowAlert(
+          t('cms.fillTitleAndDescription') || 'Please fill in title and description.',
+          t('common.error')
+        );
         return;
       }
     }
 
-    // Get new file URLs (only for newly uploaded files)
-    const newFiles = editUploadedFiles.filter((f): f is File => f instanceof File);
-    const existingFiles = editUploadedFiles.filter((f): f is string => typeof f === 'string');
-    const newFileUrls = newFiles.length > 0 
-      ? await convertFilesToBase64(newFiles)
-      : [];
+    try {
+      // Get new file URLs (only for newly uploaded files)
+      const newFiles = editUploadedFiles.filter((f): f is File => f instanceof File);
+      const existingFiles = editUploadedFiles.filter((f): f is string => typeof f === 'string');
 
-    // Combine existing and new images
-    const allImages = [...existingFiles, ...newFileUrls];
+      const resolveEditLinkedSku = (): string | undefined => {
+        if (uploadType === 'product' && editSelectedSKUs[0]) return editSelectedSKUs[0];
+        if (uploadType === 'collection' && editSelectedSKUs.length === 1) return editSelectedSKUs[0];
+        return undefined;
+      };
 
-    // For product type, use product name as title, otherwise use form title
-    // Get product from inventory if available
-    const productForSKU = editSelectedSKUs.length > 0 
-      ? inventory.find(item => item.sku === editSelectedSKUs[0])
-      : null;
-    const contentTitle = uploadType === 'product' 
-      ? (productForSKU?.name || `Product Content - ${editSelectedSKUs[0] || 'Unknown'}`)
-      : editFormData.title;
+      const editDefaultFolder = uploadType === 'general' ? 'general' : 'unlinked';
+      const newUploadItems: CmsMediaUploadItem[] = newFiles.map((file) => ({
+        file,
+        linkedSku: resolveEditLinkedSku(),
+      }));
 
-    const hashtagsArray = uploadType === 'product' 
-      ? [] 
-      : editFormData.hashtags.split(',').map(tag => tag.trim()).filter(Boolean);
-    const tagsArray = uploadType === 'product' 
-      ? [] 
-      : editFormData.tags.split(',').map(tag => tag.trim()).filter(Boolean);
+      const newUploadResult =
+        newUploadItems.length > 0
+          ? await uploadCmsMediaToStorage(newUploadItems, editDefaultFolder)
+          : { urls: [] as string[], imageLinkedSkus: [] as string[] };
 
-    // Update the content
-    await updateContent(editingContent.id, {
-      title: contentTitle,
-      description: editFormData.description || '',
-      hashtags: hashtagsArray,
-      images: allImages,
-      category: editFormData.category || '',
-      tags: tagsArray,
-      language: editFormData.language,
-      linkedProductIds: editSelectedSKUs,
-    });
+      const existingLinkedPadded = existingFiles.map(
+        (_, i) => editingContent.imageLinkedSkus?.[i] ?? ''
+      );
 
-    // Reset edit state
-    setEditingContent(null);
-    setEditFormData({
-      title: '',
-      description: '',
-      hashtags: '',
-      category: '',
-      line: '',
-      tags: '',
-      language: 'en',
-    });
-    setEditUploadedFiles([]);
-    setEditSelectedSKUs([]);
-    // Reset tab state selectedProduct
-    updateCurrentTabState({ 
-      selectedProduct: null,
-      formData: {
+      // Combine existing and new images
+      const allImages = [...existingFiles, ...newUploadResult.urls];
+      const imageLinkedSkus = [...existingLinkedPadded, ...newUploadResult.imageLinkedSkus];
+
+      // For product type, use product name as title, otherwise use form title
+      // Get product from inventory if available
+      const productForSKU = editSelectedSKUs.length > 0 
+        ? inventory.find(item => item.sku === editSelectedSKUs[0])
+        : null;
+      const contentTitle = uploadType === 'product' 
+        ? (productForSKU?.name || `Product Content - ${editSelectedSKUs[0] || 'Unknown'}`)
+        : editFormData.title;
+
+      const hashtagsArray = uploadType === 'product' 
+        ? [] 
+        : editFormData.hashtags.split(',').map(tag => tag.trim()).filter(Boolean);
+      const tagsArray = uploadType === 'product' 
+        ? [] 
+        : editFormData.tags.split(',').map(tag => tag.trim()).filter(Boolean);
+
+      // Update the content
+      await updateContent(editingContent.id, {
+        title: contentTitle,
+        description: editFormData.description || '',
+        hashtags: hashtagsArray,
+        images: allImages,
+        imageLinkedSkus,
+        category: editFormData.category || '',
+        tags: tagsArray,
+        language: editFormData.language,
+        linkedProductIds: editSelectedSKUs,
+      });
+
+      if (newUploadItems.length > 0) {
+        try {
+          await mergeCmsImageUploadsIntoInventory(
+            newUploadItems,
+            newUploadResult.urls,
+            inventory,
+            updateInventoryItem
+          );
+        } catch (syncErr) {
+          console.error('CMS → inventory image sync failed (edit):', syncErr);
+          showUploadFlowAlert(
+            t('cms.inventoryImageSyncFailed') ||
+              'Content was saved, but copying new images to Inventory failed. You can add them manually or try again.',
+            t('common.error')
+          );
+        }
+      }
+
+      // Reset edit state
+      setEditingContent(null);
+      setEditFormData({
         title: '',
         description: '',
         hashtags: '',
@@ -548,11 +774,37 @@ export default function CMSModuleNew() {
         line: '',
         tags: '',
         language: 'en',
-      },
-      uploadedFiles: [],
-      selectedSKUs: [],
-    });
-    alert('Content updated successfully!');
+      });
+      setEditUploadedFiles([]);
+      setEditSelectedSKUs([]);
+      // Reset tab state selectedProduct
+      updateCurrentTabState({ 
+        selectedProduct: null,
+        formData: {
+          title: '',
+          description: '',
+          hashtags: '',
+          category: '',
+          line: '',
+          tags: '',
+          language: 'en',
+        },
+        uploadedFiles: [],
+        selectedSKUs: [],
+      });
+      setManageEditModalOpen(false);
+      showUploadFlowAlert(
+        t('cms.contentUpdatedSuccess') || 'Content updated successfully!',
+        t('common.success')
+      );
+    } catch (error) {
+      console.error('Error updating CMS content:', error);
+      const detail = error instanceof Error ? error.message : String(error);
+      showUploadFlowAlert(
+        `${t('cms.contentUpdateFailed') || 'Could not update content.'}${detail ? `\n\n${detail}` : ''}`,
+        t('common.error')
+      );
+    }
   };
 
   // Handle edit file upload - accepts images, videos, and other media formats
@@ -583,248 +835,8 @@ export default function CMSModuleNew() {
     updateContentStatus(contentId, 'published', user?.id || '');
   };
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">{t('cms.title')}</h2>
-            <p className="text-gray-600 mt-1">{t('cms.subtitle')}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
-              {hasPermission('cms.edit') ? t('cms.fullAccess') : 'View Only'}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Navigation Tabs */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-2">
-        <div className="flex gap-2">
-          <button
-            onClick={() => setViewMode('dashboard')}
-            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
-              viewMode === 'dashboard'
-                ? 'bg-[#4f0c1b] text-white'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            {t('cms.dashboard')}
-          </button>
-          <button
-            onClick={() => setViewMode('products')}
-            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
-              viewMode === 'products'
-                ? 'bg-[#4f0c1b] text-white'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            {t('cms.content')}
-          </button>
-          <button
-            onClick={() => setViewMode('upload')}
-            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
-              viewMode === 'upload'
-                ? 'bg-[#4f0c1b] text-white'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            {t('cms.uploadContent')}
-          </button>
-          <button
-            onClick={() => setViewMode('manage')}
-            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
-              viewMode === 'manage'
-                ? 'bg-[#4f0c1b] text-white'
-                : 'text-gray-700 hover:bg-gray-100'
-            }`}
-          >
-            {t('cms.manageContent')}
-          </button>
-        </div>
-      </div>
-
-      {/* Dashboard View */}
-      {viewMode === 'dashboard' && (
-        <div className="space-y-6">
-          {/* Overview Section */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 bg-gradient-to-br from-[#4f0c1b] to-[#3d0a15] rounded-xl flex items-center justify-center shadow-lg">
-                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">{t('cms.contentOverview')}</h3>
-                <p className="text-sm text-gray-500">{t('cms.totalContentItems')}</p>
-              </div>
-              <div className="ml-auto">
-                <div className="text-3xl font-bold text-[#4f0c1b]">{stats.total}</div>
-                <div className="text-xs text-gray-500 mt-1">{t('cms.totalItems')}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Status Cards */}
-          <div>
-            <h3 className="text-base font-semibold text-gray-900 mb-4">{t('cms.contentStatusDistribution')}</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {/* Draft */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">{t('cms.drafts')}</div>
-                      <div className="text-xs text-gray-500">{t('cms.inProgress')}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-900">{stats.draft}</div>
-                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.draft / stats.total) * 100) : 0}%</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Submitted */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">{t('cms.submitted')}</div>
-                      <div className="text-xs text-gray-500">{t('cms.awaitingReview')}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-900">{stats.submitted}</div>
-                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.submitted / stats.total) * 100) : 0}%</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Approved */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">{t('cms.approved')}</div>
-                      <div className="text-xs text-gray-500">{t('cms.readyToPublish')}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-900">{stats.approved}</div>
-                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.approved / stats.total) * 100) : 0}%</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Published */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">{t('cms.published')}</div>
-                      <div className="text-xs text-gray-500">{t('cms.liveContent')}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-900">{stats.published}</div>
-                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.published / stats.total) * 100) : 0}%</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Rejected */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-gray-900">{t('cms.rejected')}</div>
-                      <div className="text-xs text-gray-500">{t('cms.needsRevision')}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-900">{stats.rejected}</div>
-                    <div className="text-xs text-gray-400">{stats.total > 0 ? Math.round((stats.rejected / stats.total) * 100) : 0}%</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Content View */}
-      {viewMode === 'products' && (
-        <ContentView 
-          key="content-view"
-          content={content}
-          inventory={inventory}
-          handleSelectProduct={(product) => {
-            const currentState = tabStates[uploadType];
-            updateCurrentTabState({
-              selectedProduct: product,
-              selectedSKUs: currentState.selectedSKUs.includes(product.sku) 
-                ? currentState.selectedSKUs 
-                : [...currentState.selectedSKUs, product.sku]
-            });
-            setViewMode('upload');
-          }}
-          onContentClick={(contentItem) => {
-            setSelectedContentDetail(contentItem);
-          }}
-        />
-      )}
-
-      {/* Upload View */}
-      {viewMode === 'upload' && (
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-[#4f0c1b] to-[#3d0a15] rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-gray-900">
-                  {editingContent ? t('cms.editContent') : t('cms.uploadContent')}
-                </h3>
-                <p className="text-sm text-gray-500">
-                  {editingContent ? t('cms.updateYourContentDetails') : t('cms.createNewContent')}
-                </p>
-              </div>
-            </div>
-          </div>
-
+  const renderUploadFormInner = () => (
+    <>
           {/* Content Type Selection */}
           {!editingContent && (
             <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -834,8 +846,8 @@ export default function CMSModuleNew() {
                   onClick={() => setUploadType('product')}
                   className={`px-4 py-3 rounded-xl border-2 transition-all duration-200 font-medium ${
                     uploadType === 'product'
-                      ? 'bg-[#4f0c1b] text-white border-[#4f0c1b] shadow-md'
-                      : 'bg-white text-gray-700 border-gray-300 hover:border-[#4f0c1b] hover:bg-gray-50'
+                      ? 'bg-[#515151] text-white border-[#515151] shadow-md'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-[#515151] hover:bg-gray-50'
                   }`}
                 >
                   {t('cms.singleProduct')}
@@ -844,8 +856,8 @@ export default function CMSModuleNew() {
                   onClick={() => setUploadType('collection')}
                   className={`px-4 py-3 rounded-xl border-2 transition-all duration-200 font-medium ${
                     uploadType === 'collection'
-                      ? 'bg-[#4f0c1b] text-white border-[#4f0c1b] shadow-md'
-                      : 'bg-white text-gray-700 border-gray-300 hover:border-[#4f0c1b] hover:bg-gray-50'
+                      ? 'bg-[#515151] text-white border-[#515151] shadow-md'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-[#515151] hover:bg-gray-50'
                   }`}
                 >
                   {t('cms.collection')}
@@ -854,8 +866,8 @@ export default function CMSModuleNew() {
                   onClick={() => setUploadType('general')}
                   className={`px-4 py-3 rounded-xl border-2 transition-all duration-200 font-medium ${
                     uploadType === 'general'
-                      ? 'bg-[#4f0c1b] text-white border-[#4f0c1b] shadow-md'
-                      : 'bg-white text-gray-700 border-gray-300 hover:border-[#4f0c1b] hover:bg-gray-50'
+                      ? 'bg-[#515151] text-white border-[#515151] shadow-md'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-[#515151] hover:bg-gray-50'
                   }`}
                 >
                   {t('cms.general')}
@@ -882,7 +894,7 @@ export default function CMSModuleNew() {
                     onChange={handleSKUInputChange}
                     onFocus={() => currentTabState.searchSKU.trim().length > 0 && updateCurrentTabState({ showSKUDropdown: true })}
                     placeholder={t('cms.searchBySku')}
-                    className="w-full px-4 py-2.5 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-4 py-2.5 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                   {currentTabState.searchSKU && (
                     <button
@@ -972,7 +984,7 @@ export default function CMSModuleNew() {
                     {currentTabState.selectedSKUs.map(sku => (
                       <span
                         key={sku}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#4f0c1b] text-white text-sm rounded-lg font-medium"
+                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#515151] text-white text-sm rounded-lg font-medium"
                       >
                         {sku}
                         <button
@@ -1017,7 +1029,7 @@ export default function CMSModuleNew() {
                       ? setEditFormData({ ...editFormData, language: e.target.value as 'en' | 'es' })
                       : updateCurrentTabState({ formData: { ...currentTabState.formData, language: e.target.value as 'en' | 'es' } })
                     }
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   >
                     <option value="en">English</option>
                     <option value="es">Español</option>
@@ -1034,7 +1046,7 @@ export default function CMSModuleNew() {
                     }
                     placeholder="Add any comments or notes about this product content..."
                     rows={4}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent resize-none"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent resize-none"
                   />
                 </div>
               </div>
@@ -1055,7 +1067,7 @@ export default function CMSModuleNew() {
                       }
                       required
                       placeholder="Enter content title..."
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                     />
                   </div>
 
@@ -1067,7 +1079,7 @@ export default function CMSModuleNew() {
                         ? setEditFormData({ ...editFormData, language: e.target.value as 'en' | 'es' })
                         : updateCurrentTabState({ formData: { ...currentTabState.formData, language: e.target.value as 'en' | 'es' } })
                       }
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                     >
                       <option value="en">English</option>
                       <option value="es">Español</option>
@@ -1088,7 +1100,7 @@ export default function CMSModuleNew() {
                     required
                     placeholder="Enter content description..."
                     rows={4}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent resize-none"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent resize-none"
                   />
                 </div>
 
@@ -1103,7 +1115,7 @@ export default function CMSModuleNew() {
                         : updateCurrentTabState({ formData: { ...currentTabState.formData, hashtags: e.target.value } })
                       }
                       placeholder="#jewelry #necklace"
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                     />
                     <p className="text-xs text-gray-500 mt-1">Separate multiple hashtags with spaces</p>
                   </div>
@@ -1118,7 +1130,7 @@ export default function CMSModuleNew() {
                         : updateCurrentTabState({ formData: { ...currentTabState.formData, tags: e.target.value } })
                       }
                       placeholder="promotion, sale"
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                     />
                     <p className="text-xs text-gray-500 mt-1">Separate multiple tags with commas</p>
                   </div>
@@ -1149,7 +1161,7 @@ export default function CMSModuleNew() {
                     : updateCurrentTabState({ formData: { ...currentTabState.formData, category: e.target.value } })
                   }
                   disabled={!!currentTabState.selectedProduct}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
                 >
                   <option value="">Select a category</option>
                   {availableCategories.map(category => (
@@ -1175,7 +1187,7 @@ export default function CMSModuleNew() {
                     : updateCurrentTabState({ formData: { ...currentTabState.formData, line: e.target.value } })
                   }
                   disabled={!!currentTabState.selectedProduct}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
                 >
                   <option value="">Select a line</option>
                   {availableLines.map(line => (
@@ -1200,7 +1212,7 @@ export default function CMSModuleNew() {
               <label className="text-sm font-semibold text-gray-900">Upload Media</label>
             </div>
             
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-[#4f0c1b] transition-colors">
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-[#515151] transition-colors">
               <input
                 type="file"
                 multiple
@@ -1217,7 +1229,7 @@ export default function CMSModuleNew() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
                 <span className="text-sm font-medium text-gray-700 mb-1">Click to upload or drag and drop</span>
-                <span className="text-xs text-gray-500">Images, Videos, Audio, PDF, DOC (up to 50MB)</span>
+                <span className="text-xs text-gray-500">Images, Videos, Audio, PDF, DOC (Videos up to 100MB, others up to 50MB)</span>
               </label>
             </div>
             
@@ -1299,7 +1311,7 @@ export default function CMSModuleNew() {
                             value={uploadedFile.linkedSKU || ''}
                             onChange={(e) => handleLinkFileToSKU(index, e.target.value || undefined)}
                             onClick={(e) => e.stopPropagation()}
-                            className="w-full text-xs px-2 py-1 bg-white text-gray-900 rounded border border-gray-300 focus:outline-none focus:ring-1 focus:ring-[#4f0c1b]"
+                            className="w-full text-xs px-2 py-1 bg-white text-gray-900 rounded border border-gray-300 focus:outline-none focus:ring-1 focus:ring-[#515151]"
                           >
                             <option value="">Not linked</option>
                             {currentTabState.selectedSKUs.map(sku => (
@@ -1311,7 +1323,7 @@ export default function CMSModuleNew() {
                       
                       {/* Linked SKU Badge */}
                       {uploadedFile.linkedSKU && (
-                        <div className="absolute top-2 left-2 px-2 py-1 bg-[#4f0c1b] text-white text-xs rounded font-medium">
+                        <div className="absolute top-2 left-2 px-2 py-1 bg-[#515151] text-white text-xs rounded font-medium">
                           {uploadedFile.linkedSKU}
                         </div>
                       )}
@@ -1365,20 +1377,25 @@ export default function CMSModuleNew() {
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <div className="flex justify-end gap-3">
               <button
+                type="button"
                 onClick={() => {
                   if (editingContent) {
-                    setEditingContent(null);
-                    setEditFormData({
-                      title: '',
-                      description: '',
-                      hashtags: '',
-                      category: '',
-                      line: '',
-                      tags: '',
-                      language: 'en',
-                    });
-                    setEditUploadedFiles([]);
-                    setEditSelectedSKUs([]);
+                    if (manageEditModalOpen) {
+                      closeManageEditModal();
+                    } else {
+                      setEditingContent(null);
+                      setEditFormData({
+                        title: '',
+                        description: '',
+                        hashtags: '',
+                        category: '',
+                        line: '',
+                        tags: '',
+                        language: 'en',
+                      });
+                      setEditUploadedFiles([]);
+                      setEditSelectedSKUs([]);
+                    }
                   } else {
                     updateCurrentTabState({
                       formData: {
@@ -1403,11 +1420,265 @@ export default function CMSModuleNew() {
                 {editingContent ? 'Cancel' : 'Clear'}
               </button>
               <button
-                onClick={handleSubmit}
-                className="px-6 py-2.5 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#3d0a15] font-medium transition-all shadow-sm hover:shadow-md"
+                type="button"
+                disabled={isSavingDraft || (!editingContent && !hasPermission('cms.edit'))}
+                onClick={() => void handleSubmit()}
+                className="px-6 py-2.5 bg-[#515151] text-white rounded-lg hover:bg-[#000000] font-medium transition-all shadow-sm hover:shadow-md disabled:opacity-50 disabled:pointer-events-none disabled:cursor-not-allowed"
               >
-                {editingContent ? t('cms.updateContent') : t('cms.createAsDraft')}
+                {isSavingDraft
+                  ? isAttachingMedia
+                    ? (t('cms.uploadingMedia') || 'Uploading media…')
+                    : (t('cms.savingDraft') || 'Saving draft…')
+                  : editingContent
+                    ? t('cms.updateContent')
+                    : t('cms.createAsDraft')}
               </button>
+            </div>
+          </div>
+    </>
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">{t('cms.title')}</h2>
+            <p className="text-gray-600 mt-1">{t('cms.subtitle')}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
+              {hasPermission('cms.edit') ? t('cms.fullAccess') : 'View Only'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Navigation Tabs */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-2">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setViewMode('dashboard')}
+            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+              viewMode === 'dashboard'
+                ? 'bg-[#515151] text-white'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            {t('cms.dashboard')}
+          </button>
+          <button
+            onClick={() => setViewMode('products')}
+            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+              viewMode === 'products'
+                ? 'bg-[#515151] text-white'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            {t('cms.content')}
+          </button>
+          <button
+            onClick={() => setViewMode('upload')}
+            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+              viewMode === 'upload'
+                ? 'bg-[#515151] text-white'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            {t('cms.uploadContent')}
+          </button>
+          <button
+            onClick={() => setViewMode('manage')}
+            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+              viewMode === 'manage'
+                ? 'bg-[#515151] text-white'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            {t('cms.manageContent')}
+          </button>
+        </div>
+      </div>
+
+      {/* Dashboard View */}
+      {viewMode === 'dashboard' && (
+        <div className="space-y-8">
+          {/* Overview — vertical metric card; gallery icon in soft tile (matches dashboard reference) */}
+          <div className="rounded-2xl border border-gray-200/90 bg-white p-6 text-left transition-all duration-200 hover:border-gray-300 hover:shadow-sm">
+            <div className="mb-4 flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-gray-200/90 bg-gray-50">
+              <svg
+                className="h-6 w-6 text-gray-600"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+                aria-hidden
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
+              </svg>
+            </div>
+            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">{t('cms.contentOverview')}</p>
+            <p className="mb-3 text-sm font-medium text-gray-500">{t('cms.totalContentItems')}</p>
+            <p className="text-3xl font-semibold tabular-nums tracking-tight text-gray-900">{stats.total}</p>
+            <p className="mt-2 text-xs font-medium uppercase tracking-wide text-gray-500">{t('cms.totalItems')}</p>
+          </div>
+
+          {/* Status metrics — same vertical layout as main dashboard cards */}
+          <div>
+            <p className="mb-4 text-xs font-medium uppercase tracking-wide text-gray-500">
+              {t('cms.contentStatusDistribution')}
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              {(
+                [
+                  {
+                    key: 'draft',
+                    count: stats.draft,
+                    label: t('cms.drafts'),
+                    sub: t('cms.inProgress'),
+                    path: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
+                  },
+                  {
+                    key: 'submitted',
+                    count: stats.submitted,
+                    label: t('cms.submitted'),
+                    sub: t('cms.awaitingReview'),
+                    path: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
+                  },
+                  {
+                    key: 'approved',
+                    count: stats.approved,
+                    label: t('cms.approved'),
+                    sub: t('cms.readyToPublish'),
+                    path: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+                  },
+                  {
+                    key: 'published',
+                    count: stats.published,
+                    label: t('cms.published'),
+                    sub: t('cms.liveContent'),
+                    path: 'M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12',
+                  },
+                  {
+                    key: 'rejected',
+                    count: stats.rejected,
+                    label: t('cms.rejected'),
+                    sub: t('cms.needsRevision'),
+                    path: 'M6 18L18 6M6 6l12 12',
+                  },
+                ] as const
+              ).map((row) => {
+                const pct = stats.total > 0 ? Math.round((row.count / stats.total) * 100) : 0;
+                return (
+                  <div
+                    key={row.key}
+                    className="rounded-2xl border border-gray-200/90 bg-white p-6 text-left transition-all duration-200 hover:border-gray-300 hover:shadow-sm"
+                  >
+                    <div className="mb-4">
+                      <svg
+                        className="h-5 w-5 text-gray-500"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={1.5}
+                        aria-hidden
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d={row.path} />
+                      </svg>
+                    </div>
+                    <p className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">{row.label}</p>
+                    <p className="mb-3 text-sm font-medium text-gray-500">{row.sub}</p>
+                    <p className="text-3xl font-semibold tabular-nums tracking-tight text-gray-900">{row.count}</p>
+                    <p className="mt-2 text-sm font-medium tabular-nums text-gray-500">{pct}%</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Content View */}
+      {viewMode === 'products' && (
+        <ContentView 
+          key="content-view"
+          content={content}
+          inventory={inventory}
+          handleSelectProduct={(product) => {
+            const currentState = tabStates[uploadType];
+            updateCurrentTabState({
+              selectedProduct: product,
+              selectedSKUs: currentState.selectedSKUs.includes(product.sku) 
+                ? currentState.selectedSKUs 
+                : [...currentState.selectedSKUs, product.sku]
+            });
+            setViewMode('upload');
+          }}
+          onContentClick={(contentItem) => {
+            setSelectedContentDetail(contentItem);
+          }}
+        />
+      )}
+
+      {/* Upload View */}
+      {viewMode === 'upload' && (
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-50">
+                <svg className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">
+                  {editingContent ? t('cms.editContent') : t('cms.uploadContent')}
+                </h3>
+                <p className="text-sm text-gray-500">
+                  {editingContent ? t('cms.updateYourContentDetails') : t('cms.createNewContent')}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {renderUploadFormInner()}
+        </div>
+      )}
+
+      {/* Edit from Manage Content — same form as Upload, modal overlay */}
+      {viewMode === 'manage' && manageEditModalOpen && editingContent && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={closeManageEditModal}
+        >
+          <div
+            className="bg-gray-50 rounded-2xl shadow-xl border border-gray-200 w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex-shrink-0 flex items-center justify-between gap-4 px-6 py-4 border-b border-gray-200 bg-white rounded-t-2xl">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">{t('cms.editContent')}</h3>
+                <p className="text-sm text-gray-500">{t('cms.updateYourContentDetails')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeManageEditModal}
+                className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-800 transition-colors"
+                aria-label={t('common.close') || 'Close'}
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 min-h-0">
+              <div className="space-y-6">{renderUploadFormInner()}</div>
             </div>
           </div>
         </div>
@@ -1432,7 +1703,7 @@ export default function CMSModuleNew() {
                     <button
                       onClick={() => setShowFilters(!showFilters)}
                       className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
-                        showFilters ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
+                        showFilters ? 'bg-[#515151] text-white border-[#515151]' : ''
                       }`}
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1459,7 +1730,7 @@ export default function CMSModuleNew() {
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value as ContentStatus | 'all')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                 >
                   <option value="all">{t('cms.allStatus')}</option>
                   <option value="draft">{t('cms.draft')}</option>
@@ -1478,7 +1749,7 @@ export default function CMSModuleNew() {
                   value={filterSKU}
                   onChange={(e) => setFilterSKU(e.target.value)}
                   placeholder={t('cms.searchBySkuPlaceholder')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                 />
               </div>
 
@@ -1740,20 +2011,7 @@ export default function CMSModuleNew() {
                               <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setEditingContent(item);
-                                    setUploadType(item.type);
-                                    setEditFormData({
-                                      title: item.title,
-                                      description: item.description,
-                                      hashtags: item.hashtags.join(', '),
-                                      category: item.category,
-                                      line: '',
-                                      tags: item.tags.join(', '),
-                                      language: item.language,
-                                    });
-                                    setEditUploadedFiles(item.images.map(img => img));
-                                    setEditSelectedSKUs(item.linkedProductIds || []);
-                                    setViewMode('upload');
+                                    openManageContentEditor(item);
                                   }}
                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
                                 >
@@ -1769,10 +2027,10 @@ export default function CMSModuleNew() {
                                       await updateContentStatus(item.id, 'submitted', user?.id || '');
                                     } catch (error) {
                                       console.error('Error submitting content:', error);
-                                      alert(t('cms.submitContentFailed'));
+                                      showUploadFlowAlert(t('cms.submitContentFailed'), t('common.error'));
                                     }
                                   }}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4f0c1b] text-white hover:bg-[#3d0a15] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#515151] text-white hover:bg-[#000000] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
                                 >
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1799,20 +2057,7 @@ export default function CMSModuleNew() {
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setEditingContent(item);
-                                    setUploadType(item.type);
-                                    setEditFormData({
-                                      title: item.title,
-                                      description: item.description,
-                                      hashtags: item.hashtags.join(', '),
-                                      category: item.category,
-                                      line: '',
-                                      tags: item.tags.join(', '),
-                                      language: item.language,
-                                    });
-                                    setEditUploadedFiles(item.images.map(img => img));
-                                    setEditSelectedSKUs(item.linkedProductIds || []);
-                                    setViewMode('upload');
+                                    openManageContentEditor(item);
                                   }}
                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
                                 >
@@ -1870,7 +2115,7 @@ export default function CMSModuleNew() {
                                   e.stopPropagation();
                                   handlePublish(item.id);
                                 }}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4f0c1b] text-white hover:bg-[#3d0a15] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#515151] text-white hover:bg-[#000000] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
                               >
                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -1895,19 +2140,46 @@ export default function CMSModuleNew() {
                               </button>
                             )}
                             {item.status === 'rejected' && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setResubmitContentId(item.id);
-                                  setResubmitModalOpen(true);
-                                }}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4f0c1b] text-white hover:bg-[#3d0a15] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                                {t('cms.resubmit')}
-                              </button>
+                              <>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openManageContentEditor(item);
+                                  }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                  {t('cms.edit')}
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setResubmitContentId(item.id);
+                                    setResubmitModalOpen(true);
+                                  }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#515151] text-white hover:bg-[#000000] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                  </svg>
+                                  {t('cms.resubmit')}
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setContentToDelete(item);
+                                    setDeleteDraftConfirmOpen(true);
+                                  }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-300 bg-white text-red-700 hover:bg-red-50 hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                  {t('cms.delete')}
+                                </button>
+                              </>
                             )}
                           </div>
                         </td>
@@ -1945,8 +2217,94 @@ export default function CMSModuleNew() {
               }}
             />
           )}
+
+          {/* Delete Draft / Rejected Content Confirmation Dialog */}
+          <ConfirmDialog
+            open={deleteDraftConfirmOpen}
+            title={
+              contentToDelete?.status === 'rejected'
+                ? t('cms.deleteContent')
+                : 'Delete Draft'
+            }
+            description={contentToDelete ? `Are you sure you want to delete "${contentToDelete.title}"? This action cannot be undone.` : ''}
+            confirmText={t('common.delete')}
+            cancelText={t('common.cancel')}
+            confirmVariant="danger"
+            onConfirm={async () => {
+              if (contentToDelete) {
+                try {
+                  await deleteContent(contentToDelete.id);
+                  setContentToDelete(null);
+                } catch (error) {
+                  console.error('Error deleting content:', error);
+                }
+              }
+              setDeleteDraftConfirmOpen(false);
+            }}
+            onCancel={() => {
+              setDeleteDraftConfirmOpen(false);
+              setContentToDelete(null);
+            }}
+          />
+
+          {/* Cancel Submission Confirmation Dialog */}
+          <ConfirmDialog
+            open={cancelSubmissionConfirmOpen}
+            title="Cancel Submission"
+            description={contentToCancel ? `Are you sure you want to cancel the submission of "${contentToCancel.title}"? It will be moved back to draft status.` : ''}
+            confirmText={t('common.cancelSubmission')}
+            cancelText={t('common.keepSubmitted')}
+            onConfirm={async () => {
+              if (contentToCancel) {
+                try {
+                  await updateContentStatus(contentToCancel.id, 'draft', user?.id || '');
+                  setContentToCancel(null);
+                } catch (error) {
+                  console.error('Error cancelling submission:', error);
+                }
+              }
+              setCancelSubmissionConfirmOpen(false);
+            }}
+            onCancel={() => {
+              setCancelSubmissionConfirmOpen(false);
+              setContentToCancel(null);
+            }}
+          />
+
+          {/* Delete Published Content Confirmation Dialog */}
+          <ConfirmDialog
+            open={deletePublishedConfirmOpen}
+            title="Delete Published Content"
+            description={contentToDelete ? `Are you sure you want to permanently delete "${contentToDelete.title}"? This action cannot be undone.` : ''}
+            confirmText={t('common.delete')}
+            cancelText={t('common.cancel')}
+            confirmVariant="danger"
+            onConfirm={async () => {
+              if (contentToDelete) {
+                try {
+                  await deleteContent(contentToDelete.id);
+                  setContentToDelete(null);
+                } catch (error) {
+                  console.error('Error deleting published content:', error);
+                }
+              }
+              setDeletePublishedConfirmOpen(false);
+            }}
+            onCancel={() => {
+              setDeletePublishedConfirmOpen(false);
+              setContentToDelete(null);
+            }}
+          />
         </div>
       )}
+
+      <AlertDialog
+        open={uploadFlowAlert.open}
+        title={uploadFlowAlert.title}
+        message={uploadFlowAlert.message}
+        buttonText={uploadFlowAlert.buttonText}
+        onClose={closeUploadFlowAlert}
+      />
     </div>
   );
 }
@@ -2017,7 +2375,7 @@ function ResubmitModal({
               onChange={(e) => setChangesNotes(e.target.value)}
               placeholder="Describe the changes you made to address the rejection..."
               rows={6}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
               required
             />
           </div>
@@ -2035,7 +2393,7 @@ function ResubmitModal({
           <button
             onClick={handleSubmit}
             disabled={isSubmitting || !changesNotes.trim()}
-            className="px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#3d0a15] disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+            className="px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000] disabled:opacity-50 disabled:cursor-not-allowed font-medium"
           >
             {isSubmitting ? 'Resubmitting...' : 'Resubmit'}
           </button>
@@ -2057,8 +2415,55 @@ function ContentDetailModal({
 }) {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const { deleteContent, updateContentStatus } = useCMS();
+  const { deleteContent, updateContentStatus, updateContent } = useCMS();
   const [selectedVideoUrl, setSelectedVideoUrl] = useState<string | null>(null);
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+  const [alertDialog, setAlertDialog] = useState<{ open: boolean; title: string; message: string }>({ open: false, title: '', message: '' });
+  
+  const showAlert = (message: string, title: string = 'Alert') => {
+    setAlertDialog({ open: true, title, message });
+  };
+  
+  // Handle video deletion
+  const handleDeleteVideo = async (videoUrl: string) => {
+    try {
+      // Delete from Firebase Storage
+      await deleteMediaFile(videoUrl);
+      
+      // Remove from content.videos array
+      const updatedVideos = (content.videos || []).filter(v => v !== videoUrl);
+      await updateContent(content.id, {
+        videos: updatedVideos
+      });
+      
+      // Close video player if this video was being played
+      if (selectedVideoUrl === videoUrl) {
+        setSelectedVideoUrl(null);
+      }
+    } catch (error) {
+      console.error('Error deleting video:', error);
+      throw error;
+    }
+  };
+  
+  // Helper function to detect if a URL is a video (more robust)
+  const isVideoUrl = (url: string): boolean => {
+    if (!url) return false;
+    const urlLower = url.toLowerCase();
+    return !!(
+      urlLower.includes('/videos/') || 
+      urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
+      urlLower.includes('video/') ||
+      urlLower.includes('contenttype=video') ||
+      urlLower.match(/video\/mp4|video\/quicktime|video\/webm|video\/x-msvideo/i) ||
+      (urlLower.includes('firebasestorage') && (
+        urlLower.includes('.mov') || 
+        urlLower.includes('.mp4') || 
+        urlLower.includes('.webm') ||
+        urlLower.includes('videos/')
+      ))
+    );
+  };
   const [deleteDraftConfirmOpen, setDeleteDraftConfirmOpen] = useState(false);
   const [cancelSubmissionConfirmOpen, setCancelSubmissionConfirmOpen] = useState(false);
   const [deletePublishedConfirmOpen, setDeletePublishedConfirmOpen] = useState(false);
@@ -2219,9 +2624,7 @@ function ContentDetailModal({
                             video.currentTime = video.duration / 2;
                           }
                         }}
-                        onError={(e) => {
-                          console.error('Video load error:', e);
-                        }}
+                        onError={(e) => logVideoPlaybackIssue('content detail thumbnail (videos array)', e)}
                       />
                       <div 
                         className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors cursor-pointer z-10"
@@ -2242,32 +2645,21 @@ function ContentDetailModal({
                 
                 {/* Render images, but check if any are actually videos */}
                 {(content.images || []).map((mediaUrl, index) => {
-                  // Check if it's a video by URL pattern or file extension
-                  // Also check for common video MIME types in the URL
-                  // More aggressive detection - check URL more thoroughly
-                  const urlLower = mediaUrl.toLowerCase();
-                  const isVideo = !!(
-                    urlLower.includes('/videos/') || 
-                    urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
-                    urlLower.includes('video/') ||
-                    urlLower.includes('contenttype=video') ||
-                    urlLower.match(/video\/mp4|video\/quicktime|video\/webm|video\/x-msvideo/i) ||
-                    // Check for Firebase Storage video patterns
-                    (urlLower.includes('firebasestorage') && (
-                      urlLower.includes('.mov') || 
-                      urlLower.includes('.mp4') || 
-                      urlLower.includes('.webm') ||
-                      urlLower.includes('videos/')
-                    ))
-                  );
+                  // Use the helper function to detect videos
+                  const isVideo = isVideoUrl(mediaUrl);
                   
                   const handleMediaClick = (e: React.MouseEvent) => {
                     e.stopPropagation();
                     e.preventDefault();
                     console.log('Media clicked:', { mediaUrl, isVideo, index });
-                    // Always open video player modal - let the player handle if it's actually a video
-                    console.log('Opening media player for:', mediaUrl);
-                    setSelectedVideoUrl(mediaUrl);
+                    // Open video player for videos, image viewer for images
+                    if (isVideo) {
+                      console.log('Opening video player for:', mediaUrl);
+                      setSelectedVideoUrl(mediaUrl);
+                    } else {
+                      console.log('Opening image viewer for:', mediaUrl);
+                      setSelectedImageUrl(mediaUrl);
+                    }
                   };
 
                   return (
@@ -2299,9 +2691,7 @@ function ContentDetailModal({
                                 video.currentTime = video.duration / 2;
                               }
                             }}
-                            onError={(e) => {
-                              console.error('Video load error:', e);
-                            }}
+                            onError={(e) => logVideoPlaybackIssue('content detail thumbnail (images array)', e)}
                           />
                           <div 
                             className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors cursor-pointer z-10"
@@ -2326,25 +2716,12 @@ function ContentDetailModal({
                           onError={(e) => {
                             // If image fails to load, it might be a video
                             console.log('Image failed to load, checking if it is a video:', mediaUrl);
-                            const videoUrl = mediaUrl;
-                            const urlLower = videoUrl.toLowerCase();
-                            const isVideoUrl = !!(
-                              urlLower.includes('/videos/') || 
-                              urlLower.match(/\.(mp4|mov|avi|webm|mkv|m4v|flv|wmv|3gp|mpg|mpeg)$/i) ||
-                              urlLower.includes('video/') ||
-                              (urlLower.includes('firebasestorage') && (
-                                urlLower.includes('.mov') || 
-                                urlLower.includes('.mp4') || 
-                                urlLower.includes('.webm')
-                              ))
-                            );
-                            if (isVideoUrl) {
+                            if (isVideoUrl(mediaUrl)) {
                               console.log('Detected as video after image load failure, opening player');
-                              setSelectedVideoUrl(videoUrl);
+                              setSelectedVideoUrl(mediaUrl);
                             } else {
-                              // Even if not detected, try opening as video - might work
-                              console.log('Image failed, trying to open as video anyway');
-                              setSelectedVideoUrl(videoUrl);
+                              // If image fails and it's not a video, show error
+                              console.log('Image failed to load and is not a video:', mediaUrl);
                             }
                           }}
                         />
@@ -2535,34 +2912,46 @@ function ContentDetailModal({
         </div>
       </div>
       
-      {/* Video Player Modal */}
-      {selectedVideoUrl && (
+      {/* Video Player Modal - Render via Portal to avoid z-index issues */}
+      {typeof window !== 'undefined' && selectedVideoUrl && createPortal(
         <VideoPlayerModal 
           videoUrl={selectedVideoUrl}
           onClose={() => setSelectedVideoUrl(null)}
-        />
+          onDelete={handleDeleteVideo}
+        />,
+        document.body
+      )}
+
+      {/* Image Viewer Modal - Render via Portal to avoid z-index issues */}
+      {typeof window !== 'undefined' && selectedImageUrl && createPortal(
+        <ImageViewerModal 
+          imageUrl={selectedImageUrl}
+          onClose={() => setSelectedImageUrl(null)}
+        />,
+        document.body
       )}
 
       {/* Confirmation Dialogs */}
       <ConfirmDialog
         open={deleteDraftConfirmOpen}
-        title={t('common.deleteDraft')}
-        description={t('cms.deleteDraftConfirm')}
+        title="Delete Draft"
+        description={contentToDelete ? `Are you sure you want to delete "${contentToDelete.title}"? This action cannot be undone.` : ''}
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
         confirmVariant="danger"
         onConfirm={async () => {
           if (contentToDelete) {
             try {
-              deleteContent(contentToDelete.id);
-              alert(t('cms.draftDeleted'));
+              await deleteContent(contentToDelete.id);
+              setDeleteDraftConfirmOpen(false);
+              setContentToDelete(null);
+              showAlert(t('cms.draftDeleted'), 'Success');
             } catch (error) {
               console.error('Error deleting draft:', error);
-              alert(t('cms.deleteDraftFailed'));
+              setDeleteDraftConfirmOpen(false);
+              showAlert(t('cms.deleteDraftFailed'), 'Error');
             }
-            setContentToDelete(null);
           }
-          setDeleteDraftConfirmOpen(false);
         }}
         onCancel={() => {
           setDeleteDraftConfirmOpen(false);
@@ -2572,22 +2961,23 @@ function ContentDetailModal({
 
       <ConfirmDialog
         open={cancelSubmissionConfirmOpen}
-        title={t('common.cancelSubmission')}
-        description={t('cms.cancelSubmissionConfirm')}
+        title="Cancel Submission"
+        description={contentToCancel ? `Are you sure you want to cancel the submission of "${contentToCancel.title}"? It will be moved back to draft status.` : ''}
         confirmText={t('common.cancelSubmission')}
         cancelText={t('common.keepSubmitted')}
         onConfirm={async () => {
           if (contentToCancel) {
             try {
               await updateContentStatus(contentToCancel.id, 'draft', user?.id || '');
-              alert(t('cms.submissionCancelled'));
+              setCancelSubmissionConfirmOpen(false);
+              setContentToCancel(null);
+              showAlert(t('cms.submissionCancelled'), 'Success');
             } catch (error) {
               console.error('Error cancelling submission:', error);
-              alert(t('cms.cancelSubmissionFailed'));
+              setCancelSubmissionConfirmOpen(false);
+              showAlert(t('cms.cancelSubmissionFailed'), 'Error');
             }
-            setContentToCancel(null);
           }
-          setCancelSubmissionConfirmOpen(false);
         }}
         onCancel={() => {
           setCancelSubmissionConfirmOpen(false);
@@ -2597,41 +2987,86 @@ function ContentDetailModal({
 
       <ConfirmDialog
         open={deletePublishedConfirmOpen}
-        title={t('common.deletePublishedContent')}
-        description={t('cms.deletePublishedConfirm')}
+        title="Delete Published Content"
+        description={contentToDelete ? `Are you sure you want to permanently delete "${contentToDelete.title}"? This action cannot be undone.` : ''}
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
         confirmVariant="danger"
-        onConfirm={() => {
+        onConfirm={async () => {
           if (contentToDelete) {
-            deleteContent(contentToDelete.id);
-            setContentToDelete(null);
+            try {
+              await deleteContent(contentToDelete.id);
+              setDeletePublishedConfirmOpen(false);
+              setContentToDelete(null);
+              showAlert('Content deleted successfully', 'Success');
+            } catch (error) {
+              console.error('Error deleting published content:', error);
+              setDeletePublishedConfirmOpen(false);
+              showAlert('Failed to delete content', 'Error');
+            }
           }
-          setDeletePublishedConfirmOpen(false);
         }}
         onCancel={() => {
           setDeletePublishedConfirmOpen(false);
           setContentToDelete(null);
         }}
       />
+
+      {/* Alert Dialog */}
+      <AlertDialog
+        open={alertDialog.open}
+        title={alertDialog.title}
+        message={alertDialog.message}
+        buttonText="OK"
+        onClose={() => setAlertDialog({ open: false, title: '', message: '' })}
+      />
     </div>
   );
+}
+
+/** SyntheticEvent logs as `{}` in the console; use MediaError + element state. */
+function logVideoPlaybackIssue(context: string, e: React.SyntheticEvent<HTMLVideoElement, Event>) {
+  const el = e.currentTarget;
+  const me = el.error;
+  const src = el.currentSrc || el.src || '';
+  const info: Record<string, string | number | boolean> = me
+    ? {
+        mediaErrorCode: me.code,
+        mediaErrorMessage: me.message || '(empty)',
+      }
+    : {
+        noMediaErrorObject: 1,
+        networkState: el.networkState,
+        readyState: el.readyState,
+      };
+  console.warn(`[CMS video] ${context}`, { ...info, srcPreview: src.slice(0, 160) });
 }
 
 // Video Player Modal Component
 function VideoPlayerModal({ 
   videoUrl, 
-  onClose 
+  onClose,
+  onDelete
 }: { 
   videoUrl: string; 
   onClose: () => void;
+  onDelete?: (videoUrl: string) => Promise<void>;
 }) {
+  const { user, hasPermission } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [useProxy, setUseProxy] = useState(false);
+  const [proxyUrl, setProxyUrl] = useState<string | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  
+  // Check if user can delete (admin only)
+  const canDelete = user?.role === 'admin' && hasPermission('media.delete');
 
   useEffect(() => {
-    console.log('VideoPlayerModal mounted with URL:', videoUrl);
     setIsLoading(true);
+    setError(null);
+    setUseProxy(false);
+    setProxyUrl(null);
     
     // Small delay to ensure DOM is ready
     const timer = setTimeout(() => {
@@ -2642,6 +3077,11 @@ function VideoPlayerModal({
       clearTimeout(timer);
     };
   }, [videoUrl]);
+
+  // Generate proxy URL for CORS bypass
+  const getProxyUrl = (url: string): string => {
+    return `/api/download-image?url=${encodeURIComponent(url)}`;
+  };
 
   return (
     <div 
@@ -2710,6 +3150,23 @@ function VideoPlayerModal({
               </svg>
             </button>
             
+            {/* Delete button - only show for admin users */}
+            {canDelete && onDelete && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDeleteConfirmOpen(true);
+                }}
+                className="absolute top-4 right-4 z-20 text-white hover:text-red-400 transition-colors bg-black/70 hover:bg-red-900/70 rounded-full p-2 backdrop-blur-sm"
+                aria-label="Delete video"
+                title="Delete video"
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            )}
+            
             {isLoading && (
               <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
                 <div className="text-white text-center">
@@ -2720,48 +3177,206 @@ function VideoPlayerModal({
               </div>
             )}
             <video
-              key={videoUrl}
-              src={videoUrl}
+              key={useProxy ? proxyUrl : videoUrl}
+              src={useProxy && proxyUrl ? proxyUrl : videoUrl}
               controls
-              autoPlay
+              autoPlay={!useProxy}
               playsInline
               className="w-full h-auto"
               style={{ maxHeight: '85vh', maxWidth: '100%', display: isLoading ? 'none' : 'block' }}
               onError={(e) => {
-                console.error('Video error:', e);
                 const videoElement = e.currentTarget;
-                const error = videoElement.error;
-                if (error) {
-                  console.error('Video error code:', error.code, 'message:', error.message);
-                  setError(`Failed to load video (Error ${error.code}). Please check the URL or try again.`);
-                } else {
-                  setError('Failed to load video. Please check the URL or try again.');
+                const mediaError = videoElement.error;
+                
+                // If first attempt failed and we haven't tried proxy yet, try proxy URL
+                if (!useProxy && videoUrl.includes('firebasestorage.googleapis.com')) {
+                  const proxy = getProxyUrl(videoUrl);
+                  setProxyUrl(proxy);
+                  setUseProxy(true);
+                  setIsLoading(true);
+                  setError(null);
+                  return; // Don't set error yet, try proxy first
                 }
+                
+                logVideoPlaybackIssue('VideoPlayerModal', e);
+                
+                let errorMessage = 'Failed to load video.';
+                
+                if (mediaError) {
+                  // Map error codes to user-friendly messages
+                  const errorMessages: { [key: number]: string } = {
+                    1: 'Video loading aborted. The video may have been interrupted.',
+                    2: 'Network error. Please check your internet connection or the video URL may be invalid.',
+                    3: 'Video decoding error. The video file may be corrupted or in an unsupported format.',
+                    4: 'Video source not supported. The video format may not be supported by your browser.',
+                  };
+                  
+                  const errorCode = mediaError.code || 0;
+                  const defaultMessage = mediaError.message || 'Unknown error';
+                  errorMessage = errorMessages[errorCode] || `Failed to load video (Error ${errorCode}: ${defaultMessage}).`;
+                  
+                  if (videoUrl.includes('firebasestorage.googleapis.com')) {
+                    errorMessage += ' If this persists, confirm Storage CORS allows your app origin (see storage-cors.json).';
+                  }
+                } else {
+                  errorMessage += ` (${videoUrl.slice(0, 80)}…)`;
+                }
+                
+                setError(errorMessage);
                 setIsLoading(false);
               }}
               onLoadStart={() => {
-                console.log('Video loadstart');
                 setIsLoading(true);
                 setError(null);
               }}
               onCanPlay={() => {
-                console.log('Video can play');
                 setIsLoading(false);
               }}
               onLoadedData={() => {
-                console.log('Video loaded');
                 setIsLoading(false);
               }}
               onLoadedMetadata={() => {
-                console.log('Video metadata loaded');
                 setIsLoading(false);
               }}
             >
-              <source src={videoUrl} type="video/mp4" />
-              <source src={videoUrl} type="video/quicktime" />
-              <source src={videoUrl} type="video/webm" />
+              {(useProxy && proxyUrl) ? (
+                // When using proxy, use single source with proxy URL
+                <source src={proxyUrl} type="video/mp4" />
+              ) : (
+                // Direct sources for direct URL access
+                <>
+                  <source src={videoUrl} type="video/mp4" />
+                  <source src={videoUrl} type="video/quicktime" />
+                  <source src={videoUrl} type="video/webm" />
+                  <source src={videoUrl} type="video/x-msvideo" />
+                  <source src={videoUrl} type="video/x-matroska" />
+                </>
+              )}
               Your browser does not support the video tag.
             </video>
+          </div>
+        )}
+      </div>
+      
+      {/* Delete Confirmation Dialog */}
+      {canDelete && onDelete && (
+        <ConfirmDialog
+          open={deleteConfirmOpen}
+          title="Delete Video"
+          description="Are you sure you want to permanently delete this video? This action cannot be undone. The file will be removed from Firebase Storage."
+          confirmText="Delete"
+          cancelText="Cancel"
+          confirmVariant="danger"
+          onConfirm={async () => {
+            try {
+              if (onDelete) {
+                await onDelete(videoUrl);
+              }
+              setDeleteConfirmOpen(false);
+              onClose();
+            } catch (error) {
+              console.error('Error deleting video:', error);
+              setDeleteConfirmOpen(false);
+            }
+          }}
+          onCancel={() => setDeleteConfirmOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Image Viewer Modal Component
+function ImageViewerModal({ 
+  imageUrl, 
+  onClose 
+}: { 
+  imageUrl: string; 
+  onClose: () => void;
+}) {
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsLoading(true);
+    setError(null);
+  }, [imageUrl]);
+
+  return (
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-95 z-[100] flex items-center justify-center p-4"
+      onClick={onClose}
+      style={{ zIndex: 9999 }}
+    >
+      <div 
+        className="relative w-full max-w-6xl bg-black rounded-lg overflow-hidden shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          className="absolute -top-12 left-0 text-white hover:text-gray-300 transition-colors z-10 bg-black/50 rounded-full p-2"
+          aria-label="Go back"
+        >
+          <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors z-10 bg-black/50 rounded-full p-2"
+          aria-label="Close image"
+        >
+          <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+        
+        {error ? (
+          <div className="p-8 text-center">
+            <div className="text-red-400 mb-4">
+              <svg className="w-16 h-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <p className="text-white text-lg mb-2">Error loading image</p>
+            <p className="text-gray-400 text-sm">{error}</p>
+            <button
+              onClick={onClose}
+              className="mt-4 px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600"
+            >
+              Close
+            </button>
+          </div>
+        ) : (
+          <div className="relative w-full bg-black" style={{ maxHeight: '90vh', minHeight: '400px' }}>
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
+                <div className="text-white text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+                  <p>Loading image...</p>
+                </div>
+              </div>
+            )}
+            <img
+              src={imageUrl}
+              alt="Full size view"
+              className="w-full h-auto max-h-[90vh] object-contain mx-auto"
+              style={{ display: isLoading ? 'none' : 'block' }}
+              onError={(e) => {
+                setError('Failed to load image. Please check the URL or try again.');
+                setIsLoading(false);
+              }}
+              onLoad={() => {
+                setIsLoading(false);
+                setError(null);
+              }}
+            />
           </div>
         )}
       </div>
@@ -2784,7 +3399,7 @@ function ContentView({
   const { t } = useTranslation();
   const { user, hasPermission } = useAuth();
   const { updateInventoryItem } = useInventory();
-  const { deleteContent, updateContentStatus } = useCMS();
+  const { deleteContent, updateContentStatus, updateContent } = useCMS();
   
   // Confirmation dialog states
   const [deleteDraftConfirmOpen, setDeleteDraftConfirmOpen] = useState(false);
@@ -2807,6 +3422,60 @@ function ContentView({
   const [selectedProductDetail, setSelectedProductDetail] = useState<InventoryItem | null>(null);
   const [selectedCollectionDetail, setSelectedCollectionDetail] = useState<CMSContent | null>(null);
   const [selectedGeneralDetail, setSelectedGeneralDetail] = useState<CMSContent | null>(null);
+  
+  // Handle video deletion from video player
+  const handleDeleteVideo = async (videoUrl: string) => {
+    try {
+      // Delete from Firebase Storage
+      await deleteMediaFile(videoUrl);
+      
+      // Try to remove from CMS content if it exists there
+      if (selectedCollectionDetail && selectedCollectionDetail.videos.includes(videoUrl)) {
+        const updatedVideos = selectedCollectionDetail.videos.filter(v => v !== videoUrl);
+        await updateContent(selectedCollectionDetail.id, {
+          videos: updatedVideos
+        });
+        // Update local state
+        setSelectedCollectionDetail({
+          ...selectedCollectionDetail,
+          videos: updatedVideos
+        });
+      } else if (selectedGeneralDetail && selectedGeneralDetail.videos.includes(videoUrl)) {
+        const updatedVideos = selectedGeneralDetail.videos.filter(v => v !== videoUrl);
+        await updateContent(selectedGeneralDetail.id, {
+          videos: updatedVideos
+        });
+        // Update local state
+        setSelectedGeneralDetail({
+          ...selectedGeneralDetail,
+          videos: updatedVideos
+        });
+      } else if (selectedProductDetail) {
+        // It might be in inventory item's images array (videos are stored there too)
+        const inventoryImages = selectedProductDetail.images || [];
+        if (inventoryImages.includes(videoUrl)) {
+          const updatedImages = inventoryImages.filter(img => img !== videoUrl);
+          await updateInventoryItem(selectedProductDetail.id, {
+            images: updatedImages
+          });
+          // Update local state
+          setSelectedProductDetail({
+            ...selectedProductDetail,
+            images: updatedImages
+          });
+        }
+      }
+      
+      // Close video player if this video was being played
+      if (selectedVideoUrl === videoUrl) {
+        setSelectedVideoUrl(null);
+      }
+    } catch (error) {
+      console.error('Error deleting video:', error);
+      throw error;
+    }
+  };
+  
   const [showPhotoGallery, setShowPhotoGallery] = useState(false);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
@@ -3004,7 +3673,7 @@ function ContentView({
                 e.stopPropagation();
                 handleSelectAllCollections();
               }}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#4f0c1b] bg-[#4f0c1b]/10 rounded-lg hover:bg-[#4f0c1b]/20 transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#515151] bg-[#515151]/10 rounded-lg hover:bg-[#515151]/20 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -3020,7 +3689,7 @@ function ContentView({
                   key={item.id}
                   className={`border rounded-lg p-4 transition-all duration-200 relative cursor-pointer ${
                     isSelected
-                      ? 'border-[#4f0c1b] bg-[#4f0c1b]/5'
+                      ? 'border-[#515151] bg-[#515151]/5'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                   onClick={() => handleToggleCollection(item.id)}
@@ -3032,7 +3701,7 @@ function ContentView({
                       checked={isSelected}
                       onChange={() => handleToggleCollection(item.id)}
                       onClick={(e) => e.stopPropagation()}
-                      className="w-5 h-5 text-[#4f0c1b] focus:ring-[#4f0c1b] border-gray-300 rounded cursor-pointer"
+                      className="w-5 h-5 text-[#515151] focus:ring-[#515151] border-gray-300 rounded cursor-pointer"
                     />
                   </div>
                   {/* Media - opens detail modal */}
@@ -3201,7 +3870,7 @@ function ContentView({
                 e.stopPropagation();
                 handleSelectAllGeneral();
               }}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#4f0c1b] bg-[#4f0c1b]/10 rounded-lg hover:bg-[#4f0c1b]/20 transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#515151] bg-[#515151]/10 rounded-lg hover:bg-[#515151]/20 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -3217,7 +3886,7 @@ function ContentView({
                   key={item.id}
                   className={`border rounded-lg p-4 transition-all duration-200 relative cursor-pointer ${
                     isSelected
-                      ? 'border-[#4f0c1b] bg-[#4f0c1b]/5'
+                      ? 'border-[#515151] bg-[#515151]/5'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                   onClick={() => handleToggleGeneral(item.id)}
@@ -3229,7 +3898,7 @@ function ContentView({
                       checked={isSelected}
                       onChange={() => handleToggleGeneral(item.id)}
                       onClick={(e) => e.stopPropagation()}
-                      className="w-5 h-5 text-[#4f0c1b] focus:ring-[#4f0c1b] border-gray-300 rounded cursor-pointer"
+                      className="w-5 h-5 text-[#515151] focus:ring-[#515151] border-gray-300 rounded cursor-pointer"
                     />
                   </div>
                   {/* Media - opens detail modal */}
@@ -3408,7 +4077,7 @@ function ContentView({
                     e.stopPropagation();
                     handleSelectAllInventory();
                   }}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#4f0c1b] bg-[#4f0c1b]/10 rounded-lg hover:bg-[#4f0c1b]/20 transition-colors"
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#515151] bg-[#515151]/10 rounded-lg hover:bg-[#515151]/20 transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -3475,7 +4144,7 @@ function ContentView({
                     key={item.id}
                     className={`border rounded-lg p-4 transition-all duration-200 relative cursor-pointer ${
                       selectedProducts.has(item.sku)
-                        ? 'border-[#4f0c1b] bg-[#4f0c1b]/5'
+                        ? 'border-[#515151] bg-[#515151]/5'
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
                     onClick={() => handleToggleProduct(item.sku)}
@@ -3487,7 +4156,7 @@ function ContentView({
                         checked={selectedProducts.has(item.sku)}
                         onChange={() => handleToggleProduct(item.sku)}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-5 h-5 text-[#4f0c1b] focus:ring-[#4f0c1b] border-gray-300 rounded cursor-pointer"
+                        className="w-5 h-5 text-[#515151] focus:ring-[#515151] border-gray-300 rounded cursor-pointer"
                       />
                     </div>
 
@@ -4001,7 +4670,7 @@ function ContentView({
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
-              showFilters ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
+              showFilters ? 'bg-[#515151] text-white border-[#515151]' : ''
             }`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -4020,7 +4689,7 @@ function ContentView({
           <button
             onClick={() => setShowBulkDownload(!showBulkDownload)}
             className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
-              showBulkDownload ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
+              showBulkDownload ? 'bg-[#515151] text-white border-[#515151]' : ''
             }`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -4045,7 +4714,7 @@ function ContentView({
             <select
               value={contentTypeFilter}
               onChange={(e) => setContentTypeFilter(e.target.value as 'all' | 'product' | 'collection' | 'general' | 'inventory')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             >
               <option value="all">All Content</option>
               <option value="product">Product Content</option>
@@ -4061,7 +4730,7 @@ function ContentView({
               placeholder={contentTypeFilter === 'inventory' ? "Search products..." : "Search content..."}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             />
           </div>
           
@@ -4070,7 +4739,7 @@ function ContentView({
             <select
               value={filterCategory}
               onChange={(e) => setFilterCategory(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             >
               <option value="all">All Categories</option>
               {categories.map(category => (
@@ -4084,7 +4753,7 @@ function ContentView({
             <select
               value={filterLine}
               onChange={(e) => setFilterLine(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             >
               <option value="all">All Lines</option>
               {lines.map(line => (
@@ -4098,7 +4767,7 @@ function ContentView({
             <select
               value={filterAvailability}
               onChange={(e) => setFilterAvailability(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             >
               <option value="all">All Items</option>
               <option value="in-stock">In Stock</option>
@@ -4114,7 +4783,7 @@ function ContentView({
             <select
               value={filterCollectionName}
               onChange={(e) => setFilterCollectionName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             >
               <option value="all">All Collections</option>
               {collectionNames.map(collectionName => (
@@ -4168,7 +4837,7 @@ function ContentView({
           <div className="flex items-center gap-2 pt-4 border-t border-gray-200">
             <button
               onClick={handleSelectAllItems}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#4f0c1b] bg-[#4f0c1b]/10 rounded-lg hover:bg-[#4f0c1b]/20 transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#515151] bg-[#515151]/10 rounded-lg hover:bg-[#515151]/20 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -4423,12 +5092,12 @@ function ContentView({
                   <div className="mb-6">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="flex items-center gap-2">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Images</h4>
                       </div>
-                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                      <span className="px-2.5 py-0.5 bg-[#515151]/10 text-[#515151] text-xs font-semibold rounded-full">
                         {allImages.length}
                       </span>
                     </div>
@@ -4460,8 +5129,8 @@ function ContentView({
                           }}
                         >
                           <div className="text-center">
-                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
-                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
+                            <span className="text-[#515151] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#515151] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
                           </div>
                         </div>
                       )}
@@ -4474,12 +5143,12 @@ function ContentView({
                   <div className="mb-6">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="flex items-center gap-2">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Videos</h4>
                       </div>
-                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                      <span className="px-2.5 py-0.5 bg-[#515151]/10 text-[#515151] text-xs font-semibold rounded-full">
                         {allVideos.length}
                       </span>
                     </div>
@@ -4531,8 +5200,8 @@ function ContentView({
                           }}
                         >
                           <div className="text-center">
-                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
-                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allVideos.length - 4}</span>
+                            <span className="text-[#515151] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#515151] font-semibold text-sm block leading-tight">{allVideos.length - 4}</span>
                           </div>
                         </div>
                       )}
@@ -4545,7 +5214,7 @@ function ContentView({
                   <div className="space-y-6">
                   <div>
                       <div className="flex items-center gap-2 mb-4">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Product Information</h4>
@@ -4576,7 +5245,7 @@ function ContentView({
 
                   <div>
                       <div className="flex items-center gap-2 mb-4">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Stock Information</h4>
@@ -4604,7 +5273,7 @@ function ContentView({
                         </div>
                         <div className="flex justify-between items-center pt-2">
                           <span className="text-sm font-semibold text-gray-900">Total Stock</span>
-                          <span className="text-xl font-bold text-[#4f0c1b]">
+                          <span className="text-xl font-bold text-[#515151]">
                           {selectedProductDetail.ecuadorStock + selectedProductDetail.usaStock} units
                         </span>
                       </div>
@@ -4638,7 +5307,7 @@ function ContentView({
                   <div className="pt-4">
                     <button
                       onClick={() => handleToggleProduct(selectedProductDetail.sku)}
-                      className="w-full px-4 py-2 border border-[#4f0c1b] text-[#4f0c1b] rounded-lg hover:bg-[#4f0c1b]/10 transition-colors font-medium"
+                      className="w-full px-4 py-2 border border-[#515151] text-[#515151] rounded-lg hover:bg-[#515151]/10 transition-colors font-medium"
                     >
                       {selectedProducts.has(selectedProductDetail.sku) ? 'Deselect for Download' : 'Select for Download'}
                     </button>
@@ -4852,8 +5521,8 @@ function ContentView({
               {/* Header */}
               <div className="sticky top-0 bg-gradient-to-r from-white to-gray-50 border-b border-gray-200 px-6 py-5 flex items-center justify-between z-10 shadow-sm">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-[#4f0c1b]/10 rounded-lg flex items-center justify-center">
-                    <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div className="w-10 h-10 bg-[#515151]/10 rounded-lg flex items-center justify-center">
+                    <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                   </div>
@@ -4885,7 +5554,7 @@ function ContentView({
                     }}
                     className={`relative px-5 py-3 font-semibold text-sm transition-all duration-200 ${
                       contentViewerTab === 'images'
-                        ? 'text-[#4f0c1b]'
+                        ? 'text-[#515151]'
                         : 'text-gray-500 hover:text-gray-700'
                     }`}
                   >
@@ -4896,14 +5565,14 @@ function ContentView({
                       <span>Images</span>
                       <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                         contentViewerTab === 'images'
-                          ? 'bg-[#4f0c1b]/10 text-[#4f0c1b]'
+                          ? 'bg-[#515151]/10 text-[#515151]'
                           : 'bg-gray-100 text-gray-600'
                       }`}>
                         {allImages.length}
                       </span>
                     </div>
                     {contentViewerTab === 'images' && (
-                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#4f0c1b] rounded-t-full" />
+                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#515151] rounded-t-full" />
                     )}
                   </button>
                   <button
@@ -4913,7 +5582,7 @@ function ContentView({
                     }}
                     className={`relative px-5 py-3 font-semibold text-sm transition-all duration-200 ${
                       contentViewerTab === 'videos'
-                        ? 'text-[#4f0c1b]'
+                        ? 'text-[#515151]'
                         : 'text-gray-500 hover:text-gray-700'
                     }`}
                   >
@@ -4924,14 +5593,14 @@ function ContentView({
                       <span>Videos</span>
                       <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                         contentViewerTab === 'videos'
-                          ? 'bg-[#4f0c1b]/10 text-[#4f0c1b]'
+                          ? 'bg-[#515151]/10 text-[#515151]'
                           : 'bg-gray-100 text-gray-600'
                       }`}>
                         {allVideos.length}
                       </span>
                     </div>
                     {contentViewerTab === 'videos' && (
-                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#4f0c1b] rounded-t-full" />
+                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#515151] rounded-t-full" />
                     )}
                   </button>
                 </div>
@@ -4949,7 +5618,7 @@ function ContentView({
                     <div className="mb-5 flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3 border border-gray-200">
                       <button
                         onClick={handleSelectAll}
-                        className="flex items-center gap-2 text-sm font-semibold text-[#4f0c1b] hover:text-[#3d0a15] transition-colors"
+                        className="flex items-center gap-2 text-sm font-semibold text-[#515151] hover:text-[#000000] transition-colors"
                       >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -4958,7 +5627,7 @@ function ContentView({
                       </button>
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Selected:</span>
-                        <span className="px-2.5 py-1 bg-[#4f0c1b]/10 text-[#4f0c1b] text-sm font-bold rounded-full">
+                        <span className="px-2.5 py-1 bg-[#515151]/10 text-[#515151] text-sm font-bold rounded-full">
                           {selectedContentItems.size}
                         </span>
                         <span className="text-xs text-gray-400">/</span>
@@ -4978,8 +5647,8 @@ function ContentView({
                             key={index}
                             className={`relative border-2 rounded-xl overflow-hidden cursor-pointer transition-all duration-200 group ${
                               isSelected 
-                                ? 'border-[#4f0c1b] ring-4 ring-[#4f0c1b]/20 shadow-lg scale-105' 
-                                : 'border-gray-200 hover:border-[#4f0c1b]/50 hover:shadow-md'
+                                ? 'border-[#515151] ring-4 ring-[#515151]/20 shadow-lg scale-105' 
+                                : 'border-gray-200 hover:border-[#515151]/50 hover:shadow-md'
                             }`}
                             onClick={() => handleToggleSelection(index)}
                           >
@@ -4987,7 +5656,7 @@ function ContentView({
                             <div className="absolute top-3 right-3 z-10">
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center shadow-lg transition-all ${
                                 isSelected 
-                                  ? 'bg-[#4f0c1b] scale-110' 
+                                  ? 'bg-[#515151] scale-110' 
                                   : 'bg-white/90 group-hover:bg-white'
                               }`}>
                                 {isSelected ? (
@@ -4995,7 +5664,7 @@ function ContentView({
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                                   </svg>
                                 ) : (
-                                  <div className="w-3 h-3 border-2 border-gray-400 rounded-sm group-hover:border-[#4f0c1b] transition-colors" />
+                                  <div className="w-3 h-3 border-2 border-gray-400 rounded-sm group-hover:border-[#515151] transition-colors" />
                                 )}
                               </div>
                             </div>
@@ -5057,7 +5726,7 @@ function ContentView({
                                     e.stopPropagation();
                                     setSelectedVideoUrl(url);
                                   }}
-                                  className="absolute bottom-2 right-2 z-20 w-10 h-10 bg-[#4f0c1b] hover:bg-[#3d0a15] rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-all duration-200 group/play"
+                                  className="absolute bottom-2 right-2 z-20 w-10 h-10 bg-[#515151] hover:bg-[#000000] rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-all duration-200 group/play"
                                   aria-label="Play video"
                                 >
                                   <svg className="w-5 h-5 text-white ml-0.5 group-hover/play:scale-110 transition-transform" fill="currentColor" viewBox="0 0 24 24">
@@ -5090,7 +5759,7 @@ function ContentView({
                   <button
                     onClick={handleDownloadZip}
                     disabled={selectedContentItems.size === 0 || isDownloadingZip}
-                    className="flex items-center gap-2 px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#3d0a15] disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                    className="flex items-center gap-2 px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
                   >
                     {isDownloadingZip ? (
                       <>
@@ -5177,12 +5846,12 @@ function ContentView({
                   <div className="mb-6">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="flex items-center gap-2">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Images</h4>
                       </div>
-                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                      <span className="px-2.5 py-0.5 bg-[#515151]/10 text-[#515151] text-xs font-semibold rounded-full">
                         {allImages.length}
                       </span>
                     </div>
@@ -5202,8 +5871,8 @@ function ContentView({
                       {allImages.length > 4 && (
                         <div className="flex-shrink-0 w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center border-2 border-gray-300 shadow-sm">
                           <div className="text-center">
-                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
-                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
+                            <span className="text-[#515151] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#515151] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
                           </div>
                         </div>
                       )}
@@ -5216,12 +5885,12 @@ function ContentView({
                   <div className="mb-6">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="flex items-center gap-2">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Videos</h4>
                       </div>
-                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                      <span className="px-2.5 py-0.5 bg-[#515151]/10 text-[#515151] text-xs font-semibold rounded-full">
                         {allVideos.length}
                       </span>
                     </div>
@@ -5262,8 +5931,8 @@ function ContentView({
                       {allVideos.length > 4 && (
                         <div className="flex-shrink-0 w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center border-2 border-gray-300 shadow-sm">
                           <div className="text-center">
-                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
-                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allVideos.length - 4}</span>
+                            <span className="text-[#515151] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#515151] font-semibold text-sm block leading-tight">{allVideos.length - 4}</span>
                           </div>
                         </div>
                       )}
@@ -5276,7 +5945,7 @@ function ContentView({
                   <div className="space-y-6">
                     <div>
                       <div className="flex items-center gap-2 mb-4">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Content Information</h4>
@@ -5327,7 +5996,7 @@ function ContentView({
 
                   <div>
                     <div className="flex items-center gap-2 mb-4">
-                      <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                       </svg>
                       <h4 className="text-base font-semibold text-gray-900">Tags & Hashtags</h4>
@@ -5366,7 +6035,7 @@ function ContentView({
                     {selectedCollectionDetail.linkedProductIds.length > 0 && (
                       <div className="mt-6">
                         <div className="flex items-center gap-2 mb-4">
-                          <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                           </svg>
                           <h4 className="text-base font-semibold text-gray-900">Linked Products ({selectedCollectionDetail.linkedProductIds.length})</h4>
@@ -5391,7 +6060,7 @@ function ContentView({
                         handleToggleCollection(selectedCollectionDetail.id);
                         setSelectedCollectionDetail(null);
                       }}
-                      className="w-full px-4 py-2 border border-[#4f0c1b] text-[#4f0c1b] rounded-lg hover:bg-[#4f0c1b]/10 transition-colors font-medium"
+                      className="w-full px-4 py-2 border border-[#515151] text-[#515151] rounded-lg hover:bg-[#515151]/10 transition-colors font-medium"
                     >
                       {selectedCollections.has(selectedCollectionDetail.id) ? 'Deselect for Download' : 'Select for Download'}
                     </button>
@@ -5452,12 +6121,12 @@ function ContentView({
                   <div className="mb-6">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="flex items-center gap-2">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Images</h4>
                       </div>
-                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                      <span className="px-2.5 py-0.5 bg-[#515151]/10 text-[#515151] text-xs font-semibold rounded-full">
                         {allImages.length}
                       </span>
                     </div>
@@ -5477,8 +6146,8 @@ function ContentView({
                       {allImages.length > 4 && (
                         <div className="flex-shrink-0 w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center border-2 border-gray-300 shadow-sm">
                           <div className="text-center">
-                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
-                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
+                            <span className="text-[#515151] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#515151] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
                           </div>
                         </div>
                       )}
@@ -5491,12 +6160,12 @@ function ContentView({
                   <div className="mb-6">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="flex items-center gap-2">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Videos</h4>
                       </div>
-                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                      <span className="px-2.5 py-0.5 bg-[#515151]/10 text-[#515151] text-xs font-semibold rounded-full">
                         {allVideos.length}
                       </span>
                     </div>
@@ -5537,8 +6206,8 @@ function ContentView({
                       {allVideos.length > 4 && (
                         <div className="flex-shrink-0 w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center border-2 border-gray-300 shadow-sm">
                           <div className="text-center">
-                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
-                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allVideos.length - 4}</span>
+                            <span className="text-[#515151] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#515151] font-semibold text-sm block leading-tight">{allVideos.length - 4}</span>
                           </div>
                         </div>
                       )}
@@ -5551,7 +6220,7 @@ function ContentView({
                   <div className="space-y-6">
                     <div>
                       <div className="flex items-center gap-2 mb-4">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Content Information</h4>
@@ -5602,7 +6271,7 @@ function ContentView({
 
                   <div>
                     <div className="flex items-center gap-2 mb-4">
-                      <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                       </svg>
                       <h4 className="text-base font-semibold text-gray-900">Tags & Hashtags</h4>
@@ -5641,7 +6310,7 @@ function ContentView({
                     {selectedGeneralDetail.linkedProductIds.length > 0 && (
                       <div className="mt-6">
                         <div className="flex items-center gap-2 mb-4">
-                          <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                           </svg>
                           <h4 className="text-base font-semibold text-gray-900">Linked Products ({selectedGeneralDetail.linkedProductIds.length})</h4>
@@ -5666,7 +6335,7 @@ function ContentView({
                         handleToggleGeneral(selectedGeneralDetail.id);
                         setSelectedGeneralDetail(null);
                       }}
-                      className="w-full px-4 py-2 border border-[#4f0c1b] text-[#4f0c1b] rounded-lg hover:bg-[#4f0c1b]/10 transition-colors font-medium"
+                      className="w-full px-4 py-2 border border-[#515151] text-[#515151] rounded-lg hover:bg-[#515151]/10 transition-colors font-medium"
                     >
                       {selectedGeneral.has(selectedGeneralDetail.id) ? 'Deselect for Download' : 'Select for Download'}
                     </button>
@@ -5683,6 +6352,7 @@ function ContentView({
         <VideoPlayerModal 
           videoUrl={selectedVideoUrl}
           onClose={() => setSelectedVideoUrl(null)}
+          onDelete={handleDeleteVideo}
         />
       )}
 

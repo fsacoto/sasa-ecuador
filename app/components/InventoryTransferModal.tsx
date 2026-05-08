@@ -309,7 +309,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
 
     // Title
     pdf.setFontSize(20);
-    pdf.setTextColor(79, 12, 27); // #4f0c1b
+    pdf.setTextColor(251, 227, 227); // #515151
     pdf.setFont('helvetica', 'bold');
     pdf.text('Inventory Transfer Document', margin, yPos);
     yPos += 12;
@@ -370,7 +370,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
     // Items Table Section
     pdf.setFontSize(12);
     pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(79, 12, 27);
+    pdf.setTextColor(251, 227, 227);
     pdf.text('Items Transferred', margin, yPos);
     yPos += 8;
 
@@ -383,7 +383,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
     const tableStartX = margin;
 
     // Draw table header background
-    pdf.setFillColor(79, 12, 27);
+    pdf.setFillColor(251, 227, 227);
     pdf.rect(tableStartX, tableStartY - 5, tableWidth, rowHeight, 'F');
     
     // Table Headers
@@ -408,7 +408,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
         currentY = margin + rowHeight;
         
         // Redraw header on new page
-        pdf.setFillColor(79, 12, 27);
+        pdf.setFillColor(251, 227, 227);
         pdf.rect(tableStartX, currentY - rowHeight - 2, tableWidth, rowHeight, 'F');
         pdf.setFont('helvetica', 'bold');
         pdf.setTextColor(255, 255, 255);
@@ -474,7 +474,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
       
       pdf.setFontSize(11);
       pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(79, 12, 27);
+      pdf.setTextColor(251, 227, 227);
       pdf.text('Note:', margin, yPos);
       yPos += 7;
       
@@ -534,7 +534,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
               }}
               className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === 'move'
-                  ? 'border-[#4f0c1b] text-[#4f0c1b]'
+                  ? 'border-[#515151] text-[#515151]'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -548,7 +548,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
               }}
               className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === 'history'
-                  ? 'border-[#4f0c1b] text-[#4f0c1b]'
+                  ? 'border-[#515151] text-[#515151]'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -582,7 +582,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
                     <button
                       type="button"
                       onClick={addRow}
-                      className="px-3 py-1.5 text-sm bg-[#4f0c1b] text-white rounded-lg hover:bg-[#3d0a15] transition-colors"
+                      className="px-3 py-1.5 text-sm bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors"
                     >
                       + {t('inventory.transfer.addItem')}
                     </button>
@@ -596,7 +596,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
                       <button
                         type="button"
                         onClick={addRow}
-                        className="mt-2 text-[#4f0c1b] hover:underline"
+                        className="mt-2 text-[#515151] hover:underline"
                       >
                         {t('inventory.transfer.clickToAdd')}
                       </button>
@@ -627,7 +627,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
                                     <div>
                                       <div className="flex items-center justify-between px-2 py-1 border border-gray-300 rounded bg-gray-50">
                                         <div>
-                                          <div className="font-mono text-sm font-semibold text-[#4f0c1b]">
+                                          <div className="font-mono text-sm font-semibold text-[#515151]">
                                             {inventory.find(i => i.id === row.itemId)?.sku}
                                           </div>
                                           <div className="text-sm text-gray-700">
@@ -668,7 +668,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
                                           setTimeout(() => updateDropdownPosition(index), 0);
                                         }}
                                         placeholder={t('inventory.transfer.searchItems')}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm"
                                       />
                                       {showSearchDropdowns[index] && getFilteredInventory(index).length > 0 && dropdownPositions[index] && (
                                         <div 
@@ -688,7 +688,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
                                               onClick={() => handleItemSelect(index, item.id)}
                                               className="px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
                                             >
-                                              <div className="font-mono text-sm font-semibold text-[#4f0c1b]">{item.sku}</div>
+                                              <div className="font-mono text-sm font-semibold text-[#515151]">{item.sku}</div>
                                               <div className="text-sm text-gray-700">{item.name}</div>
                                               <div className="text-xs text-gray-600 mt-1">
                                                 <span className="mr-3">Ecuador: {item.ecuadorStock}</span>
@@ -710,7 +710,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
                                   value={row.quantity || ''}
                                   onChange={(e) => updateRow(index, { quantity: parseInt(e.target.value) || 0 })}
                                   required
-                                  className="w-20 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#4f0c1b]"
+                                  className="w-20 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#515151]"
                                 />
                               </td>
                               <td className="px-4 py-3">
@@ -724,7 +724,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
                                     });
                                   }}
                                   required
-                                  className="px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#4f0c1b]"
+                                  className="px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#515151]"
                                 >
                                   <option value="Ecuador">Ecuador</option>
                                   <option value="USA">USA</option>
@@ -735,7 +735,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
                                   value={row.toCountry}
                                   onChange={(e) => updateRow(index, { toCountry: e.target.value as InventoryCountry })}
                                   required
-                                  className="px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#4f0c1b]"
+                                  className="px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-[#515151]"
                                 >
                                   <option value="Ecuador">Ecuador</option>
                                   <option value="USA">USA</option>
@@ -775,7 +775,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
                   onChange={(e) => setNote(e.target.value)}
                   rows={3}
                   placeholder={t('inventory.transfer.notePlaceholder')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
               </div>
 
@@ -798,7 +798,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
                 <button
                   type="submit"
                   disabled={isSubmitting || transferRows.length === 0}
-                  className="flex-1 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 bg-[#515151] hover:bg-[#000000] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? t('inventory.transfer.moving') : t('inventory.transfer.move')}
                 </button>
@@ -894,7 +894,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
                   <select
                     value={sortField}
                     onChange={(e) => handleSort(e.target.value as 'date' | 'transactionId' | 'createdBy' | 'itemsCount')}
-                    className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   >
                     <option value="date">{t('inventory.transfer.sortByDate')}</option>
                     <option value="transactionId">{t('inventory.transfer.sortByTransactionId')}</option>
@@ -952,7 +952,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
                   {getSortedTransfers().map((tr) => (
                     <div
                       key={tr.id}
-                      className="bg-white border border-gray-200 rounded-lg p-5 hover:border-[#4f0c1b] hover:shadow-sm transition-all cursor-pointer"
+                      className="bg-white border border-gray-200 rounded-lg p-5 hover:border-[#515151] hover:shadow-sm transition-all cursor-pointer"
                       onClick={() => handleViewDetail(tr)}
                     >
                       <div className="flex items-start justify-between mb-3">
@@ -1018,7 +1018,7 @@ export default function InventoryTransferModal({ isOpen, onClose }: InventoryTra
                             e.stopPropagation();
                             handleViewDetail(tr);
                           }}
-                          className="text-sm font-medium text-[#4f0c1b] hover:text-[#3d0a15]"
+                          className="text-sm font-medium text-[#515151] hover:text-[#000000]"
                         >
                           View Full Details
                         </button>

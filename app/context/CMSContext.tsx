@@ -1,19 +1,22 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { CMSContent, ContentStatus } from '../types';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { useAuth } from './AuthContext';
+import { CMSContent, CMSContentDraftInput, ContentStatus } from '../types';
 import * as cmsService from '../services/cmsService';
 
 interface CMSContextType {
   content: CMSContent[];
   isLoading: boolean;
-  addContent: (content: Omit<CMSContent, 'id' | 'metadata'>) => Promise<void>;
+  addContent: (content: CMSContentDraftInput) => Promise<string>;
   updateContent: (id: string, updates: Partial<CMSContent>) => Promise<void>;
   deleteContent: (id: string) => Promise<void>;
   updateContentStatus: (id: string, status: ContentStatus, userId: string, notes?: string) => Promise<void>;
   resubmitRejectedContent: (id: string, userId: string, changesNotes: string) => Promise<void>;
   getContentByStatus: (status: ContentStatus) => CMSContent[];
   getContentBySKU: (sku: string) => CMSContent[];
+  /** Re-fetch all CMS rows from Firestore (no global loading flag; for fresh merges e.g. inventory gallery). */
+  refreshCMS: () => Promise<void>;
   getContentStats: () => {
     total: number;
     draft: number;
@@ -28,15 +31,11 @@ interface CMSContextType {
 const CMSContext = createContext<CMSContextType | undefined>(undefined);
 
 export function CMSProvider({ children }: { children: ReactNode }) {
+  const { user, isLoading: authLoading } = useAuth();
   const [content, setContent] = useState<CMSContent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load content from Firestore on mount
-  useEffect(() => {
-    loadContent();
-  }, []);
-
-  const loadContent = async () => {
+  const loadContent = useCallback(async () => {
     try {
       setIsLoading(true);
       const data = await cmsService.getCMSContent();
@@ -46,24 +45,52 @@ export function CMSProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  const addContent = async (contentData: Omit<CMSContent, 'id' | 'metadata'>) => {
-    try {
-      const newId = await cmsService.addCMSContent(contentData);
-      const newContent: CMSContent = {
-        ...contentData,
-        id: newId,
-        metadata: {
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      };
-      setContent((prev) => [...prev, newContent]);
-    } catch (error) {
-      console.error('Error adding CMS content:', error);
-      throw error;
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      setContent([]);
+      setIsLoading(false);
+      return;
     }
+    void loadContent();
+  }, [user?.id, authLoading, loadContent]);
+
+  const refreshCMS = useCallback(async () => {
+    try {
+      const data = await cmsService.getCMSContent();
+      setContent(data);
+    } catch (error) {
+      console.error('Error refreshing CMS content:', error);
+    }
+  }, []);
+
+  const addContent = async (contentData: CMSContentDraftInput) => {
+    const newId = await cmsService.createCMSDraft(contentData);
+    const now = new Date();
+    const newContent: CMSContent = {
+      ...contentData,
+      id: newId,
+      status: 'draft',
+      statusHistory: [
+        {
+          status: 'draft',
+          timestamp: now,
+          userId: contentData.authorId || '',
+        },
+      ],
+      metadata: {
+        createdAt: now,
+        updatedAt: now,
+      },
+    };
+    setContent((prev) => [newContent, ...prev]);
+    // Do not await — a hanging full-collection read left the UI stuck on "Saving…"
+    void cmsService.getCMSContent().then(setContent).catch((err) => {
+      console.error('CMS list refresh after create failed (draft was saved):', err);
+    });
+    return newId;
   };
 
   const updateContent = async (id: string, updates: Partial<CMSContent>) => {
@@ -192,7 +219,10 @@ export function CMSProvider({ children }: { children: ReactNode }) {
   };
 
   const getContentBySKU = (sku: string) => {
-    return content.filter((item) => item.linkedProductIds.includes(sku));
+    const n = sku.trim().toLowerCase();
+    return content.filter((item) =>
+      (item.linkedProductIds || []).some((id) => id.trim().toLowerCase() === n)
+    );
   };
 
   const getContentStats = () => {
@@ -219,6 +249,7 @@ export function CMSProvider({ children }: { children: ReactNode }) {
         resubmitRejectedContent,
         getContentByStatus,
         getContentBySKU,
+        refreshCMS,
         getContentStats,
       }}
     >

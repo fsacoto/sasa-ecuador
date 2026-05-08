@@ -51,6 +51,17 @@ export interface PurchaseOrder {
   receivedDate?: Date;
   verifiedDate?: Date;
   createdAt: Date;
+  /** Firebase Storage URL for label image; derived from SKU, set when PO is saved. */
+  barcode?: string;
+}
+
+/** Problem qty from PO verification (damaged, etc.) — stock still counts units on hand. */
+export interface VerificationIssueRef {
+  purchaseOrderId: string;
+  quantityProblem: number;
+  /** Good qty from the same verification (for display: e.g. 2 good + 1 problem = 3 on hand). */
+  quantityGoodAtVerification?: number;
+  comment?: string;
 }
 
 export interface InventoryItem {
@@ -67,6 +78,8 @@ export interface InventoryItem {
   consignmentStock?: number; // Inventory on consignment
   images: string[]; // Array of image URLs or base64 data
   barcode?: string; // Base64 encoded barcode image
+  /** Per linked PO: units flagged with problems at verification; click warning in Inventory to read comments. */
+  verificationIssues?: VerificationIssueRef[];
   createdAt: Date;
 }
 
@@ -144,6 +157,8 @@ export interface CMSContent {
     notes?: string;
   }[];
   images: string[];
+  /** Parallel to `images` (same length): internal SKU each file was tied to at upload; empty string if none. For Storage browse, paths use `images/cms/by-sku/{sanitizedSku}/…`. */
+  imageLinkedSkus?: string[];
   videos: string[];
   authorId: string;
   authorName: string;
@@ -162,6 +177,9 @@ export interface CMSContent {
     lastResubmittedAt?: Date;
   };
 }
+
+/** Payload for creating new CMS rows; `createCMSDraft` sets status, statusHistory, and metadata. */
+export type CMSContentDraftInput = Omit<CMSContent, 'id' | 'metadata' | 'status' | 'statusHistory'>;
 
 export interface Client {
   id: string;

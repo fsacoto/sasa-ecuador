@@ -1,8 +1,52 @@
-import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy, QueryDocumentSnapshot, Timestamp } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  getDocs,
+  getDoc,
+  query,
+  where,
+  orderBy,
+  QueryDocumentSnapshot,
+  Timestamp,
+} from 'firebase/firestore';
 import { db } from '../utils/firebase';
-import { CMSContent, ContentStatus } from '../types';
+import { CMSContent, CMSContentDraftInput, ContentStatus } from '../types';
 
 const COLLECTION_NAME = 'cmsContent';
+
+function isFirestoreTimestamp(v: unknown): v is Timestamp {
+  return v instanceof Timestamp;
+}
+
+/**
+ * Firestore rejects `undefined` anywhere in the payload. Dates in nested maps/arrays
+ * are converted to Timestamp for reliable writes.
+ */
+export function sanitizeForFirestoreWrite(input: unknown): unknown {
+  if (input === undefined) return undefined;
+  if (input === null) return null;
+  if (input instanceof Date) return Timestamp.fromDate(input);
+  if (isFirestoreTimestamp(input)) return input;
+  if (Array.isArray(input)) {
+    return input
+      .map((item) => sanitizeForFirestoreWrite(item))
+      .filter((x): x is Exclude<typeof x, undefined> => x !== undefined);
+  }
+  if (typeof input === 'object') {
+    const obj = input as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (v === undefined) continue;
+      const sv = sanitizeForFirestoreWrite(v);
+      if (sv !== undefined) out[k] = sv;
+    }
+    return out;
+  }
+  return input;
+}
 
 // Helper to convert Firestore data to CMSContent
 const toCMSContent = (doc: QueryDocumentSnapshot): CMSContent => {
@@ -61,11 +105,6 @@ const removeUndefined = <T extends Record<string, unknown>>(obj: T): Partial<T> 
     }
   }
   return cleaned;
-};
-
-// Helper to convert CMSContent to Firestore data
-const toFirestore = (content: Omit<CMSContent, 'id' | 'metadata'> | Partial<CMSContent>) => {
-  return removeUndefined(content as Record<string, unknown>);
 };
 
 // Get all CMS content
@@ -136,7 +175,7 @@ export async function getCMSContentByType(type: string): Promise<CMSContent[]> {
   }
 }
 
-// Add a new CMS content item
+// Add a new CMS content item (raw — prefer createCMSDraft for new drafts)
 export async function addCMSContent(content: Omit<CMSContent, 'id' | 'metadata'>): Promise<string> {
   try {
     const contentWithMetadata = {
@@ -144,14 +183,36 @@ export async function addCMSContent(content: Omit<CMSContent, 'id' | 'metadata'>
       metadata: {
         createdAt: new Date(),
         updatedAt: new Date(),
-      }
+      },
     };
-    const docRef = await addDoc(collection(db, COLLECTION_NAME), toFirestore(contentWithMetadata));
+    const sanitized = sanitizeForFirestoreWrite(contentWithMetadata) as Record<string, unknown>;
+    const docRef = await addDoc(collection(db, COLLECTION_NAME), sanitized);
     return docRef.id;
   } catch (error) {
     console.error('Error adding CMS content:', error);
     throw error;
   }
+}
+
+/**
+ * Canonical path for new CMS items: always `status: draft` and a fresh draft statusHistory entry.
+ * Caller may omit status/history; they are overwritten here so Firestore always matches app rules.
+ */
+export async function createCMSDraft(content: CMSContentDraftInput): Promise<string> {
+  const userId = content.authorId || '';
+  const now = new Date();
+  const draft: Omit<CMSContent, 'id' | 'metadata'> = {
+    ...content,
+    status: 'draft',
+    statusHistory: [
+      {
+        status: 'draft',
+        timestamp: now,
+        userId,
+      },
+    ],
+  };
+  return addCMSContent(draft);
 }
 
 // Update a CMS content item

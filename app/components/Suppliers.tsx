@@ -48,6 +48,9 @@ export default function Suppliers() {
     return allColumns;
   };
 
+  const getVisibleColumnCount = () =>
+    getVisibleColumns().filter((col) => !hiddenColumns.has(col.key)).length;
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -109,7 +112,7 @@ export default function Suppliers() {
         </div>
         <button
           onClick={() => setIsFormOpen(true)}
-          className="flex items-center gap-2 px-5 py-2.5 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow-md active:scale-95"
+          className="flex items-center gap-2 px-5 py-2.5 bg-[#515151] hover:bg-[#000000] text-white rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow-md active:scale-95"
         >
           <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -158,12 +161,12 @@ export default function Suppliers() {
                             setHiddenColumns(prev => new Set([...prev, column.key]));
                           }
                         }}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:ring-offset-2 ${
-                          hiddenColumns.has(column.key) ? 'bg-gray-300' : 'bg-[#4f0c1b]'
+                        className={`toggle-switch relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#515151] focus:ring-offset-2 ${
+                          hiddenColumns.has(column.key) ? 'toggle-switch-off' : 'toggle-switch-on'
                         }`}
                       >
                         <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          className={`toggle-knob inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
                             hiddenColumns.has(column.key) ? 'translate-x-1' : 'translate-x-6'
                           }`}
                         />
@@ -197,7 +200,7 @@ export default function Suppliers() {
                     placeholder={t('suppliers.searchSuppliers')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                   <svg className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -234,7 +237,7 @@ export default function Suppliers() {
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -245,7 +248,7 @@ export default function Suppliers() {
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     placeholder="supplier@email.com"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
                 <div>
@@ -255,7 +258,7 @@ export default function Suppliers() {
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     placeholder="+1 (555) 123-4567"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
               </div>
@@ -265,20 +268,20 @@ export default function Suppliers() {
                   <select
                     value={formData.country}
                     onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   >
                     <option value="">{t('suppliers.selectCountry')}</option>
-                    <option value="USA">🇺🇸 USA</option>
-                    <option value="Ecuador">🇪🇨 Ecuador</option>
-                    <option value="Colombia">🇨🇴 Colombia</option>
-                    <option value="Brazil">🇧🇷 Brazil</option>
-                    <option value="China">🇨🇳 China</option>
-                    <option value="India">🇮🇳 India</option>
-                    <option value="Thailand">🇹🇭 Thailand</option>
-                    <option value="Italy">🇮🇹 Italy</option>
-                    <option value="Spain">🇪🇸 Spain</option>
-                    <option value="Mexico">🇲🇽 Mexico</option>
-                    <option value="Peru">🇵🇪 Peru</option>
+                    <option value="USA">USA</option>
+                    <option value="Ecuador">Ecuador</option>
+                    <option value="Colombia">Colombia</option>
+                    <option value="Brazil">Brazil</option>
+                    <option value="China">China</option>
+                    <option value="India">India</option>
+                    <option value="Thailand">Thailand</option>
+                    <option value="Italy">Italy</option>
+                    <option value="Spain">Spain</option>
+                    <option value="Mexico">Mexico</option>
+                    <option value="Peru">Peru</option>
                     <option value="Other">{t('suppliers.other')}</option>
                   </select>
                 </div>
@@ -287,7 +290,7 @@ export default function Suppliers() {
                   <select
                     value={formData.currency}
                     onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   >
                     <option value="USD">USD - US Dollar</option>
                     <option value="COP">COP - Colombian Peso</option>
@@ -303,7 +306,7 @@ export default function Suppliers() {
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
               </div>
             </form>
@@ -318,7 +321,7 @@ export default function Suppliers() {
               <button
                 type="submit"
                 onClick={handleSubmit}
-                className="flex-1 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
+                className="flex-1 bg-[#515151] hover:bg-[#000000] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
               >
                 {editingSupplier ? t('suppliers.update') : t('suppliers.add')} {t('suppliers.title')}
               </button>
@@ -332,6 +335,9 @@ export default function Suppliers() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
+                  #
+                </th>
                 {!hiddenColumns.has('name') && (
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('suppliers.name')}
@@ -362,18 +368,21 @@ export default function Suppliers() {
             <tbody className="divide-y divide-gray-100">
               {filteredSuppliers.length === 0 ? (
                 <tr>
-                  <td colSpan={getVisibleColumns().length} className="px-6 py-12 text-center text-sm text-gray-500">
+                  <td colSpan={getVisibleColumnCount() + 1} className="px-6 py-12 text-center text-sm text-gray-500">
                     {searchQuery ? t('suppliers.noSuppliersMatching') : t('suppliers.noSuppliersYet')}
                   </td>
                 </tr>
               ) : (
-                filteredSuppliers.map((supplier) => (
+                filteredSuppliers.map((supplier, index) => (
                   <tr key={supplier.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                      {index + 1}
+                    </td>
                     {!hiddenColumns.has('name') && (
                       <td className="px-6 py-4 whitespace-nowrap">
                         <button
                           onClick={() => setSelectedSupplier(supplier)}
-                          className="font-medium text-[#4f0c1b] hover:text-[#3d0a15] hover:underline transition-colors text-left"
+                          className="font-medium text-[#515151] hover:text-[#000000] hover:underline transition-colors text-left"
                         >
                           {supplier.name}
                         </button>
@@ -392,7 +401,7 @@ export default function Suppliers() {
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                         <button
                           onClick={() => handleEdit(supplier)}
-                          className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium mr-4 transition-colors"
+                          className="text-[#515151] hover:text-[#000000] font-medium mr-4 transition-colors"
                         >
                           {t('suppliers.edit')}
                         </button>
@@ -412,6 +421,20 @@ export default function Suppliers() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="bg-gray-50 border-t border-gray-200 px-6 py-3 flex items-center justify-between text-sm text-gray-600">
+          <div className="flex items-center gap-4">
+            <span>
+              {t('purchaseOrders.showing')}{' '}
+              <span className="font-semibold text-gray-900">{filteredSuppliers.length}</span>{' '}
+              {t('purchaseOrders.of')}{' '}
+              <span className="font-semibold text-gray-900">{suppliers.length}</span>{' '}
+              {t('suppliers.footerSuppliers')}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <span>{t('suppliers.footerCountsHint')}</span>
+          </div>
         </div>
       </div>
 

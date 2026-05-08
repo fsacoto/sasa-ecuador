@@ -1,6 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { useAuth } from './AuthContext';
 import { Supplier, PurchaseOrder, InventoryItem, InventoryCountry, InventoryTransfer, AdditionalCost, LandedCostCalculation } from '../types';
 import * as suppliersService from '../services/suppliersService';
 import * as purchaseOrdersService from '../services/purchaseOrdersService';
@@ -17,7 +18,7 @@ interface InventoryContextType {
   
   // Purchase Orders
   purchaseOrders: PurchaseOrder[];
-  addPurchaseOrder: (order: Omit<PurchaseOrder, 'id' | 'createdAt'>) => Promise<void>;
+  addPurchaseOrder: (order: Omit<PurchaseOrder, 'id' | 'createdAt'>) => Promise<string>;
   addPurchaseOrdersBulk: (orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]) => Promise<void>;
   updatePurchaseOrder: (id: string, order: Partial<PurchaseOrder>) => Promise<void>;
   deletePurchaseOrder: (id: string) => Promise<void>;
@@ -54,6 +55,7 @@ interface InventoryContextType {
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
 
 export function InventoryProvider({ children }: { children: ReactNode }) {
+  const { user, isLoading: authLoading } = useAuth();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -62,12 +64,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   const [additionalCosts, setAdditionalCosts] = useState<AdditionalCost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load all data on mount
-  useEffect(() => {
-    loadAllData();
-  }, []);
-
-  const loadAllData = async () => {
+  const loadAllData = useCallback(async () => {
     try {
       setIsLoading(true);
       const [suppliersData, ordersData, inventoryData, transfersData, costsData] = await Promise.allSettled([
@@ -88,7 +85,21 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      setSuppliers([]);
+      setPurchaseOrders([]);
+      setInventory([]);
+      setInventoryTransfers([]);
+      setAdditionalCosts([]);
+      setIsLoading(false);
+      return;
+    }
+    void loadAllData();
+  }, [user?.id, authLoading, loadAllData]);
 
   const loadInventoryTransfers = async (options?: { itemId?: string; limitCount?: number }) => {
     try {
@@ -142,7 +153,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   };
 
   // Purchase Order operations
-  const addPurchaseOrder = async (order: Omit<PurchaseOrder, 'id' | 'createdAt'>) => {
+  const addPurchaseOrder = async (order: Omit<PurchaseOrder, 'id' | 'createdAt'>): Promise<string> => {
     try {
       const newId = await purchaseOrdersService.addPurchaseOrder(order);
       const newOrder: PurchaseOrder = {
@@ -151,6 +162,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         createdAt: new Date(),
       };
       setPurchaseOrders(prev => [...prev, newOrder]);
+      return newId;
     } catch (error) {
       console.error('Error adding purchase order:', error);
       throw error;

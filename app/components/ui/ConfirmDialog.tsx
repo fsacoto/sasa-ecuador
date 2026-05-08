@@ -25,7 +25,7 @@ export default function ConfirmDialog({
 
   const confirmButtonClass = confirmVariant === 'danger'
     ? 'px-4 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700 font-medium transition-colors'
-    : 'px-4 py-2 rounded-xl bg-[#064E3B] text-white hover:bg-[#04633C] font-medium transition-colors';
+    : 'px-4 py-2 rounded-xl bg-[#515151] text-white hover:bg-[#000000] font-medium transition-colors';
 
   return (
     <div
@@ -40,7 +40,7 @@ export default function ConfirmDialog({
           <h3 className="text-lg font-semibold text-gray-900 mb-2">
             {title}
           </h3>
-          <p className="text-gray-600 text-sm">
+          <p className="text-gray-600 text-sm whitespace-pre-line">
             {description}
           </p>
         </div>

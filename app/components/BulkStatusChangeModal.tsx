@@ -112,7 +112,7 @@ export default function BulkStatusChangeModal({ purchaseOrders, onClose, onBulkS
               <select
                 value={newStatus}
                 onChange={(e) => setNewStatus(e.target.value as PurchaseOrderStatus)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
               >
                 <option value="Ordered">📦 {t('purchaseOrders.statusOrdered') || 'Ordered'}</option>
                 <option value="Shipped">🚚 {t('purchaseOrders.statusShipped') || 'Shipped'}</option>
@@ -132,14 +132,14 @@ export default function BulkStatusChangeModal({ purchaseOrders, onClose, onBulkS
                     placeholder={t('purchaseOrders.searchInvoices') || 'Search by invoice or description...'}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm"
                   />
                 </div>
                 <div className="w-48">
                   <select
                     value={filterSupplier}
                     onChange={(e) => setFilterSupplier(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm"
                   >
                     <option value="all">{t('purchaseOrders.allSuppliers') || 'All Suppliers'}</option>
                     {suppliers.map(supplierId => (
@@ -153,7 +153,7 @@ export default function BulkStatusChangeModal({ purchaseOrders, onClose, onBulkS
                   <select
                     value={filterStatus}
                     onChange={(e) => setFilterStatus(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm"
                   >
                     <option value="all">{t('purchaseOrders.allStatus') || 'All Status'}</option>
                     {statuses.map(status => (
@@ -166,7 +166,7 @@ export default function BulkStatusChangeModal({ purchaseOrders, onClose, onBulkS
               <div className="flex gap-2">
                 <button
                   onClick={handleSelectAll}
-                  className="px-3 py-1.5 text-sm text-[#4f0c1b] hover:bg-[#4f0c1b] hover:text-white border border-[#4f0c1b] rounded-lg transition-colors"
+                  className="px-3 py-1.5 text-sm text-[#515151] hover:bg-[#515151] hover:text-white border border-[#515151] rounded-lg transition-colors"
                 >
                   {t('purchaseOrders.selectAll') || 'Select All'}
                 </button>
@@ -194,7 +194,7 @@ export default function BulkStatusChangeModal({ purchaseOrders, onClose, onBulkS
                     key={invoice}
                     className={`border rounded-lg p-4 cursor-pointer transition-all ${
                       selectedInvoices.includes(invoice)
-                        ? 'border-[#4f0c1b] bg-[#4f0c1b]/5'
+                        ? 'border-[#515151] bg-[#515151]/5'
                         : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                     }`}
                     onClick={() => handleInvoiceToggle(invoice)}
@@ -205,7 +205,7 @@ export default function BulkStatusChangeModal({ purchaseOrders, onClose, onBulkS
                         checked={selectedInvoices.includes(invoice)}
                         onChange={() => handleInvoiceToggle(invoice)}
                         onClick={(e) => e.stopPropagation()}
-                        className="mt-1 w-4 h-4 text-[#4f0c1b] border-gray-300 rounded focus:ring-[#4f0c1b]"
+                        className="mt-1 w-4 h-4 text-[#515151] border-gray-300 rounded focus:ring-[#515151]"
                       />
                       <div className="flex-1">
                         <div className="flex items-center justify-between">
@@ -244,7 +244,7 @@ export default function BulkStatusChangeModal({ purchaseOrders, onClose, onBulkS
             <button
               onClick={handleStatusChange}
               disabled={selectedInvoices.length === 0}
-              className="px-4 py-2 bg-[#4f0c1b] text-white hover:bg-[#3d0a15] rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 bg-[#515151] text-white hover:bg-[#000000] rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {t('purchaseOrders.changeStatus') || 'Change Status'}
             </button>

@@ -5,11 +5,12 @@ import {
   signInWithEmailAndPassword, 
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  sendPasswordResetEmail,
   User as FirebaseUser
 } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
 import { auth } from '../utils/firebase';
-import { getUserRole, getPermissionsForRole, createUserDocument } from '../services/userRoles';
+import { getPermissionsForRole, createUserDocument, resolveUserRoleFromFirestoreSnapshot } from '../services/userRoles';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 
@@ -22,9 +23,13 @@ export interface User {
   name: string;
 }
 
+/** Result of requesting a password reset email. */
+export type ResetPasswordOutcome = 'sent' | 'not-found' | 'failed';
+
 interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
+  resetPassword: (email: string) => Promise<ResetPasswordOutcome>;
   logout: () => void;
   isLoading: boolean;
   hasPermission: (permission: string) => boolean;
@@ -53,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           
           // Get user data from Firestore (role and name)
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          const role = await getUserRole(firebaseUser.uid);
+          const role = resolveUserRoleFromFirestoreSnapshot(firebaseUser.uid, userDoc);
           const userName = userDoc.exists() && userDoc.data().name 
             ? userDoc.data().name 
             : (firebaseUser.displayName || getUserDisplayName(email));
@@ -138,6 +143,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const resetPassword = async (email: string): Promise<ResetPasswordOutcome> => {
+    const trimmed = email.trim();
+    if (!trimmed) return 'failed';
+    try {
+      // If unknown addresses always show success (green) with no reset email: Firebase Console →
+      // Authentication → Settings → User actions → Email enumeration protection – turn OFF so
+      // `auth/user-not-found` is returned for unregistered addresses.
+
+      // Continue URL must be an authorized domain in Firebase Console (e.g. localhost + prod).
+      const continueUrl =
+        typeof window !== 'undefined' && window.location?.origin
+          ? `${window.location.origin}/`
+          : undefined;
+      await sendPasswordResetEmail(
+        auth,
+        trimmed,
+        continueUrl ? { url: continueUrl } : undefined
+      );
+      return 'sent';
+    } catch (error) {
+      if (error instanceof FirebaseError) {
+        console.error('Password reset error:', error.code, error.message);
+        if (error.code === 'auth/user-not-found') {
+          return 'not-found';
+        }
+      } else {
+        console.error('Password reset error:', error);
+      }
+      return 'failed';
+    }
+  };
+
   const logout = async () => {
     try {
       await firebaseSignOut(auth);
@@ -154,7 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isLoading, hasPermission }}>
+    <AuthContext.Provider value={{ user, login, resetPassword, logout, isLoading, hasPermission }}>
       {children}
     </AuthContext.Provider>
   );

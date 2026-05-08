@@ -6,16 +6,18 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "firebase:deploy:storage": "firebase deploy --only storage",
+    "firebase:cors": "echo \"Apply CORS: gsutil cors set storage-cors.json gs://YOUR_BUCKET_ID\" && echo \"Bucket id = Firebase Console → Storage (same as NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET).\""
   },
   "dependencies": {
     "@dataconnect/generated": "link:src/dataconnect-generated",
     "@react-pdf/renderer": "^4.3.1",
     "firebase": "^12.4.0",
-    "jsbarcode": "^3.12.1",
+    "jsbarcode": "^3.12.3",
     "jspdf": "^3.0.3",
     "jszip": "^3.10.1",
-    "next": "15.5.7",
+    "next": "15.5.14",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "vercel": "^48.6.0",
@@ -30,7 +32,7 @@
     "@types/react-dom": "^19",
     "@types/video.js": "^7.3.58",
     "eslint": "^9",
-    "eslint-config-next": "15.5.7",
+    "eslint-config-next": "15.5.14",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Client } from '../types';
 import { 
   getAllClients, 
@@ -34,6 +35,27 @@ export default function Clients() {
   const [filterCountry, setFilterCountry] = useState<'Ecuador' | 'USA' | 'All'>('All');
   const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc' | 'desc'}>({key: 'name', direction: 'asc'});
 
+  const [clientActionsMenuId, setClientActionsMenuId] = useState<string | null>(null);
+  const [clientActionsMenuPos, setClientActionsMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const clientActionsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const CLIENT_MENU_MIN_WIDTH = 192;
+
+  const syncClientActionsMenuPosition = useCallback(() => {
+    const btn = clientActionsButtonRef.current;
+    if (!btn) return;
+    const r = btn.getBoundingClientRect();
+    const pad = 8;
+    let left = r.right - CLIENT_MENU_MIN_WIDTH;
+    left = Math.max(pad, Math.min(left, window.innerWidth - CLIENT_MENU_MIN_WIDTH - pad));
+    setClientActionsMenuPos({ top: r.bottom + 4, left });
+  }, []);
+
+  const closeClientActionsMenu = useCallback(() => {
+    setClientActionsMenuId(null);
+    setClientActionsMenuPos(null);
+    clientActionsButtonRef.current = null;
+  }, []);
+
   useEffect(() => {
     loadClients();
   }, []);
@@ -55,6 +77,34 @@ export default function Clients() {
   useEffect(() => {
     loadClients();
   }, [filterCountry]);
+
+  useEffect(() => {
+    const closeOnOutside = (e: MouseEvent) => {
+      const el = (e.target as HTMLElement).closest('[data-client-actions-root]');
+      if (!el) closeClientActionsMenu();
+    };
+    document.addEventListener('mousedown', closeOnOutside);
+    return () => document.removeEventListener('mousedown', closeOnOutside);
+  }, [closeClientActionsMenu]);
+
+  useLayoutEffect(() => {
+    if (!clientActionsMenuId) {
+      setClientActionsMenuPos(null);
+      return;
+    }
+    syncClientActionsMenuPosition();
+  }, [clientActionsMenuId, syncClientActionsMenuPosition]);
+
+  useEffect(() => {
+    if (!clientActionsMenuId) return;
+    const onScrollOrResize = () => syncClientActionsMenuPosition();
+    window.addEventListener('resize', onScrollOrResize);
+    window.addEventListener('scroll', onScrollOrResize, true);
+    return () => {
+      window.removeEventListener('resize', onScrollOrResize);
+      window.removeEventListener('scroll', onScrollOrResize, true);
+    };
+  }, [clientActionsMenuId, syncClientActionsMenuPosition]);
 
   const openModal = (client?: Client) => {
     if (client) {
@@ -182,6 +232,10 @@ export default function Clients() {
     return 0;
   });
 
+  const clientForActionsMenu = clientActionsMenuId
+    ? sortedClients.find((c) => c.id === clientActionsMenuId)
+    : undefined;
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -192,8 +246,11 @@ export default function Clients() {
  {(hasPermission('clients.create') || hasPermission('clients.create.ecuador') || hasPermission('clients.edit') || hasPermission('clients.edit.ecuador')) && (
           <button
             onClick={() => openModal()}
-            className="bg-[#4f0c1b] text-white px-4 py-2 rounded-lg hover:bg-[#5c1327] transition-colors"
+            className="inline-flex items-center justify-center gap-2 bg-[#515151] text-white px-4 py-2 rounded-lg hover:bg-[#000000] transition-colors"
           >
+            <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
             {t('clients.addClient')}
           </button>
         )}
@@ -208,13 +265,13 @@ export default function Clients() {
               placeholder={t('clients.searchClients')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             />
           </div>
           <select
             value={filterCountry}
             onChange={(e) => setFilterCountry(e.target.value as 'Ecuador' | 'USA' | 'All')}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
           >
             <option value="All">{t('clients.allCountries')}</option>
             <option value="Ecuador">Ecuador</option>
@@ -311,31 +368,35 @@ export default function Clients() {
                     <div className="text-sm text-gray-700">{client.city}</div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-xs font-medium">
-                      {client.country === 'Ecuador' ? '🇪🇨 Ecuador' : '🇺🇸 USA'}
-                    </div>
+                    <div className="text-sm text-gray-700">{client.country}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <div className="flex gap-2 justify-center">
-                      {canEdit(client) && (
+                    {canEdit(client) || canDelete(client) ? (
+                      <div className="inline-flex justify-center" data-client-actions-root>
                         <button
-                          onClick={() => openModal(client)}
-                          className="px-3 py-1.5 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200 transition-colors"
-                          title={t('clients.edit')}
+                          type="button"
+                          onClick={(e) => {
+                            const opening = clientActionsMenuId !== client.id;
+                            if (opening) {
+                              clientActionsButtonRef.current = e.currentTarget;
+                              setClientActionsMenuId(client.id);
+                            } else {
+                              closeClientActionsMenu();
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+                          aria-expanded={clientActionsMenuId === client.id}
+                          aria-haspopup="menu"
                         >
-                          ✏️
+                          {t('clients.actions')}
+                          <svg className="h-3.5 w-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                          </svg>
                         </button>
-                      )}
-                      {canDelete(client) && (
-                        <button
-                          onClick={() => handleDelete(client)}
-                          className="px-3 py-1.5 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
-                          title={t('clients.delete')}
-                        >
-                          🗑️
-                        </button>
-                      )}
-                    </div>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-gray-400">—</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -343,6 +404,53 @@ export default function Clients() {
           </table>
         </div>
       )}
+
+      {clientActionsMenuId &&
+        clientActionsMenuPos &&
+        clientForActionsMenu &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            data-client-actions-root
+            role="menu"
+            className="fixed z-[100] min-w-[12rem] rounded-lg border border-gray-200 bg-white py-1 text-left shadow-lg"
+            style={{ top: clientActionsMenuPos.top, left: clientActionsMenuPos.left }}
+          >
+            {canEdit(clientForActionsMenu) && (
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={() => {
+                  openModal(clientForActionsMenu);
+                  closeClientActionsMenu();
+                }}
+              >
+                <svg className="h-4 w-4 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                {t('clients.edit')}
+              </button>
+            )}
+            {canDelete(clientForActionsMenu) && (
+              <button
+                type="button"
+                role="menuitem"
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+                onClick={() => {
+                  handleDelete(clientForActionsMenu);
+                  closeClientActionsMenu();
+                }}
+              >
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                {t('clients.delete')}
+              </button>
+            )}
+          </div>,
+          document.body
+        )}
 
       {/* Modal */}
       {showModal && (
@@ -362,7 +470,7 @@ export default function Clients() {
                     required
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b]"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
                   />
                 </div>
                 <div>
@@ -374,7 +482,7 @@ export default function Clients() {
                     value={formData.country}
                     onChange={(e) => setFormData({ ...formData, country: e.target.value as 'Ecuador' | 'USA' })}
                     disabled={user?.role === 'sales'}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] disabled:bg-gray-100"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] disabled:bg-gray-100"
                   >
                     <option value="Ecuador">Ecuador</option>
                     <option value="USA">USA</option>
@@ -390,7 +498,7 @@ export default function Clients() {
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b]"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
                   />
                 </div>
                 <div>
@@ -401,7 +509,7 @@ export default function Clients() {
                     type="tel"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b]"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
                   />
                 </div>
               </div>
@@ -414,7 +522,7 @@ export default function Clients() {
                   required
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b]"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
                 />
               </div>
               <div>
@@ -426,7 +534,7 @@ export default function Clients() {
                   required
                   value={formData.city}
                   onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b]"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
                 />
               </div>
               <div>
@@ -437,7 +545,7 @@ export default function Clients() {
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   rows={3}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b]"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
                 />
               </div>
               <div className="flex justify-end gap-3 pt-4">
@@ -450,7 +558,7 @@ export default function Clients() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors"
+                  className="px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors"
                 >
                   {t('clients.save')}
                 </button>

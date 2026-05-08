@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { parseCSV, detectColumnMapping, cleanNumericValue, ParsedRow } from '../utils/csvParser';
 import { useInventory } from '../context/InventoryContext';
-import { generateUniqueSKU } from '../utils/skuGenerator';
+import { generateUniqueSKU, collectUsedSkus } from '../utils/skuGenerator';
 import { PurchaseOrder, InventoryItem } from '../types';
 import { getExchangeRates, getExchangeRate, type ExchangeRateResponse } from '../utils/currencyApi';
 
@@ -14,7 +14,7 @@ interface BulkImportModalProps {
 type ImportStep = 'upload' | 'mapping' | 'preview' | 'complete';
 
 export default function BulkImportModal({ onClose }: BulkImportModalProps) {
-  const { addPurchaseOrdersBulk, inventory, suppliers, addSupplier } = useInventory();
+  const { addPurchaseOrdersBulk, inventory, purchaseOrders, suppliers, addSupplier } = useInventory();
   const [step, setStep] = useState<ImportStep>('upload');
   const [parsedData, setParsedData] = useState<ParsedRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -31,6 +31,8 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
   
   // Cache to track suppliers being created during import to prevent duplicates
   const supplierCacheRef = useRef<Map<string, Promise<string>>>(new Map());
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Exchange rates state
   const [exchangeRates, setExchangeRates] = useState<ExchangeRateResponse | null>(null);
@@ -231,51 +233,88 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
     return lineName;
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const resetFileInput = () => {
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const processSelectedFile = (file: File) => {
     if (!file) return;
 
-    // Check if it's an Excel file
     if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
       alert('Please export your Excel file as CSV first.\n\nIn Excel: File → Save As → Format: CSV (.csv)');
-      e.target.value = ''; // Reset input
+      resetFileInput();
       return;
     }
 
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      
-      // Check if it looks like binary data
+
       if (text.includes('PK!') || text.includes('<?xml')) {
         alert('This appears to be an Excel file. Please export as CSV first.\n\nIn Excel: File → Save As → Format: CSV (.csv)');
-        e.target.value = '';
+        resetFileInput();
         return;
       }
-      
+
       const rows = parseCSV(text);
-      
+
       if (rows.length > 0) {
         const fileHeaders = Object.keys(rows[0]);
         setHeaders(fileHeaders);
         setParsedData(rows);
-        
-        // Auto-detect column mapping
+
         const detectedMapping = detectColumnMapping(fileHeaders);
-        
-        // Debug logging for headers and mapping
+
         console.log('CSV Headers detected:', fileHeaders);
         console.log('Auto-detected mapping:', detectedMapping);
-        
+
         setColumnMapping(detectedMapping);
-        
+
         setStep('mapping');
       } else {
         alert('Could not parse file. Please make sure it\'s a valid CSV file.');
-        e.target.value = '';
+        resetFileInput();
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    processSelectedFile(file);
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!e.dataTransfer.types.includes('Files')) return;
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const next = e.relatedTarget as Node | null;
+    if (next && (e.currentTarget as HTMLElement).contains(next)) return;
+    setIsDragging(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types.includes('Files')) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    processSelectedFile(file);
   };
 
   const handleImport = async () => {
@@ -322,6 +361,9 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
         : `IMPORT-${timestamp}`;
     }
 
+    const baseExistingSkus = collectUsedSkus(inventory, purchaseOrders);
+    const allocatedSkus: string[] = [];
+
     // Process rows and create suppliers as needed
     for (let index = 0; index < parsedData.length; index++) {
       const row = parsedData[index];
@@ -365,14 +407,20 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
         autoLinked = true;
         autoLinkedCount++;
       } else if (matchedCategory && matchedLine) {
-        // Generate proper internal SKU based on matched category and line
-        const existingSkus = inventory.map(item => item.sku);
-        internalSku = generateUniqueSKU(matchedCategory, matchedLine, existingSkus);
+        const existingSkus = [...baseExistingSkus, ...allocatedSkus];
+        internalSku = generateUniqueSKU(
+          matchedCategory,
+          matchedLine,
+          supplierSKU.trim() || 'NOSKU',
+          existingSkus
+        );
       } else if (!sku) {
         // Generate a placeholder SKU if missing category/line and no CSV SKU
         internalSku = `IMP${timestamp.toString().slice(-5)}${String(index).padStart(3, '0')}`;
       }
       // If we have a CSV SKU but no category/line, keep the CSV SKU
+
+      allocatedSkus.push(internalSku);
 
       // Determine if this order needs review
       // Only flag for review if critical fields are missing, not category/line
@@ -491,21 +539,43 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
           {/* Step 1: Upload */}
           {step === 'upload' && (
             <div className="space-y-6">
-              <div className="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-[#4f0c1b] transition-colors">
+              <div
+                role="button"
+                tabIndex={0}
+                aria-label="Upload or drop CSV file"
+                onDragEnter={handleDragEnter}
+                onDragLeave={handleDragLeave}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
+                className={`border-2 border-dashed rounded-xl p-12 text-center transition-colors ${
+                  isDragging
+                    ? 'border-[#515151] bg-[#515151]/10'
+                    : 'border-gray-300 hover:border-[#515151]'
+                }`}
+              >
                 <input
+                  ref={fileInputRef}
                   type="file"
-                  accept=".csv"
+                  accept=".csv,text/csv,text/plain"
                   onChange={handleFileUpload}
                   className="hidden"
                   id="file-upload"
                 />
                 <label
                   htmlFor="file-upload"
-                  className="cursor-pointer"
+                  className="cursor-pointer block"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => e.preventDefault()}
                 >
                   <div className="text-6xl mb-4">📄</div>
                   <div className="text-base font-medium text-gray-900 mb-2">
-                    Click to upload CSV file
+                    {isDragging ? 'Drop CSV file here' : 'Click or drag CSV file here'}
                   </div>
                   <div className="text-sm text-gray-500">
                     CSV format only (.csv)
@@ -551,7 +621,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                       value={invoicePrefix}
                       onChange={(e) => setInvoicePrefix(e.target.value)}
                       placeholder="e.g., INV-2025-OCT"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                     />
                     <p className="text-xs text-gray-500 mt-1">
                       {Object.values(columnMapping).includes('invoice') 
@@ -565,7 +635,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                       type="date"
                       value={purchaseDate}
                       onChange={(e) => setPurchaseDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                     />
                   </div>
                 </div>
@@ -578,7 +648,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                     value={invoiceLink}
                     onChange={(e) => setInvoiceLink(e.target.value)}
                     placeholder="https://example.com/invoice.pdf or Google Drive link"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                   />
                   <p className="text-xs text-gray-500 mt-1">
                     Link to the invoice document (PDF, Google Drive, etc.). This will be applied to all imported purchase orders and linked to inventory items when verified.
@@ -590,7 +660,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                     <select
                       value={defaultSupplier}
                       onChange={(e) => setDefaultSupplier(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                     >
                       <option value="">None (add later)</option>
                       {suppliers.map((supplier) => (
@@ -605,7 +675,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                     <select
                       value={defaultDestination}
                       onChange={(e) => setDefaultDestination(e.target.value as 'Ecuador' | 'USA')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                     >
                       <option value="Ecuador">Ecuador</option>
                       <option value="USA">USA</option>
@@ -625,7 +695,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                           setDefaultCurrency(e.target.value);
                           setExchangeRateManuallySet(false); // Reset manual flag when currency changes
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                       >
                         <option value="USD">USD - US Dollar</option>
                         <option value="COP">COP - Colombian Peso</option>
@@ -650,7 +720,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                             setExchangeRate(parseFloat(e.target.value) || 1);
                             setExchangeRateManuallySet(true);
                           }}
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                           placeholder="1.0"
                         />
                         {!exchangeRateManuallySet && exchangeRates && defaultCurrency !== 'USD' && (
@@ -700,7 +770,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                       <select
                         value={columnMapping[header] || ''}
                         onChange={(e) => setColumnMapping({ ...columnMapping, [header]: e.target.value })}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] text-sm"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] text-sm"
                       >
                         <option value="">Skip this column</option>
                         <option value="invoice">Invoice Number</option>
@@ -728,7 +798,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                       if (dbField) {
                         return (
                           <div key={csvCol}>
-                            <span className="text-[#4f0c1b] font-semibold">{dbField}:</span> {parsedData[0][csvCol]}
+                            <span className="text-[#515151] font-semibold">{dbField}:</span> {parsedData[0][csvCol]}
                           </div>
                         );
                       }
@@ -758,7 +828,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
               <h4 className="text-xl font-semibold text-gray-900 mb-2">Import Complete!</h4>
               <div className="space-y-2 text-sm">
                 <p className="text-gray-700">
-                  Successfully imported <span className="font-semibold text-[#4f0c1b]">{importResults.success}</span> purchase orders
+                  Successfully imported <span className="font-semibold text-[#515151]">{importResults.success}</span> purchase orders
                 </p>
                 {importResults.autoLinked && importResults.autoLinked > 0 && (
                   <p className="text-green-600 font-medium">
@@ -773,7 +843,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
               </div>
               <button
                 onClick={onClose}
-                className="mt-6 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm"
+                className="mt-6 bg-[#515151] hover:bg-[#000000] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm"
               >
                 Done
               </button>
@@ -794,7 +864,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
             <button
               type="button"
               onClick={handleImport}
-              className="flex-1 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
+              className="flex-1 bg-[#515151] hover:bg-[#000000] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
             >
               Import {parsedData.length} Items
             </button>

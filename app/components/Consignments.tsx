@@ -9,6 +9,7 @@ import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../context/TranslationContext';
 import ConfirmDialog from './ui/ConfirmDialog';
+import AlertDialog from './ui/AlertDialog';
 
 type View = 'list' | 'create' | 'details';
 
@@ -43,6 +44,14 @@ export default function Consignments() {
   // Delete confirmation state
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [consignmentToDelete, setConsignmentToDelete] = useState<Consignment | null>(null);
+  
+  // Alert dialog state
+  const [alertDialog, setAlertDialog] = useState<{open: boolean, title?: string, message: string}>({open: false, message: ''});
+  
+  // Helper function for styled alerts
+  const showAlert = (message: string, title?: string) => {
+    setAlertDialog({ open: true, message, title });
+  };
 
   // Create a stable string identifier - always a string, never changes array size
   const userIdString = (user?.id || '') as string;
@@ -78,7 +87,7 @@ export default function Consignments() {
       const errorMessage = error?.message || 'Unknown error';
       const errorCode = error?.code || 'unknown';
       console.error('Error details:', { errorMessage, errorCode, error });
-      alert(`Error loading consignments: ${errorMessage} (Code: ${errorCode})\n\nPlease ensure:\n1. You are logged in\n2. Firestore rules have been deployed\n3. Try refreshing the page`);
+      showAlert(`Error loading consignments: ${errorMessage} (Code: ${errorCode})\n\nPlease ensure:\n1. You are logged in\n2. Firestore rules have been deployed\n3. Try refreshing the page`, 'Error');
     } finally {
       setLoading(false);
     }
@@ -138,7 +147,7 @@ export default function Consignments() {
     setConsignmentItems(updatedItems);
     
     if (quantity > maxQuantity) {
-      alert(`Cannot exceed available stock: ${maxQuantity}`);
+      showAlert(`Cannot exceed available stock: ${maxQuantity}`, 'Stock Limit');
     }
   };
 
@@ -174,12 +183,12 @@ export default function Consignments() {
 
   const handleCreateConsignment = async () => {
     if (!selectedClient) {
-      alert(t('consignments.pleaseSelectClient'));
+      showAlert(t('consignments.pleaseSelectClient'), 'Validation Error');
       return;
     }
 
     if (consignmentItems.length === 0) {
-      alert(t('consignments.pleaseAddItems'));
+      showAlert(t('consignments.pleaseAddItems'), 'Validation Error');
       return;
     }
 
@@ -188,7 +197,7 @@ export default function Consignments() {
       for (const item of consignmentItems) {
         const inventoryItem = inventory.find(inv => inv.sku === item.sku);
         if (!inventoryItem || inventoryItem.ecuadorStock < item.quantity) {
-          alert(`Insufficient stock for ${item.sku}. Available: ${inventoryItem?.ecuadorStock || 0}`);
+          showAlert(`Insufficient stock for ${item.sku}. Available: ${inventoryItem?.ecuadorStock || 0}`, 'Stock Error');
           return;
         }
       }
@@ -233,14 +242,14 @@ export default function Consignments() {
         }
       }
 
-      alert(t('consignments.consignmentCreated'));
+      showAlert(t('consignments.consignmentCreated'), 'Success');
       setView('list');
       setSelectedClient(null);
       setConsignmentItems([]);
       loadConsignments();
     } catch (error) {
       console.error('Error creating consignment:', error);
-      alert(t('consignments.errorCreating'));
+      showAlert(t('consignments.errorCreating'), 'Error');
     }
   };
 
@@ -249,7 +258,7 @@ export default function Consignments() {
 
     const hasSales = Object.values(salesQuantities).some(qty => qty > 0);
     if (!hasSales) {
-      alert(t('consignments.pleaseEnterQuantitiesToSell'));
+      showAlert(t('consignments.pleaseEnterQuantitiesToSell'), 'Validation Error');
       return;
     }
 
@@ -345,7 +354,7 @@ export default function Consignments() {
         });
       }
 
-      alert(t('consignments.salesRegistered'));
+      showAlert(t('consignments.salesRegistered'), 'Success');
       setSalesQuantities({});
       loadConsignments();
       // Reload selected consignment
@@ -356,7 +365,7 @@ export default function Consignments() {
       }
     } catch (error: any) {
       console.error('Error registering sales:', error);
-      alert(error.message || t('consignments.errorRegisteringSales'));
+      showAlert(error.message || t('consignments.errorRegisteringSales'), 'Error');
     }
   };
 
@@ -365,7 +374,7 @@ export default function Consignments() {
 
     const hasReturns = Object.values(returnQuantities).some(qty => qty > 0);
     if (!hasReturns) {
-      alert(t('consignments.pleaseEnterQuantitiesToReturn'));
+      showAlert(t('consignments.pleaseEnterQuantitiesToReturn'), 'Validation Error');
       return;
     }
 
@@ -406,7 +415,7 @@ export default function Consignments() {
         }
       }
 
-      alert(t('consignments.returnsRegistered'));
+      showAlert(t('consignments.returnsRegistered'), 'Success');
       setReturnQuantities({});
       loadConsignments();
       // Reload selected consignment
@@ -417,7 +426,7 @@ export default function Consignments() {
       }
     } catch (error: any) {
       console.error('Error registering returns:', error);
-      alert(error.message || t('consignments.errorRegisteringReturns'));
+      showAlert(error.message || t('consignments.errorRegisteringReturns'), 'Error');
     }
   };
 
@@ -459,13 +468,13 @@ export default function Consignments() {
       // Delete the consignment
       await deleteConsignment(consignmentToDelete.id);
       
-      alert(t('consignments.consignmentDeleted') || 'Consignment deleted successfully');
+      showAlert(t('consignments.consignmentDeleted') || 'Consignment deleted successfully', 'Success');
       setDeleteConfirmOpen(false);
       setConsignmentToDelete(null);
       loadConsignments();
     } catch (error: any) {
       console.error('Error deleting consignment:', error);
-      alert(error.message || t('consignments.errorDeleting') || 'Error deleting consignment');
+      showAlert(error.message || t('consignments.errorDeleting') || 'Error deleting consignment', 'Error');
       setDeleteConfirmOpen(false);
       setConsignmentToDelete(null);
     }
@@ -508,7 +517,7 @@ export default function Consignments() {
       setPdfConsignment(null);
     } catch (error) {
       console.error('Error generating PDF:', error);
-      alert(t('consignments.errorGeneratingPdf'));
+      showAlert(t('consignments.errorGeneratingPdf'), 'Error');
       setShowPdfLanguageModal(false);
       setPdfConsignment(null);
     }
@@ -590,7 +599,7 @@ export default function Consignments() {
           </div>
           <button
             onClick={() => setView('create')}
-            className="px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors"
+            className="px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors"
           >
             {t('consignments.createNew')}
           </button>
@@ -677,7 +686,7 @@ export default function Consignments() {
                 {sortedConsignments.map((consignment) => (
                   <tr key={consignment.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="font-mono text-sm font-medium text-[#4f0c1b]">{consignment.consignmentId}</div>
+                      <div className="font-mono text-sm font-medium text-[#515151]">{consignment.consignmentId}</div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-gray-900">{consignment.clientName}</div>
@@ -759,17 +768,15 @@ export default function Consignments() {
               <div className="space-y-3 mb-6">
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'en')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
                 >
-                  <span>{t('language.english')}</span>
-                  <span>🇺🇸</span>
+                  {t('language.english')}
                 </button>
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'es')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
                 >
-                  <span>{t('language.spanish')}</span>
-                  <span>🇪🇸</span>
+                  {t('language.spanish')}
                 </button>
               </div>
 
@@ -785,6 +792,14 @@ export default function Consignments() {
             </div>
           </div>
         )}
+
+        {/* Alert Dialog */}
+        <AlertDialog
+          open={alertDialog.open}
+          title={alertDialog.title}
+          message={alertDialog.message}
+          onClose={() => setAlertDialog({ open: false, message: '' })}
+        />
       </>
     );
   }
@@ -824,7 +839,7 @@ export default function Consignments() {
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('consignments.country')}</div>
-                    <div className="font-medium text-gray-900">{selectedClient.country === 'Ecuador' ? '🇪🇨 Ecuador' : '🇺🇸 USA'}</div>
+                    <div className="font-medium text-gray-900">{selectedClient.country === 'Ecuador' ? 'Ecuador' : 'USA'}</div>
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{t('consignments.address')}</div>
@@ -880,7 +895,7 @@ export default function Consignments() {
                   setShowDropdown(true);
                 }}
                 onFocus={() => setShowDropdown(true)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
               />
               
               {showDropdown && filteredInventory.length > 0 && (
@@ -891,7 +906,7 @@ export default function Consignments() {
                       onClick={() => addProductToConsignment(product)}
                       className="px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
                     >
-                      <div className="font-mono text-sm font-semibold text-[#4f0c1b]">{product.sku}</div>
+                      <div className="font-mono text-sm font-semibold text-[#515151]">{product.sku}</div>
                       <div className="text-sm text-gray-600">{product.name}</div>
                       <div className="text-xs text-gray-500">{t('consignments.stock')}: {product.ecuadorStock} | {product.category} - {product.line}</div>
                     </div>
@@ -960,7 +975,7 @@ export default function Consignments() {
               <div className="mt-6">
                 <button
                   onClick={handleCreateConsignment}
-                  className="w-full px-6 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium"
+                  className="w-full px-6 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium"
                 >
                   {t('consignments.createConsignment')}
                 </button>
@@ -979,17 +994,15 @@ export default function Consignments() {
               <div className="space-y-3 mb-6">
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'en')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
                 >
-                  <span>{t('language.english')}</span>
-                  <span>🇺🇸</span>
+                  {t('language.english')}
                 </button>
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'es')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
                 >
-                  <span>{t('language.spanish')}</span>
-                  <span>🇪🇸</span>
+                  {t('language.spanish')}
                 </button>
               </div>
 
@@ -1005,6 +1018,14 @@ export default function Consignments() {
             </div>
           </div>
         )}
+
+        {/* Alert Dialog */}
+        <AlertDialog
+          open={alertDialog.open}
+          title={alertDialog.title}
+          message={alertDialog.message}
+          onClose={() => setAlertDialog({ open: false, message: '' })}
+        />
       </>
     );
   }
@@ -1190,17 +1211,15 @@ export default function Consignments() {
               <div className="space-y-3 mb-6">
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'en')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
                 >
-                  <span>{t('language.english')}</span>
-                  <span>🇺🇸</span>
+                  {t('language.english')}
                 </button>
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'es')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
                 >
-                  <span>{t('language.spanish')}</span>
-                  <span>🇪🇸</span>
+                  {t('language.spanish')}
                 </button>
               </div>
 
@@ -1216,6 +1235,14 @@ export default function Consignments() {
             </div>
           </div>
         )}
+
+        {/* Alert Dialog */}
+        <AlertDialog
+          open={alertDialog.open}
+          title={alertDialog.title}
+          message={alertDialog.message}
+          onClose={() => setAlertDialog({ open: false, message: '' })}
+        />
       </>
     );
   }

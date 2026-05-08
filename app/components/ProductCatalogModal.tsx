@@ -76,24 +76,24 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4 animate-in fade-in duration-300">
-      <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-6xl h-[95vh] sm:h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-500">
-        {/* Compact Header */}
-        <div className="bg-gradient-to-r from-[#4f0c1b] to-[#6b1426] text-white px-4 sm:px-6 py-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Create Product Catalog</h3>
-            <button
-              onClick={onClose}
-              className="text-white/80 hover:text-white hover:bg-white/10 rounded-full p-1.5 transition-all duration-200"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
+      <div className="sasa-modal-light bg-white rounded-2xl sm:rounded-3xl w-full max-w-6xl h-[95vh] sm:h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-500">
+        {/* Header — same treatment as Add Purchase Order (no heavy dividers) */}
+        <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between bg-white px-4 py-4 sm:px-6">
+          <h3 className="text-lg font-semibold text-gray-900">Create Product Catalog</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 transition-colors hover:text-gray-600"
+            aria-label="Close"
+          >
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
-        {/* Compact Configuration */}
-        <div className="px-4 sm:px-6 py-3 bg-gray-50 border-b border-gray-200">
+        {/* Configuration */}
+        <div className="px-4 sm:px-6 pb-4 pt-0 bg-white">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Catalog Title */}
             <div className="md:col-span-2">
@@ -102,7 +102,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                 type="text"
                 value={catalogTitle}
                 onChange={(e) => setCatalogTitle(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#4f0c1b] focus:border-[#4f0c1b] bg-white text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] bg-white text-sm"
                 placeholder="Enter catalog name..."
               />
             </div>
@@ -114,7 +114,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                 <select
                   value={itemsPerPage}
                   onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#4f0c1b] focus:border-[#4f0c1b] bg-white text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] bg-white text-sm"
                 >
                   <option value={2}>2 per page</option>
                   <option value={4}>4 per page</option>
@@ -129,7 +129,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                 <select
                   value={orientation}
                   onChange={(e) => setOrientation(e.target.value as 'landscape' | 'portrait')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#4f0c1b] focus:border-[#4f0c1b] bg-white text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] bg-white text-sm"
                 >
                   <option value="landscape">Landscape</option>
                   <option value="portrait">Portrait</option>
@@ -141,7 +141,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                 <select
                   value={catalogLocale}
                   onChange={(e) => setCatalogLocale(e.target.value as CatalogLocale)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#4f0c1b] focus:border-[#4f0c1b] bg-white text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] bg-white text-sm"
                 >
                   <option value="en">{t('catalog.english')}</option>
                   <option value="es">{t('catalog.spanish')}</option>
@@ -149,12 +149,12 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
               </div>
               
               <div className="flex items-end">
-                <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-lg border border-gray-300 hover:border-[#4f0c1b] transition-colors">
+                <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-lg border border-gray-300 hover:border-[#515151] transition-colors">
                   <input
                     type="checkbox"
                     checked={includeStock}
                     onChange={(e) => setIncludeStock(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-300 text-[#4f0c1b] focus:ring-[#4f0c1b]"
+                    className="w-4 h-4 rounded border-gray-300 text-[#515151] focus:ring-[#515151]"
                   />
                   <span className="text-xs font-medium text-gray-700">Stock</span>
                 </label>
@@ -163,11 +163,11 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
           </div>
         </div>
 
-        {/* Compact Filter Section */}
-        <div className="px-4 sm:px-6 py-3 bg-white border-b border-gray-200">
+        {/* Filters */}
+        <div className="px-4 sm:px-6 py-4 bg-white">
           <div className="flex items-center gap-3 mb-3">
             <div className="flex items-center gap-2">
-              <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
               </svg>
               <h4 className="text-sm font-semibold text-gray-800">Filters</h4>
@@ -180,7 +180,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                   setFilterEcuadorStock(false);
                   setFilterUsaStock(false);
                 }}
-                className="text-xs text-[#4f0c1b] hover:text-[#3d0a15] font-medium"
+                className="text-xs text-[#515151] hover:text-[#000000] font-medium"
               >
                 Clear All
               </button>
@@ -194,7 +194,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
               <select
                 value={filterCategory}
                 onChange={(e) => setFilterCategory(e.target.value)}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#4f0c1b] focus:border-[#4f0c1b] bg-white text-xs"
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] bg-white text-xs"
               >
                 <option value="all">All Categories</option>
                 {categories.map(category => (
@@ -209,7 +209,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
               <select
                 value={filterLine}
                 onChange={(e) => setFilterLine(e.target.value)}
-                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#4f0c1b] focus:border-[#4f0c1b] bg-white text-xs"
+                className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] bg-white text-xs"
               >
                 <option value="all">All Lines</option>
                 {lines.map(line => (
@@ -225,9 +225,9 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                   type="checkbox"
                   checked={filterEcuadorStock}
                   onChange={(e) => setFilterEcuadorStock(e.target.checked)}
-                  className="w-3 h-3 rounded border-gray-300 text-[#4f0c1b] focus:ring-[#4f0c1b]"
+                  className="w-3 h-3 rounded border-gray-300 text-[#515151] focus:ring-[#515151]"
                 />
-                <span className="text-xs font-medium text-gray-700">🇪🇨 Ecuador</span>
+                <span className="text-xs font-medium text-gray-700">Ecuador</span>
               </label>
             </div>
 
@@ -238,21 +238,21 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                   type="checkbox"
                   checked={filterUsaStock}
                   onChange={(e) => setFilterUsaStock(e.target.checked)}
-                  className="w-3 h-3 rounded border-gray-300 text-[#4f0c1b] focus:ring-[#4f0c1b]"
+                  className="w-3 h-3 rounded border-gray-300 text-[#515151] focus:ring-[#515151]"
                 />
-                <span className="text-xs font-medium text-gray-700">🇺🇸 USA</span>
+                <span className="text-xs font-medium text-gray-700">USA</span>
               </label>
             </div>
           </div>
         </div>
 
-        {/* Compact Selection Summary */}
-        <div className="px-4 sm:px-6 py-2 bg-gray-50 border-b border-gray-200">
+        {/* Selection summary */}
+        <div className="px-4 sm:px-6 py-3 bg-white">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
                 onClick={toggleAll}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white rounded-md transition-all duration-200 font-medium text-xs"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#515151] hover:bg-[#000000] text-white rounded-md transition-all duration-200 font-medium text-xs"
               >
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -261,7 +261,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
               </button>
 
               <div className="flex items-center gap-1 text-xs">
-                <span className="font-semibold text-[#4f0c1b]">{selectedItems.length}</span>
+                <span className="font-semibold text-[#515151]">{selectedItems.length}</span>
                 <span className="text-gray-600">of</span>
                 <span className="font-semibold text-gray-800">{filteredInventory.length}</span>
                 <span className="text-gray-600">products</span>
@@ -298,7 +298,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                     <div key={category} className="space-y-4">
                       <div className="flex items-center gap-3">
                         <h4 className="text-xl font-bold text-gray-800">{category}</h4>
-                        <span className="bg-[#4f0c1b] text-white text-sm px-3 py-1 rounded-full font-medium">
+                        <span className="bg-[#515151] text-white text-sm px-3 py-1 rounded-full font-medium">
                           {categoryItems.length} items
                         </span>
                       </div>
@@ -311,7 +311,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                                  className={`
                                    group relative p-3 rounded-xl border-2 transition-all duration-300 text-left overflow-hidden
                                    ${selectedItems.includes(item.id)
-                                     ? 'border-[#4f0c1b] bg-gradient-to-br from-[#4f0c1b]/5 to-[#6b1426]/5 shadow-lg scale-[1.02]'
+                                     ? 'border-[#515151] bg-gradient-to-br from-[#515151]/5 to-[#000000]/5 shadow-lg scale-[1.02]'
                                      : 'border-gray-200 hover:border-gray-300 hover:shadow-md hover:scale-[1.01] bg-white'
                                    }
                                  `}
@@ -321,7 +321,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                               <div className={`
                                 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all duration-200
                                 ${selectedItems.includes(item.id)
-                                  ? 'bg-[#4f0c1b] border-[#4f0c1b] shadow-lg'
+                                  ? 'bg-[#515151] border-[#515151] shadow-lg'
                                   : 'bg-white border-gray-300 group-hover:border-gray-400'
                                 }
                               `}>
@@ -355,8 +355,8 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                               <h5 className="font-semibold text-gray-900 text-xs line-clamp-2 leading-tight">{item.name}</h5>
                               <p className="text-xs text-gray-500 font-mono">{item.sku}</p>
                               <div className="flex items-center gap-1 text-xs">
-                                <span className="text-gray-600">🇪🇨 {item.ecuadorStock}</span>
-                                <span className="text-gray-600">🇺🇸 {item.usaStock}</span>
+                                <span className="text-gray-600">EC {item.ecuadorStock}</span>
+                                <span className="text-gray-600">USA {item.usaStock}</span>
                               </div>
                             </div>
                           </button>
@@ -370,43 +370,42 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
           </div>
         </div>
 
-        {/* Compact Footer */}
-        <div className="px-4 sm:px-6 py-2 bg-gray-50 border-t border-gray-200 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-600">
-              {selectedItems.length > 0 ? (
-                <span className="font-medium text-[#4f0c1b]">{selectedItems.length} products selected</span>
-              ) : (
-                <span>Select products to create your catalog</span>
-              )}
-            </div>
-            
-            <div className="flex gap-2">
+        {/* Footer */}
+        <div className="flex shrink-0 items-center justify-between gap-4 px-4 py-4 sm:px-6 bg-white">
+          <div className="min-w-0 text-xs text-gray-600">
+            {selectedItems.length > 0 ? (
+              <span className="font-medium text-[#515151]">{selectedItems.length} products selected</span>
+            ) : (
+              <span>Select products to create your catalog</span>
+            )}
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1.5 border border-gray-300 rounded-md hover:bg-gray-50 transition-all font-medium text-gray-700 text-xs"
+            >
+              Cancel
+            </button>
+            {selectedItems.length > 0 ? (
+              <CatalogDownloadButton
+                products={selectedInventory}
+                catalogTitle={catalogTitle}
+                includeStock={includeStock}
+                itemsPerPage={itemsPerPage}
+                orientation={orientation}
+                locale={catalogLocale}
+                fileName={`${catalogTitle.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`}
+              />
+            ) : (
               <button
-                onClick={onClose}
-                className="px-3 py-1.5 border border-gray-300 rounded-md hover:bg-gray-50 transition-all font-medium text-gray-700 text-xs"
+                type="button"
+                disabled
+                className="px-3 py-1.5 bg-gray-200 text-gray-400 rounded-md font-medium cursor-not-allowed text-xs"
               >
-                Cancel
+                Select Products
               </button>
-              {selectedItems.length > 0 ? (
-                <CatalogDownloadButton
-                  products={selectedInventory}
-                  catalogTitle={catalogTitle}
-                  includeStock={includeStock}
-                  itemsPerPage={itemsPerPage}
-                  orientation={orientation}
-                  locale={catalogLocale}
-                  fileName={`${catalogTitle.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`}
-                />
-              ) : (
-                <button
-                  disabled
-                  className="px-3 py-1.5 bg-gray-200 text-gray-400 rounded-md font-medium cursor-not-allowed text-xs"
-                >
-                  Select Products
-                </button>
-              )}
-            </div>
+            )}
           </div>
         </div>
       </div>

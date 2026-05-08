@@ -44,7 +44,7 @@ export default function SupplierDetailPanel({ supplier, onClose }: SupplierDetai
               {supplier.email && (
                 <div className="flex justify-between items-center">
                   <span className="text-gray-600">Email:</span>
-                  <a href={`mailto:${supplier.email}`} className="font-medium text-[#4f0c1b] hover:underline">
+                  <a href={`mailto:${supplier.email}`} className="font-medium text-[#515151] hover:underline">
                     {supplier.email}
                   </a>
                 </div>
@@ -52,7 +52,7 @@ export default function SupplierDetailPanel({ supplier, onClose }: SupplierDetai
               {supplier.phone && (
                 <div className="flex justify-between items-center">
                   <span className="text-gray-600">Phone:</span>
-                  <a href={`tel:${supplier.phone}`} className="font-medium text-[#4f0c1b] hover:underline">
+                  <a href={`tel:${supplier.phone}`} className="font-medium text-[#515151] hover:underline">
                     {supplier.phone}
                   </a>
                 </div>

@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  --sasa-burgundy: #4f0c1b;
-  --sasa-cream: #e4e0c2;
+  --sasa-pink: #FBE3E3;
+  --sasa-black: #000000;
+  --sasa-tertiary: #515151;
   --background: #ffffff;
   --foreground: #2d2d2d;
 }
@@ -10,14 +11,275 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-sasa-burgundy: var(--sasa-burgundy);
-  --color-sasa-cream: var(--sasa-cream);
+  --color-sasa-pink: var(--sasa-pink);
+  --color-sasa-black: var(--sasa-black);
+  --color-sasa-tertiary: var(--sasa-tertiary);
+  /* Single UI typeface: Geist Sans everywhere (including `font-mono` utilities). */
   --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-mono: var(--font-geist-sans);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Dark mode for main content only (top bar and sidebar stay fixed). */
+.app-dark-main {
+  background: #000000;
+  color: #ffffff;
+}
+
+.app-dark-main .bg-white,
+.app-dark-main .bg-gray-50,
+.app-dark-main .bg-gray-100 {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+/* Popups/menus/dropdowns in dark mode must be opaque black (no bleed-through). */
+.app-dark-main [role='menu'],
+.app-dark-main [role='listbox'],
+.app-dark-main [role='dialog'],
+.app-dark-main [class*='absolute'][class*='bg-white'],
+.app-dark-main [class*='absolute'][class*='bg-gray-50'] {
+  background-color: #0b0b0b !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.app-dark-main .bg-black,
+.app-dark-main .bg-gray-900,
+.app-dark-main .bg-gray-800 {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.app-dark-main .border-gray-100,
+.app-dark-main .border-gray-200,
+.app-dark-main .border-gray-300 {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.app-dark-main .text-black,
+.app-dark-main .text-gray-900,
+.app-dark-main .text-gray-800,
+.app-dark-main .text-gray-700 {
+  color: #ffffff !important;
+}
+
+.app-dark-main .text-gray-600,
+.app-dark-main .text-gray-500,
+.app-dark-main .text-gray-400 {
+  color: #d1d5db !important;
+}
+
+/* Remap hardcoded tertiary dark text to readable light gray in dark mode. */
+.app-dark-main [class*='text-\\[\\#515151\\]'],
+.app-dark-main [class*='text-\\[\\#626262\\]'],
+.app-dark-main [style*='color: rgb(81, 81, 81)'],
+.app-dark-main [style*='color:#515151'] {
+  color: #d1d5db !important;
+}
+
+/* Explicit utility escapes for Tailwind arbitrary text colors in className strings. */
+.app-dark-main .text-\[\#515151\],
+.app-dark-main .text-\[\#626262\] {
+  color: #d1d5db !important;
+}
+
+.app-dark-main svg,
+.app-dark-main svg * {
+  color: currentColor !important;
+  stroke: currentColor;
+}
+
+.app-dark-main button:hover,
+.app-dark-main [role='button']:hover,
+.app-dark-main a:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+
+.app-dark-main [class*='hover:bg-white']:hover,
+.app-dark-main [class*='hover:bg-gray-50']:hover,
+.app-dark-main [class*='hover:bg-gray-100']:hover,
+.app-dark-main [class*='hover:bg-gray-200']:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.app-dark-main tr:hover td,
+.app-dark-main li:hover,
+.app-dark-main [role='row']:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.app-dark-main input,
+.app-dark-main select,
+.app-dark-main textarea {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.app-dark-main input[type='date']::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.2);
+}
+
+.app-dark-main .toggle-knob {
+  background-color: #ffffff !important;
+}
+
+.toggle-switch-on {
+  background-color: #00d39b !important;
+}
+
+.toggle-switch-off {
+  background-color: #4b5563 !important;
+}
+
+.toggle-knob {
+  background: linear-gradient(145deg, #ffffff 0%, #f5f5f5 100%) !important;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.95) inset !important;
+}
+
+/* Global modals: blur stays on the overlay; dialog surfaces stay solid (not glass). */
+[class*='fixed'][class*='inset-0'][class*='backdrop-blur'] {
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+/*
+ * Modal panels inside fixed overlays: solid surfaces (blur only on the backdrop).
+ * Light mode: white / gray fills. Dark mode: opaque #101010 so blur never shows through.
+ * Exclude Tailwind opacity utilities (e.g. bg-white/10).
+ * Wrap intentional light dialogs in dark mode with .sasa-modal-light on the root panel.
+ */
+[class*='fixed'][class*='inset-0'] [class*='bg-white']:not([class*='bg-white/']) {
+  background-color: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  opacity: 1 !important;
+  isolation: isolate;
+}
+
+[class*='fixed'][class*='inset-0'] [class*='bg-gray-50']:not([class*='bg-gray-50/']) {
+  background-color: #f9fafb !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  opacity: 1 !important;
+  isolation: isolate;
+}
+
+[class*='fixed'][class*='inset-0'] [class*='bg-gray-100']:not([class*='bg-gray-100/']) {
+  background-color: #f3f4f6 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  opacity: 1 !important;
+  isolation: isolate;
+}
+
+.app-dark-main [class*='fixed'][class*='inset-0'] [class*='bg-white']:not([class*='bg-white/']) {
+  background-color: #101010 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  opacity: 1 !important;
+  isolation: isolate;
+}
+
+.app-dark-main [class*='fixed'][class*='inset-0'] [class*='bg-gray-50']:not([class*='bg-gray-50/']) {
+  background-color: #101010 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  opacity: 1 !important;
+  isolation: isolate;
+}
+
+.app-dark-main [class*='fixed'][class*='inset-0'] [class*='bg-gray-100']:not([class*='bg-gray-100/']) {
+  background-color: #1a1a1a !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  opacity: 1 !important;
+  isolation: isolate;
+}
+
+/* Dark modals: pastel callouts (purple/blue-50) → dark tinted panels so light text stays readable */
+.app-dark-main [class*='fixed'][class*='inset-0'] [class*='bg-purple-50'] {
+  background-color: rgba(139, 92, 246, 0.14) !important;
+  border-color: rgba(167, 139, 250, 0.42) !important;
+}
+
+.app-dark-main [class*='fixed'][class*='inset-0'] [class*='bg-blue-50'] {
+  background-color: rgba(59, 130, 246, 0.14) !important;
+  border-color: rgba(96, 165, 250, 0.42) !important;
+}
+
+/* Light-themed modals in dark mode (catalog, profile): solid white, overrides rules above */
+.app-dark-main [class*='fixed'][class*='inset-0'] .sasa-modal-light[class*='bg-white']:not([class*='bg-white/']),
+.app-dark-main [class*='fixed'][class*='inset-0'] .sasa-modal-light [class*='bg-white']:not([class*='bg-white/']),
+.app-dark-main [class*='fixed'][class*='inset-0'] .sasa-modal-light [class*='bg-gray-50']:not([class*='bg-gray-50/']),
+.app-dark-main [class*='fixed'][class*='inset-0'] .sasa-modal-light [class*='bg-gray-100']:not([class*='bg-gray-100/']) {
+  background-color: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  opacity: 1 !important;
+  isolation: isolate;
+}
+
+.app-dark-main [class*='fixed'][class*='inset-0'] .sasa-modal-light .text-gray-900,
+.app-dark-main [class*='fixed'][class*='inset-0'] .sasa-modal-light .text-gray-800,
+.app-dark-main [class*='fixed'][class*='inset-0'] .sasa-modal-light .text-gray-700 {
+  color: #111827 !important;
+}
+
+.app-dark-main [class*='fixed'][class*='inset-0'] .sasa-modal-light .text-gray-600,
+.app-dark-main [class*='fixed'][class*='inset-0'] .sasa-modal-light .text-gray-500,
+.app-dark-main [class*='fixed'][class*='inset-0'] .sasa-modal-light .text-gray-400 {
+  color: #4b5563 !important;
+}
+
+.app-dark-main [class*='fixed'][class*='inset-0'] .sasa-modal-light input,
+.app-dark-main [class*='fixed'][class*='inset-0'] .sasa-modal-light select,
+.app-dark-main [class*='fixed'][class*='inset-0'] .sasa-modal-light textarea {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+  border-color: #d1d5db !important;
+}
+
+/* Dark solid modals: fields stay opaque (not glassy) */
+.app-dark-main [class*='fixed'][class*='inset-0'] input,
+.app-dark-main [class*='fixed'][class*='inset-0'] select,
+.app-dark-main [class*='fixed'][class*='inset-0'] textarea {
+  background-color: #1a1a1a !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Scrollbars: always visible in popups/dropdowns and readable per theme. */
+[class*='overflow-y-auto'] {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(110, 110, 110, 0.85) transparent;
+}
+
+[class*='overflow-y-auto']::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+[class*='overflow-y-auto']::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[class*='overflow-y-auto']::-webkit-scrollbar-thumb {
+  background: rgba(110, 110, 110, 0.85);
+  border-radius: 999px;
+}
+
+/* Dark mode: use light gray scrollbar for contrast. */
+.app-dark-main [class*='overflow-y-auto'] {
+  scrollbar-color: rgba(205, 205, 205, 0.85) transparent;
+}
+
+.app-dark-main [class*='overflow-y-auto']::-webkit-scrollbar-thumb {
+  background: rgba(205, 205, 205, 0.85);
 }

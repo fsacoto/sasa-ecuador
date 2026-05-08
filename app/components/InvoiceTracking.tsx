@@ -1,12 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { SalesInvoice, SalesInvoiceLine, InventoryItem, Client, PaymentRecord } from '../types';
 import { getAllInvoices, updateInvoice, deleteInvoice } from '../services/invoicesService';
 import { getAllClients } from '../services/clientsService';
 import { useAuth } from '../context/AuthContext';
 import { useInventory } from '../context/InventoryContext';
 import { useTranslation } from '../context/TranslationContext';
+import AlertDialog from './ui/AlertDialog';
+import ConfirmDialog from './ui/ConfirmDialog';
 
 export default function InvoiceTracking() {
   const { user } = useAuth();
@@ -72,9 +75,73 @@ export default function InvoiceTracking() {
   const [showPdfLanguageModal, setShowPdfLanguageModal] = useState(false);
   const [pdfInvoice, setPdfInvoice] = useState<SalesInvoice | null>(null);
 
+  /** Which invoice row has the actions dropdown open (one at a time) */
+  const [invoiceActionsMenuId, setInvoiceActionsMenuId] = useState<string | null>(null);
+  const [actionsMenuPos, setActionsMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const invoiceActionsButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  const MENU_MIN_WIDTH = 192; // matches min-w-[12rem]
+
+  const syncActionsMenuPosition = useCallback(() => {
+    const btn = invoiceActionsButtonRef.current;
+    if (!btn) return;
+    const r = btn.getBoundingClientRect();
+    const pad = 8;
+    let left = r.right - MENU_MIN_WIDTH;
+    left = Math.max(pad, Math.min(left, window.innerWidth - MENU_MIN_WIDTH - pad));
+    setActionsMenuPos({ top: r.bottom + 4, left });
+  }, []);
+
+  const closeInvoiceActionsMenu = useCallback(() => {
+    setInvoiceActionsMenuId(null);
+    setActionsMenuPos(null);
+    invoiceActionsButtonRef.current = null;
+  }, []);
+
+  // Alert and Confirm dialog state
+  const [alertDialog, setAlertDialog] = useState<{open: boolean, title?: string, message: string}>({open: false, message: ''});
+  const [confirmDialog, setConfirmDialog] = useState<{open: boolean, title?: string, message: string, onConfirm: () => void}>({open: false, message: '', onConfirm: () => {}});
+
+  // Helper functions for styled alerts and confirms
+  const showAlert = (message: string, title?: string) => {
+    setAlertDialog({ open: true, message, title });
+  };
+
+  const showConfirm = (message: string, onConfirm: () => void, title?: string) => {
+    setConfirmDialog({ open: true, message, onConfirm, title });
+  };
+
   useEffect(() => {
     loadInvoices();
   }, []);
+
+  useEffect(() => {
+    const closeOnOutside = (e: MouseEvent) => {
+      const el = (e.target as HTMLElement).closest('[data-invoice-actions-root]');
+      if (!el) closeInvoiceActionsMenu();
+    };
+    document.addEventListener('mousedown', closeOnOutside);
+    return () => document.removeEventListener('mousedown', closeOnOutside);
+  }, [closeInvoiceActionsMenu]);
+
+  useLayoutEffect(() => {
+    if (!invoiceActionsMenuId) {
+      setActionsMenuPos(null);
+      return;
+    }
+    syncActionsMenuPosition();
+  }, [invoiceActionsMenuId, syncActionsMenuPosition]);
+
+  useEffect(() => {
+    if (!invoiceActionsMenuId) return;
+    const onScrollOrResize = () => syncActionsMenuPosition();
+    window.addEventListener('resize', onScrollOrResize);
+    window.addEventListener('scroll', onScrollOrResize, true);
+    return () => {
+      window.removeEventListener('resize', onScrollOrResize);
+      window.removeEventListener('scroll', onScrollOrResize, true);
+    };
+  }, [invoiceActionsMenuId, syncActionsMenuPosition]);
 
   // Extract unique clients from all invoices
   useEffect(() => {
@@ -187,7 +254,7 @@ export default function InvoiceTracking() {
       setInvoices(filteredData);
     } catch (error) {
       console.error('Error loading invoices:', error);
-      alert(t('invoiceTracking.errorLoading'));
+      showAlert(t('invoiceTracking.errorLoading'), 'Error');
     } finally {
       setLoading(false);
     }
@@ -253,7 +320,7 @@ export default function InvoiceTracking() {
         if (item.maxQuantity) {
           parsedValue = Math.min(Math.max(1, parsedValue), item.maxQuantity);
           if (parseFloat(String(value)) > item.maxQuantity) {
-            alert(`${t('invoiceTracking.cannotExceedStock')} ${item.maxQuantity}`);
+            showAlert(`${t('invoiceTracking.cannotExceedStock')} ${item.maxQuantity}`, 'Stock Limit');
           }
         }
       }
@@ -308,7 +375,7 @@ export default function InvoiceTracking() {
     if (!editingInvoice) return;
     
     if (editItems.length === 0) {
-      alert(t('invoiceTracking.invoiceMustHaveItem'));
+      showAlert(t('invoiceTracking.invoiceMustHaveItem'), 'Validation Error');
       return;
     }
 
@@ -438,15 +505,15 @@ export default function InvoiceTracking() {
         statusChangedMsg += `\nDelivery status changed to: ${newDeliveryStatus}`;
       }
       if (itemsToReturn.length > 0) {
-        statusChangedMsg += `\n${itemsToReturn.length} item(s) returned to inventory.`;
+        statusChangedMsg += `\n${itemsToReturn.length} ${t('invoiceTracking.itemsReturned') || 'item(s) returned to inventory'}.`;
       }
-      alert(statusChangedMsg);
+      showAlert(statusChangedMsg, 'Success');
       
       closeEditModal();
       loadInvoices();
     } catch (error) {
       console.error('Error updating invoice:', error);
-      alert(t('invoiceTracking.errorUpdating'));
+      showAlert(t('invoiceTracking.errorUpdating'), 'Error');
     }
   };
 
@@ -478,7 +545,7 @@ export default function InvoiceTracking() {
     
     // Don't allow more than the original quantity
     if (quantity > invoice.items[index].quantity) {
-      alert(`${t('invoiceTracking.cannotDeliverMore')} ${invoice.items[index].quantity} ${t('invoiceTracking.units')}`);
+      showAlert(`${t('invoiceTracking.cannotDeliverMore')} ${invoice.items[index].quantity} ${t('invoiceTracking.units')}`, 'Validation Error');
       return;
     }
     
@@ -491,7 +558,7 @@ export default function InvoiceTracking() {
     // Check if at least one item has quantity > 0
     const totalDelivered = Object.values(deliveryItems).reduce((sum, qty) => sum + qty, 0);
     if (totalDelivered === 0) {
-      alert(t('invoiceTracking.pleaseSpecifyQuantities'));
+      showAlert(t('invoiceTracking.pleaseSpecifyQuantities'), 'Validation Error');
       return;
     }
 
@@ -510,7 +577,17 @@ export default function InvoiceTracking() {
       `${t('invoiceTracking.itemsToBeSubtracted')}\n${itemsToSubtract}\n\n` +
       `${t('invoiceTracking.stockLevelsWillBeReduced')}`;
 
-    if (!confirm(warningMessage)) return;
+    showConfirm(
+      warningMessage,
+      () => {
+        processPartialDeliveryConfirmed();
+      },
+      t('invoiceTracking.confirmDelivery') || 'Confirm Delivery'
+    );
+  };
+
+  const processPartialDeliveryConfirmed = async () => {
+    if (!deliveryInvoice) return;
 
     try {
       const updateData: Partial<SalesInvoice> = {
@@ -536,12 +613,12 @@ export default function InvoiceTracking() {
         }
       }
 
-      alert('Partial delivery registered successfully');
+      showAlert(t('invoiceTracking.partialDeliveryRegistered') || 'Partial delivery registered successfully', 'Success');
       closeDeliveryModal();
       loadInvoices();
     } catch (error) {
       console.error('Error updating delivery:', error);
-      alert('Error updating delivery status');
+      showAlert(t('invoiceTracking.errorUpdatingDeliveryStatus'), 'Error');
     }
   };
 
@@ -616,11 +693,15 @@ export default function InvoiceTracking() {
       return;
     } else {
       // For other status changes, use simple confirmation
-      const confirmed = confirm(`${t('invoiceTracking.changeDeliveryStatus')} ${status}?`);
-      if (!confirmed) return;
+      showConfirm(
+        `${t('invoiceTracking.changeDeliveryStatus')} ${status}?`,
+        () => {
+          processDeliveryUpdate(invoice, status);
+        },
+        t('invoiceTracking.confirmStatusChange') || 'Confirm Status Change'
+      );
+      return;
     }
-    
-    await processDeliveryUpdate(invoice, status);
   };
 
   const processDeliveryUpdate = async (invoice: SalesInvoice, status: string) => {
@@ -648,11 +729,11 @@ export default function InvoiceTracking() {
         }
       }
 
-      alert(t('invoiceTracking.deliveryStatusUpdated'));
+      showAlert(t('invoiceTracking.deliveryStatusUpdated'), 'Success');
       loadInvoices();
     } catch (error) {
       console.error('Error updating delivery:', error);
-      alert(t('invoiceTracking.errorUpdatingDeliveryStatus'));
+      showAlert(t('invoiceTracking.errorUpdatingDeliveryStatus'), 'Error');
     }
   };
 
@@ -679,11 +760,11 @@ export default function InvoiceTracking() {
 
       await updateInvoice(invoice.id, updateData);
 
-      alert(t('invoiceTracking.deliveryStatusUpdated') + `\n${itemsToReturn.length} item(s) returned to inventory.`);
+      showAlert(t('invoiceTracking.deliveryStatusUpdated') + `\n${itemsToReturn.length} ${t('invoiceTracking.itemsReturned') || 'item(s) returned to inventory'}.`, 'Success');
       loadInvoices();
     } catch (error) {
       console.error('Error updating delivery:', error);
-      alert(t('invoiceTracking.errorUpdatingDeliveryStatus'));
+      showAlert(t('invoiceTracking.errorUpdatingDeliveryStatus'), 'Error');
     }
   };
 
@@ -699,13 +780,13 @@ export default function InvoiceTracking() {
 
     const payment = parseFloat(paymentAmount);
     if (isNaN(payment) || payment <= 0) {
-      alert(t('invoiceTracking.pleaseEnterValidPayment'));
+      showAlert(t('invoiceTracking.pleaseEnterValidPayment'), 'Validation Error');
       return;
     }
 
     // Allow payment slightly over remaining balance (tolerance for rounding)
     if (payment > paymentInvoice.remainingBalance + 0.01) {
-      alert(`${t('invoiceTracking.paymentCannotExceed')} $${paymentInvoice.remainingBalance.toFixed(2)}`);
+      showAlert(`${t('invoiceTracking.paymentCannotExceed')} $${paymentInvoice.remainingBalance.toFixed(2)}`, 'Validation Error');
       return;
     }
 
@@ -739,39 +820,93 @@ export default function InvoiceTracking() {
       }
 
       await updateInvoice(paymentInvoice.id, updateData);
-      alert(t('invoiceTracking.paymentAdded'));
+      showAlert(t('invoiceTracking.paymentAdded'), 'Success');
       setShowPaymentModal(false);
       loadInvoices();
     } catch (error) {
       console.error('Error adding payment:', error);
-      alert(t('invoiceTracking.errorAddingPayment'));
+      showAlert(t('invoiceTracking.errorAddingPayment'), 'Error');
     }
   };
 
   const handleUpdatePayment = async (invoice: SalesInvoice, status: 'Unpaid' | 'Partially Paid' | 'Paid') => {
-    // Only allow status changes via payment addition
-    if (status === 'Partially Paid' && invoice.paymentStatus === 'Unpaid') {
-      openPaymentModal(invoice);
-      return;
-    }
-    
+    // Don't do anything if status hasn't changed
     if (status === invoice.paymentStatus) return;
 
-    // Allow changing back to Unpaid only
+    // Handle transition to Unpaid (reset all payments)
     if (status === 'Unpaid') {
       try {
         const updateData: Partial<SalesInvoice> = {
           paymentStatus: 'Unpaid',
           amountPaid: 0,
           remainingBalance: invoice.grandTotal,
-          paymentHistory: []
+          paymentHistory: [],
+          paymentDate: undefined
         };
         await updateInvoice(invoice.id, updateData);
         loadInvoices();
       } catch (error) {
         console.error('Error updating payment:', error);
-        alert(t('invoiceTracking.errorUpdatingDeliveryStatus'));
+        showAlert(t('invoiceTracking.errorUpdatingDeliveryStatus'), 'Error');
       }
+      return;
+    }
+
+    // Handle transitions that require adding payment
+    if (status === 'Partially Paid') {
+      // If moving from Unpaid to Partially Paid, open payment modal
+      if (invoice.paymentStatus === 'Unpaid') {
+        openPaymentModal(invoice);
+        return;
+      }
+      // If moving from Paid to Partially Paid, allow direct change
+      // Status will be recalculated based on amountPaid vs grandTotal
+      if (invoice.paymentStatus === 'Paid') {
+        try {
+          // Recalculate status based on current amountPaid
+          const remainingBalance = Math.max(0, invoice.grandTotal - invoice.amountPaid);
+          let newStatus: 'Unpaid' | 'Partially Paid' | 'Paid' = 'Partially Paid';
+          if (invoice.amountPaid === 0) {
+            newStatus = 'Unpaid';
+          } else if (remainingBalance <= 0.01) {
+            newStatus = 'Paid';
+          }
+          
+          const updateData: Partial<SalesInvoice> = {
+            paymentStatus: newStatus,
+            remainingBalance: Math.round(remainingBalance * 100) / 100
+          };
+          await updateInvoice(invoice.id, updateData);
+          loadInvoices();
+        } catch (error) {
+          console.error('Error updating payment:', error);
+          showAlert(t('invoiceTracking.errorUpdatingDeliveryStatus'), 'Error');
+        }
+        return;
+      }
+    }
+
+    // Handle transition to Paid
+    if (status === 'Paid') {
+      // If already fully paid or very close, just update status
+      if (invoice.amountPaid >= invoice.grandTotal - 0.01) {
+        try {
+          const updateData: Partial<SalesInvoice> = {
+            paymentStatus: 'Paid',
+            remainingBalance: 0,
+            paymentDate: invoice.paymentDate || new Date()
+          };
+          await updateInvoice(invoice.id, updateData);
+          loadInvoices();
+        } catch (error) {
+          console.error('Error updating payment:', error);
+          showAlert(t('invoiceTracking.errorUpdatingDeliveryStatus'), 'Error');
+        }
+        return;
+      }
+      // If not fully paid, open payment modal to add remaining payment
+      openPaymentModal(invoice);
+      return;
     }
   };
 
@@ -827,7 +962,7 @@ export default function InvoiceTracking() {
       setPdfInvoice(null);
     } catch (error) {
       console.error('Error generating PDF:', error);
-      alert('Failed to generate PDF. Please try again.');
+      showAlert(t('invoiceTracking.pdfGenerationFailed') || 'Failed to generate PDF. Please try again.', 'Error');
       setShowPdfLanguageModal(false);
       setPdfInvoice(null);
     }
@@ -925,15 +1060,18 @@ export default function InvoiceTracking() {
       
       // Delete the invoice
       await deleteInvoice(invoice.id);
-      alert(t('invoiceTracking.invoiceDeleted'));
+      showAlert(t('invoiceTracking.invoiceDeleted'), 'Success');
       loadInvoices();
     } catch (error) {
       console.error('Error deleting invoice:', error);
-      alert(t('invoiceTracking.errorDeletingInvoice'));
+      showAlert(t('invoiceTracking.errorDeletingInvoice'), 'Error');
     }
   };
 
   const metrics = calculateMetrics();
+  const invoiceForActionsMenu = invoiceActionsMenuId
+    ? invoices.find((inv) => inv.id === invoiceActionsMenuId)
+    : undefined;
 
   return (
     <div className="space-y-6">
@@ -1121,7 +1259,7 @@ export default function InvoiceTracking() {
                 <tr key={invoice.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div 
-                      className="text-xl font-bold text-[#4f0c1b] cursor-pointer hover:text-[#6b1824] transition-colors" 
+                      className="text-xl font-bold text-[#515151] cursor-pointer hover:text-[#000000] transition-colors" 
                       onClick={() => {
                         setDetailsInvoice(invoice);
                         setShowInvoiceDetailsModal(true);
@@ -1138,7 +1276,7 @@ export default function InvoiceTracking() {
                     <div className="text-sm text-gray-700">{new Date(invoice.date).toLocaleDateString()}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <div className="text-lg font-bold text-[#4f0c1b]">${invoice.grandTotal.toFixed(2)}</div>
+                    <div className="text-lg font-bold text-[#515151]">${invoice.grandTotal.toFixed(2)}</div>
                     <div className="text-xs text-gray-500">{invoice.currency}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -1171,34 +1309,26 @@ export default function InvoiceTracking() {
                     <div className="text-sm font-medium text-red-600">${invoice.remainingBalance.toFixed(2)}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <div className="flex gap-2 justify-center">
+                    <div className="inline-flex justify-center" data-invoice-actions-root>
                       <button
-                        onClick={() => openPaymentModal(invoice)}
-                        className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200"
-                        title={t('invoiceTracking.addPayment')}
+                        type="button"
+                        onClick={(e) => {
+                          const opening = invoiceActionsMenuId !== invoice.id;
+                          if (opening) {
+                            invoiceActionsButtonRef.current = e.currentTarget;
+                            setInvoiceActionsMenuId(invoice.id);
+                          } else {
+                            closeInvoiceActionsMenu();
+                          }
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+                        aria-expanded={invoiceActionsMenuId === invoice.id}
+                        aria-haspopup="menu"
                       >
-                        💰
-                      </button>
-                      <button
-                        onClick={() => openEditModal(invoice)}
-                        className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs hover:bg-orange-200"
-                        title={t('invoiceTracking.editInvoice')}
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        onClick={() => handleGeneratePDFClick(invoice)}
-                        className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs hover:bg-purple-200"
-                        title={t('invoiceTracking.generatePdf')}
-                      >
-                        📄
-                      </button>
-                      <button
-                        onClick={() => handleDeleteInvoice(invoice)}
-                        className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200"
-                        title={t('invoiceTracking.deleteInvoice')}
-                      >
-                        🗑️
+                        {t('invoiceTracking.actions')}
+                        <svg className="h-3.5 w-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
                       </button>
                     </div>
                   </td>
@@ -1208,6 +1338,77 @@ export default function InvoiceTracking() {
           </table>
         </div>
       )}
+
+      {invoiceActionsMenuId &&
+        actionsMenuPos &&
+        invoiceForActionsMenu &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            data-invoice-actions-root
+            role="menu"
+            className="fixed z-[100] min-w-[12rem] rounded-lg border border-gray-200 bg-white py-1 text-left shadow-lg"
+            style={{ top: actionsMenuPos.top, left: actionsMenuPos.left }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              onClick={() => {
+                openPaymentModal(invoiceForActionsMenu);
+                closeInvoiceActionsMenu();
+              }}
+            >
+              <svg className="h-4 w-4 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              {t('invoiceTracking.addPayment')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              onClick={() => {
+                openEditModal(invoiceForActionsMenu);
+                closeInvoiceActionsMenu();
+              }}
+            >
+              <svg className="h-4 w-4 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              {t('invoiceTracking.editInvoice')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              onClick={() => {
+                handleGeneratePDFClick(invoiceForActionsMenu);
+                closeInvoiceActionsMenu();
+              }}
+            >
+              <svg className="h-4 w-4 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              {t('invoiceTracking.generatePdf')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+              onClick={() => {
+                handleDeleteInvoice(invoiceForActionsMenu);
+                closeInvoiceActionsMenu();
+              }}
+            >
+              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              {t('invoiceTracking.deleteInvoice')}
+            </button>
+          </div>,
+          document.body
+        )}
 
       {/* Edit Modal */}
       {editingInvoice && (
@@ -1233,7 +1434,7 @@ export default function InvoiceTracking() {
                     setEditShowDropdown(true);
                   }}
                   onFocus={() => setEditShowDropdown(true)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
                 
                 {editShowDropdown && getFilteredEditInventory().length > 0 && (
@@ -1244,7 +1445,7 @@ export default function InvoiceTracking() {
                         onClick={() => addProductToEditItems(product)}
                         className="px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
                       >
-                        <div className="font-mono text-sm font-semibold text-[#4f0c1b]">{product.sku}</div>
+                        <div className="font-mono text-sm font-semibold text-[#515151]">{product.sku}</div>
                         <div className="text-sm text-gray-600">{product.name}</div>
                         <div className="text-xs text-gray-500">{t('invoiceTracking.stock')}: {product.ecuadorStock} | {product.category} - {product.line}</div>
                       </div>
@@ -1390,7 +1591,7 @@ export default function InvoiceTracking() {
                 <span>{t('invoiceTracking.discount')}:</span>
                 <span className="font-semibold">${calculateEditDiscount().toFixed(2)}</span>
               </div>
-              <div className="flex justify-between text-xl font-bold text-[#4f0c1b] pt-2 border-t">
+              <div className="flex justify-between text-xl font-bold text-[#515151] pt-2 border-t">
                 <span>{t('invoiceTracking.grandTotal')}:</span>
                 <span>${calculateEditGrandTotal().toFixed(2)}</span>
               </div>
@@ -1400,7 +1601,7 @@ export default function InvoiceTracking() {
             <div className="flex gap-2">
               <button
                 onClick={saveInvoiceEdit}
-                className="flex-1 px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327]"
+                className="flex-1 px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000]"
               >
                 {t('invoiceTracking.saveChanges')}
               </button>
@@ -1430,7 +1631,7 @@ export default function InvoiceTracking() {
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}
                   placeholder={`${t('invoiceTracking.max')}: $${paymentInvoice.remainingBalance.toFixed(2)}`}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
                 <button
                   type="button"
@@ -1447,7 +1648,7 @@ export default function InvoiceTracking() {
                   type="date"
                   value={paymentDate}
                   onChange={(e) => setPaymentDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
               </div>
 
@@ -1470,8 +1671,11 @@ export default function InvoiceTracking() {
             <div className="flex gap-2 mt-6">
               <button
                 onClick={addPayment}
-                className="flex-1 px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327]"
+                className="inline-flex flex-1 items-center justify-center gap-2 px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000]"
               >
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
                 {t('invoiceTracking.addPayment')}
               </button>
               <button
@@ -1502,7 +1706,7 @@ export default function InvoiceTracking() {
                   type="date"
                   value={deliveryDate}
                   onChange={(e) => setDeliveryDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
               </div>
 
@@ -1513,7 +1717,7 @@ export default function InvoiceTracking() {
                   onChange={(e) => setDeliveryNotes(e.target.value)}
                   rows={3}
                   placeholder={t('invoiceTracking.deliveryNotesPlaceholder')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
               </div>
 
@@ -1562,7 +1766,7 @@ export default function InvoiceTracking() {
             <div className="flex gap-2 mt-6">
               <button
                 onClick={savePartialDelivery}
-                className="flex-1 px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327]"
+                className="flex-1 px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000]"
               >
                 {t('invoiceTracking.registerPartialDelivery')}
               </button>
@@ -1582,7 +1786,7 @@ export default function InvoiceTracking() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-start mb-6">
-              <h3 className="text-2xl font-bold text-[#4f0c1b]">{detailsInvoice.invoiceNumber}</h3>
+              <h3 className="text-2xl font-bold text-[#515151]">{detailsInvoice.invoiceNumber}</h3>
               <button
                 onClick={() => {
                   setShowInvoiceDetailsModal(false);
@@ -1658,7 +1862,7 @@ export default function InvoiceTracking() {
                     <span>{t('invoiceTracking.discount')} {detailsInvoice.discountType === 'percentage' ? `(${detailsInvoice.discountValue}%)` : ''}:</span>
                     <span className="font-medium text-red-600">-${detailsInvoice.discountTotal.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-lg font-bold text-[#4f0c1b] pt-2 border-t border-gray-300">
+                  <div className="flex justify-between text-lg font-bold text-[#515151] pt-2 border-t border-gray-300">
                     <span>{t('invoiceTracking.grandTotal')}:</span>
                     <span>${detailsInvoice.grandTotal.toFixed(2)}</span>
                   </div>
@@ -1960,17 +2164,15 @@ export default function InvoiceTracking() {
             <div className="space-y-3 mb-6">
               <button
                 onClick={() => generatePDF(pdfInvoice, 'en')}
-                className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
               >
-                <span>{t('language.english')}</span>
-                <span>🇺🇸</span>
+                {t('language.english')}
               </button>
               <button
                 onClick={() => generatePDF(pdfInvoice, 'es')}
-                className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left flex items-center justify-between"
+                className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
               >
-                <span>{t('language.spanish')}</span>
-                <span>🇪🇸</span>
+                {t('language.spanish')}
               </button>
             </div>
 
@@ -1986,6 +2188,26 @@ export default function InvoiceTracking() {
           </div>
         </div>
       )}
+
+      {/* Alert Dialog */}
+      <AlertDialog
+        open={alertDialog.open}
+        title={alertDialog.title}
+        message={alertDialog.message}
+        onClose={() => setAlertDialog({ open: false, message: '' })}
+      />
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        description={confirmDialog.message}
+        onConfirm={() => {
+          confirmDialog.onConfirm();
+          setConfirmDialog({ open: false, message: '', onConfirm: () => {} });
+        }}
+        onCancel={() => setConfirmDialog({ open: false, message: '', onConfirm: () => {} })}
+      />
     </div>
   );
 }

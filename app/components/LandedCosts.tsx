@@ -5,6 +5,7 @@ import { useInventory } from '../context/InventoryContext';
 import { AdditionalCost, AdditionalCostType, LandedCostCalculation } from '../types';
 import { useTranslation } from '../context/TranslationContext';
 import ConfirmDialog from './ui/ConfirmDialog';
+import AlertDialog from './ui/AlertDialog';
 
 export default function LandedCosts() {
   const { 
@@ -23,6 +24,21 @@ export default function LandedCosts() {
   const [editingCost, setEditingCost] = useState<AdditionalCost | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [costToDelete, setCostToDelete] = useState<string | null>(null);
+  
+  // Alert dialog state
+  const [alertDialog, setAlertDialog] = useState<{open: boolean, title?: string, message: string}>({open: false, message: ''});
+  
+  // Edit description modal state
+  const [editDescriptionModal, setEditDescriptionModal] = useState<{open: boolean, cost: AdditionalCost | null, newDescription: string}>({
+    open: false,
+    cost: null,
+    newDescription: ''
+  });
+  
+  // Helper function for styled alerts
+  const showAlert = (message: string, title?: string) => {
+    setAlertDialog({ open: true, message, title });
+  };
   const [formData, setFormData] = useState({
     invoiceNumber: '',
     costs: [
@@ -55,7 +71,7 @@ export default function LandedCosts() {
     const validCosts = formData.costs.filter(cost => cost.amount > 0);
     
     if (validCosts.length === 0) {
-      alert(t('landedCosts.pleaseEnterCost'));
+      showAlert(t('landedCosts.pleaseEnterCost'), 'Validation Error');
       return;
     }
     
@@ -94,11 +110,26 @@ export default function LandedCosts() {
 
   // Handle edit
   const handleEdit = (cost: AdditionalCost) => {
-    // For individual cost editing, we'll use a simpler approach
-    const newDescription = prompt(t('landedCosts.editDescription'), cost.description);
-    if (newDescription !== null) {
-      updateAdditionalCost(cost.id, { description: newDescription });
+    setEditDescriptionModal({
+      open: true,
+      cost,
+      newDescription: cost.description
+    });
+  };
+
+  // Handle save edited description
+  const handleSaveDescription = () => {
+    if (editDescriptionModal.cost) {
+      updateAdditionalCost(editDescriptionModal.cost.id, { 
+        description: editDescriptionModal.newDescription 
+      });
+      setEditDescriptionModal({ open: false, cost: null, newDescription: '' });
     }
+  };
+
+  // Handle cancel edit
+  const handleCancelEdit = () => {
+    setEditDescriptionModal({ open: false, cost: null, newDescription: '' });
   };
 
   // Handle delete
@@ -153,7 +184,7 @@ export default function LandedCosts() {
         </div>
         <button
           onClick={() => setIsFormOpen(true)}
-          className="flex items-center gap-2 px-5 py-2.5 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow-md active:scale-95"
+          className="flex items-center gap-2 px-5 py-2.5 bg-[#515151] hover:bg-[#000000] text-white rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow-md active:scale-95"
         >
           <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -177,7 +208,7 @@ export default function LandedCosts() {
                 onClick={() => setSelectedInvoice(invoiceNumber)}
                 className={`p-4 rounded-lg border-2 text-left transition-all ${
                   selectedInvoice === invoiceNumber
-                    ? 'border-[#4f0c1b] bg-[#4f0c1b]/5'
+                    ? 'border-[#515151] bg-[#515151]/5'
                     : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                 }`}
               >
@@ -220,7 +251,7 @@ export default function LandedCosts() {
                   <div key={cost.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                     <div className="flex-1">
                       <div className="flex items-center gap-3">
-                        <span className="px-2 py-1 bg-[#4f0c1b] text-white text-xs font-medium rounded">
+                        <span className="px-2 py-1 bg-[#515151] text-white text-xs font-medium rounded">
                           {cost.type}
                         </span>
                         <span className="font-semibold text-gray-900">${cost.amount.toFixed(2)}</span>
@@ -277,9 +308,9 @@ export default function LandedCosts() {
                     ${landedCostCalculation.totalAdditionalCosts.toFixed(2)}
                   </div>
                 </div>
-                <div className="bg-[#4f0c1b]/10 rounded-lg p-4">
-                  <div className="text-sm font-medium text-[#4f0c1b] mb-1">{t('landedCosts.totalLandedCost')}</div>
-                  <div className="text-xl font-semibold text-[#4f0c1b]">
+                <div className="bg-[#515151]/10 rounded-lg p-4">
+                  <div className="text-sm font-medium text-[#515151] mb-1">{t('landedCosts.totalLandedCost')}</div>
+                  <div className="text-xl font-semibold text-[#515151]">
                     ${landedCostCalculation.totalLandedCost.toFixed(2)}
                   </div>
                 </div>
@@ -311,8 +342,8 @@ export default function LandedCosts() {
                         <td className="py-3 text-right text-gray-700">${item.baseItemTotal.toFixed(2)}</td>
                         <td className="py-3 text-right text-gray-700">{item.proportionalShare.toFixed(1)}%</td>
                         <td className="py-3 text-right text-gray-700">${item.additionalCostAllocation.toFixed(2)}</td>
-                        <td className="py-3 text-right font-medium text-[#4f0c1b]">${item.finalCostPerUnit.toFixed(2)}</td>
-                        <td className="py-3 text-right font-semibold text-[#4f0c1b]">${item.finalItemTotal.toFixed(2)}</td>
+                        <td className="py-3 text-right font-medium text-[#515151]">${item.finalCostPerUnit.toFixed(2)}</td>
+                        <td className="py-3 text-right font-semibold text-[#515151]">${item.finalItemTotal.toFixed(2)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -346,7 +377,7 @@ export default function LandedCosts() {
                 <select
                   value={formData.invoiceNumber}
                   onChange={(e) => setFormData({ ...formData, invoiceNumber: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   required
                 >
                   <option value="">Select Invoice</option>
@@ -363,7 +394,7 @@ export default function LandedCosts() {
                   {formData.costs.map((cost, index) => (
                     <div key={index} className="bg-gray-50 rounded-lg p-4">
                       <div className="flex items-center gap-3 mb-3">
-                        <span className="px-3 py-1 bg-[#4f0c1b] text-white text-sm font-medium rounded">
+                        <span className="px-3 py-1 bg-[#515151] text-white text-sm font-medium rounded">
                           {cost.type}
                         </span>
                         <div className="flex-1">
@@ -374,7 +405,7 @@ export default function LandedCosts() {
                             min="0"
                             value={cost.amount}
                             onChange={(e) => updateCostField(index, 'amount', parseFloat(e.target.value) || 0)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                             placeholder="0.00"
                           />
                         </div>
@@ -385,7 +416,7 @@ export default function LandedCosts() {
                           type="text"
                           value={cost.description}
                           onChange={(e) => updateCostField(index, 'description', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                           placeholder={`Enter ${cost.type.toLowerCase()} details...`}
                         />
                       </div>
@@ -401,7 +432,7 @@ export default function LandedCosts() {
                   type="date"
                   value={formData.date}
                   onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   required
                 />
               </div>
@@ -412,7 +443,7 @@ export default function LandedCosts() {
                 <textarea
                   value={formData.comments}
                   onChange={(e) => setFormData({ ...formData, comments: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   rows={3}
                   placeholder="Enter any additional comments or notes about these costs..."
                 />
@@ -442,7 +473,7 @@ export default function LandedCosts() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white rounded-lg transition-colors font-medium"
+                  className="flex-1 px-4 py-2 bg-[#515151] hover:bg-[#000000] text-white rounded-lg transition-colors font-medium"
                 >
                   Add Costs
                 </button>
@@ -465,6 +496,64 @@ export default function LandedCosts() {
           setCostToDelete(null);
         }}
       />
+
+      {/* Alert Dialog */}
+      <AlertDialog
+        open={alertDialog.open}
+        title={alertDialog.title}
+        message={alertDialog.message}
+        onClose={() => setAlertDialog({ open: false, message: '' })}
+      />
+
+      {/* Edit Description Modal */}
+      {editDescriptionModal.open && editDescriptionModal.cost && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-md shadow-lg">
+            <div className="px-6 py-5">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                {t('landedCosts.editDescription')}
+              </h3>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {editDescriptionModal.cost.type} - Description
+                </label>
+                <input
+                  type="text"
+                  value={editDescriptionModal.newDescription}
+                  onChange={(e) => setEditDescriptionModal({
+                    ...editDescriptionModal,
+                    newDescription: e.target.value
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
+                  placeholder="Enter description..."
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleSaveDescription();
+                    } else if (e.key === 'Escape') {
+                      handleCancelEdit();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
+              <button
+                onClick={handleCancelEdit}
+                className="px-4 py-2 rounded-xl text-gray-700 bg-gray-100 hover:bg-gray-200 font-medium transition-colors"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={handleSaveDescription}
+                className="px-4 py-2 rounded-xl bg-[#515151] text-white hover:bg-[#000000] font-medium transition-colors"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
