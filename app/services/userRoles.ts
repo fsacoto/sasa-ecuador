@@ -38,7 +38,9 @@ export const PERMISSIONS = {
     'sales.view',
     'sales.create',
     'sales.invoice.create',
-    'media.delete'
+    'media.delete',
+    'settings.view',
+    'settings.profile.edit'
   ],
   marketing: [
     'inventory.view',
@@ -46,7 +48,9 @@ export const PERMISSIONS = {
     'cms.edit',
     'inventory.view.availability',
     'images.download',
-    'content.export'
+    'content.export',
+    'settings.view',
+    'settings.profile.edit'
     // Note: Marketing users CANNOT delete published content, approve, or deny content
     // These permissions are admin-only: 'cms.delete', 'cms.approve', 'cms.deny'
   ],
@@ -60,7 +64,9 @@ export const PERMISSIONS = {
     'sales.create',
     'sales.invoice.create',
     'sales.invoice.pdf',
-    'sales.discount.apply'
+    'sales.discount.apply',
+    'settings.view',
+    'settings.profile.edit'
   ]
 };
 

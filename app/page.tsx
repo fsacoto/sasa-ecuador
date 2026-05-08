@@ -6,6 +6,8 @@ import { useAuth } from './context/AuthContext';
 import { useTranslation } from './context/TranslationContext';
 import { db } from './utils/firebase';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
+import { auth } from './utils/firebase';
 import { uploadImage } from './services/storageService';
 import LoginForm from './components/LoginForm';
 import Dashboard from './components/Dashboard';
@@ -18,6 +20,7 @@ import Clients from './components/Clients';
 import Sales from './components/Sales';
 import InvoiceTracking from './components/InvoiceTracking';
 import Consignments from './components/Consignments';
+import SettingsHub from './components/SettingsHub';
 
 type Tab =
   | 'dashboard'
@@ -31,7 +34,8 @@ type Tab =
   | 'clients'
   | 'sales'
   | 'invoice-tracking'
-  | 'consignments';
+  | 'consignments'
+  | 'settings';
 
 /** Extra English keywords so search still matches common terms under any UI language */
 const TAB_SEARCH_ALIASES: Partial<Record<Tab, string>> = {
@@ -45,6 +49,7 @@ const TAB_SEARCH_ALIASES: Partial<Record<Tab, string>> = {
   sales: 'sales invoices invoice orders revenue',
   'invoice-tracking': 'invoice invoices ar receivable tracking payments',
   consignments: 'consignment consign consigned',
+  settings: 'settings profile preferences integrations notifications scanner accounting',
 };
 
 type NavSearchEntry = { tab: Tab; title: string; path: string; haystack: string };
@@ -188,6 +193,15 @@ function IconUserOutline({ className = 'w-5 h-5 shrink-0' }: { className?: strin
   );
 }
 
+function IconCog({ className = 'w-5 h-5 shrink-0' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.757.427 1.757 2.925 0 3.351a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.427 1.757-2.925 1.757-3.351 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.757-.427-1.757-2.925 0-3.351a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.607 2.296.07 2.572-1.065z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  );
+}
+
 const INVENTORY_TABS: Tab[] = ['suppliers', 'purchase-orders', 'inventory', 'landed-costs'];
 const SALES_TABS: Tab[] = ['clients', 'sales', 'invoice-tracking', 'consignments'];
 
@@ -234,7 +248,7 @@ function AppContent() {
   const photoCropDragRef = useRef({ startX: 0, startY: 0, originX: 0, originY: 0 });
 
   useEffect(() => {
-    if (user?.role === 'marketing' && activeTab !== 'cms') {
+    if (user?.role === 'marketing' && activeTab !== 'cms' && activeTab !== 'settings') {
       setActiveTab('cms');
     } else if (user?.role !== 'marketing' && activeTab === 'cms' && !hasPermission('cms.view')) {
       setActiveTab('dashboard');
@@ -335,13 +349,19 @@ function AppContent() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f9f9f9]">
+      <div
+        className={`min-h-screen flex items-center justify-center ${
+          darkModeOn ? 'bg-black text-white' : 'bg-[#f9f9f9] text-gray-700'
+        }`}
+      >
         <div className="text-center">
           <div
-            className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#515151] mx-auto"
+            className={`animate-spin rounded-full h-12 w-12 border-2 border-transparent mx-auto ${
+              darkModeOn ? 'border-t-white border-r-white/70' : 'border-t-[#515151] border-r-[#515151]/60'
+            }`}
             aria-hidden
           />
-          <p className="mt-4 text-gray-600">{t('common.loading')}</p>
+          <p className={`mt-4 ${darkModeOn ? 'text-gray-200' : 'text-gray-600'}`}>{t('common.loading')}</p>
         </div>
       </div>
     );
@@ -458,9 +478,35 @@ function AppContent() {
     }
   };
 
+  const resetProfileDraft = () => {
+    setProfileForm(profileSaved);
+    setProfilePhotoMenuOpen(false);
+    setProfileError('');
+  };
+
+  const changePasswordWithReauth = async (currentPassword: string, nextPassword: string): Promise<string | null> => {
+    try {
+      if (!auth.currentUser || !auth.currentUser.email) {
+        return 'No authenticated user found.';
+      }
+      if (nextPassword.length < 8) {
+        return 'New password must be at least 8 characters.';
+      }
+      const credential = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
+      await reauthenticateWithCredential(auth.currentUser, credential);
+      await updatePassword(auth.currentUser, nextPassword);
+      return null;
+    } catch (error) {
+      console.error('Error updating password:', error);
+      return 'Could not update password. Verify your current password and try again.';
+    }
+  };
+
   const getTabs = () => {
     if (user?.role === 'marketing') {
-      return [{ id: 'cms' as Tab, label: t('navigation.cms'), permission: 'cms.view' }];
+      return [{ id: 'cms' as Tab, label: t('navigation.cms'), permission: 'cms.view' }].filter((tab) =>
+        hasPermission(tab.permission)
+      );
     }
 
     const baseTabs: { id: Tab; label: string; permission: string }[] = [
@@ -619,7 +665,9 @@ function AppContent() {
     return (
       <div
         ref={flyoutRef}
-        className="fixed z-[60] w-48 rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+        className={`fixed z-[60] w-48 rounded-lg py-1 shadow-lg ${
+          darkModeOn ? 'border border-gray-700 bg-[#101010]' : 'border border-gray-200 bg-white'
+        }`}
         style={{ left: sidebarWidth, top: Math.max(16, flyoutTop) }}
       >
         {items.map((item) => (
@@ -630,11 +678,17 @@ function AppContent() {
               setActiveTab(item.id);
               setSuiteFlyout(null);
             }}
-                      className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs ${
-              activeTab === item.id ? 'bg-[#1a1a1a] font-medium text-[#c5c5c5]' : 'text-[#c5c5c5] hover:bg-[#1a1a1a]'
+            className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs ${
+              activeTab === item.id
+                ? darkModeOn
+                  ? 'bg-[#1a1a1a] font-medium text-[#c5c5c5]'
+                  : 'bg-gray-100 font-medium text-gray-800'
+                : darkModeOn
+                  ? 'text-[#c5c5c5] hover:bg-[#1a1a1a]'
+                  : 'text-gray-700 hover:bg-gray-100'
             }`}
           >
-            <item.IconEl className="h-3.5 w-3.5 shrink-0 text-[#c5c5c5]" />
+            <item.IconEl className={`h-3.5 w-3.5 shrink-0 ${darkModeOn ? 'text-[#c5c5c5]' : 'text-gray-500'}`} />
             <span className="truncate">{item.label}</span>
           </button>
         ))}
@@ -643,30 +697,12 @@ function AppContent() {
   };
 
   return (
-    <div className="flex h-dvh min-h-0 overflow-hidden bg-[#f9f9f9]">
+    <div className="flex h-dvh min-h-0 overflow-hidden bg-[#f9f9f9] pt-12">
       <aside
         className="flex min-h-0 shrink-0 flex-col bg-[#101010] text-[#c5c5c5] transition-[width] duration-200 ease-out"
         style={{ width: sidebarWidth }}
       >
-        <div
-          className={`flex h-12 shrink-0 items-center ${sidebarCollapsed ? 'justify-center px-1' : 'gap-2 px-2'}`}
-        >
-          <Image
-            src="/sasa.png"
-            alt="SASA"
-            width={100}
-            height={33}
-            className={`w-auto object-contain invert ${sidebarCollapsed ? 'h-6 max-w-[36px]' : 'h-7 max-w-[88px]'}`}
-            priority
-          />
-          {!sidebarCollapsed && (
-            <span className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-[#c5c5c5]">
-              Business Hub
-            </span>
-          )}
-        </div>
-
-        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-1.5 py-3">
+        <nav className="flex flex-1 flex-col gap-1.5 overflow-y-auto px-1.5 py-3">
           {tabs.map((tab) => {
             if (tab.id === 'inventory-suite') {
               return (
@@ -701,7 +737,7 @@ function AppContent() {
                     )}
                   </button>
                   {!sidebarCollapsed && inventoryOpen && (
-                    <div className="mt-0.5 space-y-0 border-l border-gray-200 pl-1.5 ml-2.5">
+                    <div className="mt-0.5 space-y-1 border-l border-gray-200 pl-1.5 ml-2.5">
                       {inventorySubItems.map((item) => (
                         <button
                           key={item.id}
@@ -757,7 +793,7 @@ function AppContent() {
                     )}
                   </button>
                   {!sidebarCollapsed && salesOpen && (
-                    <div className="mt-0.5 space-y-0 border-l border-gray-200 pl-1.5 ml-2.5">
+                    <div className="mt-0.5 space-y-1 border-l border-gray-200 pl-1.5 ml-2.5">
                       {salesSubItems.map((item) => (
                         <button
                           key={item.id}
@@ -795,6 +831,8 @@ function AppContent() {
                         ? IconShopping
                         : tab.id === 'invoice-tracking'
                           ? IconDocument
+                          : tab.id === 'settings'
+                            ? IconCog
                           : IconDashboard;
 
             return (
@@ -813,7 +851,28 @@ function AppContent() {
           })}
         </nav>
 
-        <div className="mt-auto px-1.5 py-2">
+        <div className="mt-auto px-1.5 py-2 space-y-1.5">
+          {hasPermission('settings.view') && (
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('settings');
+                setSuiteFlyout(null);
+              }}
+              className={`flex w-full items-center gap-1.5 rounded-md py-1.5 text-xs transition-colors ${
+                sidebarCollapsed ? 'justify-center px-0' : 'justify-start px-2 text-left'
+              } ${
+                activeTab === 'settings'
+                  ? 'bg-[#232323] text-[#c5c5c5]'
+                  : 'text-[#c5c5c5] hover:bg-[#1a1a1a] hover:text-[#c5c5c5]'
+              }`}
+              title="Settings"
+              style={activeTab === 'settings' ? { boxShadow: `inset 2px 0 0 0 ${SIDEBAR_ACCENT}` } : undefined}
+            >
+              <IconCog className="h-4 w-4 shrink-0" />
+              {!sidebarCollapsed && <span className="min-w-0 flex-1 truncate text-left">Settings</span>}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -830,7 +889,23 @@ function AppContent() {
       </aside>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="relative flex h-12 shrink-0 items-center justify-end gap-3 bg-[#101010] px-3 lg:px-5">
+        <header className="fixed left-0 right-0 top-0 z-[90] flex h-12 shrink-0 items-center justify-end gap-3 bg-[#101010] px-3 lg:px-5">
+          <div
+            className="absolute left-0 top-1/2 flex -translate-y-1/2 items-center gap-2 px-3 lg:px-5"
+            style={{ width: Math.max(SIDEBAR_EXPANDED_PX, 220) }}
+          >
+            <Image
+              src="/sasa.png"
+              alt="SASA"
+              width={100}
+              height={33}
+              className="h-7 w-auto max-w-[88px] object-contain invert"
+              priority
+            />
+            <span className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-[#c5c5c5]">
+              Business Hub
+            </span>
+          </div>
           <div
             ref={navSearchRef}
             className="absolute left-1/2 top-1/2 z-[5] w-full max-w-xl -translate-x-1/2 -translate-y-1/2 px-3"
@@ -983,12 +1058,11 @@ function AppContent() {
 
             {userMenuOpen && (
               <div
-                className="absolute right-0 top-full z-[70] mt-1 w-56 overflow-hidden rounded-lg border border-gray-700 bg-[#101010] py-1 shadow-lg"
+                className={`absolute right-0 top-full z-[70] mt-1 w-56 overflow-hidden rounded-lg py-1 shadow-lg ${
+                  darkModeOn ? 'border border-gray-700 bg-[#101010]' : 'border border-gray-200 bg-white'
+                }`}
                 role="menu"
               >
-                <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#c5c5c5]">
-                  {t('language.selectLanguage')}
-                </p>
                 <button
                   type="button"
                   role="menuitem"
@@ -998,13 +1072,22 @@ function AppContent() {
                     setProfileModalOpen(true);
                     setUserMenuOpen(false);
                   }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-[#c5c5c5] transition-colors hover:bg-[#1a1a1a]"
+                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${
+                    darkModeOn ? 'text-[#c5c5c5] hover:bg-[#1a1a1a]' : 'text-gray-700 hover:bg-gray-100'
+                  }`}
                 >
                   <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5.121 17.804A10.954 10.954 0 0112 15c2.5 0 4.847.816 6.879 2.196M15 9a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
                   Profile
                 </button>
+                <p
+                  className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide ${
+                    darkModeOn ? 'text-[#c5c5c5]' : 'text-gray-500'
+                  }`}
+                >
+                  {t('language.selectLanguage')}
+                </p>
                 {(
                   [
                     { code: 'en' as const, name: t('language.english') },
@@ -1021,8 +1104,12 @@ function AppContent() {
                     }}
                     className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${
                       locale === lang.code
-                        ? 'bg-[#1a1a1a] font-medium text-[#c5c5c5]'
-                        : 'text-[#c5c5c5] hover:bg-[#1a1a1a]'
+                        ? darkModeOn
+                          ? 'bg-[#1a1a1a] font-medium text-[#c5c5c5]'
+                          : 'bg-gray-100 font-medium text-gray-900'
+                        : darkModeOn
+                          ? 'text-[#c5c5c5] hover:bg-[#1a1a1a]'
+                          : 'text-gray-700 hover:bg-gray-100'
                     }`}
                   >
                     <span>{lang.name}</span>
@@ -1037,7 +1124,7 @@ function AppContent() {
                     )}
                   </button>
                 ))}
-                <div className="my-1 border-t border-gray-700" role="separator" />
+                <div className={`my-1 border-t ${darkModeOn ? 'border-gray-700' : 'border-gray-200'}`} role="separator" />
                 <button
                   type="button"
                   role="menuitem"
@@ -1045,7 +1132,9 @@ function AppContent() {
                     setUserMenuOpen(false);
                     logout();
                   }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-[#c5c5c5] transition-colors hover:bg-[#1a1a1a]"
+                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${
+                    darkModeOn ? 'text-[#c5c5c5] hover:bg-[#1a1a1a]' : 'text-gray-700 hover:bg-gray-100'
+                  }`}
                 >
                   <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
                     <path
@@ -1061,11 +1150,23 @@ function AppContent() {
           </div>
         </header>
 
+        <input
+          ref={profilePhotoInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => handleProfilePhotoChange(e.target.files?.[0] ?? null)}
+        />
+
         {profileModalOpen && (
           <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
-            <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-5 shadow-2xl">
+            <div
+              className={`w-full max-w-md rounded-xl p-5 shadow-2xl ${
+                darkModeOn ? 'border border-gray-700 bg-[#101010]' : 'border border-gray-200 bg-white'
+              }`}
+            >
               <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-900">Profile Settings</h3>
+                <h3 className={`text-sm font-semibold ${darkModeOn ? 'text-white' : 'text-gray-900'}`}>Profile Settings</h3>
                 <button
                   type="button"
                   onClick={() => {
@@ -1074,7 +1175,7 @@ function AppContent() {
                     setProfileModalOpen(false);
                     setProfileError('');
                   }}
-                  className="rounded p-1 text-gray-600 hover:bg-gray-100"
+                  className={`rounded p-1 ${darkModeOn ? 'text-gray-300 hover:bg-[#1a1a1a]' : 'text-gray-600 hover:bg-gray-100'}`}
                   aria-label="Close profile settings"
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -1085,11 +1186,11 @@ function AppContent() {
 
               <div className="mb-4 flex items-center gap-3">
                 <div ref={profilePhotoMenuRef} className="group relative">
-                  <div className="h-14 w-14 overflow-hidden rounded-full border border-gray-300 bg-gray-100">
+                  <div className={`h-14 w-14 overflow-hidden rounded-full ${darkModeOn ? 'border border-gray-600 bg-[#1a1a1a]' : 'border border-gray-300 bg-gray-100'}`}>
                     {profileForm.photoURL ? (
                       <img src={profileForm.photoURL} alt="Profile" className="h-full w-full object-cover" />
                     ) : (
-                      <div className="flex h-full w-full items-center justify-center text-gray-500">
+                      <div className={`flex h-full w-full items-center justify-center ${darkModeOn ? 'text-gray-300' : 'text-gray-500'}`}>
                         <IconUserOutline className="h-6 w-6" />
                       </div>
                     )}
@@ -1097,7 +1198,11 @@ function AppContent() {
                   <button
                     type="button"
                     onClick={() => setProfilePhotoMenuOpen((v) => !v)}
-                    className="absolute bottom-0 right-0 rounded-full border border-gray-300 bg-white p-1 text-gray-700 opacity-0 shadow-sm transition-opacity hover:bg-gray-100 group-hover:opacity-100"
+                    className={`absolute bottom-0 right-0 rounded-full p-1 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 ${
+                      darkModeOn
+                        ? 'border border-gray-600 bg-[#101010] text-gray-200 hover:bg-[#1a1a1a]'
+                        : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'
+                    }`}
                     aria-label="Photo options"
                   >
                     <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -1106,14 +1211,20 @@ function AppContent() {
                   </button>
 
                   {profilePhotoMenuOpen && (
-                    <div className="absolute -right-2 top-16 z-10 w-44 overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg">
+                    <div
+                      className={`absolute -right-2 top-16 z-10 w-44 overflow-hidden rounded-md shadow-lg ${
+                        darkModeOn ? 'border border-gray-700 bg-[#101010]' : 'border border-gray-200 bg-white'
+                      }`}
+                    >
                       <button
                         type="button"
                         onClick={() => {
                           setProfilePhotoMenuOpen(false);
                           profilePhotoInputRef.current?.click();
                         }}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
+                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
+                          darkModeOn ? 'text-gray-200 hover:bg-[#1a1a1a]' : 'text-gray-700 hover:bg-gray-50'
+                        }`}
                       >
                         <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M3 16l4-4a2 2 0 012.828 0L14 16m-1-1 1.586-1.586a2 2 0 012.828 0L21 17m-9-9h.01M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -1126,7 +1237,9 @@ function AppContent() {
                           setProfileForm((prev) => ({ ...prev, photoURL: '' }));
                           setProfilePhotoMenuOpen(false);
                         }}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-red-600 hover:bg-red-50"
+                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
+                          darkModeOn ? 'text-red-400 hover:bg-red-900/20' : 'text-red-600 hover:bg-red-50'
+                        }`}
                       >
                         <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7V5h6v2m-7 4v6m4-6v6m4-6v6M8 7h8l-1 13H9L8 7z" />
@@ -1137,46 +1250,51 @@ function AppContent() {
                   )}
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-gray-900">{displayName || user.name}</p>
-                  <p className="truncate text-xs text-gray-500">{user.email}</p>
+                  <p className={`truncate text-sm font-semibold ${darkModeOn ? 'text-white' : 'text-gray-900'}`}>{displayName || user.name}</p>
+                  <p className={`truncate text-xs ${darkModeOn ? 'text-gray-400' : 'text-gray-500'}`}>{user.email}</p>
                 </div>
-                <input
-                  ref={profilePhotoInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => handleProfilePhotoChange(e.target.files?.[0] ?? null)}
-                />
               </div>
 
               <div className="space-y-3">
                 <div>
-                  <label className="mb-1 block text-xs text-gray-700">First name</label>
+                  <label className={`mb-1 block text-xs ${darkModeOn ? 'text-gray-300' : 'text-gray-700'}`}>First name</label>
                   <input
                     type="text"
                     value={profileForm.firstName}
                     onChange={(e) => setProfileForm((prev) => ({ ...prev, firstName: e.target.value }))}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#515151]"
+                    className={`w-full rounded-lg px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#515151] ${
+                      darkModeOn
+                        ? 'border border-gray-600 bg-[#1a1a1a] text-white'
+                        : 'border border-gray-300 bg-white text-gray-900'
+                    }`}
                     placeholder="First name"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-700">Last name</label>
+                  <label className={`mb-1 block text-xs ${darkModeOn ? 'text-gray-300' : 'text-gray-700'}`}>Last name</label>
                   <input
                     type="text"
                     value={profileForm.lastName}
                     onChange={(e) => setProfileForm((prev) => ({ ...prev, lastName: e.target.value }))}
-                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#515151]"
+                    className={`w-full rounded-lg px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#515151] ${
+                      darkModeOn
+                        ? 'border border-gray-600 bg-[#1a1a1a] text-white'
+                        : 'border border-gray-300 bg-white text-gray-900'
+                    }`}
                     placeholder="Last name"
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-gray-700">Email</label>
+                  <label className={`mb-1 block text-xs ${darkModeOn ? 'text-gray-300' : 'text-gray-700'}`}>Email</label>
                   <input
                     type="email"
                     value={user.email}
                     readOnly
-                    className="w-full cursor-not-allowed rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm text-gray-500"
+                    className={`w-full cursor-not-allowed rounded-lg px-3 py-2 text-sm ${
+                      darkModeOn
+                        ? 'border border-gray-700 bg-[#1a1a1a] text-gray-400'
+                        : 'border border-gray-200 bg-gray-100 text-gray-500'
+                    }`}
                   />
                 </div>
               </div>
@@ -1192,7 +1310,11 @@ function AppContent() {
                     setProfileModalOpen(false);
                     setProfileError('');
                   }}
-                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100"
+                  className={`rounded-md border px-3 py-1.5 text-xs ${
+                    darkModeOn
+                      ? 'border-gray-600 text-gray-200 hover:bg-[#1a1a1a]'
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                  }`}
                 >
                   Cancel
                 </button>
@@ -1211,9 +1333,13 @@ function AppContent() {
 
         {photoCropOpen && (
           <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4">
-            <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-5 shadow-2xl">
+            <div
+              className={`w-full max-w-md rounded-xl p-5 shadow-2xl ${
+                darkModeOn ? 'border border-gray-700 bg-[#101010]' : 'border border-gray-200 bg-white'
+              }`}
+            >
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-900">Adjust profile photo</h3>
+                <h3 className={`text-sm font-semibold ${darkModeOn ? 'text-white' : 'text-gray-900'}`}>Adjust profile photo</h3>
                 <button
                   type="button"
                   onClick={() => {
@@ -1221,7 +1347,7 @@ function AppContent() {
                     setPhotoCropSrc('');
                     setPhotoCropDragging(false);
                   }}
-                  className="rounded p-1 text-gray-600 hover:bg-gray-100"
+                  className={`rounded p-1 ${darkModeOn ? 'text-gray-300 hover:bg-[#1a1a1a]' : 'text-gray-600 hover:bg-gray-100'}`}
                   aria-label="Close crop editor"
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -1230,9 +1356,11 @@ function AppContent() {
                 </button>
               </div>
 
-              <div className="mb-3 text-xs text-gray-500">Drag to position and use zoom to fit inside the frame.</div>
+              <div className={`mb-3 text-xs ${darkModeOn ? 'text-gray-400' : 'text-gray-500'}`}>Drag to position and use zoom to fit inside the frame.</div>
               <div
-                className="relative mx-auto overflow-hidden rounded-full border border-gray-300 bg-gray-100"
+                className={`relative mx-auto overflow-hidden rounded-full ${
+                  darkModeOn ? 'border border-gray-600 bg-[#1a1a1a]' : 'border border-gray-300 bg-gray-100'
+                }`}
                 style={{ width: PHOTO_FRAME_SIZE, height: PHOTO_FRAME_SIZE, cursor: photoCropDragging ? 'grabbing' : 'grab' }}
                 onMouseDown={(e) => {
                   photoCropDragRef.current = {
@@ -1272,7 +1400,7 @@ function AppContent() {
               </div>
 
               <div className="mt-4">
-                <label className="mb-1 block text-xs text-gray-700">Zoom</label>
+                <label className={`mb-1 block text-xs ${darkModeOn ? 'text-gray-300' : 'text-gray-700'}`}>Zoom</label>
                 <input
                   type="range"
                   min={1}
@@ -1292,7 +1420,11 @@ function AppContent() {
                     setPhotoCropSrc('');
                     setPhotoCropDragging(false);
                   }}
-                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100"
+                  className={`rounded-md border px-3 py-1.5 text-xs ${
+                    darkModeOn
+                      ? 'border-gray-600 text-gray-200 hover:bg-[#1a1a1a]'
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                  }`}
                 >
                   Cancel
                 </button>
@@ -1338,6 +1470,20 @@ function AppContent() {
             {activeTab === 'invoice-tracking' && hasPermission('sales.view') && <InvoiceTracking />}
             {activeTab === 'consignments' &&
               (hasPermission('sales.view') || hasPermission('sales.create')) && <Consignments />}
+            {activeTab === 'settings' && hasPermission('settings.view') && (
+              <SettingsHub
+                user={user}
+                profileForm={profileForm}
+                profileSaving={profileSaving}
+                profileError={profileError}
+                onProfileFieldChange={(field, value) => setProfileForm((prev) => ({ ...prev, [field]: value }))}
+                onProfileChoosePhoto={() => profilePhotoInputRef.current?.click()}
+                onProfileDeletePhoto={() => setProfileForm((prev) => ({ ...prev, photoURL: '' }))}
+                onSaveProfile={saveProfile}
+                onResetProfileDraft={resetProfileDraft}
+                onChangePassword={changePasswordWithReauth}
+              />
+            )}
           </div>
         </main>
       </div>
