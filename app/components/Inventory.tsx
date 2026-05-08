@@ -744,12 +744,12 @@ export default function Inventory() {
                               setGalleryFields(prev => new Set([...prev, field.key]));
                             }
                           }}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#515151] focus:ring-offset-2 ${
-                            galleryFields.has(field.key) ? 'bg-[#515151]' : 'bg-gray-300'
+                          className={`toggle-switch relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#515151] focus:ring-offset-2 ${
+                            galleryFields.has(field.key) ? 'toggle-switch-on' : 'toggle-switch-off'
                           }`}
                         >
                           <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            className={`toggle-knob inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
                               galleryFields.has(field.key) ? 'translate-x-6' : 'translate-x-1'
                             }`}
                           />
@@ -851,12 +851,12 @@ export default function Inventory() {
                               setHiddenColumns(prev => new Set([...prev, column.key]));
                             }
                           }}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#515151] focus:ring-offset-2 ${
-                            hiddenColumns.has(column.key) ? 'bg-gray-300' : 'bg-[#515151]'
+                          className={`toggle-switch relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#515151] focus:ring-offset-2 ${
+                            hiddenColumns.has(column.key) ? 'toggle-switch-off' : 'toggle-switch-on'
                           }`}
                         >
                           <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            className={`toggle-knob inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
                               hiddenColumns.has(column.key) ? 'translate-x-1' : 'translate-x-6'
                             }`}
                           />

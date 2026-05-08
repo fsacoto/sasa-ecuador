@@ -224,6 +224,7 @@ function AppContent() {
   const [profilePhotoMenuOpen, setProfilePhotoMenuOpen] = useState(false);
   const profilePhotoMenuRef = useRef<HTMLDivElement>(null);
   const profilePhotoInputRef = useRef<HTMLInputElement>(null);
+  const [darkModeOn, setDarkModeOn] = useState(false);
   const [photoCropOpen, setPhotoCropOpen] = useState(false);
   const [photoCropSrc, setPhotoCropSrc] = useState('');
   const [photoCropOffset, setPhotoCropOffset] = useState({ x: 0, y: 0 });
@@ -320,6 +321,17 @@ function AppContent() {
       cancelled = true;
     };
   }, [user]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = window.localStorage.getItem('sasaDarkMode');
+    if (saved === 'on') setDarkModeOn(true);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('sasaDarkMode', darkModeOn ? 'on' : 'off');
+  }, [darkModeOn]);
 
   if (isLoading) {
     return (
@@ -649,7 +661,7 @@ function AppContent() {
           />
           {!sidebarCollapsed && (
             <span className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-[#c5c5c5]">
-              {t('common.businessHub')}
+              Business Hub
             </span>
           )}
         </div>
@@ -818,9 +830,12 @@ function AppContent() {
       </aside>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-12 shrink-0 items-center gap-3 bg-[#101010] px-3 lg:px-5">
-          <div ref={navSearchRef} className="relative min-w-0 max-w-xl flex-1">
-            <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 z-[1] h-3.5 w-3.5 -translate-y-1/2 text-[#c5c5c5]" />
+        <header className="relative flex h-12 shrink-0 items-center justify-end gap-3 bg-[#101010] px-3 lg:px-5">
+          <div
+            ref={navSearchRef}
+            className="absolute left-1/2 top-1/2 z-[5] w-full max-w-xl -translate-x-1/2 -translate-y-1/2 px-3"
+          >
+            <IconSearch className="pointer-events-none absolute left-6 top-1/2 z-[1] h-3.5 w-3.5 -translate-y-1/2 text-[#c5c5c5]" />
             <input
               ref={navSearchInputRef}
               type="search"
@@ -868,19 +883,19 @@ function AppContent() {
                   }
                 }
               }}
-              className="w-full rounded-full border border-gray-700 bg-[#252525] py-1.5 pl-9 pr-3 text-xs text-[#c5c5c5] placeholder:text-[#c5c5c5] focus:border-[#515151]/60 focus:outline-none focus:ring-1 focus:ring-[#515151]/30"
+              className="h-8 w-full rounded-lg border border-gray-700 bg-[#252525] py-0 pl-12 pr-8 text-xs text-[#c5c5c5] placeholder:text-[#c5c5c5] focus:border-[#515151]/60 focus:outline-none focus:ring-1 focus:ring-[#515151]/30"
               aria-label={t('common.searchPlaceholder')}
             />
 
             {navSearchOpen && navSearchQueryNorm.length > 0 && (
               <div
                 id="nav-search-results"
-                className="absolute left-0 right-0 top-full z-[60] mt-1 max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
+                className="absolute left-0 right-0 top-full z-[60] mt-1 max-h-72 overflow-y-auto rounded-lg border border-gray-700 bg-[#252525] py-1 shadow-lg"
                 role="listbox"
                 aria-label={t('common.searchPlaceholder')}
               >
                 {navSearchResults.length === 0 ? (
-                  <p className="px-3 py-2.5 text-center text-xs text-gray-500">{t('common.searchNoResults')}</p>
+                  <p className="px-3 py-2.5 text-center text-xs text-gray-300">{t('common.searchNoResults')}</p>
                 ) : (
                   navSearchResults.map((entry, idx) => (
                     <button
@@ -893,11 +908,11 @@ function AppContent() {
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => applyNavSearch(entry)}
                       className={`flex w-full flex-col items-start gap-0.5 border-0 px-3 py-2 text-left transition-colors ${
-                        idx === navSearchHi ? 'bg-gray-50' : 'hover:bg-gray-50'
+                        idx === navSearchHi ? 'bg-[#303030]' : 'hover:bg-[#303030]'
                       }`}
                     >
-                      <span className="text-xs font-semibold text-gray-900">{entry.title}</span>
-                      <span className="text-[10px] leading-snug text-gray-500">
+                      <span className="text-xs font-semibold text-white">{entry.title}</span>
+                      <span className="text-[10px] leading-snug text-gray-300">
                         <span className="font-medium text-gray-400">{t('common.searchLocation')}: </span>
                         {entry.path}
                       </span>
@@ -908,7 +923,29 @@ function AppContent() {
             )}
           </div>
 
-          <div ref={userMenuRef} className="relative ml-auto shrink-0">
+          <button
+            type="button"
+            onClick={() => setDarkModeOn((v) => !v)}
+            className="ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#c5c5c5] transition-colors hover:bg-[#1a1a1a]"
+            aria-label={darkModeOn ? 'Turn dark mode off' : 'Turn dark mode on'}
+            title={darkModeOn ? 'Dark mode on' : 'Dark mode off'}
+          >
+            {darkModeOn ? (
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 3v2m0 14v2m9-9h-2M5 12H3m15.364 6.364-1.414-1.414M7.05 7.05 5.636 5.636m12.728 0-1.414 1.414M7.05 16.95l-1.414 1.414M12 8a4 4 0 100 8 4 4 0 000-8z"
+                />
+              </svg>
+            ) : (
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 12.79A9 9 0 1111.21 3c-.13.58-.21 1.19-.21 1.82A7.97 7.97 0 0019 12.79c.63 0 1.24-.08 1.82-.21Z" />
+              </svg>
+            )}
+          </button>
+
+          <div ref={userMenuRef} className="relative shrink-0">
             <button
               type="button"
               aria-expanded={userMenuOpen}
@@ -1272,8 +1309,13 @@ function AppContent() {
           </div>
         )}
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-4 py-8 sm:px-6 lg:px-8">
-          <div className="mx-auto max-w-7xl">
+        <main
+          className={`min-h-0 flex-1 overflow-y-auto px-4 py-8 sm:px-6 lg:px-8 ${darkModeOn ? 'app-dark-main bg-black text-white' : ''}`}
+        >
+          <div
+            className="mx-auto max-w-7xl"
+            style={undefined}
+          >
             {activeTab === 'dashboard' && user?.role !== 'marketing' && (
               <Dashboard
                 onNavigate={(tab, filters) => {

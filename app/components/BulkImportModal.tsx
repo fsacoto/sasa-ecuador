@@ -31,6 +31,8 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
   
   // Cache to track suppliers being created during import to prevent duplicates
   const supplierCacheRef = useRef<Map<string, Promise<string>>>(new Map());
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Exchange rates state
   const [exchangeRates, setExchangeRates] = useState<ExchangeRateResponse | null>(null);
@@ -231,51 +233,88 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
     return lineName;
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const resetFileInput = () => {
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const processSelectedFile = (file: File) => {
     if (!file) return;
 
-    // Check if it's an Excel file
     if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
       alert('Please export your Excel file as CSV first.\n\nIn Excel: File → Save As → Format: CSV (.csv)');
-      e.target.value = ''; // Reset input
+      resetFileInput();
       return;
     }
 
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      
-      // Check if it looks like binary data
+
       if (text.includes('PK!') || text.includes('<?xml')) {
         alert('This appears to be an Excel file. Please export as CSV first.\n\nIn Excel: File → Save As → Format: CSV (.csv)');
-        e.target.value = '';
+        resetFileInput();
         return;
       }
-      
+
       const rows = parseCSV(text);
-      
+
       if (rows.length > 0) {
         const fileHeaders = Object.keys(rows[0]);
         setHeaders(fileHeaders);
         setParsedData(rows);
-        
-        // Auto-detect column mapping
+
         const detectedMapping = detectColumnMapping(fileHeaders);
-        
-        // Debug logging for headers and mapping
+
         console.log('CSV Headers detected:', fileHeaders);
         console.log('Auto-detected mapping:', detectedMapping);
-        
+
         setColumnMapping(detectedMapping);
-        
+
         setStep('mapping');
       } else {
         alert('Could not parse file. Please make sure it\'s a valid CSV file.');
-        e.target.value = '';
+        resetFileInput();
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    processSelectedFile(file);
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!e.dataTransfer.types.includes('Files')) return;
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const next = e.relatedTarget as Node | null;
+    if (next && (e.currentTarget as HTMLElement).contains(next)) return;
+    setIsDragging(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types.includes('Files')) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    processSelectedFile(file);
   };
 
   const handleImport = async () => {
@@ -500,21 +539,43 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
           {/* Step 1: Upload */}
           {step === 'upload' && (
             <div className="space-y-6">
-              <div className="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-[#515151] transition-colors">
+              <div
+                role="button"
+                tabIndex={0}
+                aria-label="Upload or drop CSV file"
+                onDragEnter={handleDragEnter}
+                onDragLeave={handleDragLeave}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
+                className={`border-2 border-dashed rounded-xl p-12 text-center transition-colors ${
+                  isDragging
+                    ? 'border-[#515151] bg-[#515151]/10'
+                    : 'border-gray-300 hover:border-[#515151]'
+                }`}
+              >
                 <input
+                  ref={fileInputRef}
                   type="file"
-                  accept=".csv"
+                  accept=".csv,text/csv,text/plain"
                   onChange={handleFileUpload}
                   className="hidden"
                   id="file-upload"
                 />
                 <label
                   htmlFor="file-upload"
-                  className="cursor-pointer"
+                  className="cursor-pointer block"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => e.preventDefault()}
                 >
                   <div className="text-6xl mb-4">📄</div>
                   <div className="text-base font-medium text-gray-900 mb-2">
-                    Click to upload CSV file
+                    {isDragging ? 'Drop CSV file here' : 'Click or drag CSV file here'}
                   </div>
                   <div className="text-sm text-gray-500">
                     CSV format only (.csv)

@@ -246,8 +246,11 @@ export default function Clients() {
  {(hasPermission('clients.create') || hasPermission('clients.create.ecuador') || hasPermission('clients.edit') || hasPermission('clients.edit.ecuador')) && (
           <button
             onClick={() => openModal()}
-            className="bg-[#515151] text-white px-4 py-2 rounded-lg hover:bg-[#000000] transition-colors"
+            className="inline-flex items-center justify-center gap-2 bg-[#515151] text-white px-4 py-2 rounded-lg hover:bg-[#000000] transition-colors"
           >
+            <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
             {t('clients.addClient')}
           </button>
         )}

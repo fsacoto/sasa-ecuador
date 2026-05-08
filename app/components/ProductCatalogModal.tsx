@@ -76,24 +76,24 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4 animate-in fade-in duration-300">
-      <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-6xl h-[95vh] sm:h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-500">
-        {/* Compact Header */}
-        <div className="bg-gradient-to-r from-[#515151] to-[#000000] text-white px-4 sm:px-6 py-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Create Product Catalog</h3>
-            <button
-              onClick={onClose}
-              className="text-white/80 hover:text-white hover:bg-white/10 rounded-full p-1.5 transition-all duration-200"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
+      <div className="sasa-modal-light bg-white rounded-2xl sm:rounded-3xl w-full max-w-6xl h-[95vh] sm:h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-500">
+        {/* Header — same treatment as Add Purchase Order (no heavy dividers) */}
+        <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between bg-white px-4 py-4 sm:px-6">
+          <h3 className="text-lg font-semibold text-gray-900">Create Product Catalog</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 transition-colors hover:text-gray-600"
+            aria-label="Close"
+          >
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
-        {/* Compact Configuration */}
-        <div className="px-4 sm:px-6 py-3 bg-gray-50 border-b border-gray-200">
+        {/* Configuration */}
+        <div className="px-4 sm:px-6 pb-4 pt-0 bg-white">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Catalog Title */}
             <div className="md:col-span-2">
@@ -163,8 +163,8 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
           </div>
         </div>
 
-        {/* Compact Filter Section */}
-        <div className="px-4 sm:px-6 py-3 bg-white border-b border-gray-200">
+        {/* Filters */}
+        <div className="px-4 sm:px-6 py-4 bg-white">
           <div className="flex items-center gap-3 mb-3">
             <div className="flex items-center gap-2">
               <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -246,8 +246,8 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
           </div>
         </div>
 
-        {/* Compact Selection Summary */}
-        <div className="px-4 sm:px-6 py-2 bg-gray-50 border-b border-gray-200">
+        {/* Selection summary */}
+        <div className="px-4 sm:px-6 py-3 bg-white">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
@@ -370,43 +370,42 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
           </div>
         </div>
 
-        {/* Compact Footer */}
-        <div className="px-4 sm:px-6 py-2 bg-gray-50 border-t border-gray-200 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-600">
-              {selectedItems.length > 0 ? (
-                <span className="font-medium text-[#515151]">{selectedItems.length} products selected</span>
-              ) : (
-                <span>Select products to create your catalog</span>
-              )}
-            </div>
-            
-            <div className="flex gap-2">
+        {/* Footer */}
+        <div className="flex shrink-0 items-center justify-between gap-4 px-4 py-4 sm:px-6 bg-white">
+          <div className="min-w-0 text-xs text-gray-600">
+            {selectedItems.length > 0 ? (
+              <span className="font-medium text-[#515151]">{selectedItems.length} products selected</span>
+            ) : (
+              <span>Select products to create your catalog</span>
+            )}
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1.5 border border-gray-300 rounded-md hover:bg-gray-50 transition-all font-medium text-gray-700 text-xs"
+            >
+              Cancel
+            </button>
+            {selectedItems.length > 0 ? (
+              <CatalogDownloadButton
+                products={selectedInventory}
+                catalogTitle={catalogTitle}
+                includeStock={includeStock}
+                itemsPerPage={itemsPerPage}
+                orientation={orientation}
+                locale={catalogLocale}
+                fileName={`${catalogTitle.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`}
+              />
+            ) : (
               <button
-                onClick={onClose}
-                className="px-3 py-1.5 border border-gray-300 rounded-md hover:bg-gray-50 transition-all font-medium text-gray-700 text-xs"
+                type="button"
+                disabled
+                className="px-3 py-1.5 bg-gray-200 text-gray-400 rounded-md font-medium cursor-not-allowed text-xs"
               >
-                Cancel
+                Select Products
               </button>
-              {selectedItems.length > 0 ? (
-                <CatalogDownloadButton
-                  products={selectedInventory}
-                  catalogTitle={catalogTitle}
-                  includeStock={includeStock}
-                  itemsPerPage={itemsPerPage}
-                  orientation={orientation}
-                  locale={catalogLocale}
-                  fileName={`${catalogTitle.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`}
-                />
-              ) : (
-                <button
-                  disabled
-                  className="px-3 py-1.5 bg-gray-200 text-gray-400 rounded-md font-medium cursor-not-allowed text-xs"
-                >
-                  Select Products
-                </button>
-              )}
-            </div>
+            )}
           </div>
         </div>
       </div>

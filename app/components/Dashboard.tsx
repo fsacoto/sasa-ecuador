@@ -589,10 +589,10 @@ export default function Dashboard({ onNavigate }: DashboardProps = {}) {
                   className="transition-all duration-1000 ease-out"
                 />
               </svg>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="text-center">
+              <div className="absolute inset-0 flex items-center justify-center px-1">
+                <div className="mx-auto max-w-[3.75rem] text-center sm:max-w-[4.25rem]">
                   <div className="text-2xl font-semibold tabular-nums tracking-tight text-gray-900">{getTotalStock()}</div>
-                  <div className="mt-0.5 text-xs font-medium uppercase tracking-wide text-gray-500">
+                  <div className="mt-0.5 text-[0.625rem] font-medium uppercase leading-snug tracking-tight text-gray-500 sm:text-[0.6875rem]">
                     {t('dashboard.totalUnits')}
                   </div>
                 </div>
