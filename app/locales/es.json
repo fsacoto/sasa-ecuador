@@ -1120,6 +1120,7 @@
     "sendingReset": "Enviando…",
     "resetEmailSent": "Revise su correo para el enlace de restablecimiento.",
     "resetEmailFailed": "No se pudo enviar el correo. Verifique la dirección e intente de nuevo.",
+    "emailNotFound": "No se encontró una cuenta con este correo electrónico.",
     "emailRequiredForReset": "Ingrese su correo arriba e intente de nuevo.",
     "footerCompany": "© 2026 SASA Enterprises LLC. Todos los derechos reservados."
   },

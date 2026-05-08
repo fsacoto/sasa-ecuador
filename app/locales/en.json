@@ -1125,6 +1125,7 @@
     "sendingReset": "Sending…",
     "resetEmailSent": "Check your email for a link to reset your password.",
     "resetEmailFailed": "Could not send reset email. Check the address and try again.",
+    "emailNotFound": "No account found with this email.",
     "emailRequiredForReset": "Enter your email above, then try again.",
     "footerCompany": "© 2026 SASA Enterprises LLC. All rights reserved."
   },

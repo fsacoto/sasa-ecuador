@@ -23,10 +23,13 @@ export interface User {
   name: string;
 }
 
+/** Result of requesting a password reset email. */
+export type ResetPasswordOutcome = 'sent' | 'not-found' | 'failed';
+
 interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
-  resetPassword: (email: string) => Promise<boolean>;
+  resetPassword: (email: string) => Promise<ResetPasswordOutcome>;
   logout: () => void;
   isLoading: boolean;
   hasPermission: (permission: string) => boolean;
@@ -140,15 +143,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const resetPassword = async (email: string): Promise<boolean> => {
+  const resetPassword = async (email: string): Promise<ResetPasswordOutcome> => {
     const trimmed = email.trim();
-    if (!trimmed) return false;
+    if (!trimmed) return 'failed';
     try {
-      await sendPasswordResetEmail(auth, trimmed);
-      return true;
+      // If unknown addresses always show success (green) with no reset email: Firebase Console →
+      // Authentication → Settings → User actions → Email enumeration protection – turn OFF so
+      // `auth/user-not-found` is returned for unregistered addresses.
+
+      // Continue URL must be an authorized domain in Firebase Console (e.g. localhost + prod).
+      const continueUrl =
+        typeof window !== 'undefined' && window.location?.origin
+          ? `${window.location.origin}/`
+          : undefined;
+      await sendPasswordResetEmail(
+        auth,
+        trimmed,
+        continueUrl ? { url: continueUrl } : undefined
+      );
+      return 'sent';
     } catch (error) {
-      console.error('Password reset error:', error);
-      return false;
+      if (error instanceof FirebaseError) {
+        console.error('Password reset error:', error.code, error.message);
+        if (error.code === 'auth/user-not-found') {
+          return 'not-found';
+        }
+      } else {
+        console.error('Password reset error:', error);
+      }
+      return 'failed';
     }
   };
 

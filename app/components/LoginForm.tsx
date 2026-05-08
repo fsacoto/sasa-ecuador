@@ -32,10 +32,12 @@ export default function LoginForm() {
       return;
     }
     setResetSending(true);
-    const ok = await resetPassword(email);
+    const outcome = await resetPassword(email);
     setResetSending(false);
-    if (ok) {
+    if (outcome === 'sent') {
       setSuccessMessage(t('login.resetEmailSent'));
+    } else if (outcome === 'not-found') {
+      setError(t('login.emailNotFound'));
     } else {
       setError(t('login.resetEmailFailed'));
     }
