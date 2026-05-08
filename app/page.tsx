@@ -4,6 +4,9 @@ import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { useAuth } from './context/AuthContext';
 import { useTranslation } from './context/TranslationContext';
+import { db } from './utils/firebase';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { uploadImage } from './services/storageService';
 import LoginForm from './components/LoginForm';
 import Dashboard from './components/Dashboard';
 import Suppliers from './components/Suppliers';
@@ -45,9 +48,10 @@ const TAB_SEARCH_ALIASES: Partial<Record<Tab, string>> = {
 };
 
 type NavSearchEntry = { tab: Tab; title: string; path: string; haystack: string };
+type ProfileFormState = { firstName: string; lastName: string; photoURL: string };
 
 /** Active indicator (inset left bar) — SASA pink */
-const SIDEBAR_ACCENT = '#515151';
+const SIDEBAR_ACCENT = '#7a7a7a';
 /** Expanded sidebar width — compact */
 const SIDEBAR_EXPANDED_PX = 192;
 
@@ -204,6 +208,29 @@ function AppContent() {
   const [navSearchHighlight, setNavSearchHighlight] = useState(0);
   const navSearchRef = useRef<HTMLDivElement>(null);
   const navSearchInputRef = useRef<HTMLInputElement>(null);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [profileForm, setProfileForm] = useState<ProfileFormState>({
+    firstName: '',
+    lastName: '',
+    photoURL: '',
+  });
+  const [profileSaved, setProfileSaved] = useState<ProfileFormState>({
+    firstName: '',
+    lastName: '',
+    photoURL: '',
+  });
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const [profilePhotoMenuOpen, setProfilePhotoMenuOpen] = useState(false);
+  const profilePhotoMenuRef = useRef<HTMLDivElement>(null);
+  const profilePhotoInputRef = useRef<HTMLInputElement>(null);
+  const [photoCropOpen, setPhotoCropOpen] = useState(false);
+  const [photoCropSrc, setPhotoCropSrc] = useState('');
+  const [photoCropOffset, setPhotoCropOffset] = useState({ x: 0, y: 0 });
+  const [photoCropZoom, setPhotoCropZoom] = useState(1);
+  const [photoCropDragging, setPhotoCropDragging] = useState(false);
+  const [photoCropImageSize, setPhotoCropImageSize] = useState({ width: 1, height: 1 });
+  const photoCropDragRef = useRef({ startX: 0, startY: 0, originX: 0, originY: 0 });
 
   useEffect(() => {
     if (user?.role === 'marketing' && activeTab !== 'cms') {
@@ -251,6 +278,49 @@ function AppContent() {
     return () => document.removeEventListener('mousedown', close);
   }, [navSearchOpen]);
 
+  useEffect(() => {
+    if (!profilePhotoMenuOpen) return;
+    const close = (e: MouseEvent) => {
+      if (profilePhotoMenuRef.current && !profilePhotoMenuRef.current.contains(e.target as Node)) {
+        setProfilePhotoMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [profilePhotoMenuOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadProfile = async () => {
+      if (!user) return;
+      try {
+        const snap = await getDoc(doc(db, 'users', user.id));
+        const firstName =
+          snap.exists() && typeof snap.data().name === 'string' && snap.data().name.trim().length > 0
+            ? snap.data().name.trim()
+            : user.name;
+        const lastName =
+          snap.exists() && typeof snap.data().lastName === 'string' ? snap.data().lastName.trim() : '';
+        const photoURL =
+          snap.exists() && typeof snap.data().photoURL === 'string' ? snap.data().photoURL.trim() : '';
+        if (!cancelled) {
+          const next = { firstName, lastName, photoURL };
+          setProfileSaved(next);
+          setProfileForm(next);
+        }
+      } catch (error) {
+        console.error('Error loading profile:', error);
+        if (!cancelled) {
+          setProfileForm((prev) => ({ ...prev, firstName: user.name }));
+        }
+      }
+    };
+    loadProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f9f9f9]">
@@ -268,6 +338,113 @@ function AppContent() {
   if (!user) {
     return <LoginForm />;
   }
+
+  const PHOTO_FRAME_SIZE = 260;
+  const displayName = `${profileSaved.firstName || user.name}${profileSaved.lastName ? ` ${profileSaved.lastName}` : ''}`.trim();
+
+  const handleProfilePhotoChange = async (file: File | null) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = typeof reader.result === 'string' ? reader.result : '';
+      if (!src) return;
+      const img = new window.Image();
+      img.onload = () => {
+        setPhotoCropImageSize({ width: img.naturalWidth || 1, height: img.naturalHeight || 1 });
+        setPhotoCropOffset({ x: 0, y: 0 });
+        setPhotoCropZoom(1);
+        setPhotoCropSrc(src);
+        setPhotoCropOpen(true);
+      };
+      img.src = src;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const uploadCroppedProfilePhoto = async () => {
+    if (!user || !photoCropSrc) return;
+    try {
+      setProfileSaving(true);
+      setProfileError('');
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Could not create crop canvas.');
+
+      const img = new window.Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('Could not load image for cropping.'));
+        img.src = photoCropSrc;
+      });
+
+      const fitScale = Math.max(PHOTO_FRAME_SIZE / photoCropImageSize.width, PHOTO_FRAME_SIZE / photoCropImageSize.height);
+      const renderWidth = photoCropImageSize.width * fitScale * photoCropZoom;
+      const renderHeight = photoCropImageSize.height * fitScale * photoCropZoom;
+      const drawX = (PHOTO_FRAME_SIZE - renderWidth) / 2 + photoCropOffset.x;
+      const drawY = (PHOTO_FRAME_SIZE - renderHeight) / 2 + photoCropOffset.y;
+      const outScale = canvas.width / PHOTO_FRAME_SIZE;
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, drawX * outScale, drawY * outScale, renderWidth * outScale, renderHeight * outScale);
+
+      const blob: Blob = await new Promise((resolve, reject) => {
+        canvas.toBlob((b) => {
+          if (b) resolve(b);
+          else reject(new Error('Could not export cropped image.'));
+        }, 'image/jpeg', 0.92);
+      });
+
+      const croppedFile = new File([blob], `profile_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const path = `images/profiles/${user.id}/${Date.now()}_profile.jpg`;
+      const photoURL = await uploadImage(croppedFile, path);
+      setProfileForm((prev) => ({ ...prev, photoURL }));
+      setPhotoCropOpen(false);
+      setPhotoCropSrc('');
+    } catch (error) {
+      console.error('Error uploading profile photo:', error);
+      setProfileError('Could not upload profile photo. Please try again.');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const saveProfile = async () => {
+    if (!user) return;
+    const firstName = profileForm.firstName.trim();
+    const lastName = profileForm.lastName.trim();
+    if (!firstName) {
+      setProfileError('First name is required.');
+      return;
+    }
+    try {
+      setProfileSaving(true);
+      setProfileError('');
+      const payload = {
+        name: firstName,
+        lastName,
+        photoURL: profileForm.photoURL || '',
+      };
+      try {
+        await updateDoc(doc(db, 'users', user.id), payload);
+      } catch {
+        await setDoc(doc(db, 'users', user.id), payload, { merge: true });
+      }
+      setProfileSaved({
+        firstName,
+        lastName,
+        photoURL: profileForm.photoURL || '',
+      });
+      setProfileModalOpen(false);
+    } catch (error) {
+      console.error('Error saving profile:', error);
+      setProfileError('Could not save profile. Please try again.');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
 
   const getTabs = () => {
     if (user?.role === 'marketing') {
@@ -412,12 +589,12 @@ function AppContent() {
 
   const navButtonClass = (active: boolean) =>
     `relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-medium transition-colors ${
-      active ? 'bg-gray-100 text-[#515151]' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+      active ? 'bg-[#232323] text-[#c5c5c5]' : 'text-[#c5c5c5] hover:bg-[#1a1a1a] hover:text-[#c5c5c5]'
     }`;
 
   const subButtonClass = (active: boolean) =>
     `relative flex w-full items-center gap-1.5 rounded py-1 pl-2 pr-1.5 text-left text-[11px] leading-snug font-normal transition-colors ${
-      active ? 'bg-gray-50 text-[#515151]' : 'text-gray-500 hover:bg-gray-50/80 hover:text-gray-800'
+      active ? 'bg-[#232323] text-[#c5c5c5]' : 'text-[#c5c5c5] hover:bg-[#1a1a1a] hover:text-[#c5c5c5]'
     }`;
 
   const sidebarWidth = sidebarCollapsed ? 72 : SIDEBAR_EXPANDED_PX;
@@ -441,11 +618,11 @@ function AppContent() {
               setActiveTab(item.id);
               setSuiteFlyout(null);
             }}
-            className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs ${
-              activeTab === item.id ? 'bg-gray-100 font-medium text-[#515151]' : 'text-gray-600 hover:bg-gray-50'
+                      className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs ${
+              activeTab === item.id ? 'bg-[#1a1a1a] font-medium text-[#c5c5c5]' : 'text-[#c5c5c5] hover:bg-[#1a1a1a]'
             }`}
           >
-            <item.IconEl className="h-3.5 w-3.5 shrink-0 text-gray-500" />
+            <item.IconEl className="h-3.5 w-3.5 shrink-0 text-[#c5c5c5]" />
             <span className="truncate">{item.label}</span>
           </button>
         ))}
@@ -456,22 +633,22 @@ function AppContent() {
   return (
     <div className="flex h-dvh min-h-0 overflow-hidden bg-[#f9f9f9]">
       <aside
-        className="flex min-h-0 shrink-0 flex-col border-r border-gray-200 bg-white text-gray-700 transition-[width] duration-200 ease-out"
+        className="flex min-h-0 shrink-0 flex-col bg-[#101010] text-[#c5c5c5] transition-[width] duration-200 ease-out"
         style={{ width: sidebarWidth }}
       >
         <div
-          className={`flex h-12 shrink-0 items-center border-b border-gray-200 ${sidebarCollapsed ? 'justify-center px-1' : 'gap-2 px-2'}`}
+          className={`flex h-12 shrink-0 items-center ${sidebarCollapsed ? 'justify-center px-1' : 'gap-2 px-2'}`}
         >
           <Image
             src="/sasa.png"
             alt="SASA"
             width={100}
             height={33}
-            className={`w-auto object-contain ${sidebarCollapsed ? 'h-6 max-w-[36px]' : 'h-7 max-w-[88px]'}`}
+            className={`w-auto object-contain invert ${sidebarCollapsed ? 'h-6 max-w-[36px]' : 'h-7 max-w-[88px]'}`}
             priority
           />
           {!sidebarCollapsed && (
-            <span className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+            <span className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-[#c5c5c5]">
               {t('common.businessHub')}
             </span>
           )}
@@ -501,12 +678,12 @@ function AppContent() {
                         : undefined
                     }
                   >
-                    <IconWarehouse className="h-4 w-4 shrink-0 text-gray-500" />
+                    <IconWarehouse className="h-4 w-4 shrink-0 text-[#c5c5c5]" />
                     {!sidebarCollapsed && (
                       <>
                         <span className="min-w-0 flex-1 truncate text-left">{tab.label}</span>
                         <IconChevronDown
-                          className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform ${inventoryOpen ? 'rotate-180' : ''}`}
+                          className={`h-3.5 w-3.5 shrink-0 text-[#c5c5c5] transition-transform ${inventoryOpen ? 'rotate-180' : ''}`}
                         />
                       </>
                     )}
@@ -525,7 +702,7 @@ function AppContent() {
                               : undefined
                           }
                         >
-                          <item.IconEl className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                          <item.IconEl className="h-3.5 w-3.5 shrink-0 text-[#c5c5c5]" />
                           <span className="min-w-0 truncate">{item.label}</span>
                         </button>
                       ))}
@@ -557,12 +734,12 @@ function AppContent() {
                         : undefined
                     }
                   >
-                    <IconTrending className="h-4 w-4 shrink-0 text-gray-500" />
+                    <IconTrending className="h-4 w-4 shrink-0 text-[#c5c5c5]" />
                     {!sidebarCollapsed && (
                       <>
                         <span className="min-w-0 flex-1 truncate text-left">{tab.label}</span>
                         <IconChevronDown
-                          className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform ${salesOpen ? 'rotate-180' : ''}`}
+                          className={`h-3.5 w-3.5 shrink-0 text-[#c5c5c5] transition-transform ${salesOpen ? 'rotate-180' : ''}`}
                         />
                       </>
                     )}
@@ -581,7 +758,7 @@ function AppContent() {
                               : undefined
                           }
                         >
-                          <item.IconEl className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                          <item.IconEl className="h-3.5 w-3.5 shrink-0 text-[#c5c5c5]" />
                           <span className="min-w-0 truncate">{item.label}</span>
                         </button>
                       ))}
@@ -617,21 +794,21 @@ function AppContent() {
                 className={`${navButtonClass(leafActive)} ${sidebarCollapsed ? 'justify-center px-0' : ''}`}
                 style={leafActive ? { boxShadow: `inset 2px 0 0 0 ${SIDEBAR_ACCENT}` } : undefined}
               >
-                <LeafIcon className="h-4 w-4 shrink-0 text-gray-500" />
+                <LeafIcon className="h-4 w-4 shrink-0 text-[#c5c5c5]" />
                 {!sidebarCollapsed && <span className="min-w-0 flex-1 truncate text-left">{tab.label}</span>}
               </button>
             );
           })}
         </nav>
 
-        <div className="mt-auto border-t border-gray-200 px-1.5 py-2">
+        <div className="mt-auto px-1.5 py-2">
           <button
             type="button"
             onClick={() => {
               setSidebarCollapsed((c) => !c);
               setSuiteFlyout(null);
             }}
-            className="flex w-full items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-800"
+            className="flex w-full items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-[#c5c5c5] transition-colors hover:bg-[#1a1a1a] hover:text-[#c5c5c5]"
             title={sidebarCollapsed ? t('common.expandSidebar') : t('common.collapseSidebar')}
           >
             <IconChevronLeft className={`h-4 w-4 transition-transform ${sidebarCollapsed ? 'rotate-180' : ''}`} />
@@ -641,9 +818,9 @@ function AppContent() {
       </aside>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-12 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-3 lg:px-5">
+        <header className="flex h-12 shrink-0 items-center gap-3 bg-[#101010] px-3 lg:px-5">
           <div ref={navSearchRef} className="relative min-w-0 max-w-xl flex-1">
-            <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 z-[1] h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+            <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 z-[1] h-3.5 w-3.5 -translate-y-1/2 text-[#c5c5c5]" />
             <input
               ref={navSearchInputRef}
               type="search"
@@ -691,7 +868,7 @@ function AppContent() {
                   }
                 }
               }}
-              className="w-full rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-3 text-xs text-gray-800 placeholder:text-gray-400 focus:border-[#515151]/40 focus:outline-none focus:ring-1 focus:ring-[#515151]/25"
+              className="w-full rounded-full border border-gray-700 bg-[#252525] py-1.5 pl-9 pr-3 text-xs text-[#c5c5c5] placeholder:text-[#c5c5c5] focus:border-[#515151]/60 focus:outline-none focus:ring-1 focus:ring-[#515151]/30"
               aria-label={t('common.searchPlaceholder')}
             />
 
@@ -740,33 +917,57 @@ function AppContent() {
                 setUserMenuOpen((o) => !o);
                 setSuiteFlyout(null);
               }}
-              className="flex max-w-[min(100vw-5rem,280px)] items-center gap-2 rounded-lg py-1 pl-1 pr-1.5 transition-colors hover:bg-gray-50"
+              className="flex max-w-[min(100vw-5rem,280px)] items-center gap-2 rounded-lg py-1 pl-1 pr-1.5 transition-colors hover:bg-[#1a1a1a]"
             >
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-300 text-gray-700">
-                <IconUserOutline className="h-4 w-4" />
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#1a1a1a] text-[#c5c5c5]">
+                {(profileModalOpen ? profileForm.photoURL : profileSaved.photoURL) ? (
+                  <img
+                    src={profileModalOpen ? profileForm.photoURL : profileSaved.photoURL}
+                    alt="Profile"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <IconUserOutline className="h-4 w-4" />
+                )}
               </div>
               <div className="hidden min-w-0 items-center gap-2 sm:flex">
-                <span className="truncate text-xs font-bold text-gray-900">{user.name}</span>
+                <span className="truncate text-xs font-bold text-[#c5c5c5]">{displayName}</span>
                 <span
-                  className="shrink-0 rounded-md border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-semibold capitalize leading-none text-gray-600"
+                  className="shrink-0 rounded-md border border-gray-700 bg-[#1a1a1a] px-1.5 py-0.5 text-[10px] font-semibold capitalize leading-none text-[#c5c5c5]"
                   title={user.role}
                 >
                   {user.role}
                 </span>
               </div>
               <IconChevronDown
-                className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`}
+                className={`h-3.5 w-3.5 shrink-0 text-[#c5c5c5] transition-transform ${userMenuOpen ? 'rotate-180' : ''}`}
               />
             </button>
 
             {userMenuOpen && (
               <div
-                className="absolute right-0 top-full z-[70] mt-1 w-52 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+                className="absolute right-0 top-full z-[70] mt-1 w-56 overflow-hidden rounded-lg border border-gray-700 bg-[#101010] py-1 shadow-lg"
                 role="menu"
               >
-                <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#c5c5c5]">
                   {t('language.selectLanguage')}
                 </p>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setProfileForm(profileSaved);
+                    setProfilePhotoMenuOpen(false);
+                    setProfileModalOpen(true);
+                    setUserMenuOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-[#c5c5c5] transition-colors hover:bg-[#1a1a1a]"
+                >
+                  <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5.121 17.804A10.954 10.954 0 0112 15c2.5 0 4.847.816 6.879 2.196M15 9a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  Profile
+                </button>
                 {(
                   [
                     { code: 'en' as const, name: t('language.english') },
@@ -783,8 +984,8 @@ function AppContent() {
                     }}
                     className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${
                       locale === lang.code
-                        ? 'bg-gray-50 font-medium text-[#515151]'
-                        : 'text-gray-700 hover:bg-gray-50'
+                        ? 'bg-[#1a1a1a] font-medium text-[#c5c5c5]'
+                        : 'text-[#c5c5c5] hover:bg-[#1a1a1a]'
                     }`}
                   >
                     <span>{lang.name}</span>
@@ -799,7 +1000,7 @@ function AppContent() {
                     )}
                   </button>
                 ))}
-                <div className="my-1 border-t border-gray-100" role="separator" />
+                <div className="my-1 border-t border-gray-700" role="separator" />
                 <button
                   type="button"
                   role="menuitem"
@@ -807,7 +1008,7 @@ function AppContent() {
                     setUserMenuOpen(false);
                     logout();
                   }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-700 transition-colors hover:bg-red-50 hover:text-red-800"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-[#c5c5c5] transition-colors hover:bg-[#1a1a1a]"
                 >
                   <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
                     <path
@@ -822,6 +1023,254 @@ function AppContent() {
             )}
           </div>
         </header>
+
+        {profileModalOpen && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-5 shadow-2xl">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-900">Profile Settings</h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileForm(profileSaved);
+                    setProfilePhotoMenuOpen(false);
+                    setProfileModalOpen(false);
+                    setProfileError('');
+                  }}
+                  className="rounded p-1 text-gray-600 hover:bg-gray-100"
+                  aria-label="Close profile settings"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="mb-4 flex items-center gap-3">
+                <div ref={profilePhotoMenuRef} className="group relative">
+                  <div className="h-14 w-14 overflow-hidden rounded-full border border-gray-300 bg-gray-100">
+                    {profileForm.photoURL ? (
+                      <img src={profileForm.photoURL} alt="Profile" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-gray-500">
+                        <IconUserOutline className="h-6 w-6" />
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setProfilePhotoMenuOpen((v) => !v)}
+                    className="absolute bottom-0 right-0 rounded-full border border-gray-300 bg-white p-1 text-gray-700 opacity-0 shadow-sm transition-opacity hover:bg-gray-100 group-hover:opacity-100"
+                    aria-label="Photo options"
+                  >
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
+                    </svg>
+                  </button>
+
+                  {profilePhotoMenuOpen && (
+                    <div className="absolute -right-2 top-16 z-10 w-44 overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProfilePhotoMenuOpen(false);
+                          profilePhotoInputRef.current?.click();
+                        }}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50"
+                      >
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16l4-4a2 2 0 012.828 0L14 16m-1-1 1.586-1.586a2 2 0 012.828 0L21 17m-9-9h.01M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        Choose new photo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProfileForm((prev) => ({ ...prev, photoURL: '' }));
+                          setProfilePhotoMenuOpen(false);
+                        }}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-red-600 hover:bg-red-50"
+                      >
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7V5h6v2m-7 4v6m4-6v6m4-6v6M8 7h8l-1 13H9L8 7z" />
+                        </svg>
+                        Delete photo
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-gray-900">{displayName || user.name}</p>
+                  <p className="truncate text-xs text-gray-500">{user.email}</p>
+                </div>
+                <input
+                  ref={profilePhotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleProfilePhotoChange(e.target.files?.[0] ?? null)}
+                />
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="mb-1 block text-xs text-gray-700">First name</label>
+                  <input
+                    type="text"
+                    value={profileForm.firstName}
+                    onChange={(e) => setProfileForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#515151]"
+                    placeholder="First name"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-700">Last name</label>
+                  <input
+                    type="text"
+                    value={profileForm.lastName}
+                    onChange={(e) => setProfileForm((prev) => ({ ...prev, lastName: e.target.value }))}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#515151]"
+                    placeholder="Last name"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-700">Email</label>
+                  <input
+                    type="email"
+                    value={user.email}
+                    readOnly
+                    className="w-full cursor-not-allowed rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm text-gray-500"
+                  />
+                </div>
+              </div>
+
+              {profileError && <p className="mt-3 text-xs text-red-400">{profileError}</p>}
+
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileForm(profileSaved);
+                    setProfilePhotoMenuOpen(false);
+                    setProfileModalOpen(false);
+                    setProfileError('');
+                  }}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={profileSaving}
+                  onClick={saveProfile}
+                  className="rounded-md bg-[#515151] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#626262] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {profileSaving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {photoCropOpen && (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-5 shadow-2xl">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-900">Adjust profile photo</h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPhotoCropOpen(false);
+                    setPhotoCropSrc('');
+                    setPhotoCropDragging(false);
+                  }}
+                  className="rounded p-1 text-gray-600 hover:bg-gray-100"
+                  aria-label="Close crop editor"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="mb-3 text-xs text-gray-500">Drag to position and use zoom to fit inside the frame.</div>
+              <div
+                className="relative mx-auto overflow-hidden rounded-full border border-gray-300 bg-gray-100"
+                style={{ width: PHOTO_FRAME_SIZE, height: PHOTO_FRAME_SIZE, cursor: photoCropDragging ? 'grabbing' : 'grab' }}
+                onMouseDown={(e) => {
+                  photoCropDragRef.current = {
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    originX: photoCropOffset.x,
+                    originY: photoCropOffset.y,
+                  };
+                  setPhotoCropDragging(true);
+                }}
+                onMouseMove={(e) => {
+                  if (!photoCropDragging) return;
+                  const dx = e.clientX - photoCropDragRef.current.startX;
+                  const dy = e.clientY - photoCropDragRef.current.startY;
+                  setPhotoCropOffset({ x: photoCropDragRef.current.originX + dx, y: photoCropDragRef.current.originY + dy });
+                }}
+                onMouseUp={() => setPhotoCropDragging(false)}
+                onMouseLeave={() => setPhotoCropDragging(false)}
+              >
+                {photoCropSrc && (
+                  <img
+                    src={photoCropSrc}
+                    alt="Crop preview"
+                    draggable={false}
+                    className="select-none"
+                    style={{
+                      position: 'absolute',
+                      left: '50%',
+                      top: '50%',
+                      transform: `translate(calc(-50% + ${photoCropOffset.x}px), calc(-50% + ${photoCropOffset.y}px)) scale(${photoCropZoom})`,
+                      width: `${Math.max(PHOTO_FRAME_SIZE, (photoCropImageSize.width / photoCropImageSize.height) * PHOTO_FRAME_SIZE)}px`,
+                      height: `${Math.max(PHOTO_FRAME_SIZE, (photoCropImageSize.height / photoCropImageSize.width) * PHOTO_FRAME_SIZE)}px`,
+                      objectFit: 'cover',
+                    }}
+                  />
+                )}
+              </div>
+
+              <div className="mt-4">
+                <label className="mb-1 block text-xs text-gray-700">Zoom</label>
+                <input
+                  type="range"
+                  min={1}
+                  max={2.6}
+                  step={0.01}
+                  value={photoCropZoom}
+                  onChange={(e) => setPhotoCropZoom(Number(e.target.value))}
+                  className="w-full"
+                />
+              </div>
+
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPhotoCropOpen(false);
+                    setPhotoCropSrc('');
+                    setPhotoCropDragging(false);
+                  }}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={profileSaving}
+                  onClick={uploadCroppedProfilePhoto}
+                  className="rounded-md bg-[#515151] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#626262] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {profileSaving ? 'Uploading...' : 'Use photo'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <main className="min-h-0 flex-1 overflow-y-auto px-4 py-8 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-7xl">
