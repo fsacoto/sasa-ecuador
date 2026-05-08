@@ -500,7 +500,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
           {/* Step 1: Upload */}
           {step === 'upload' && (
             <div className="space-y-6">
-              <div className="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-[#4f0c1b] transition-colors">
+              <div className="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-[#515151] transition-colors">
                 <input
                   type="file"
                   accept=".csv"
@@ -560,7 +560,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                       value={invoicePrefix}
                       onChange={(e) => setInvoicePrefix(e.target.value)}
                       placeholder="e.g., INV-2025-OCT"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                     />
                     <p className="text-xs text-gray-500 mt-1">
                       {Object.values(columnMapping).includes('invoice') 
@@ -574,7 +574,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                       type="date"
                       value={purchaseDate}
                       onChange={(e) => setPurchaseDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                     />
                   </div>
                 </div>
@@ -587,7 +587,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                     value={invoiceLink}
                     onChange={(e) => setInvoiceLink(e.target.value)}
                     placeholder="https://example.com/invoice.pdf or Google Drive link"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                   />
                   <p className="text-xs text-gray-500 mt-1">
                     Link to the invoice document (PDF, Google Drive, etc.). This will be applied to all imported purchase orders and linked to inventory items when verified.
@@ -599,7 +599,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                     <select
                       value={defaultSupplier}
                       onChange={(e) => setDefaultSupplier(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                     >
                       <option value="">None (add later)</option>
                       {suppliers.map((supplier) => (
@@ -614,7 +614,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                     <select
                       value={defaultDestination}
                       onChange={(e) => setDefaultDestination(e.target.value as 'Ecuador' | 'USA')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                     >
                       <option value="Ecuador">Ecuador</option>
                       <option value="USA">USA</option>
@@ -634,7 +634,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                           setDefaultCurrency(e.target.value);
                           setExchangeRateManuallySet(false); // Reset manual flag when currency changes
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                       >
                         <option value="USD">USD - US Dollar</option>
                         <option value="COP">COP - Colombian Peso</option>
@@ -659,7 +659,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                             setExchangeRate(parseFloat(e.target.value) || 1);
                             setExchangeRateManuallySet(true);
                           }}
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                           placeholder="1.0"
                         />
                         {!exchangeRateManuallySet && exchangeRates && defaultCurrency !== 'USD' && (
@@ -709,7 +709,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                       <select
                         value={columnMapping[header] || ''}
                         onChange={(e) => setColumnMapping({ ...columnMapping, [header]: e.target.value })}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] text-sm"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] text-sm"
                       >
                         <option value="">Skip this column</option>
                         <option value="invoice">Invoice Number</option>
@@ -737,7 +737,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                       if (dbField) {
                         return (
                           <div key={csvCol}>
-                            <span className="text-[#4f0c1b] font-semibold">{dbField}:</span> {parsedData[0][csvCol]}
+                            <span className="text-[#515151] font-semibold">{dbField}:</span> {parsedData[0][csvCol]}
                           </div>
                         );
                       }
@@ -767,7 +767,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
               <h4 className="text-xl font-semibold text-gray-900 mb-2">Import Complete!</h4>
               <div className="space-y-2 text-sm">
                 <p className="text-gray-700">
-                  Successfully imported <span className="font-semibold text-[#4f0c1b]">{importResults.success}</span> purchase orders
+                  Successfully imported <span className="font-semibold text-[#515151]">{importResults.success}</span> purchase orders
                 </p>
                 {importResults.autoLinked && importResults.autoLinked > 0 && (
                   <p className="text-green-600 font-medium">
@@ -782,7 +782,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
               </div>
               <button
                 onClick={onClose}
-                className="mt-6 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm"
+                className="mt-6 bg-[#515151] hover:bg-[#000000] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm"
               >
                 Done
               </button>
@@ -803,7 +803,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
             <button
               type="button"
               onClick={handleImport}
-              className="flex-1 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
+              className="flex-1 bg-[#515151] hover:bg-[#000000] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
             >
               Import {parsedData.length} Items
             </button>

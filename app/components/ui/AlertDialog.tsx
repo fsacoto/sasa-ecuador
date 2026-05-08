@@ -37,7 +37,7 @@ export default function AlertDialog({
         <div className="flex justify-end px-6 py-4 border-t border-gray-100">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-[#4f0c1b] text-white hover:bg-[#6b1824] font-medium transition-colors"
+            className="px-4 py-2 rounded-xl bg-[#515151] text-white hover:bg-[#000000] font-medium transition-colors"
           >
             {buttonText}
           </button>

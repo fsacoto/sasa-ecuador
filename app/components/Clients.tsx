@@ -246,7 +246,7 @@ export default function Clients() {
  {(hasPermission('clients.create') || hasPermission('clients.create.ecuador') || hasPermission('clients.edit') || hasPermission('clients.edit.ecuador')) && (
           <button
             onClick={() => openModal()}
-            className="bg-[#4f0c1b] text-white px-4 py-2 rounded-lg hover:bg-[#5c1327] transition-colors"
+            className="bg-[#515151] text-white px-4 py-2 rounded-lg hover:bg-[#000000] transition-colors"
           >
             {t('clients.addClient')}
           </button>
@@ -262,13 +262,13 @@ export default function Clients() {
               placeholder={t('clients.searchClients')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             />
           </div>
           <select
             value={filterCountry}
             onChange={(e) => setFilterCountry(e.target.value as 'Ecuador' | 'USA' | 'All')}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
           >
             <option value="All">{t('clients.allCountries')}</option>
             <option value="Ecuador">Ecuador</option>
@@ -467,7 +467,7 @@ export default function Clients() {
                     required
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b]"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
                   />
                 </div>
                 <div>
@@ -479,7 +479,7 @@ export default function Clients() {
                     value={formData.country}
                     onChange={(e) => setFormData({ ...formData, country: e.target.value as 'Ecuador' | 'USA' })}
                     disabled={user?.role === 'sales'}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] disabled:bg-gray-100"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] disabled:bg-gray-100"
                   >
                     <option value="Ecuador">Ecuador</option>
                     <option value="USA">USA</option>
@@ -495,7 +495,7 @@ export default function Clients() {
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b]"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
                   />
                 </div>
                 <div>
@@ -506,7 +506,7 @@ export default function Clients() {
                     type="tel"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b]"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
                   />
                 </div>
               </div>
@@ -519,7 +519,7 @@ export default function Clients() {
                   required
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b]"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
                 />
               </div>
               <div>
@@ -531,7 +531,7 @@ export default function Clients() {
                   required
                   value={formData.city}
                   onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b]"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
                 />
               </div>
               <div>
@@ -542,7 +542,7 @@ export default function Clients() {
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   rows={3}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b]"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
                 />
               </div>
               <div className="flex justify-end gap-3 pt-4">
@@ -555,7 +555,7 @@ export default function Clients() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors"
+                  className="px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors"
                 >
                   {t('clients.save')}
                 </button>

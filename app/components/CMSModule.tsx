@@ -209,7 +209,7 @@ export default function CMSModule() {
               placeholder="Search products..."
               value={filters.search}
               onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             />
           </div>
           
@@ -218,7 +218,7 @@ export default function CMSModule() {
             <select
               value={filters.category}
               onChange={(e) => setFilters({ ...filters, category: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             >
               <option value="all">All Categories</option>
               {categories.map(category => (
@@ -232,7 +232,7 @@ export default function CMSModule() {
             <select
               value={filters.line}
               onChange={(e) => setFilters({ ...filters, line: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             >
               <option value="all">All Lines</option>
               {lines.map(line => (
@@ -246,7 +246,7 @@ export default function CMSModule() {
             <select
               value={filters.availability}
               onChange={(e) => setFilters({ ...filters, availability: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             >
               <option value="all">All Items</option>
               <option value="in-stock">In Stock</option>
@@ -353,7 +353,7 @@ export default function CMSModule() {
                   <div
                     key={item.id}
                     className={`border rounded-lg p-4 transition-all duration-200 ${
-                      isSelected ? 'border-[#4f0c1b] bg-[#4f0c1b]/5' : 'border-gray-200 hover:border-gray-300'
+                      isSelected ? 'border-[#515151] bg-[#515151]/5' : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
                     {/* Image */}
@@ -382,7 +382,7 @@ export default function CMSModule() {
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => handleSelectItem(item.id)}
-                            className="ml-2 h-4 w-4 text-[#4f0c1b] focus:ring-[#4f0c1b] border-gray-300 rounded"
+                            className="ml-2 h-4 w-4 text-[#515151] focus:ring-[#515151] border-gray-300 rounded"
                           />
                         )}
                       </div>

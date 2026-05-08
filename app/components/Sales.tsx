@@ -244,7 +244,7 @@ export default function Sales() {
               type="date"
               value={invoiceDate}
               onChange={(e) => setInvoiceDate(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             />
           </div>
         </div>
@@ -302,7 +302,7 @@ export default function Sales() {
             <span className="text-gray-500 italic">{t('sales.walkInCustomer')}</span>
             <button
               onClick={() => setShowClientModal(true)}
-              className="px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors"
+              className="px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors"
             >
               {t('sales.selectClient')}
             </button>
@@ -326,7 +326,7 @@ export default function Sales() {
                 setShowDropdown(true);
               }}
               onFocus={() => setShowDropdown(true)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             />
             
             {showDropdown && filteredInventory.length > 0 && (
@@ -337,7 +337,7 @@ export default function Sales() {
                     onClick={() => addProductToInvoice(product)}
                     className="px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
                   >
-                    <div className="font-mono text-sm font-semibold text-[#4f0c1b]">{product.sku}</div>
+                    <div className="font-mono text-sm font-semibold text-[#515151]">{product.sku}</div>
                     <div className="text-sm text-gray-600">{product.name}</div>
                     <div className="text-xs text-gray-500">{t('sales.stock')}: {product.ecuadorStock} | {product.category} - {product.line}</div>
                   </div>
@@ -459,7 +459,7 @@ export default function Sales() {
               </span>
             </div>
             
-            <div className="flex justify-between font-bold text-xl text-[#4f0c1b] pt-3 border-t-2 border-gray-300">
+            <div className="flex justify-between font-bold text-xl text-[#515151] pt-3 border-t-2 border-gray-300">
               <span>{t('sales.grandTotal')}:</span>
               <span>${calculateGrandTotal().toFixed(2)}</span>
             </div>
@@ -475,7 +475,7 @@ export default function Sales() {
                 <select
                   value={paymentMethod}
                   onChange={(e) => setPaymentMethod(e.target.value as 'card' | 'cash' | 'transfer' | '')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 >
                   <option value="">{t('sales.selectPaymentMethod')}</option>
                   <option value="card">{t('sales.card')}</option>
@@ -494,7 +494,7 @@ export default function Sales() {
                     onChange={(e) => setPaymentComment(e.target.value)}
                     placeholder={t('sales.paymentDetailsPlaceholder')}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
               )}
@@ -503,7 +503,7 @@ export default function Sales() {
 
           <button
             onClick={submitInvoice}
-            className="w-full px-6 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium mt-4"
+            className="w-full px-6 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium mt-4"
           >
             {t('sales.submitInvoice')}
           </button>

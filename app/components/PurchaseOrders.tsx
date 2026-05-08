@@ -1445,11 +1445,11 @@ export default function PurchaseOrders() {
       );
     }
     return sortDirection === 'asc' ? (
-      <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
       </svg>
     ) : (
-      <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
       </svg>
     );
@@ -1523,7 +1523,7 @@ export default function PurchaseOrders() {
                     }}
                     className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors text-gray-700 hover:bg-gray-50"
                   >
-                    <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
                     </svg>
                     {t('purchaseOrders.importOrders')}
@@ -1559,7 +1559,7 @@ export default function PurchaseOrders() {
 
           <button
             onClick={() => setIsFormOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow-md active:scale-95"
+            className="flex items-center gap-2 px-4 py-2 bg-[#515151] hover:bg-[#000000] text-white rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow-md active:scale-95"
           >
             <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -1576,7 +1576,7 @@ export default function PurchaseOrders() {
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
-              showFilters ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
+              showFilters ? 'bg-[#515151] text-white border-[#515151]' : ''
             }`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1596,7 +1596,7 @@ export default function PurchaseOrders() {
           <button
             onClick={() => setShowGroupByDropdown(!showGroupByDropdown)}
             className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
-              groupByField ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
+              groupByField ? 'bg-[#515151] text-white border-[#515151]' : ''
             }`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1644,7 +1644,7 @@ export default function PurchaseOrders() {
                       setExpandedGroups(new Set()); // Reset expanded groups when clearing grouping
                     }}
                     className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                      !groupByField ? 'bg-[#4f0c1b] text-white' : 'text-gray-700 hover:bg-gray-50'
+                      !groupByField ? 'bg-[#515151] text-white' : 'text-gray-700 hover:bg-gray-50'
                     }`}
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1661,7 +1661,7 @@ export default function PurchaseOrders() {
                         setExpandedGroups(new Set()); // Reset expanded groups when changing grouping
                       }}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                        groupByField === field.key ? 'bg-[#4f0c1b] text-white' : 'text-gray-700 hover:bg-gray-50'
+                        groupByField === field.key ? 'bg-[#515151] text-white' : 'text-gray-700 hover:bg-gray-50'
                       }`}
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1717,8 +1717,8 @@ export default function PurchaseOrders() {
                             setHiddenColumns(prev => new Set([...prev, column.key]));
                           }
                         }}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:ring-offset-2 ${
-                          hiddenColumns.has(column.key) ? 'bg-gray-300' : 'bg-[#4f0c1b]'
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#515151] focus:ring-offset-2 ${
+                          hiddenColumns.has(column.key) ? 'bg-gray-300' : 'bg-[#515151]'
                         }`}
                       >
                         <span
@@ -1756,7 +1756,7 @@ export default function PurchaseOrders() {
                     placeholder={t('purchaseOrders.searchPlaceholder')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                   <svg className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -1779,7 +1779,7 @@ export default function PurchaseOrders() {
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">{t('purchaseOrders.allStatus')}</option>
                   <option value="Ordered">📦 {t('purchaseOrders.ordered')}</option>
@@ -1795,7 +1795,7 @@ export default function PurchaseOrders() {
                 <select
                   value={filterSupplier}
                   onChange={(e) => setFilterSupplier(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">{t('purchaseOrders.allSuppliers')}</option>
                   {suppliers.map(supplier => (
@@ -1810,7 +1810,7 @@ export default function PurchaseOrders() {
                 <select
                   value={filterDestination}
                   onChange={(e) => setFilterDestination(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">{t('purchaseOrders.allDestinations')}</option>
                   <option value="Ecuador">{t('purchaseOrders.ecuador')}</option>
@@ -1824,7 +1824,7 @@ export default function PurchaseOrders() {
                 <select
                   value={filterCategory}
                   onChange={(e) => setFilterCategory(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">{t('purchaseOrders.allCategories')}</option>
                   {predefinedCategories.map(cat => (
@@ -1846,7 +1846,7 @@ export default function PurchaseOrders() {
                 <select
                   value={filterLine}
                   onChange={(e) => setFilterLine(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">{t('purchaseOrders.allLines')}</option>
                   {predefinedLines.map(line => (
@@ -1870,7 +1870,7 @@ export default function PurchaseOrders() {
                   type="checkbox"
                   checked={filterDuplicateSku}
                   onChange={(e) => setFilterDuplicateSku(e.target.checked)}
-                  className="w-4 h-4 text-[#4f0c1b] border-gray-300 rounded focus:ring-[#4f0c1b] focus:ring-2"
+                  className="w-4 h-4 text-[#515151] border-gray-300 rounded focus:ring-[#515151] focus:ring-2"
                 />
                 <span className="text-gray-700">
                   {t('purchaseOrders.duplicateSkus')} ({duplicateSkus.length} {t('purchaseOrders.sku')}s {t('common.with')} {t('common.multiple')} {t('purchaseOrders.items')})
@@ -1884,7 +1884,7 @@ export default function PurchaseOrders() {
               <select
                 value={filterQuantityIssues}
                 onChange={(e) => setFilterQuantityIssues(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm bg-white"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
               >
                 <option value="all">{t('purchaseOrders.allOrders') || 'All Orders'}</option>
                 <option value="problems">⚠️ {t('purchaseOrders.withProblems') || 'With Problems'}</option>
@@ -1907,7 +1907,7 @@ export default function PurchaseOrders() {
                     setFilterLine('all');
                     setFilterQuantityIssues('all');
                   }}
-                  className="text-[#4f0c1b] hover:text-[#3d0a15] font-medium text-sm"
+                  className="text-[#515151] hover:text-[#000000] font-medium text-sm"
                 >
                   {t('purchaseOrders.clearAllFilters')}
                 </button>
@@ -1959,7 +1959,7 @@ export default function PurchaseOrders() {
                     <select
                       value={selectedInventoryId}
                       onChange={(e) => setSelectedInventoryId(e.target.value)}
-                      className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent bg-white text-sm"
+                      className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent bg-white text-sm"
                     >
                       <option value="">
                         {editingOrder ? t('purchaseOrders.keepCurrentCreateNew') : t('purchaseOrders.selectExistingOrCreate')}
@@ -1994,7 +1994,7 @@ export default function PurchaseOrders() {
                     </p>
                   )}
                   {isCreatingNewItem && (
-                    <p className="text-xs text-[#4f0c1b] mt-1.5 font-medium">
+                    <p className="text-xs text-[#515151] mt-1.5 font-medium">
                       {t('purchaseOrders.newProductWillBeAdded')}
                     </p>
                   )}
@@ -2009,7 +2009,7 @@ export default function PurchaseOrders() {
                     required
                     value={formData.invoice}
                     onChange={(e) => setFormData({ ...formData, invoice: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
                 <div>
@@ -2018,7 +2018,7 @@ export default function PurchaseOrders() {
                     type="url"
                     value={formData.invoiceLink}
                     onChange={(e) => setFormData({ ...formData, invoiceLink: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
               </div>
@@ -2039,7 +2039,7 @@ export default function PurchaseOrders() {
                           setFormData({ ...formData, supplierId: e.target.value });
                         }
                       }}
-                      className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent ${supplierInputMode === 'text' ? 'hidden' : ''}`}
+                      className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent ${supplierInputMode === 'text' ? 'hidden' : ''}`}
                   >
                     <option value="">{t('purchaseOrders.selectSupplier')}</option>
                     {suppliers.map((supplier) => (
@@ -2069,7 +2069,7 @@ export default function PurchaseOrders() {
                         }
                       }}
                       placeholder={t('purchaseOrders.enterSupplierName') || 'Enter supplier name'}
-                      className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent ${supplierInputMode === 'select' ? 'hidden' : ''}`}
+                      className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent ${supplierInputMode === 'select' ? 'hidden' : ''}`}
                     />
                     {supplierInputMode === 'text' && (
                       <button
@@ -2092,7 +2092,7 @@ export default function PurchaseOrders() {
                     type="text"
                     value={formData.supplierSKU}
                     onChange={(e) => setFormData({ ...formData, supplierSKU: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
               </div>
@@ -2110,7 +2110,7 @@ export default function PurchaseOrders() {
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     placeholder={isCreatingNewItem ? t('purchaseOrders.productNamePlaceholder') : t('purchaseOrders.orderDescription')}
                     disabled={!!(selectedInventoryId && selectedInventoryId !== 'new' && !editingOrder)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500"
                   />
                 </div>
 
@@ -2138,7 +2138,7 @@ export default function PurchaseOrders() {
                             setFormData({ ...formData, category: e.target.value });
                           }
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                       >
                         <option value="">{t('purchaseOrders.select')}</option>
                         {predefinedCategories.map(cat => (
@@ -2163,7 +2163,7 @@ export default function PurchaseOrders() {
                           value={formData.category}
                           onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                           placeholder={t('purchaseOrders.newCategory')}
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                           autoFocus
                         />
                         <button
@@ -2199,7 +2199,7 @@ export default function PurchaseOrders() {
                             setFormData({ ...formData, line: e.target.value });
                           }
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                       >
                         <option value="">{t('purchaseOrders.select')}</option>
                         {predefinedLines.map(line => (
@@ -2224,7 +2224,7 @@ export default function PurchaseOrders() {
                           value={formData.line}
                           onChange={(e) => setFormData({ ...formData, line: e.target.value })}
                           placeholder={t('purchaseOrders.newLine')}
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                           autoFocus
                         />
                         <button
@@ -2249,17 +2249,17 @@ export default function PurchaseOrders() {
                         onChange={(e) => handleSkuChange(e.target.value)}
                         placeholder={isCreatingNewItem ? t('purchaseOrders.auto') : ''}
                         disabled={!!(selectedInventoryId && selectedInventoryId !== 'new' && !editingOrder)}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 font-mono text-sm"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 font-mono text-sm"
                       />
                       {(isCreatingNewItem || editingOrder) && (
                         <button
                           type="button"
                           onClick={handleRegenerateSku}
                           disabled={!formData.category || !formData.line}
-                          className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-white hover:border-[#4f0c1b] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                          className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-white hover:border-[#515151] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                           title={t('purchaseOrders.regenerateSkuFromCategory')}
                         >
-                          <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                           </svg>
                         </button>
@@ -2273,7 +2273,7 @@ export default function PurchaseOrders() {
                   </p>
                 )}
                 {editingOrder && formData.category && formData.line && (
-                  <p className="text-xs text-[#4f0c1b]">
+                  <p className="text-xs text-[#515151]">
                     {t('purchaseOrders.tipUpdateCategory')}
                   </p>
                 )}
@@ -2288,7 +2288,7 @@ export default function PurchaseOrders() {
                     min="0"
                     value={formData.quantity}
                     onChange={(e) => setFormData({ ...formData, quantity: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
                 <div>
@@ -2297,7 +2297,7 @@ export default function PurchaseOrders() {
                     required
                     value={formData.destinationStock}
                     onChange={(e) => setFormData({ ...formData, destinationStock: e.target.value as 'Ecuador' | 'USA' })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   >
                     <option value="Ecuador">Ecuador</option>
                     <option value="USA">USA</option>
@@ -2320,7 +2320,7 @@ export default function PurchaseOrders() {
                         setExchangeRateManuallySet(false); // Allow auto-update for new orders
                       }
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   >
                     <option value="USD">USD - US Dollar</option>
                     <option value="COP">COP - Colombian Peso</option>
@@ -2341,7 +2341,7 @@ export default function PurchaseOrders() {
                     step="0.01"
                     value={formData.costPerUnit}
                     onChange={(e) => setFormData({ ...formData, costPerUnit: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
                 <div>
@@ -2352,7 +2352,7 @@ export default function PurchaseOrders() {
                     step="0.01"
                     value={formData.discountPerUnit}
                     onChange={(e) => setFormData({ ...formData, discountPerUnit: parseFloat(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
                 <div>
@@ -2367,7 +2367,7 @@ export default function PurchaseOrders() {
                         setFormData({ ...formData, exchangeRate: parseFloat(e.target.value) || 1 });
                         setExchangeRateManuallySet(true);
                       }}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                     />
                     <button
                       type="button"
@@ -2410,8 +2410,8 @@ export default function PurchaseOrders() {
 
 
               {/* Cost Summary */}
-              <div className="bg-white border-2 border-[#4f0c1b] rounded-lg p-4">
-                <h4 className="font-semibold mb-3 text-[#4f0c1b]">{t('purchaseOrders.costSummary')}</h4>
+              <div className="bg-white border-2 border-[#515151] rounded-lg p-4">
+                <h4 className="font-semibold mb-3 text-[#515151]">{t('purchaseOrders.costSummary')}</h4>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between text-gray-600">
                     <span>{t('purchaseOrders.productCost')} ({formData.currency}):</span>
@@ -2427,7 +2427,7 @@ export default function PurchaseOrders() {
                       <span>${totals.costInUSD.toFixed(2)}</span>
                     </div>
                   </div>
-                  <div className="bg-[#4f0c1b] text-white rounded-lg p-3 mt-3">
+                  <div className="bg-[#515151] text-white rounded-lg p-3 mt-3">
                     <div className="flex justify-between font-semibold">
                       <span>{t('purchaseOrders.costPerUnitLabel')}</span>
                       <span>${(totals.costInUSD / formData.quantity).toFixed(2)}</span>
@@ -2446,7 +2446,7 @@ export default function PurchaseOrders() {
                   required
                   value={formData.purchaseDate}
                   onChange={(e) => setFormData({ ...formData, purchaseDate: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   {t('purchaseOrders.productImagesManaged')}
@@ -2465,7 +2465,7 @@ export default function PurchaseOrders() {
               <button
                 type="submit"
                 onClick={handleSubmit}
-                className="flex-1 bg-[#4f0c1b] hover:bg-[#3d0a15] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
+                className="flex-1 bg-[#515151] hover:bg-[#000000] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
               >
                 {editingOrder ? t('purchaseOrders.updatePurchaseOrder') : t('purchaseOrders.addPurchaseOrder')}
               </button>
@@ -2702,7 +2702,7 @@ export default function PurchaseOrders() {
                         {supplier ? (
                           <button
                             onClick={() => setSelectedSupplier(supplier)}
-                            className="text-[#4f0c1b] hover:text-[#3d0a15] hover:underline transition-colors font-medium"
+                            className="text-[#515151] hover:text-[#000000] hover:underline transition-colors font-medium"
                           >
                             {supplier.name}
                           </button>
@@ -2757,7 +2757,7 @@ export default function PurchaseOrders() {
                           <select
                             value={order.status || 'Ordered'}
                             onChange={(e) => handleStatusChange(order, e.target.value as PurchaseOrderStatus)}
-                            className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:ring-2 focus:ring-[#4f0c1b] ${
+                            className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:ring-2 focus:ring-[#515151] ${
                               order.status === 'Verified' ? 'bg-green-100 text-green-800 font-bold' :
                               order.status === 'Received' ? 'bg-blue-100 text-blue-800' :
                               order.status === 'Shipped' ? 'bg-purple-100 text-purple-800' :
@@ -2877,7 +2877,7 @@ export default function PurchaseOrders() {
                                 </svg>
                               <h3 className="text-lg font-semibold text-gray-900">{groupKey}</h3>
                               </button>
-                              <span className="bg-[#4f0c1b] text-white px-2 py-1 rounded-full text-xs font-medium">
+                              <span className="bg-[#515151] text-white px-2 py-1 rounded-full text-xs font-medium">
                                 {totalOrders} {totalOrders !== 1 ? t('purchaseOrders.orders') : t('purchaseOrders.order')}
                               </span>
                               {hasNeedsReview && (
@@ -2918,7 +2918,7 @@ export default function PurchaseOrders() {
                                   {supplier ? (
                                     <button
                                       onClick={() => setSelectedSupplier(supplier)}
-                                      className="text-[#4f0c1b] hover:text-[#3d0a15] hover:underline transition-colors font-medium"
+                                      className="text-[#515151] hover:text-[#000000] hover:underline transition-colors font-medium"
                                     >
                                       {supplier.name}
                                     </button>
@@ -3321,7 +3321,7 @@ export default function PurchaseOrders() {
                         setVerificationQuantityGood(val);
                       }
                     }}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-lg font-medium"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-lg font-medium"
                     placeholder={verificationData.order.quantity.toString()}
                     autoFocus
                   />
@@ -3417,7 +3417,7 @@ export default function PurchaseOrders() {
                     value={verificationComment}
                     onChange={(e) => setVerificationComment(e.target.value)}
                     rows={3}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent resize-none"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent resize-none"
                     placeholder={t('purchaseOrders.verificationCommentPlaceholder') || 'Add notes about problems, damages, missing items, etc...'}
                   />
                   <p className="text-xs text-gray-500 mt-1">
@@ -3438,7 +3438,7 @@ export default function PurchaseOrders() {
                           const files = Array.from(e.target.files || []);
                           setVerificationMedia(prev => [...prev, ...files]);
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm"
                       />
                       
                       {/* Preview uploaded files */}
@@ -3508,7 +3508,7 @@ export default function PurchaseOrders() {
               </button>
               <button
                 onClick={handleVerificationConfirm}
-                className="px-4 py-2 rounded-xl bg-[#4f0c1b] text-white hover:bg-[#3d0a15] font-medium transition-colors"
+                className="px-4 py-2 rounded-xl bg-[#515151] text-white hover:bg-[#000000] font-medium transition-colors"
               >
                 {t('purchaseOrders.verify') || 'Verify'}
               </button>

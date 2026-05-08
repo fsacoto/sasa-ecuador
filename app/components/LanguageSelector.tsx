@@ -67,7 +67,7 @@ export default function LanguageSelector({ variant = 'default' }: LanguageSelect
                 onClick={() => handleLanguageChange(language.code)}
                 className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 transition-colors ${
                   locale === language.code
-                    ? 'bg-gray-100 text-[#4f0c1b] font-medium'
+                    ? 'bg-gray-100 text-[#515151] font-medium'
                     : 'text-gray-700 hover:bg-gray-50'
                 }`}
               >

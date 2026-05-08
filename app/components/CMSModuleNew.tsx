@@ -274,11 +274,11 @@ export default function CMSModuleNew() {
       );
     }
     return sortDirection === 'asc' ? (
-      <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
       </svg>
     ) : (
-      <svg className="w-4 h-4 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
       </svg>
     );
@@ -846,8 +846,8 @@ export default function CMSModuleNew() {
                   onClick={() => setUploadType('product')}
                   className={`px-4 py-3 rounded-xl border-2 transition-all duration-200 font-medium ${
                     uploadType === 'product'
-                      ? 'bg-[#4f0c1b] text-white border-[#4f0c1b] shadow-md'
-                      : 'bg-white text-gray-700 border-gray-300 hover:border-[#4f0c1b] hover:bg-gray-50'
+                      ? 'bg-[#515151] text-white border-[#515151] shadow-md'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-[#515151] hover:bg-gray-50'
                   }`}
                 >
                   {t('cms.singleProduct')}
@@ -856,8 +856,8 @@ export default function CMSModuleNew() {
                   onClick={() => setUploadType('collection')}
                   className={`px-4 py-3 rounded-xl border-2 transition-all duration-200 font-medium ${
                     uploadType === 'collection'
-                      ? 'bg-[#4f0c1b] text-white border-[#4f0c1b] shadow-md'
-                      : 'bg-white text-gray-700 border-gray-300 hover:border-[#4f0c1b] hover:bg-gray-50'
+                      ? 'bg-[#515151] text-white border-[#515151] shadow-md'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-[#515151] hover:bg-gray-50'
                   }`}
                 >
                   {t('cms.collection')}
@@ -866,8 +866,8 @@ export default function CMSModuleNew() {
                   onClick={() => setUploadType('general')}
                   className={`px-4 py-3 rounded-xl border-2 transition-all duration-200 font-medium ${
                     uploadType === 'general'
-                      ? 'bg-[#4f0c1b] text-white border-[#4f0c1b] shadow-md'
-                      : 'bg-white text-gray-700 border-gray-300 hover:border-[#4f0c1b] hover:bg-gray-50'
+                      ? 'bg-[#515151] text-white border-[#515151] shadow-md'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-[#515151] hover:bg-gray-50'
                   }`}
                 >
                   {t('cms.general')}
@@ -894,7 +894,7 @@ export default function CMSModuleNew() {
                     onChange={handleSKUInputChange}
                     onFocus={() => currentTabState.searchSKU.trim().length > 0 && updateCurrentTabState({ showSKUDropdown: true })}
                     placeholder={t('cms.searchBySku')}
-                    className="w-full px-4 py-2.5 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-4 py-2.5 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                   {currentTabState.searchSKU && (
                     <button
@@ -984,7 +984,7 @@ export default function CMSModuleNew() {
                     {currentTabState.selectedSKUs.map(sku => (
                       <span
                         key={sku}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#4f0c1b] text-white text-sm rounded-lg font-medium"
+                        className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#515151] text-white text-sm rounded-lg font-medium"
                       >
                         {sku}
                         <button
@@ -1029,7 +1029,7 @@ export default function CMSModuleNew() {
                       ? setEditFormData({ ...editFormData, language: e.target.value as 'en' | 'es' })
                       : updateCurrentTabState({ formData: { ...currentTabState.formData, language: e.target.value as 'en' | 'es' } })
                     }
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   >
                     <option value="en">English</option>
                     <option value="es">Español</option>
@@ -1046,7 +1046,7 @@ export default function CMSModuleNew() {
                     }
                     placeholder="Add any comments or notes about this product content..."
                     rows={4}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent resize-none"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent resize-none"
                   />
                 </div>
               </div>
@@ -1067,7 +1067,7 @@ export default function CMSModuleNew() {
                       }
                       required
                       placeholder="Enter content title..."
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                     />
                   </div>
 
@@ -1079,7 +1079,7 @@ export default function CMSModuleNew() {
                         ? setEditFormData({ ...editFormData, language: e.target.value as 'en' | 'es' })
                         : updateCurrentTabState({ formData: { ...currentTabState.formData, language: e.target.value as 'en' | 'es' } })
                       }
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                     >
                       <option value="en">English</option>
                       <option value="es">Español</option>
@@ -1100,7 +1100,7 @@ export default function CMSModuleNew() {
                     required
                     placeholder="Enter content description..."
                     rows={4}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent resize-none"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent resize-none"
                   />
                 </div>
 
@@ -1115,7 +1115,7 @@ export default function CMSModuleNew() {
                         : updateCurrentTabState({ formData: { ...currentTabState.formData, hashtags: e.target.value } })
                       }
                       placeholder="#jewelry #necklace"
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                     />
                     <p className="text-xs text-gray-500 mt-1">Separate multiple hashtags with spaces</p>
                   </div>
@@ -1130,7 +1130,7 @@ export default function CMSModuleNew() {
                         : updateCurrentTabState({ formData: { ...currentTabState.formData, tags: e.target.value } })
                       }
                       placeholder="promotion, sale"
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                     />
                     <p className="text-xs text-gray-500 mt-1">Separate multiple tags with commas</p>
                   </div>
@@ -1161,7 +1161,7 @@ export default function CMSModuleNew() {
                     : updateCurrentTabState({ formData: { ...currentTabState.formData, category: e.target.value } })
                   }
                   disabled={!!currentTabState.selectedProduct}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
                 >
                   <option value="">Select a category</option>
                   {availableCategories.map(category => (
@@ -1187,7 +1187,7 @@ export default function CMSModuleNew() {
                     : updateCurrentTabState({ formData: { ...currentTabState.formData, line: e.target.value } })
                   }
                   disabled={!!currentTabState.selectedProduct}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
                 >
                   <option value="">Select a line</option>
                   {availableLines.map(line => (
@@ -1212,7 +1212,7 @@ export default function CMSModuleNew() {
               <label className="text-sm font-semibold text-gray-900">Upload Media</label>
             </div>
             
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-[#4f0c1b] transition-colors">
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-[#515151] transition-colors">
               <input
                 type="file"
                 multiple
@@ -1311,7 +1311,7 @@ export default function CMSModuleNew() {
                             value={uploadedFile.linkedSKU || ''}
                             onChange={(e) => handleLinkFileToSKU(index, e.target.value || undefined)}
                             onClick={(e) => e.stopPropagation()}
-                            className="w-full text-xs px-2 py-1 bg-white text-gray-900 rounded border border-gray-300 focus:outline-none focus:ring-1 focus:ring-[#4f0c1b]"
+                            className="w-full text-xs px-2 py-1 bg-white text-gray-900 rounded border border-gray-300 focus:outline-none focus:ring-1 focus:ring-[#515151]"
                           >
                             <option value="">Not linked</option>
                             {currentTabState.selectedSKUs.map(sku => (
@@ -1323,7 +1323,7 @@ export default function CMSModuleNew() {
                       
                       {/* Linked SKU Badge */}
                       {uploadedFile.linkedSKU && (
-                        <div className="absolute top-2 left-2 px-2 py-1 bg-[#4f0c1b] text-white text-xs rounded font-medium">
+                        <div className="absolute top-2 left-2 px-2 py-1 bg-[#515151] text-white text-xs rounded font-medium">
                           {uploadedFile.linkedSKU}
                         </div>
                       )}
@@ -1423,7 +1423,7 @@ export default function CMSModuleNew() {
                 type="button"
                 disabled={isSavingDraft || (!editingContent && !hasPermission('cms.edit'))}
                 onClick={() => void handleSubmit()}
-                className="px-6 py-2.5 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#3d0a15] font-medium transition-all shadow-sm hover:shadow-md disabled:opacity-50 disabled:pointer-events-none disabled:cursor-not-allowed"
+                className="px-6 py-2.5 bg-[#515151] text-white rounded-lg hover:bg-[#000000] font-medium transition-all shadow-sm hover:shadow-md disabled:opacity-50 disabled:pointer-events-none disabled:cursor-not-allowed"
               >
                 {isSavingDraft
                   ? isAttachingMedia
@@ -1462,7 +1462,7 @@ export default function CMSModuleNew() {
             onClick={() => setViewMode('dashboard')}
             className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
               viewMode === 'dashboard'
-                ? 'bg-[#4f0c1b] text-white'
+                ? 'bg-[#515151] text-white'
                 : 'text-gray-700 hover:bg-gray-100'
             }`}
           >
@@ -1472,7 +1472,7 @@ export default function CMSModuleNew() {
             onClick={() => setViewMode('products')}
             className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
               viewMode === 'products'
-                ? 'bg-[#4f0c1b] text-white'
+                ? 'bg-[#515151] text-white'
                 : 'text-gray-700 hover:bg-gray-100'
             }`}
           >
@@ -1482,7 +1482,7 @@ export default function CMSModuleNew() {
             onClick={() => setViewMode('upload')}
             className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
               viewMode === 'upload'
-                ? 'bg-[#4f0c1b] text-white'
+                ? 'bg-[#515151] text-white'
                 : 'text-gray-700 hover:bg-gray-100'
             }`}
           >
@@ -1492,7 +1492,7 @@ export default function CMSModuleNew() {
             onClick={() => setViewMode('manage')}
             className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
               viewMode === 'manage'
-                ? 'bg-[#4f0c1b] text-white'
+                ? 'bg-[#515151] text-white'
                 : 'text-gray-700 hover:bg-gray-100'
             }`}
           >
@@ -1703,7 +1703,7 @@ export default function CMSModuleNew() {
                     <button
                       onClick={() => setShowFilters(!showFilters)}
                       className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
-                        showFilters ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
+                        showFilters ? 'bg-[#515151] text-white border-[#515151]' : ''
                       }`}
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1730,7 +1730,7 @@ export default function CMSModuleNew() {
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value as ContentStatus | 'all')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                 >
                   <option value="all">{t('cms.allStatus')}</option>
                   <option value="draft">{t('cms.draft')}</option>
@@ -1749,7 +1749,7 @@ export default function CMSModuleNew() {
                   value={filterSKU}
                   onChange={(e) => setFilterSKU(e.target.value)}
                   placeholder={t('cms.searchBySkuPlaceholder')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                 />
               </div>
 
@@ -2030,7 +2030,7 @@ export default function CMSModuleNew() {
                                       showUploadFlowAlert(t('cms.submitContentFailed'), t('common.error'));
                                     }
                                   }}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4f0c1b] text-white hover:bg-[#3d0a15] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#515151] text-white hover:bg-[#000000] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
                                 >
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -2115,7 +2115,7 @@ export default function CMSModuleNew() {
                                   e.stopPropagation();
                                   handlePublish(item.id);
                                 }}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4f0c1b] text-white hover:bg-[#3d0a15] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#515151] text-white hover:bg-[#000000] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
                               >
                                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -2159,7 +2159,7 @@ export default function CMSModuleNew() {
                                     setResubmitContentId(item.id);
                                     setResubmitModalOpen(true);
                                   }}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4f0c1b] text-white hover:bg-[#3d0a15] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#515151] text-white hover:bg-[#000000] shadow-sm hover:shadow-md transition-all duration-200 text-xs font-medium"
                                 >
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -2375,7 +2375,7 @@ function ResubmitModal({
               onChange={(e) => setChangesNotes(e.target.value)}
               placeholder="Describe the changes you made to address the rejection..."
               rows={6}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b]"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
               required
             />
           </div>
@@ -2393,7 +2393,7 @@ function ResubmitModal({
           <button
             onClick={handleSubmit}
             disabled={isSubmitting || !changesNotes.trim()}
-            className="px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#3d0a15] disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+            className="px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000] disabled:opacity-50 disabled:cursor-not-allowed font-medium"
           >
             {isSubmitting ? 'Resubmitting...' : 'Resubmit'}
           </button>
@@ -3673,7 +3673,7 @@ function ContentView({
                 e.stopPropagation();
                 handleSelectAllCollections();
               }}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#4f0c1b] bg-[#4f0c1b]/10 rounded-lg hover:bg-[#4f0c1b]/20 transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#515151] bg-[#515151]/10 rounded-lg hover:bg-[#515151]/20 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -3689,7 +3689,7 @@ function ContentView({
                   key={item.id}
                   className={`border rounded-lg p-4 transition-all duration-200 relative cursor-pointer ${
                     isSelected
-                      ? 'border-[#4f0c1b] bg-[#4f0c1b]/5'
+                      ? 'border-[#515151] bg-[#515151]/5'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                   onClick={() => handleToggleCollection(item.id)}
@@ -3701,7 +3701,7 @@ function ContentView({
                       checked={isSelected}
                       onChange={() => handleToggleCollection(item.id)}
                       onClick={(e) => e.stopPropagation()}
-                      className="w-5 h-5 text-[#4f0c1b] focus:ring-[#4f0c1b] border-gray-300 rounded cursor-pointer"
+                      className="w-5 h-5 text-[#515151] focus:ring-[#515151] border-gray-300 rounded cursor-pointer"
                     />
                   </div>
                   {/* Media - opens detail modal */}
@@ -3870,7 +3870,7 @@ function ContentView({
                 e.stopPropagation();
                 handleSelectAllGeneral();
               }}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#4f0c1b] bg-[#4f0c1b]/10 rounded-lg hover:bg-[#4f0c1b]/20 transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#515151] bg-[#515151]/10 rounded-lg hover:bg-[#515151]/20 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -3886,7 +3886,7 @@ function ContentView({
                   key={item.id}
                   className={`border rounded-lg p-4 transition-all duration-200 relative cursor-pointer ${
                     isSelected
-                      ? 'border-[#4f0c1b] bg-[#4f0c1b]/5'
+                      ? 'border-[#515151] bg-[#515151]/5'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                   onClick={() => handleToggleGeneral(item.id)}
@@ -3898,7 +3898,7 @@ function ContentView({
                       checked={isSelected}
                       onChange={() => handleToggleGeneral(item.id)}
                       onClick={(e) => e.stopPropagation()}
-                      className="w-5 h-5 text-[#4f0c1b] focus:ring-[#4f0c1b] border-gray-300 rounded cursor-pointer"
+                      className="w-5 h-5 text-[#515151] focus:ring-[#515151] border-gray-300 rounded cursor-pointer"
                     />
                   </div>
                   {/* Media - opens detail modal */}
@@ -4077,7 +4077,7 @@ function ContentView({
                     e.stopPropagation();
                     handleSelectAllInventory();
                   }}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#4f0c1b] bg-[#4f0c1b]/10 rounded-lg hover:bg-[#4f0c1b]/20 transition-colors"
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#515151] bg-[#515151]/10 rounded-lg hover:bg-[#515151]/20 transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -4144,7 +4144,7 @@ function ContentView({
                     key={item.id}
                     className={`border rounded-lg p-4 transition-all duration-200 relative cursor-pointer ${
                       selectedProducts.has(item.sku)
-                        ? 'border-[#4f0c1b] bg-[#4f0c1b]/5'
+                        ? 'border-[#515151] bg-[#515151]/5'
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
                     onClick={() => handleToggleProduct(item.sku)}
@@ -4156,7 +4156,7 @@ function ContentView({
                         checked={selectedProducts.has(item.sku)}
                         onChange={() => handleToggleProduct(item.sku)}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-5 h-5 text-[#4f0c1b] focus:ring-[#4f0c1b] border-gray-300 rounded cursor-pointer"
+                        className="w-5 h-5 text-[#515151] focus:ring-[#515151] border-gray-300 rounded cursor-pointer"
                       />
                     </div>
 
@@ -4670,7 +4670,7 @@ function ContentView({
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
-              showFilters ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
+              showFilters ? 'bg-[#515151] text-white border-[#515151]' : ''
             }`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -4689,7 +4689,7 @@ function ContentView({
           <button
             onClick={() => setShowBulkDownload(!showBulkDownload)}
             className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
-              showBulkDownload ? 'bg-[#4f0c1b] text-white border-[#4f0c1b]' : ''
+              showBulkDownload ? 'bg-[#515151] text-white border-[#515151]' : ''
             }`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -4714,7 +4714,7 @@ function ContentView({
             <select
               value={contentTypeFilter}
               onChange={(e) => setContentTypeFilter(e.target.value as 'all' | 'product' | 'collection' | 'general' | 'inventory')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             >
               <option value="all">All Content</option>
               <option value="product">Product Content</option>
@@ -4730,7 +4730,7 @@ function ContentView({
               placeholder={contentTypeFilter === 'inventory' ? "Search products..." : "Search content..."}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             />
           </div>
           
@@ -4739,7 +4739,7 @@ function ContentView({
             <select
               value={filterCategory}
               onChange={(e) => setFilterCategory(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             >
               <option value="all">All Categories</option>
               {categories.map(category => (
@@ -4753,7 +4753,7 @@ function ContentView({
             <select
               value={filterLine}
               onChange={(e) => setFilterLine(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             >
               <option value="all">All Lines</option>
               {lines.map(line => (
@@ -4767,7 +4767,7 @@ function ContentView({
             <select
               value={filterAvailability}
               onChange={(e) => setFilterAvailability(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             >
               <option value="all">All Items</option>
               <option value="in-stock">In Stock</option>
@@ -4783,7 +4783,7 @@ function ContentView({
             <select
               value={filterCollectionName}
               onChange={(e) => setFilterCollectionName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
             >
               <option value="all">All Collections</option>
               {collectionNames.map(collectionName => (
@@ -4837,7 +4837,7 @@ function ContentView({
           <div className="flex items-center gap-2 pt-4 border-t border-gray-200">
             <button
               onClick={handleSelectAllItems}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#4f0c1b] bg-[#4f0c1b]/10 rounded-lg hover:bg-[#4f0c1b]/20 transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-[#515151] bg-[#515151]/10 rounded-lg hover:bg-[#515151]/20 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -5092,12 +5092,12 @@ function ContentView({
                   <div className="mb-6">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="flex items-center gap-2">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Images</h4>
                       </div>
-                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                      <span className="px-2.5 py-0.5 bg-[#515151]/10 text-[#515151] text-xs font-semibold rounded-full">
                         {allImages.length}
                       </span>
                     </div>
@@ -5129,8 +5129,8 @@ function ContentView({
                           }}
                         >
                           <div className="text-center">
-                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
-                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
+                            <span className="text-[#515151] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#515151] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
                           </div>
                         </div>
                       )}
@@ -5143,12 +5143,12 @@ function ContentView({
                   <div className="mb-6">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="flex items-center gap-2">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Videos</h4>
                       </div>
-                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                      <span className="px-2.5 py-0.5 bg-[#515151]/10 text-[#515151] text-xs font-semibold rounded-full">
                         {allVideos.length}
                       </span>
                     </div>
@@ -5200,8 +5200,8 @@ function ContentView({
                           }}
                         >
                           <div className="text-center">
-                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
-                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allVideos.length - 4}</span>
+                            <span className="text-[#515151] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#515151] font-semibold text-sm block leading-tight">{allVideos.length - 4}</span>
                           </div>
                         </div>
                       )}
@@ -5214,7 +5214,7 @@ function ContentView({
                   <div className="space-y-6">
                   <div>
                       <div className="flex items-center gap-2 mb-4">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Product Information</h4>
@@ -5245,7 +5245,7 @@ function ContentView({
 
                   <div>
                       <div className="flex items-center gap-2 mb-4">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Stock Information</h4>
@@ -5273,7 +5273,7 @@ function ContentView({
                         </div>
                         <div className="flex justify-between items-center pt-2">
                           <span className="text-sm font-semibold text-gray-900">Total Stock</span>
-                          <span className="text-xl font-bold text-[#4f0c1b]">
+                          <span className="text-xl font-bold text-[#515151]">
                           {selectedProductDetail.ecuadorStock + selectedProductDetail.usaStock} units
                         </span>
                       </div>
@@ -5307,7 +5307,7 @@ function ContentView({
                   <div className="pt-4">
                     <button
                       onClick={() => handleToggleProduct(selectedProductDetail.sku)}
-                      className="w-full px-4 py-2 border border-[#4f0c1b] text-[#4f0c1b] rounded-lg hover:bg-[#4f0c1b]/10 transition-colors font-medium"
+                      className="w-full px-4 py-2 border border-[#515151] text-[#515151] rounded-lg hover:bg-[#515151]/10 transition-colors font-medium"
                     >
                       {selectedProducts.has(selectedProductDetail.sku) ? 'Deselect for Download' : 'Select for Download'}
                     </button>
@@ -5521,8 +5521,8 @@ function ContentView({
               {/* Header */}
               <div className="sticky top-0 bg-gradient-to-r from-white to-gray-50 border-b border-gray-200 px-6 py-5 flex items-center justify-between z-10 shadow-sm">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-[#4f0c1b]/10 rounded-lg flex items-center justify-center">
-                    <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div className="w-10 h-10 bg-[#515151]/10 rounded-lg flex items-center justify-center">
+                    <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                   </div>
@@ -5554,7 +5554,7 @@ function ContentView({
                     }}
                     className={`relative px-5 py-3 font-semibold text-sm transition-all duration-200 ${
                       contentViewerTab === 'images'
-                        ? 'text-[#4f0c1b]'
+                        ? 'text-[#515151]'
                         : 'text-gray-500 hover:text-gray-700'
                     }`}
                   >
@@ -5565,14 +5565,14 @@ function ContentView({
                       <span>Images</span>
                       <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                         contentViewerTab === 'images'
-                          ? 'bg-[#4f0c1b]/10 text-[#4f0c1b]'
+                          ? 'bg-[#515151]/10 text-[#515151]'
                           : 'bg-gray-100 text-gray-600'
                       }`}>
                         {allImages.length}
                       </span>
                     </div>
                     {contentViewerTab === 'images' && (
-                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#4f0c1b] rounded-t-full" />
+                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#515151] rounded-t-full" />
                     )}
                   </button>
                   <button
@@ -5582,7 +5582,7 @@ function ContentView({
                     }}
                     className={`relative px-5 py-3 font-semibold text-sm transition-all duration-200 ${
                       contentViewerTab === 'videos'
-                        ? 'text-[#4f0c1b]'
+                        ? 'text-[#515151]'
                         : 'text-gray-500 hover:text-gray-700'
                     }`}
                   >
@@ -5593,14 +5593,14 @@ function ContentView({
                       <span>Videos</span>
                       <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                         contentViewerTab === 'videos'
-                          ? 'bg-[#4f0c1b]/10 text-[#4f0c1b]'
+                          ? 'bg-[#515151]/10 text-[#515151]'
                           : 'bg-gray-100 text-gray-600'
                       }`}>
                         {allVideos.length}
                       </span>
                     </div>
                     {contentViewerTab === 'videos' && (
-                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#4f0c1b] rounded-t-full" />
+                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#515151] rounded-t-full" />
                     )}
                   </button>
                 </div>
@@ -5618,7 +5618,7 @@ function ContentView({
                     <div className="mb-5 flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3 border border-gray-200">
                       <button
                         onClick={handleSelectAll}
-                        className="flex items-center gap-2 text-sm font-semibold text-[#4f0c1b] hover:text-[#3d0a15] transition-colors"
+                        className="flex items-center gap-2 text-sm font-semibold text-[#515151] hover:text-[#000000] transition-colors"
                       >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -5627,7 +5627,7 @@ function ContentView({
                       </button>
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Selected:</span>
-                        <span className="px-2.5 py-1 bg-[#4f0c1b]/10 text-[#4f0c1b] text-sm font-bold rounded-full">
+                        <span className="px-2.5 py-1 bg-[#515151]/10 text-[#515151] text-sm font-bold rounded-full">
                           {selectedContentItems.size}
                         </span>
                         <span className="text-xs text-gray-400">/</span>
@@ -5647,8 +5647,8 @@ function ContentView({
                             key={index}
                             className={`relative border-2 rounded-xl overflow-hidden cursor-pointer transition-all duration-200 group ${
                               isSelected 
-                                ? 'border-[#4f0c1b] ring-4 ring-[#4f0c1b]/20 shadow-lg scale-105' 
-                                : 'border-gray-200 hover:border-[#4f0c1b]/50 hover:shadow-md'
+                                ? 'border-[#515151] ring-4 ring-[#515151]/20 shadow-lg scale-105' 
+                                : 'border-gray-200 hover:border-[#515151]/50 hover:shadow-md'
                             }`}
                             onClick={() => handleToggleSelection(index)}
                           >
@@ -5656,7 +5656,7 @@ function ContentView({
                             <div className="absolute top-3 right-3 z-10">
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center shadow-lg transition-all ${
                                 isSelected 
-                                  ? 'bg-[#4f0c1b] scale-110' 
+                                  ? 'bg-[#515151] scale-110' 
                                   : 'bg-white/90 group-hover:bg-white'
                               }`}>
                                 {isSelected ? (
@@ -5664,7 +5664,7 @@ function ContentView({
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                                   </svg>
                                 ) : (
-                                  <div className="w-3 h-3 border-2 border-gray-400 rounded-sm group-hover:border-[#4f0c1b] transition-colors" />
+                                  <div className="w-3 h-3 border-2 border-gray-400 rounded-sm group-hover:border-[#515151] transition-colors" />
                                 )}
                               </div>
                             </div>
@@ -5726,7 +5726,7 @@ function ContentView({
                                     e.stopPropagation();
                                     setSelectedVideoUrl(url);
                                   }}
-                                  className="absolute bottom-2 right-2 z-20 w-10 h-10 bg-[#4f0c1b] hover:bg-[#3d0a15] rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-all duration-200 group/play"
+                                  className="absolute bottom-2 right-2 z-20 w-10 h-10 bg-[#515151] hover:bg-[#000000] rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-all duration-200 group/play"
                                   aria-label="Play video"
                                 >
                                   <svg className="w-5 h-5 text-white ml-0.5 group-hover/play:scale-110 transition-transform" fill="currentColor" viewBox="0 0 24 24">
@@ -5759,7 +5759,7 @@ function ContentView({
                   <button
                     onClick={handleDownloadZip}
                     disabled={selectedContentItems.size === 0 || isDownloadingZip}
-                    className="flex items-center gap-2 px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#3d0a15] disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                    className="flex items-center gap-2 px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
                   >
                     {isDownloadingZip ? (
                       <>
@@ -5846,12 +5846,12 @@ function ContentView({
                   <div className="mb-6">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="flex items-center gap-2">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Images</h4>
                       </div>
-                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                      <span className="px-2.5 py-0.5 bg-[#515151]/10 text-[#515151] text-xs font-semibold rounded-full">
                         {allImages.length}
                       </span>
                     </div>
@@ -5871,8 +5871,8 @@ function ContentView({
                       {allImages.length > 4 && (
                         <div className="flex-shrink-0 w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center border-2 border-gray-300 shadow-sm">
                           <div className="text-center">
-                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
-                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
+                            <span className="text-[#515151] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#515151] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
                           </div>
                         </div>
                       )}
@@ -5885,12 +5885,12 @@ function ContentView({
                   <div className="mb-6">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="flex items-center gap-2">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Videos</h4>
                       </div>
-                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                      <span className="px-2.5 py-0.5 bg-[#515151]/10 text-[#515151] text-xs font-semibold rounded-full">
                         {allVideos.length}
                       </span>
                     </div>
@@ -5931,8 +5931,8 @@ function ContentView({
                       {allVideos.length > 4 && (
                         <div className="flex-shrink-0 w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center border-2 border-gray-300 shadow-sm">
                           <div className="text-center">
-                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
-                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allVideos.length - 4}</span>
+                            <span className="text-[#515151] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#515151] font-semibold text-sm block leading-tight">{allVideos.length - 4}</span>
                           </div>
                         </div>
                       )}
@@ -5945,7 +5945,7 @@ function ContentView({
                   <div className="space-y-6">
                     <div>
                       <div className="flex items-center gap-2 mb-4">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Content Information</h4>
@@ -5996,7 +5996,7 @@ function ContentView({
 
                   <div>
                     <div className="flex items-center gap-2 mb-4">
-                      <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                       </svg>
                       <h4 className="text-base font-semibold text-gray-900">Tags & Hashtags</h4>
@@ -6035,7 +6035,7 @@ function ContentView({
                     {selectedCollectionDetail.linkedProductIds.length > 0 && (
                       <div className="mt-6">
                         <div className="flex items-center gap-2 mb-4">
-                          <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                           </svg>
                           <h4 className="text-base font-semibold text-gray-900">Linked Products ({selectedCollectionDetail.linkedProductIds.length})</h4>
@@ -6060,7 +6060,7 @@ function ContentView({
                         handleToggleCollection(selectedCollectionDetail.id);
                         setSelectedCollectionDetail(null);
                       }}
-                      className="w-full px-4 py-2 border border-[#4f0c1b] text-[#4f0c1b] rounded-lg hover:bg-[#4f0c1b]/10 transition-colors font-medium"
+                      className="w-full px-4 py-2 border border-[#515151] text-[#515151] rounded-lg hover:bg-[#515151]/10 transition-colors font-medium"
                     >
                       {selectedCollections.has(selectedCollectionDetail.id) ? 'Deselect for Download' : 'Select for Download'}
                     </button>
@@ -6121,12 +6121,12 @@ function ContentView({
                   <div className="mb-6">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="flex items-center gap-2">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Images</h4>
                       </div>
-                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                      <span className="px-2.5 py-0.5 bg-[#515151]/10 text-[#515151] text-xs font-semibold rounded-full">
                         {allImages.length}
                       </span>
                     </div>
@@ -6146,8 +6146,8 @@ function ContentView({
                       {allImages.length > 4 && (
                         <div className="flex-shrink-0 w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center border-2 border-gray-300 shadow-sm">
                           <div className="text-center">
-                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
-                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
+                            <span className="text-[#515151] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#515151] font-semibold text-sm block leading-tight">{allImages.length - 4}</span>
                           </div>
                         </div>
                       )}
@@ -6160,12 +6160,12 @@ function ContentView({
                   <div className="mb-6">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="flex items-center gap-2">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Videos</h4>
                       </div>
-                      <span className="px-2.5 py-0.5 bg-[#4f0c1b]/10 text-[#4f0c1b] text-xs font-semibold rounded-full">
+                      <span className="px-2.5 py-0.5 bg-[#515151]/10 text-[#515151] text-xs font-semibold rounded-full">
                         {allVideos.length}
                       </span>
                     </div>
@@ -6206,8 +6206,8 @@ function ContentView({
                       {allVideos.length > 4 && (
                         <div className="flex-shrink-0 w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center border-2 border-gray-300 shadow-sm">
                           <div className="text-center">
-                            <span className="text-[#4f0c1b] font-bold text-xl block leading-tight">+</span>
-                            <span className="text-[#4f0c1b] font-semibold text-sm block leading-tight">{allVideos.length - 4}</span>
+                            <span className="text-[#515151] font-bold text-xl block leading-tight">+</span>
+                            <span className="text-[#515151] font-semibold text-sm block leading-tight">{allVideos.length - 4}</span>
                           </div>
                         </div>
                       )}
@@ -6220,7 +6220,7 @@ function ContentView({
                   <div className="space-y-6">
                     <div>
                       <div className="flex items-center gap-2 mb-4">
-                        <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <h4 className="text-base font-semibold text-gray-900">Content Information</h4>
@@ -6271,7 +6271,7 @@ function ContentView({
 
                   <div>
                     <div className="flex items-center gap-2 mb-4">
-                      <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                       </svg>
                       <h4 className="text-base font-semibold text-gray-900">Tags & Hashtags</h4>
@@ -6310,7 +6310,7 @@ function ContentView({
                     {selectedGeneralDetail.linkedProductIds.length > 0 && (
                       <div className="mt-6">
                         <div className="flex items-center gap-2 mb-4">
-                          <svg className="w-5 h-5 text-[#4f0c1b]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <svg className="w-5 h-5 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                           </svg>
                           <h4 className="text-base font-semibold text-gray-900">Linked Products ({selectedGeneralDetail.linkedProductIds.length})</h4>
@@ -6335,7 +6335,7 @@ function ContentView({
                         handleToggleGeneral(selectedGeneralDetail.id);
                         setSelectedGeneralDetail(null);
                       }}
-                      className="w-full px-4 py-2 border border-[#4f0c1b] text-[#4f0c1b] rounded-lg hover:bg-[#4f0c1b]/10 transition-colors font-medium"
+                      className="w-full px-4 py-2 border border-[#515151] text-[#515151] rounded-lg hover:bg-[#515151]/10 transition-colors font-medium"
                     >
                       {selectedGeneral.has(selectedGeneralDetail.id) ? 'Deselect for Download' : 'Select for Download'}
                     </button>

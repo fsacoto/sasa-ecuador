@@ -599,7 +599,7 @@ export default function Consignments() {
           </div>
           <button
             onClick={() => setView('create')}
-            className="px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors"
+            className="px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors"
           >
             {t('consignments.createNew')}
           </button>
@@ -686,7 +686,7 @@ export default function Consignments() {
                 {sortedConsignments.map((consignment) => (
                   <tr key={consignment.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="font-mono text-sm font-medium text-[#4f0c1b]">{consignment.consignmentId}</div>
+                      <div className="font-mono text-sm font-medium text-[#515151]">{consignment.consignmentId}</div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-gray-900">{consignment.clientName}</div>
@@ -768,13 +768,13 @@ export default function Consignments() {
               <div className="space-y-3 mb-6">
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'en')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left"
+                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
                 >
                   {t('language.english')}
                 </button>
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'es')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left"
+                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
                 >
                   {t('language.spanish')}
                 </button>
@@ -895,7 +895,7 @@ export default function Consignments() {
                   setShowDropdown(true);
                 }}
                 onFocus={() => setShowDropdown(true)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
               />
               
               {showDropdown && filteredInventory.length > 0 && (
@@ -906,7 +906,7 @@ export default function Consignments() {
                       onClick={() => addProductToConsignment(product)}
                       className="px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
                     >
-                      <div className="font-mono text-sm font-semibold text-[#4f0c1b]">{product.sku}</div>
+                      <div className="font-mono text-sm font-semibold text-[#515151]">{product.sku}</div>
                       <div className="text-sm text-gray-600">{product.name}</div>
                       <div className="text-xs text-gray-500">{t('consignments.stock')}: {product.ecuadorStock} | {product.category} - {product.line}</div>
                     </div>
@@ -975,7 +975,7 @@ export default function Consignments() {
               <div className="mt-6">
                 <button
                   onClick={handleCreateConsignment}
-                  className="w-full px-6 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium"
+                  className="w-full px-6 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium"
                 >
                   {t('consignments.createConsignment')}
                 </button>
@@ -994,13 +994,13 @@ export default function Consignments() {
               <div className="space-y-3 mb-6">
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'en')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left"
+                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
                 >
                   {t('language.english')}
                 </button>
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'es')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left"
+                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
                 >
                   {t('language.spanish')}
                 </button>
@@ -1211,13 +1211,13 @@ export default function Consignments() {
               <div className="space-y-3 mb-6">
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'en')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left"
+                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
                 >
                   {t('language.english')}
                 </button>
                 <button
                   onClick={() => generatePDF(pdfConsignment, 'es')}
-                  className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left"
+                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
                 >
                   {t('language.spanish')}
                 </button>

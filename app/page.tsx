@@ -46,8 +46,8 @@ const TAB_SEARCH_ALIASES: Partial<Record<Tab, string>> = {
 
 type NavSearchEntry = { tab: Tab; title: string; path: string; haystack: string };
 
-/** Active indicator (inset left bar) — SASA burgundy */
-const SIDEBAR_ACCENT = '#4f0c1b';
+/** Active indicator (inset left bar) — SASA pink */
+const SIDEBAR_ACCENT = '#515151';
 /** Expanded sidebar width — compact */
 const SIDEBAR_EXPANDED_PX = 192;
 
@@ -256,7 +256,7 @@ function AppContent() {
       <div className="min-h-screen flex items-center justify-center bg-[#f9f9f9]">
         <div className="text-center">
           <div
-            className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#4f0c1b] mx-auto"
+            className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#515151] mx-auto"
             aria-hidden
           />
           <p className="mt-4 text-gray-600">{t('common.loading')}</p>
@@ -412,12 +412,12 @@ function AppContent() {
 
   const navButtonClass = (active: boolean) =>
     `relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-medium transition-colors ${
-      active ? 'bg-gray-100 text-[#4f0c1b]' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+      active ? 'bg-gray-100 text-[#515151]' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
     }`;
 
   const subButtonClass = (active: boolean) =>
     `relative flex w-full items-center gap-1.5 rounded py-1 pl-2 pr-1.5 text-left text-[11px] leading-snug font-normal transition-colors ${
-      active ? 'bg-gray-50 text-[#4f0c1b]' : 'text-gray-500 hover:bg-gray-50/80 hover:text-gray-800'
+      active ? 'bg-gray-50 text-[#515151]' : 'text-gray-500 hover:bg-gray-50/80 hover:text-gray-800'
     }`;
 
   const sidebarWidth = sidebarCollapsed ? 72 : SIDEBAR_EXPANDED_PX;
@@ -442,7 +442,7 @@ function AppContent() {
               setSuiteFlyout(null);
             }}
             className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs ${
-              activeTab === item.id ? 'bg-gray-100 font-medium text-[#4f0c1b]' : 'text-gray-600 hover:bg-gray-50'
+              activeTab === item.id ? 'bg-gray-100 font-medium text-[#515151]' : 'text-gray-600 hover:bg-gray-50'
             }`}
           >
             <item.IconEl className="h-3.5 w-3.5 shrink-0 text-gray-500" />
@@ -691,7 +691,7 @@ function AppContent() {
                   }
                 }
               }}
-              className="w-full rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-3 text-xs text-gray-800 placeholder:text-gray-400 focus:border-[#4f0c1b]/40 focus:outline-none focus:ring-1 focus:ring-[#4f0c1b]/25"
+              className="w-full rounded-full border border-gray-200 bg-white py-1.5 pl-9 pr-3 text-xs text-gray-800 placeholder:text-gray-400 focus:border-[#515151]/40 focus:outline-none focus:ring-1 focus:ring-[#515151]/25"
               aria-label={t('common.searchPlaceholder')}
             />
 
@@ -783,7 +783,7 @@ function AppContent() {
                     }}
                     className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${
                       locale === lang.code
-                        ? 'bg-gray-50 font-medium text-[#4f0c1b]'
+                        ? 'bg-gray-50 font-medium text-[#515151]'
                         : 'text-gray-700 hover:bg-gray-50'
                     }`}
                   >

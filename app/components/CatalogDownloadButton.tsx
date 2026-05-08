@@ -93,7 +93,7 @@ export default function CatalogDownloadButton({
     <button
       onClick={handleDownload}
       disabled={isGenerating}
-      className="px-3 py-1.5 bg-[#4f0c1b] hover:bg-[#3d0a15] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md transition-all font-medium shadow-sm hover:shadow-lg active:scale-95 text-center text-xs"
+      className="px-3 py-1.5 bg-[#515151] hover:bg-[#000000] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md transition-all font-medium shadow-sm hover:shadow-lg active:scale-95 text-center text-xs"
     >
       {isGenerating ? (
         <span className="flex items-center justify-center gap-1">

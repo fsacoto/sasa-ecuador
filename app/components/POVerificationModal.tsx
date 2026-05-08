@@ -153,7 +153,7 @@ export default function POVerificationModal({
                 onClick={() => setSelectedLocale('en')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   selectedLocale === 'en'
-                    ? 'bg-[#4f0c1b] text-white'
+                    ? 'bg-[#515151] text-white'
                     : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                 }`}
               >
@@ -163,7 +163,7 @@ export default function POVerificationModal({
                 onClick={() => setSelectedLocale('es')}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   selectedLocale === 'es'
-                    ? 'bg-[#4f0c1b] text-white'
+                    ? 'bg-[#515151] text-white'
                     : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                 }`}
               >
@@ -189,7 +189,7 @@ export default function POVerificationModal({
               placeholder={t('purchaseOrders.searchInvoicePlaceholder') || 'Search by PO Number, Invoice, Date, Destination, or SKU...'}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-[#4f0c1b] outline-none"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-[#515151] outline-none"
             />
           </div>
         </div>

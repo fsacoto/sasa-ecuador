@@ -234,7 +234,7 @@ export default function BarcodePrintModal({
                     setSelectedOrderIds([]);
                     setSelectedInvoice(null);
                   }}
-                  className="w-4 h-4 text-[#4f0c1b] border-gray-300 focus:ring-[#4f0c1b]"
+                  className="w-4 h-4 text-[#515151] border-gray-300 focus:ring-[#515151]"
                 />
                 <div>
                   <span className="text-sm font-medium text-gray-900">
@@ -257,7 +257,7 @@ export default function BarcodePrintModal({
                     setSelectedOrderIds([]);
                     setSelectedInvoice(null);
                   }}
-                  className="w-4 h-4 text-[#4f0c1b] border-gray-300 focus:ring-[#4f0c1b]"
+                  className="w-4 h-4 text-[#515151] border-gray-300 focus:ring-[#515151]"
                 />
                 <div>
                   <span className="text-sm font-medium text-gray-900">
@@ -283,7 +283,7 @@ export default function BarcodePrintModal({
                   value="full"
                   checked={printMode === 'full'}
                   onChange={(e) => setPrintMode(e.target.value as 'full')}
-                  className="w-4 h-4 text-[#4f0c1b] border-gray-300 focus:ring-[#4f0c1b]"
+                  className="w-4 h-4 text-[#515151] border-gray-300 focus:ring-[#515151]"
                 />
                 <div>
                   <span className="text-sm font-medium text-gray-900">
@@ -302,7 +302,7 @@ export default function BarcodePrintModal({
                   value="one-per-item"
                   checked={printMode === 'one-per-item'}
                   onChange={(e) => setPrintMode(e.target.value as 'one-per-item')}
-                  className="w-4 h-4 text-[#4f0c1b] border-gray-300 focus:ring-[#4f0c1b]"
+                  className="w-4 h-4 text-[#515151] border-gray-300 focus:ring-[#515151]"
                 />
                 <div>
                   <span className="text-sm font-medium text-gray-900">
@@ -321,7 +321,7 @@ export default function BarcodePrintModal({
                   value="single"
                   checked={printMode === 'single'}
                   onChange={(e) => setPrintMode(e.target.value as 'single')}
-                  className="w-4 h-4 text-[#4f0c1b] border-gray-300 focus:ring-[#4f0c1b]"
+                  className="w-4 h-4 text-[#515151] border-gray-300 focus:ring-[#515151]"
                 />
                 <div>
                   <span className="text-sm font-medium text-gray-900">
@@ -345,7 +345,7 @@ export default function BarcodePrintModal({
               }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent text-sm"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm"
             />
           </div>
 
@@ -355,7 +355,7 @@ export default function BarcodePrintModal({
                 <button
                   type="button"
                   onClick={handleSelectAll}
-                  className="px-3 py-1.5 text-sm text-[#4f0c1b] hover:bg-[#4f0c1b] hover:text-white border border-[#4f0c1b] rounded-lg transition-colors"
+                  className="px-3 py-1.5 text-sm text-[#515151] hover:bg-[#515151] hover:text-white border border-[#515151] rounded-lg transition-colors"
                 >
                   {t('purchaseOrders.selectAll') || 'Select All'}
                 </button>
@@ -423,7 +423,7 @@ export default function BarcodePrintModal({
                       key={invoice}
                       className={`border rounded-lg p-4 cursor-pointer transition-all ${
                         isSelected
-                          ? 'border-[#4f0c1b] bg-[#4f0c1b]/5'
+                          ? 'border-[#515151] bg-[#515151]/5'
                           : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                       }`}
                       onClick={() => handleInvoiceSelect(invoice)}
@@ -435,7 +435,7 @@ export default function BarcodePrintModal({
                           checked={isSelected}
                           onChange={() => handleInvoiceSelect(invoice)}
                           onClick={(e) => e.stopPropagation()}
-                          className="mt-1 w-4 h-4 text-[#4f0c1b] border-gray-300 focus:ring-[#4f0c1b]"
+                          className="mt-1 w-4 h-4 text-[#515151] border-gray-300 focus:ring-[#515151]"
                         />
                         <div className="flex-1">
                           <div className="flex items-center justify-between">
@@ -508,7 +508,7 @@ export default function BarcodePrintModal({
                     key={row.order.id}
                     className={`border rounded-lg p-4 cursor-pointer transition-all ${
                       isSelected
-                        ? 'border-[#4f0c1b] bg-[#4f0c1b]/5'
+                        ? 'border-[#515151] bg-[#515151]/5'
                         : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                     }`}
                     onClick={() => handleOrderToggle(row.order.id)}
@@ -519,7 +519,7 @@ export default function BarcodePrintModal({
                         checked={isSelected}
                         onChange={() => handleOrderToggle(row.order.id)}
                         onClick={(e) => e.stopPropagation()}
-                        className="mt-1 w-4 h-4 text-[#4f0c1b] border-gray-300 rounded focus:ring-[#4f0c1b]"
+                        className="mt-1 w-4 h-4 text-[#515151] border-gray-300 rounded focus:ring-[#515151]"
                       />
                       <div className="flex-1">
                         <div className="flex items-center justify-between">
@@ -571,7 +571,7 @@ export default function BarcodePrintModal({
             type="button"
             onClick={handlePrint}
             disabled={groupingMode === 'invoice' ? !selectedInvoice : selectedOrderIds.length === 0}
-            className="px-4 py-2 bg-[#4f0c1b] text-white hover:bg-[#3d0a15] rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 bg-[#515151] text-white hover:bg-[#000000] rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {t('purchaseOrders.print') || 'Print'}
           </button>

@@ -1259,7 +1259,7 @@ export default function InvoiceTracking() {
                 <tr key={invoice.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div 
-                      className="text-xl font-bold text-[#4f0c1b] cursor-pointer hover:text-[#6b1824] transition-colors" 
+                      className="text-xl font-bold text-[#515151] cursor-pointer hover:text-[#000000] transition-colors" 
                       onClick={() => {
                         setDetailsInvoice(invoice);
                         setShowInvoiceDetailsModal(true);
@@ -1276,7 +1276,7 @@ export default function InvoiceTracking() {
                     <div className="text-sm text-gray-700">{new Date(invoice.date).toLocaleDateString()}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <div className="text-lg font-bold text-[#4f0c1b]">${invoice.grandTotal.toFixed(2)}</div>
+                    <div className="text-lg font-bold text-[#515151]">${invoice.grandTotal.toFixed(2)}</div>
                     <div className="text-xs text-gray-500">{invoice.currency}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -1434,7 +1434,7 @@ export default function InvoiceTracking() {
                     setEditShowDropdown(true);
                   }}
                   onFocus={() => setEditShowDropdown(true)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
                 
                 {editShowDropdown && getFilteredEditInventory().length > 0 && (
@@ -1445,7 +1445,7 @@ export default function InvoiceTracking() {
                         onClick={() => addProductToEditItems(product)}
                         className="px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
                       >
-                        <div className="font-mono text-sm font-semibold text-[#4f0c1b]">{product.sku}</div>
+                        <div className="font-mono text-sm font-semibold text-[#515151]">{product.sku}</div>
                         <div className="text-sm text-gray-600">{product.name}</div>
                         <div className="text-xs text-gray-500">{t('invoiceTracking.stock')}: {product.ecuadorStock} | {product.category} - {product.line}</div>
                       </div>
@@ -1591,7 +1591,7 @@ export default function InvoiceTracking() {
                 <span>{t('invoiceTracking.discount')}:</span>
                 <span className="font-semibold">${calculateEditDiscount().toFixed(2)}</span>
               </div>
-              <div className="flex justify-between text-xl font-bold text-[#4f0c1b] pt-2 border-t">
+              <div className="flex justify-between text-xl font-bold text-[#515151] pt-2 border-t">
                 <span>{t('invoiceTracking.grandTotal')}:</span>
                 <span>${calculateEditGrandTotal().toFixed(2)}</span>
               </div>
@@ -1601,7 +1601,7 @@ export default function InvoiceTracking() {
             <div className="flex gap-2">
               <button
                 onClick={saveInvoiceEdit}
-                className="flex-1 px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327]"
+                className="flex-1 px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000]"
               >
                 {t('invoiceTracking.saveChanges')}
               </button>
@@ -1631,7 +1631,7 @@ export default function InvoiceTracking() {
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}
                   placeholder={`${t('invoiceTracking.max')}: $${paymentInvoice.remainingBalance.toFixed(2)}`}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
                 <button
                   type="button"
@@ -1648,7 +1648,7 @@ export default function InvoiceTracking() {
                   type="date"
                   value={paymentDate}
                   onChange={(e) => setPaymentDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
               </div>
 
@@ -1671,7 +1671,7 @@ export default function InvoiceTracking() {
             <div className="flex gap-2 mt-6">
               <button
                 onClick={addPayment}
-                className="flex-1 px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327]"
+                className="flex-1 px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000]"
               >
                 {t('invoiceTracking.addPayment')}
               </button>
@@ -1703,7 +1703,7 @@ export default function InvoiceTracking() {
                   type="date"
                   value={deliveryDate}
                   onChange={(e) => setDeliveryDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
               </div>
 
@@ -1714,7 +1714,7 @@ export default function InvoiceTracking() {
                   onChange={(e) => setDeliveryNotes(e.target.value)}
                   rows={3}
                   placeholder={t('invoiceTracking.deliveryNotesPlaceholder')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4f0c1b] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
               </div>
 
@@ -1763,7 +1763,7 @@ export default function InvoiceTracking() {
             <div className="flex gap-2 mt-6">
               <button
                 onClick={savePartialDelivery}
-                className="flex-1 px-4 py-2 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327]"
+                className="flex-1 px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000]"
               >
                 {t('invoiceTracking.registerPartialDelivery')}
               </button>
@@ -1783,7 +1783,7 @@ export default function InvoiceTracking() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-start mb-6">
-              <h3 className="text-2xl font-bold text-[#4f0c1b]">{detailsInvoice.invoiceNumber}</h3>
+              <h3 className="text-2xl font-bold text-[#515151]">{detailsInvoice.invoiceNumber}</h3>
               <button
                 onClick={() => {
                   setShowInvoiceDetailsModal(false);
@@ -1859,7 +1859,7 @@ export default function InvoiceTracking() {
                     <span>{t('invoiceTracking.discount')} {detailsInvoice.discountType === 'percentage' ? `(${detailsInvoice.discountValue}%)` : ''}:</span>
                     <span className="font-medium text-red-600">-${detailsInvoice.discountTotal.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-lg font-bold text-[#4f0c1b] pt-2 border-t border-gray-300">
+                  <div className="flex justify-between text-lg font-bold text-[#515151] pt-2 border-t border-gray-300">
                     <span>{t('invoiceTracking.grandTotal')}:</span>
                     <span>${detailsInvoice.grandTotal.toFixed(2)}</span>
                   </div>
@@ -2161,13 +2161,13 @@ export default function InvoiceTracking() {
             <div className="space-y-3 mb-6">
               <button
                 onClick={() => generatePDF(pdfInvoice, 'en')}
-                className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left"
+                className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
               >
                 {t('language.english')}
               </button>
               <button
                 onClick={() => generatePDF(pdfInvoice, 'es')}
-                className="w-full px-4 py-3 bg-[#4f0c1b] text-white rounded-lg hover:bg-[#5c1327] transition-colors font-medium text-left"
+                className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
               >
                 {t('language.spanish')}
               </button>

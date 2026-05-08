@@ -180,7 +180,7 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
                     <button
                       type="button"
                       onClick={() => setLightboxOpen(true)}
-                      className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4f0c1b] focus-visible:ring-offset-2 rounded-xl"
+                      className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#515151] focus-visible:ring-offset-2 rounded-xl"
                       aria-label={t('inventory.galleryOpenFullscreen')}
                     >
                       <div className="relative w-full max-h-72 min-h-[200px] flex items-center justify-center bg-gray-100">
@@ -210,7 +210,7 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
                             e.stopPropagation();
                             goPrev();
                           }}
-                          className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center text-gray-700 hover:bg-gray-50 hover:text-[#4f0c1b] z-10"
+                          className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center text-gray-700 hover:bg-gray-50 hover:text-[#515151] z-10"
                           aria-label={t('inventory.galleryPrevious')}
                         >
                           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -223,7 +223,7 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
                             e.stopPropagation();
                             goNext();
                           }}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center text-gray-700 hover:bg-gray-50 hover:text-[#4f0c1b] z-10"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center text-gray-700 hover:bg-gray-50 hover:text-[#515151] z-10"
                           aria-label={t('inventory.galleryNext')}
                         >
                           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -240,7 +240,7 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
                     <button
                       type="button"
                       onClick={() => setLightboxOpen(true)}
-                      className="text-[#4f0c1b] font-medium hover:underline"
+                      className="text-[#515151] font-medium hover:underline"
                     >
                       {t('inventory.galleryOpenFullscreen')}
                     </button>
@@ -259,7 +259,7 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
                           onClick={() => setActiveIndex(index)}
                           className={`relative shrink-0 w-16 h-16 rounded-lg border-2 overflow-hidden bg-gray-100 transition-colors ${
                             index === activeIndex
-                              ? 'border-[#4f0c1b] ring-2 ring-[#4f0c1b]/20'
+                              ? 'border-[#515151] ring-2 ring-[#515151]/20'
                               : 'border-gray-200 hover:border-gray-300'
                           }`}
                           aria-label={`${t('inventory.gallery')} ${index + 1}`}
@@ -417,7 +417,7 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
                       onClick={() => setSelectedSupplier(supplier)}
                       className="w-full bg-gray-50 rounded-lg p-3 text-left hover:bg-gray-100 transition-colors"
                     >
-                      <div className="font-medium text-sm text-[#4f0c1b]">{supplier.name}</div>
+                      <div className="font-medium text-sm text-[#515151]">{supplier.name}</div>
                       <div className="text-xs text-gray-500 mt-0.5">
                         {supplier.country} · {supplier.currency}
                       </div>
@@ -446,7 +446,7 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
                             {supplier && (
                               <button
                                 onClick={() => setSelectedSupplier(supplier)}
-                                className="text-xs text-[#4f0c1b] hover:underline"
+                                className="text-xs text-[#515151] hover:underline"
                               >
                                 {supplier.name}
                               </button>
