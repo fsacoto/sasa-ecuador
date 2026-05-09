@@ -2,48 +2,29 @@
 
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { InventoryItem } from '../types';
-import enMessages from '../locales/en.json';
 import esMessages from '../locales/es.json';
 
-type Locale = 'en' | 'es';
-
-const messagesMap: Record<Locale, typeof enMessages> = {
-  en: enMessages,
-  es: esMessages,
-};
-
-// Translation helper function for PDF component
-const translate = (locale: Locale, key: string): string => {
+// Traducciones solo en español (PDF)
+const translate = (key: string): string => {
   const keys = key.split('.');
-  let value: unknown = messagesMap[locale];
-  
+  let value: unknown = esMessages;
+
   for (const k of keys) {
     if (value && typeof value === 'object' && k in value) {
       value = (value as Record<string, unknown>)[k];
     } else {
-      // Fallback to English if key not found
-      value = messagesMap.en;
-      for (const fallbackKey of keys) {
-        if (value && typeof value === 'object' && fallbackKey in value) {
-          value = (value as Record<string, unknown>)[fallbackKey];
-        } else {
-          return key; // Return key if not found in fallback either
-        }
-      }
-      break;
+      return key;
     }
   }
-  
+
   return typeof value === 'string' ? value : key;
 };
 
-// Translate material name based on locale
-const translateMaterialName = (locale: Locale, materialName: string): string => {
+const translateMaterialName = (materialName: string): string => {
   const materialLower = materialName.toLowerCase();
   const materialKey = materialLower.replace(/\s+/g, '');
-  
-  // Try to find translation key
-  const materialTranslations = messagesMap[locale].inventory?.catalog?.materialNames as Record<string, string> | undefined;
+
+  const materialTranslations = esMessages.inventory?.catalog?.materialNames as Record<string, string> | undefined;
   if (materialTranslations) {
     // Check various possible keys
     const possibleKeys = [
@@ -309,7 +290,6 @@ interface ProductCatalogPDFProps {
   includeStock: boolean;
   itemsPerPage: number;
   orientation: 'landscape' | 'portrait';
-  locale?: Locale;
 }
 
 export default function ProductCatalogPDF({
@@ -318,9 +298,8 @@ export default function ProductCatalogPDF({
   includeStock = false,
   itemsPerPage = 4,
   orientation = 'landscape',
-  locale = 'en',
 }: ProductCatalogPDFProps) {
-  const t = (key: string) => translate(locale, key);
+  const t = (key: string) => translate(key);
   // Handle empty products
   if (!products || products.length === 0) {
     return (
@@ -384,7 +363,7 @@ export default function ProductCatalogPDF({
                       <View style={styles.textPanel}>
                         {/* 1. Material Badge - Single line, no ellipsis, auto-expand, always gold color */}
                         {product.line && (() => {
-                          const badgeText = translateMaterialName(locale, product.line);
+                          const badgeText = translateMaterialName(product.line);
                           const textStyle = getBadgeTextStyle(badgeText);
                           return (
                             <View style={styles.materialBadge}>
@@ -445,7 +424,7 @@ export default function ProductCatalogPDF({
                       <View style={styles.textPanel}>
                         {/* 1. Material Badge - Single line, no ellipsis, auto-expand, always gold color */}
                         {product.line && (() => {
-                          const badgeText = translateMaterialName(locale, product.line);
+                          const badgeText = translateMaterialName(product.line);
                           const textStyle = getBadgeTextStyle(badgeText);
                           return (
                             <View style={styles.materialBadge}>

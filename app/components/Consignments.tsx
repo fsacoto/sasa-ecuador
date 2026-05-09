@@ -38,8 +38,6 @@ export default function Consignments() {
   const hasLoadedRef = useRef(false);
 
   // PDF language selection modal state
-  const [showPdfLanguageModal, setShowPdfLanguageModal] = useState(false);
-  const [pdfConsignment, setPdfConsignment] = useState<Consignment | null>(null);
   
   // Delete confirmation state
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -481,11 +479,10 @@ export default function Consignments() {
   };
 
   const handleGeneratePDFClick = (consignment: Consignment) => {
-    setPdfConsignment(consignment);
-    setShowPdfLanguageModal(true);
+    void generatePDF(consignment);
   };
 
-  const generatePDF = async (consignment: Consignment, locale: 'en' | 'es' = 'en') => {
+  const generatePDF = async (consignment: Consignment) => {
     try {
       const { convertImageForPDF } = await import('../utils/imageConverter');
       const logoUrl = typeof window !== 'undefined' 
@@ -498,7 +495,7 @@ export default function Consignments() {
         import('./ConsignmentPDF')
       ]);
 
-      const pdfDocument = <ConsignmentPDF consignment={consignment} logoSrc={logoBase64 || logoUrl} locale={locale} />;
+      const pdfDocument = <ConsignmentPDF consignment={consignment} logoSrc={logoBase64 || logoUrl} />;
 
       const instance = pdf(pdfDocument);
       const blob = await instance.toBlob();
@@ -512,14 +509,9 @@ export default function Consignments() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       
-      // Close modal
-      setShowPdfLanguageModal(false);
-      setPdfConsignment(null);
     } catch (error) {
       console.error('Error generating PDF:', error);
       showAlert(t('consignments.errorGeneratingPdf'), 'Error');
-      setShowPdfLanguageModal(false);
-      setPdfConsignment(null);
     }
   };
 
@@ -758,41 +750,6 @@ export default function Consignments() {
             setConsignmentToDelete(null);
           }}
         />
-        {/* PDF Language Selection Modal */}
-        {showPdfLanguageModal && pdfConsignment && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-md">
-              <h3 className="text-xl font-semibold mb-4">{t('pdf.selectLanguage')}</h3>
-              <p className="text-sm text-gray-600 mb-6">{t('pdf.selectLanguageForPdf')}</p>
-              
-              <div className="space-y-3 mb-6">
-                <button
-                  onClick={() => generatePDF(pdfConsignment, 'en')}
-                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
-                >
-                  {t('language.english')}
-                </button>
-                <button
-                  onClick={() => generatePDF(pdfConsignment, 'es')}
-                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
-                >
-                  {t('language.spanish')}
-                </button>
-              </div>
-
-              <button
-                onClick={() => {
-                  setShowPdfLanguageModal(false);
-                  setPdfConsignment(null);
-                }}
-                className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Alert Dialog */}
         <AlertDialog
           open={alertDialog.open}
@@ -984,41 +941,6 @@ export default function Consignments() {
           </div>
         )}
       </div>
-        {/* PDF Language Selection Modal */}
-        {showPdfLanguageModal && pdfConsignment && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-md">
-              <h3 className="text-xl font-semibold mb-4">{t('pdf.selectLanguage')}</h3>
-              <p className="text-sm text-gray-600 mb-6">{t('pdf.selectLanguageForPdf')}</p>
-              
-              <div className="space-y-3 mb-6">
-                <button
-                  onClick={() => generatePDF(pdfConsignment, 'en')}
-                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
-                >
-                  {t('language.english')}
-                </button>
-                <button
-                  onClick={() => generatePDF(pdfConsignment, 'es')}
-                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
-                >
-                  {t('language.spanish')}
-                </button>
-              </div>
-
-              <button
-                onClick={() => {
-                  setShowPdfLanguageModal(false);
-                  setPdfConsignment(null);
-                }}
-                className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Alert Dialog */}
         <AlertDialog
           open={alertDialog.open}
@@ -1201,41 +1123,6 @@ export default function Consignments() {
           </div>
         </div>
       </div>
-        {/* PDF Language Selection Modal */}
-        {showPdfLanguageModal && pdfConsignment && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-md">
-              <h3 className="text-xl font-semibold mb-4">{t('pdf.selectLanguage')}</h3>
-              <p className="text-sm text-gray-600 mb-6">{t('pdf.selectLanguageForPdf')}</p>
-              
-              <div className="space-y-3 mb-6">
-                <button
-                  onClick={() => generatePDF(pdfConsignment, 'en')}
-                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
-                >
-                  {t('language.english')}
-                </button>
-                <button
-                  onClick={() => generatePDF(pdfConsignment, 'es')}
-                  className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
-                >
-                  {t('language.spanish')}
-                </button>
-              </div>
-
-              <button
-                onClick={() => {
-                  setShowPdfLanguageModal(false);
-                  setPdfConsignment(null);
-                }}
-                className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Alert Dialog */}
         <AlertDialog
           open={alertDialog.open}

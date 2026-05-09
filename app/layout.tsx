@@ -12,8 +12,8 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "SASA Business Hub",
-  description: "Jewelry inventory management system for SASA",
+  title: "SASA — Centro de gestión",
+  description: "Gestión de inventario y operaciones para SASA",
 };
 
 export default function RootLayout({
@@ -22,7 +22,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="es" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistSans.className} font-sans antialiased`}
         suppressHydrationWarning

@@ -2,38 +2,20 @@
 
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { SalesInvoice } from '../types';
-import enMessages from '../locales/en.json';
 import esMessages from '../locales/es.json';
 
-type Locale = 'en' | 'es';
-
-const messagesMap: Record<Locale, typeof enMessages> = {
-  en: enMessages,
-  es: esMessages,
-};
-
-// Translation helper function for PDF component
-const translate = (locale: Locale, key: string): string => {
+const translate = (key: string): string => {
   const keys = key.split('.');
-  let value: unknown = messagesMap[locale];
-  
+  let value: unknown = esMessages;
+
   for (const k of keys) {
     if (value && typeof value === 'object' && k in value) {
       value = (value as Record<string, unknown>)[k];
     } else {
-      // Fallback to English if key not found
-      value = messagesMap.en;
-      for (const fallbackKey of keys) {
-        if (value && typeof value === 'object' && fallbackKey in value) {
-          value = (value as Record<string, unknown>)[fallbackKey];
-        } else {
-          return key; // Return key if not found in fallback either
-        }
-      }
-      break;
+      return key;
     }
   }
-  
+
   return typeof value === 'string' ? value : key;
 };
 
@@ -252,18 +234,17 @@ const styles = StyleSheet.create({
 interface InvoicePDFProps {
   invoice: SalesInvoice;
   logoSrc?: string;
-  locale?: Locale;
 }
 
-export default function InvoicePDF({ invoice, logoSrc = '/sasa.png', locale = 'en' }: InvoicePDFProps) {
-  const t = (key: string) => translate(locale, key);
+export default function InvoicePDF({ invoice, logoSrc = '/sasa.png' }: InvoicePDFProps) {
+  const t = (key: string) => translate(key);
   // Format date
   const formatDate = (date: Date | string) => {
     const d = typeof date === 'string' ? new Date(date) : date;
-    return d.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
+    return d.toLocaleDateString('es-EC', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
     });
   };
 

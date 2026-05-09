@@ -5,7 +5,6 @@ interface GeneratePOVerificationPDFParams {
   orders: PurchaseOrder[];
   supplier: Supplier | null;
   invoiceNumber: string;
-  locale: 'en' | 'es';
 }
 
 // Load logo as base64 (we'll need to handle this)
@@ -38,20 +37,12 @@ function formatPONumber(invoice: string): string {
   return invoice || 'PO-00000';
 }
 
-// Format date
-function formatDate(date: Date | string, locale: 'en' | 'es'): string {
+function formatDate(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
-  if (locale === 'es') {
-    return d.toLocaleDateString('es-ES', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-  }
-  return d.toLocaleDateString('en-US', {
+  return d.toLocaleDateString('es-EC', {
     year: 'numeric',
     month: 'long',
-    day: 'numeric'
+    day: 'numeric',
   });
 }
 
@@ -59,7 +50,6 @@ export async function generatePOVerificationPDF({
   orders,
   supplier,
   invoiceNumber,
-  locale
 }: GeneratePOVerificationPDFParams): Promise<void> {
   const doc = new jsPDF({ 
     orientation: 'landscape', 
@@ -73,58 +63,32 @@ export async function generatePOVerificationPDF({
   const usableWidth = pageWidth - (margin * 2);
   const usableHeight = pageHeight - (margin * 2);
 
-  // Translations
-  const translations = {
-    en: {
-      title: 'PURCHASE ORDER VERIFICATION',
-      purchaseOrder: 'Purchase Order:',
-      supplierInvoice: 'Supplier Invoice:',
-      invoiceDate: 'Invoice Date:',
-      destinationCountry: 'Destination Country:',
-      currentDate: 'Current Date:',
-      no: 'NO',
-      sku: 'SKU',
-      description: 'DESCRIPTION',
-      category: 'CATEGORY',
-      line: 'LINE',
-      qtyOrdered: 'QTY ORDERED',
-      qtyReceived: 'QTY RECEIVED',
-      notes: 'NOTES',
-      check: 'CHECK',
-      verifiedBy: 'Verified By:',
-      date: 'Date:',
-      signature: 'Signature:',
-      page: 'Page',
-      of: 'of'
-    },
-    es: {
-      title: 'VERIFICACIÓN DE ORDEN DE COMPRA',
-      purchaseOrder: 'Orden de Compra:',
-      supplierInvoice: 'Factura del Proveedor:',
-      invoiceDate: 'Fecha de Factura:',
-      destinationCountry: 'País de Destino:',
-      currentDate: 'Fecha Actual:',
-      no: 'NO',
-      sku: 'SKU',
-      description: 'DESCRIPCIÓN',
-      category: 'CATEGORÍA',
-      line: 'LÍNEA',
-      qtyOrdered: 'CANT. PEDIDA',
-      qtyReceived: 'CANT. RECIBIDA',
-      notes: 'NOTAS',
-      check: 'CHECK',
-      verifiedBy: 'Verificado Por:',
-      date: 'Fecha:',
-      signature: 'Firma:',
-      page: 'Página',
-      of: 'de'
-    }
+  const t = {
+    title: 'VERIFICACIÓN DE ORDEN DE COMPRA',
+    purchaseOrder: 'Orden de Compra:',
+    supplierInvoice: 'Factura del Proveedor:',
+    invoiceDate: 'Fecha de Factura:',
+    destinationCountry: 'País de Destino:',
+    currentDate: 'Fecha Actual:',
+    no: 'NO',
+    sku: 'SKU',
+    description: 'DESCRIPCIÓN',
+    category: 'CATEGORÍA',
+    line: 'LÍNEA',
+    qtyOrdered: 'CANT. PEDIDA',
+    qtyReceived: 'CANT. RECIBIDA',
+    notes: 'NOTAS',
+    check: 'CHECK',
+    verifiedBy: 'Verificado Por:',
+    date: 'Fecha:',
+    signature: 'Firma:',
+    page: 'Página',
+    of: 'de',
   };
 
-  const t = translations[locale];
   const poNumber = formatPONumber(invoiceNumber);
-  const invoiceDate = formatDate(orders[0].purchaseDate, locale);
-  const currentDate = formatDate(new Date(), locale);
+  const invoiceDate = formatDate(orders[0].purchaseDate);
+  const currentDate = formatDate(new Date());
   const destinationStock = orders[0].destinationStock;
 
   // Load logo

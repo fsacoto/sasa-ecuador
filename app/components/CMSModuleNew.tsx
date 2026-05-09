@@ -97,7 +97,7 @@ export default function CMSModuleNew() {
       category: string;
       line: string;
       tags: string;
-      language: 'en' | 'es';
+      language: 'es';
     };
     uploadedFiles: UploadedFile[];
   };
@@ -115,7 +115,7 @@ export default function CMSModuleNew() {
         category: '',
         line: '',
         tags: '',
-        language: 'en',
+        language: 'es',
       },
       uploadedFiles: [],
     },
@@ -131,7 +131,7 @@ export default function CMSModuleNew() {
         category: '',
         line: '',
         tags: '',
-        language: 'en',
+        language: 'es',
       },
       uploadedFiles: [],
     },
@@ -147,7 +147,7 @@ export default function CMSModuleNew() {
         category: '',
         line: '',
         tags: '',
-        language: 'en',
+        language: 'es',
       },
       uploadedFiles: [],
     },
@@ -179,7 +179,7 @@ export default function CMSModuleNew() {
     category: '',
     line: '',
     tags: '',
-    language: 'en' as 'en' | 'es',
+    language: 'es',
   });
   const [editUploadedFiles, setEditUploadedFiles] = useState<(File | string)[]>([]);
   const [editSelectedSKUs, setEditSelectedSKUs] = useState<string[]>([]);
@@ -213,7 +213,7 @@ export default function CMSModuleNew() {
       category: '',
       line: '',
       tags: '',
-      language: 'en',
+      language: 'es',
     });
     setEditUploadedFiles([]);
     setEditSelectedSKUs([]);
@@ -232,7 +232,7 @@ export default function CMSModuleNew() {
       category: item.category,
       line: '',
       tags: item.tags.join(', '),
-      language: item.language,
+      language: 'es',
     });
     setEditUploadedFiles([...item.images, ...(item.videos || [])]);
     setEditSelectedSKUs(skus);
@@ -599,7 +599,7 @@ export default function CMSModuleNew() {
         authorName: user?.name || 'Unknown',
         category: (state.formData.category || '').trim(),
         tags: tagsArray,
-        language: state.formData.language,
+        language: 'es',
         linkedProductIds: [...state.selectedSKUs],
       });
 
@@ -636,7 +636,7 @@ export default function CMSModuleNew() {
           category: '',
           line: '',
           tags: '',
-          language: 'en',
+          language: 'es',
         },
         uploadedFiles: [],
         selectedSKUs: [],
@@ -742,7 +742,7 @@ export default function CMSModuleNew() {
         imageLinkedSkus,
         category: editFormData.category || '',
         tags: tagsArray,
-        language: editFormData.language,
+        language: 'es',
         linkedProductIds: editSelectedSKUs,
       });
 
@@ -773,7 +773,7 @@ export default function CMSModuleNew() {
         category: '',
         line: '',
         tags: '',
-        language: 'en',
+        language: 'es',
       });
       setEditUploadedFiles([]);
       setEditSelectedSKUs([]);
@@ -787,7 +787,7 @@ export default function CMSModuleNew() {
           category: '',
           line: '',
           tags: '',
-          language: 'en',
+          language: 'es',
         },
         uploadedFiles: [],
         selectedSKUs: [],
@@ -1020,31 +1020,15 @@ export default function CMSModuleNew() {
 
             {uploadType === 'product' ? (
               <div className="space-y-5">
-                {/* Single Product: Only show Language and Comments */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Language</label>
-                  <select
-                    value={editingContent ? editFormData.language : currentTabState.formData.language}
-                    onChange={(e) => editingContent 
-                      ? setEditFormData({ ...editFormData, language: e.target.value as 'en' | 'es' })
-                      : updateCurrentTabState({ formData: { ...currentTabState.formData, language: e.target.value as 'en' | 'es' } })
-                    }
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
-                  >
-                    <option value="en">English</option>
-                    <option value="es">Español</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Comments</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('cms.comments')}</label>
                   <textarea
                     value={editingContent ? editFormData.description : currentTabState.formData.description}
                     onChange={(e) => editingContent
                       ? setEditFormData({ ...editFormData, description: e.target.value })
                       : updateCurrentTabState({ formData: { ...currentTabState.formData, description: e.target.value } })
                     }
-                    placeholder="Add any comments or notes about this product content..."
+                    placeholder={t('cms.commentsPlaceholder')}
                     rows={4}
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent resize-none"
                   />
@@ -1053,43 +1037,26 @@ export default function CMSModuleNew() {
             ) : (
               <div className="space-y-5">
                 {/* Collection/General: Show full form */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {t('cms.titleColumn')} <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={editingContent ? editFormData.title : currentTabState.formData.title}
-                      onChange={(e) => editingContent
-                        ? setEditFormData({ ...editFormData, title: e.target.value })
-                        : updateCurrentTabState({ formData: { ...currentTabState.formData, title: e.target.value } })
-                      }
-                      required
-                      placeholder="Enter content title..."
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Language</label>
-                    <select
-                      value={editingContent ? editFormData.language : currentTabState.formData.language}
-                      onChange={(e) => editingContent
-                        ? setEditFormData({ ...editFormData, language: e.target.value as 'en' | 'es' })
-                        : updateCurrentTabState({ formData: { ...currentTabState.formData, language: e.target.value as 'en' | 'es' } })
-                      }
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
-                    >
-                      <option value="en">English</option>
-                      <option value="es">Español</option>
-                    </select>
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('cms.titleColumn')} <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editingContent ? editFormData.title : currentTabState.formData.title}
+                    onChange={(e) => editingContent
+                      ? setEditFormData({ ...editFormData, title: e.target.value })
+                      : updateCurrentTabState({ formData: { ...currentTabState.formData, title: e.target.value } })
+                    }
+                    required
+                    placeholder={t('cms.enterContentTitle')}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
+                  />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Description <span className="text-red-500">*</span>
+                    {t('cms.description')} <span className="text-red-500">*</span>
                   </label>
                   <textarea
                     value={editingContent ? editFormData.description : currentTabState.formData.description}
@@ -1098,7 +1065,7 @@ export default function CMSModuleNew() {
                       : updateCurrentTabState({ formData: { ...currentTabState.formData, description: e.target.value } })
                     }
                     required
-                    placeholder="Enter content description..."
+                    placeholder={t('cms.enterContentDescription')}
                     rows={4}
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent resize-none"
                   />
@@ -1106,7 +1073,7 @@ export default function CMSModuleNew() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Hashtags</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('cms.hashtags')}</label>
                     <input
                       type="text"
                       value={editingContent ? editFormData.hashtags : currentTabState.formData.hashtags}
@@ -1114,14 +1081,14 @@ export default function CMSModuleNew() {
                         ? setEditFormData({ ...editFormData, hashtags: e.target.value })
                         : updateCurrentTabState({ formData: { ...currentTabState.formData, hashtags: e.target.value } })
                       }
-                      placeholder="#jewelry #necklace"
+                      placeholder="#joyería #collar"
                       className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                     />
-                    <p className="text-xs text-gray-500 mt-1">Separate multiple hashtags with spaces</p>
+                    <p className="text-xs text-gray-500 mt-1">{t('cms.hashtagsSeparateSpaces')}</p>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Tags</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('cms.tags')}</label>
                     <input
                       type="text"
                       value={editingContent ? editFormData.tags : currentTabState.formData.tags}
@@ -1129,10 +1096,10 @@ export default function CMSModuleNew() {
                         ? setEditFormData({ ...editFormData, tags: e.target.value })
                         : updateCurrentTabState({ formData: { ...currentTabState.formData, tags: e.target.value } })
                       }
-                      placeholder="promotion, sale"
+                      placeholder={t('cms.hashtagsPlaceholder')}
                       className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                     />
-                    <p className="text-xs text-gray-500 mt-1">Separate multiple tags with commas</p>
+                    <p className="text-xs text-gray-500 mt-1">{t('cms.tagsSeparateCommas')}</p>
                   </div>
                 </div>
               </div>
@@ -1391,7 +1358,7 @@ export default function CMSModuleNew() {
                         category: '',
                         line: '',
                         tags: '',
-                        language: 'en',
+                        language: 'es',
                       });
                       setEditUploadedFiles([]);
                       setEditSelectedSKUs([]);
@@ -1405,7 +1372,7 @@ export default function CMSModuleNew() {
                         category: '',
                         line: '',
                         tags: '',
-                        language: 'en',
+                        language: 'es',
                       },
                       uploadedFiles: [],
                       selectedSKUs: [],
@@ -2319,12 +2286,13 @@ function ResubmitModal({
   onClose: () => void;
   onResubmit: (changesNotes: string) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [changesNotes, setChangesNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async () => {
     if (!changesNotes.trim()) {
-      alert('Please describe the changes made before resubmitting.');
+      alert(t('cms.resubmitDescribeChangesAlert'));
       return;
     }
     setIsSubmitting(true);
@@ -2332,7 +2300,7 @@ function ResubmitModal({
       await onResubmit(changesNotes);
     } catch (error) {
       console.error('Error resubmitting:', error);
-      alert('Error resubmitting content. Please try again.');
+      alert(t('cms.resubmitErrorAlert'));
     } finally {
       setIsSubmitting(false);
     }
@@ -2349,7 +2317,7 @@ function ResubmitModal({
       >
         {/* Header */}
         <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">Resubmit Content</h3>
+          <h3 className="text-lg font-semibold text-gray-900">{t('cms.resubmitModalTitle')}</h3>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600"
@@ -2363,17 +2331,17 @@ function ResubmitModal({
         {/* Content */}
         <div className="p-6 space-y-4">
           <p className="text-sm text-gray-600">
-            Please describe the changes you made to address the rejection. This will help reviewers understand what was updated.
+            {t('cms.resubmitIntro')}
           </p>
           
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Changes Made <span className="text-red-500">*</span>
+              {t('cms.resubmitChangesLabel')} <span className="text-red-500">*</span>
             </label>
             <textarea
               value={changesNotes}
               onChange={(e) => setChangesNotes(e.target.value)}
-              placeholder="Describe the changes you made to address the rejection..."
+              placeholder={t('cms.resubmitPlaceholder')}
               rows={6}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
               required
@@ -2388,14 +2356,14 @@ function ResubmitModal({
             disabled={isSubmitting}
             className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             onClick={handleSubmit}
             disabled={isSubmitting || !changesNotes.trim()}
             className="px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000] disabled:opacity-50 disabled:cursor-not-allowed font-medium"
           >
-            {isSubmitting ? 'Resubmitting...' : 'Resubmit'}
+            {isSubmitting ? t('cms.resubmitting') : t('cms.resubmit')}
           </button>
         </div>
       </div>
@@ -2564,8 +2532,8 @@ function ContentDetailModal({
                   </div>
                 </div>
                 <div>
-                  <span className="text-xs font-medium text-gray-500">Language</span>
-                  <p className="text-sm font-medium text-gray-900 mt-1">{content.language.toUpperCase()}</p>
+                  <span className="text-xs font-medium text-gray-500">{t('cms.language')}</span>
+                  <p className="text-sm font-medium text-gray-900 mt-1">{t('cms.spanish')}</p>
                 </div>
                 <div>
                   <span className="text-xs font-medium text-gray-500">Category</span>
@@ -5975,8 +5943,8 @@ function ContentView({
                           </span>
                         </div>
                         <div className="flex items-start justify-between pb-3 border-b border-gray-200">
-                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Language</span>
-                          <p className="text-sm font-semibold text-gray-900 text-right">{selectedCollectionDetail.language.toUpperCase()}</p>
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t('cms.language')}</span>
+                          <p className="text-sm font-semibold text-gray-900 text-right">{t('cms.spanish')}</p>
                         </div>
                         <div className="flex items-start justify-between pb-3 border-b border-gray-200">
                           <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Category</span>
@@ -6250,8 +6218,8 @@ function ContentView({
                           </span>
                         </div>
                         <div className="flex items-start justify-between pb-3 border-b border-gray-200">
-                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Language</span>
-                          <p className="text-sm font-semibold text-gray-900 text-right">{selectedGeneralDetail.language.toUpperCase()}</p>
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t('cms.language')}</span>
+                          <p className="text-sm font-semibold text-gray-900 text-right">{t('cms.spanish')}</p>
                         </div>
                         <div className="flex items-start justify-between pb-3 border-b border-gray-200">
                           <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Category</span>

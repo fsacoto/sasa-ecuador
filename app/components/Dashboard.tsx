@@ -224,7 +224,7 @@ const metricCardClass =
 export default function Dashboard({ onNavigate }: DashboardProps = {}) {
   const { suppliers, purchaseOrders, inventory } = useInventory();
   const { hasPermission, user } = useAuth();
-  const { t, locale } = useTranslation();
+  const { t } = useTranslation();
 
   const firstName =
     user?.name?.trim().split(/\s+/)[0] || user?.email?.split('@')[0] || t('dashboard.greetingDefaultName');
@@ -242,7 +242,7 @@ export default function Dashboard({ onNavigate }: DashboardProps = {}) {
           ? t('dashboard.greetingAfternoon')
           : t('dashboard.greetingEvening');
     setGreetingLine(tpl.replace('{name}', firstName));
-  }, [t, firstName, locale]);
+  }, [t, firstName]);
 
   const handleNavigate = (tab: string, filters?: Record<string, any>) => {
     if (onNavigate) {

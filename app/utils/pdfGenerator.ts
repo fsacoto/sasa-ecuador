@@ -10,12 +10,11 @@ export interface GenerateCatalogPDFParams {
   includeStock: boolean;
   itemsPerPage: number;
   orientation: 'landscape' | 'portrait';
-  locale: 'en' | 'es';
   fileName: string;
 }
 
 export async function generateCatalogPDF(params: GenerateCatalogPDFParams): Promise<void> {
-  const { products, catalogTitle, includeStock, itemsPerPage, orientation, locale, fileName } = params;
+  const { products, catalogTitle, includeStock, itemsPerPage, orientation, fileName } = params;
 
   // Import image converter
   const { convertImageForPDF } = await import('./imageConverter');
@@ -78,7 +77,6 @@ export async function generateCatalogPDF(params: GenerateCatalogPDFParams): Prom
     includeStock,
     itemsPerPage,
     orientation,
-    locale,
   } as React.ComponentProps<typeof ProductCatalogPDF>);
 
   // Generate blob - cast to any to avoid type issues with React PDF

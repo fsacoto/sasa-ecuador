@@ -141,7 +141,7 @@ export interface LandedCostCalculation {
 
 export type ContentType = 'product' | 'collection' | 'general';
 export type ContentStatus = 'draft' | 'submitted' | 'approved' | 'published' | 'archived' | 'rejected';
-export type ContentLanguage = 'en' | 'es';
+export type ContentLanguage = 'es';
 
 export interface CMSContent {
   id: string;

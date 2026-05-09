@@ -5,8 +5,6 @@ import { InventoryItem } from '../types';
 import CatalogDownloadButton from './CatalogDownloadButton';
 import { useTranslation } from '../context/TranslationContext';
 
-type CatalogLocale = 'en' | 'es';
-
 interface ProductCatalogModalProps {
   inventory: InventoryItem[];
   onClose: () => void;
@@ -19,8 +17,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
   const [includeStock, setIncludeStock] = useState(false);
   const [itemsPerPage, setItemsPerPage] = useState(4);
   const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape');
-  const [catalogLocale, setCatalogLocale] = useState<CatalogLocale>('en');
-  
+
   // Filter states
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterLine, setFilterLine] = useState<string>('all');
@@ -79,12 +76,12 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
       <div className="sasa-modal-light bg-white rounded-2xl sm:rounded-3xl w-full max-w-6xl h-[95vh] sm:h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-500">
         {/* Header — same treatment as Add Purchase Order (no heavy dividers) */}
         <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between bg-white px-4 py-4 sm:px-6">
-          <h3 className="text-lg font-semibold text-gray-900">Create Product Catalog</h3>
+          <h3 className="text-lg font-semibold text-gray-900">{t('inventory.catalog.createModalTitle')}</h3>
           <button
             type="button"
             onClick={onClose}
             className="text-gray-400 transition-colors hover:text-gray-600"
-            aria-label="Close"
+            aria-label={t('common.close')}
           >
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -97,57 +94,45 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Catalog Title */}
             <div className="md:col-span-2">
-              <label className="block text-xs font-medium mb-1 text-gray-700">Catalog Title</label>
+              <label className="block text-xs font-medium mb-1 text-gray-700">{t('inventory.catalog.catalogTitleLabel')}</label>
               <input
                 type="text"
                 value={catalogTitle}
                 onChange={(e) => setCatalogTitle(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] bg-white text-sm"
-                placeholder="Enter catalog name..."
+                placeholder={t('inventory.catalog.catalogTitlePlaceholder')}
               />
             </div>
 
-            {/* Layout, Orientation, Language & Include Stock */}
+            {/* Diseño, orientación e incluir stock */}
             <div className="flex gap-3">
               <div className="flex-1">
-                <label className="block text-xs font-medium mb-1 text-gray-700">Layout</label>
+                <label className="block text-xs font-medium mb-1 text-gray-700">{t('inventory.catalog.layoutLabel')}</label>
                 <select
                   value={itemsPerPage}
                   onChange={(e) => setItemsPerPage(Number(e.target.value))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] bg-white text-sm"
                 >
-                  <option value={2}>2 per page</option>
-                  <option value={4}>4 per page</option>
-                  <option value={6}>6 per page</option>
-                  <option value={8}>8 per page</option>
-                  <option value={9}>9 per page</option>
+                  <option value={2}>2 por página</option>
+                  <option value={4}>4 por página</option>
+                  <option value={6}>6 por página</option>
+                  <option value={8}>8 por página</option>
+                  <option value={9}>9 por página</option>
                 </select>
               </div>
-              
+
               <div className="flex-1">
-                <label className="block text-xs font-medium mb-1 text-gray-700">Orientation</label>
+                <label className="block text-xs font-medium mb-1 text-gray-700">{t('inventory.catalog.orientationLabel')}</label>
                 <select
                   value={orientation}
                   onChange={(e) => setOrientation(e.target.value as 'landscape' | 'portrait')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] bg-white text-sm"
                 >
-                  <option value="landscape">Landscape</option>
-                  <option value="portrait">Portrait</option>
+                  <option value="landscape">{t('inventory.catalog.landscape')}</option>
+                  <option value="portrait">{t('inventory.catalog.portrait')}</option>
                 </select>
               </div>
 
-              <div className="flex-1">
-                <label className="block text-xs font-medium mb-1 text-gray-700">{t('catalog.selectLanguage')}</label>
-                <select
-                  value={catalogLocale}
-                  onChange={(e) => setCatalogLocale(e.target.value as CatalogLocale)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] bg-white text-sm"
-                >
-                  <option value="en">{t('catalog.english')}</option>
-                  <option value="es">{t('catalog.spanish')}</option>
-                </select>
-              </div>
-              
               <div className="flex items-end">
                 <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-lg border border-gray-300 hover:border-[#515151] transition-colors">
                   <input
@@ -156,7 +141,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                     onChange={(e) => setIncludeStock(e.target.checked)}
                     className="w-4 h-4 rounded border-gray-300 text-[#515151] focus:ring-[#515151]"
                   />
-                  <span className="text-xs font-medium text-gray-700">Stock</span>
+                  <span className="text-xs font-medium text-gray-700">{t('inventory.catalog.includeStockShort')}</span>
                 </label>
               </div>
             </div>
@@ -170,7 +155,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
               <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
               </svg>
-              <h4 className="text-sm font-semibold text-gray-800">Filters</h4>
+              <h4 className="text-sm font-semibold text-gray-800">{t('inventory.catalog.filtersLabel')}</h4>
             </div>
             {(filterCategory !== 'all' || filterLine !== 'all' || filterEcuadorStock || filterUsaStock) && (
               <button
@@ -182,7 +167,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                 }}
                 className="text-xs text-[#515151] hover:text-[#000000] font-medium"
               >
-                Clear All
+                {t('inventory.clearAllFilters')}
               </button>
             )}
           </div>
@@ -190,13 +175,13 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {/* Category Filter */}
             <div>
-              <label className="block text-xs font-medium mb-1 text-gray-700">Category</label>
+              <label className="block text-xs font-medium mb-1 text-gray-700">{t('inventory.catalog.categoryFilterLabel')}</label>
               <select
                 value={filterCategory}
                 onChange={(e) => setFilterCategory(e.target.value)}
                 className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] bg-white text-xs"
               >
-                <option value="all">All Categories</option>
+                <option value="all">{t('inventory.catalog.allCategoriesOption')}</option>
                 {categories.map(category => (
                   <option key={category} value={category}>{category}</option>
                 ))}
@@ -205,13 +190,13 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
 
             {/* Line Filter */}
             <div>
-              <label className="block text-xs font-medium mb-1 text-gray-700">Line</label>
+              <label className="block text-xs font-medium mb-1 text-gray-700">{t('inventory.catalog.lineFilterLabel')}</label>
               <select
                 value={filterLine}
                 onChange={(e) => setFilterLine(e.target.value)}
                 className="w-full px-2 py-1.5 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] bg-white text-xs"
               >
-                <option value="all">All Lines</option>
+                <option value="all">{t('inventory.catalog.allLinesOption')}</option>
                 {lines.map(line => (
                   <option key={line} value={line}>{line}</option>
                 ))}
@@ -257,17 +242,19 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                {selectedItems.length === filteredInventory.length ? 'Deselect All' : 'Select All'}
+                {selectedItems.length === filteredInventory.length
+                  ? t('inventory.catalog.deselectAllProducts')
+                  : t('inventory.catalog.selectAllProducts')}
               </button>
 
               <div className="flex items-center gap-1 text-xs">
                 <span className="font-semibold text-[#515151]">{selectedItems.length}</span>
-                <span className="text-gray-600">of</span>
+                <span className="text-gray-600">{t('inventory.catalog.selectedCountOf')}</span>
                 <span className="font-semibold text-gray-800">{filteredInventory.length}</span>
-                <span className="text-gray-600">products</span>
+                <span className="text-gray-600">{t('inventory.catalog.productsSelectedSuffix')}</span>
                 {(filterCategory !== 'all' || filterLine !== 'all' || filterEcuadorStock || filterUsaStock) && (
                   <span className="text-xs text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded-full ml-1">
-                    filtered
+                    {t('inventory.catalog.filteredBadge')}
                   </span>
                 )}
               </div>
@@ -285,8 +272,8 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
                   </svg>
                 </div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-2">No products found</h3>
-                <p className="text-gray-600">Try adjusting your filters to see more products</p>
+                <h3 className="text-lg font-semibold text-gray-800 mb-2">{t('inventory.catalog.noProductsFilteredTitle')}</h3>
+                <p className="text-gray-600">{t('inventory.catalog.noProductsFilteredHint')}</p>
               </div>
             ) : (
               <div className="space-y-8">
@@ -299,7 +286,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                       <div className="flex items-center gap-3">
                         <h4 className="text-xl font-bold text-gray-800">{category}</h4>
                         <span className="bg-[#515151] text-white text-sm px-3 py-1 rounded-full font-medium">
-                          {categoryItems.length} items
+                          {categoryItems.length} {t('inventory.catalog.itemsInCategory')}
                         </span>
                       </div>
                       
@@ -374,9 +361,11 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
         <div className="flex shrink-0 items-center justify-between gap-4 px-4 py-4 sm:px-6 bg-white">
           <div className="min-w-0 text-xs text-gray-600">
             {selectedItems.length > 0 ? (
-              <span className="font-medium text-[#515151]">{selectedItems.length} products selected</span>
+              <span className="font-medium text-[#515151]">
+                {selectedItems.length} {t('inventory.catalog.productsSelectedSuffix')}
+              </span>
             ) : (
-              <span>Select products to create your catalog</span>
+              <span>{t('inventory.catalog.selectProductsHint')}</span>
             )}
           </div>
           <div className="flex shrink-0 gap-2">
@@ -385,7 +374,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
               onClick={onClose}
               className="px-3 py-1.5 border border-gray-300 rounded-md hover:bg-gray-50 transition-all font-medium text-gray-700 text-xs"
             >
-              Cancel
+              {t('inventory.catalog.cancelModal')}
             </button>
             {selectedItems.length > 0 ? (
               <CatalogDownloadButton
@@ -394,7 +383,6 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                 includeStock={includeStock}
                 itemsPerPage={itemsPerPage}
                 orientation={orientation}
-                locale={catalogLocale}
                 fileName={`${catalogTitle.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`}
               />
             ) : (
@@ -403,7 +391,7 @@ export default function ProductCatalogModal({ inventory, onClose }: ProductCatal
                 disabled
                 className="px-3 py-1.5 bg-gray-200 text-gray-400 rounded-md font-medium cursor-not-allowed text-xs"
               >
-                Select Products
+                {t('inventory.catalog.selectProductsDisabled')}
               </button>
             )}
           </div>

@@ -72,8 +72,6 @@ export default function InvoiceTracking() {
   const [itemsReturningToStock, setItemsReturningToStock] = useState<Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}>>([]);
 
   // PDF language selection modal state
-  const [showPdfLanguageModal, setShowPdfLanguageModal] = useState(false);
-  const [pdfInvoice, setPdfInvoice] = useState<SalesInvoice | null>(null);
 
   /** Which invoice row has the actions dropdown open (one at a time) */
   const [invoiceActionsMenuId, setInvoiceActionsMenuId] = useState<string | null>(null);
@@ -921,11 +919,10 @@ export default function InvoiceTracking() {
   };
 
   const handleGeneratePDFClick = (invoice: SalesInvoice) => {
-    setPdfInvoice(invoice);
-    setShowPdfLanguageModal(true);
+    void generatePDF(invoice);
   };
 
-  const generatePDF = async (invoice: SalesInvoice, locale: 'en' | 'es' = 'en') => {
+  const generatePDF = async (invoice: SalesInvoice) => {
     try {
       // Convert logo image for PDF - use full URL for public assets
       const { convertImageForPDF } = await import('../utils/imageConverter');
@@ -941,7 +938,7 @@ export default function InvoiceTracking() {
       ]);
 
       // Create PDF document with converted logo and locale
-      const pdfDocument = <InvoicePDF invoice={invoice} logoSrc={logoBase64 || logoUrl} locale={locale} />;
+      const pdfDocument = <InvoicePDF invoice={invoice} logoSrc={logoBase64 || logoUrl} />;
 
       // Generate blob
       const instance = pdf(pdfDocument);
@@ -957,14 +954,9 @@ export default function InvoiceTracking() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       
-      // Close modal
-      setShowPdfLanguageModal(false);
-      setPdfInvoice(null);
     } catch (error) {
       console.error('Error generating PDF:', error);
       showAlert(t('invoiceTracking.pdfGenerationFailed') || 'Failed to generate PDF. Please try again.', 'Error');
-      setShowPdfLanguageModal(false);
-      setPdfInvoice(null);
     }
   };
 
@@ -2147,41 +2139,6 @@ export default function InvoiceTracking() {
                 setItemsReturningToStock([]);
               }}
               className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
-            >
-              {t('invoiceTracking.cancel')}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* PDF Language Selection Modal */}
-      {showPdfLanguageModal && pdfInvoice && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-xl font-semibold mb-4">{t('pdf.selectLanguage')}</h3>
-            <p className="text-sm text-gray-600 mb-6">{t('pdf.selectLanguageForPdf')}</p>
-            
-            <div className="space-y-3 mb-6">
-              <button
-                onClick={() => generatePDF(pdfInvoice, 'en')}
-                className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
-              >
-                {t('language.english')}
-              </button>
-              <button
-                onClick={() => generatePDF(pdfInvoice, 'es')}
-                className="w-full px-4 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium text-left"
-              >
-                {t('language.spanish')}
-              </button>
-            </div>
-
-            <button
-              onClick={() => {
-                setShowPdfLanguageModal(false);
-                setPdfInvoice(null);
-              }}
-              className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
             >
               {t('invoiceTracking.cancel')}
             </button>

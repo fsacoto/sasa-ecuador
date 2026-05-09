@@ -37,19 +37,19 @@ type Tab =
   | 'consignments'
   | 'settings';
 
-/** Extra English keywords so search still matches common terms under any UI language */
+/** Palabras clave extra para búsqueda en navegación */
 const TAB_SEARCH_ALIASES: Partial<Record<Tab, string>> = {
-  dashboard: 'home overview main metrics',
-  suppliers: 'supplier vendors vendor sourcing',
-  'purchase-orders': 'purchase order orders po buying procurement',
-  inventory: 'inventory stock sku skus product products items warehouse ecuador',
-  'landed-costs': 'landed cost costs shipping freight logistics import',
-  cms: 'cms content media marketing website catalog',
-  clients: 'clients customers contacts accounts crm',
-  sales: 'sales invoices invoice orders revenue',
-  'invoice-tracking': 'invoice invoices ar receivable tracking payments',
-  consignments: 'consignment consign consigned',
-  settings: 'settings profile preferences integrations notifications scanner accounting',
+  dashboard: 'inicio panel principal métricas resumen',
+  suppliers: 'proveedores compras abastecimiento',
+  'purchase-orders': 'órdenes compra pedidos oc proveedor',
+  inventory: 'inventario stock sku productos bodega almacén ecuador',
+  'landed-costs': 'costos destino flete logística importación',
+  cms: 'contenido medios marketing catálogo web',
+  clients: 'clientes contactos cuentas crm',
+  sales: 'ventas facturas pedidos cobros',
+  'invoice-tracking': 'facturas seguimiento cobranza pagos',
+  consignments: 'consignaciones consigna',
+  settings: 'configuración perfil preferencias integraciones notificaciones escáner contabilidad',
 };
 
 type NavSearchEntry = { tab: Tab; title: string; path: string; haystack: string };
@@ -207,7 +207,7 @@ const SALES_TABS: Tab[] = ['clients', 'sales', 'invoice-tracking', 'consignments
 
 function AppContent() {
   const { user, logout, hasPermission, isLoading } = useAuth();
-  const { t, locale, setLocale } = useTranslation();
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<Tab>(user?.role === 'marketing' ? 'cms' : 'dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(true);
@@ -1079,51 +1079,8 @@ function AppContent() {
                   <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5.121 17.804A10.954 10.954 0 0112 15c2.5 0 4.847.816 6.879 2.196M15 9a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  Profile
+                  {t('common.profile')}
                 </button>
-                <p
-                  className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide ${
-                    darkModeOn ? 'text-[#c5c5c5]' : 'text-gray-500'
-                  }`}
-                >
-                  {t('language.selectLanguage')}
-                </p>
-                {(
-                  [
-                    { code: 'en' as const, name: t('language.english') },
-                    { code: 'es' as const, name: t('language.spanish') },
-                  ] as const
-                ).map((lang) => (
-                  <button
-                    key={lang.code}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setLocale(lang.code);
-                      setUserMenuOpen(false);
-                    }}
-                    className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${
-                      locale === lang.code
-                        ? darkModeOn
-                          ? 'bg-[#1a1a1a] font-medium text-[#c5c5c5]'
-                          : 'bg-gray-100 font-medium text-gray-900'
-                        : darkModeOn
-                          ? 'text-[#c5c5c5] hover:bg-[#1a1a1a]'
-                          : 'text-gray-700 hover:bg-gray-100'
-                    }`}
-                  >
-                    <span>{lang.name}</span>
-                    {locale === lang.code && (
-                      <svg className="ml-auto h-3.5 w-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
-                        <path
-                          fillRule="evenodd"
-                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                    )}
-                  </button>
-                ))}
                 <div className={`my-1 border-t ${darkModeOn ? 'border-gray-700' : 'border-gray-200'}`} role="separator" />
                 <button
                   type="button"

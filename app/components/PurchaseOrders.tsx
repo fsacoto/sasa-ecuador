@@ -1076,7 +1076,7 @@ export default function PurchaseOrders() {
     return unverifiedInvoices.sort((a, b) => a.invoice.localeCompare(b.invoice));
   };
 
-  const handleDownloadVerificationSheet = async (invoiceNumber: string, locale: 'en' | 'es') => {
+  const handleDownloadVerificationSheet = async (invoiceNumber: string) => {
     try {
       // Get all orders for this invoice
       const invoiceOrders = purchaseOrders.filter(order => order.invoice === invoiceNumber);
@@ -1093,7 +1093,6 @@ export default function PurchaseOrders() {
         orders: invoiceOrders,
         supplier: supplier || null,
         invoiceNumber,
-        locale,
       });
 
       // Show toast notification
@@ -2808,7 +2807,7 @@ export default function PurchaseOrders() {
                         )}
                         {order.status !== 'Verified' && (
                           <button
-                            onClick={() => handleDownloadVerificationSheet(order.invoice, 'en')}
+                            onClick={() => handleDownloadVerificationSheet(order.invoice)}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
                             title={t('purchaseOrders.downloadVerificationSheet') || 'Download Verification Sheet'}
                           >
@@ -3038,7 +3037,7 @@ export default function PurchaseOrders() {
                                 )}
                                 {order.status !== 'Verified' && (
                                   <button
-                                    onClick={() => handleDownloadVerificationSheet(order.invoice, 'en')}
+                                    onClick={() => handleDownloadVerificationSheet(order.invoice)}
                                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
                                     title={t('purchaseOrders.downloadVerificationSheet') || 'Download Verification Sheet'}
                                   >
@@ -3113,9 +3112,9 @@ export default function PurchaseOrders() {
           purchaseOrders={purchaseOrders}
           suppliers={suppliers}
           onClose={() => setIsPOVerificationModalOpen(false)}
-          onSelect={(invoiceNumber, locale) => {
+          onSelect={(invoiceNumber) => {
             setIsPOVerificationModalOpen(false);
-            handleDownloadVerificationSheet(invoiceNumber, locale);
+            handleDownloadVerificationSheet(invoiceNumber);
           }}
         />
       )}

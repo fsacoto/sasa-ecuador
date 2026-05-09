@@ -8,7 +8,7 @@ interface POVerificationModalProps {
   purchaseOrders: PurchaseOrder[];
   suppliers: Supplier[];
   onClose: () => void;
-  onSelect: (invoiceNumber: string, locale: 'en' | 'es') => void;
+  onSelect: (invoiceNumber: string) => void;
 }
 
 export default function POVerificationModal({ 
@@ -19,7 +19,6 @@ export default function POVerificationModal({
 }: POVerificationModalProps) {
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedLocale, setSelectedLocale] = useState<'en' | 'es'>('en');
 
   // Get unique invoices that have at least one unverified order
   const unverifiedInvoices = useMemo(() => {
@@ -114,7 +113,7 @@ export default function POVerificationModal({
   };
 
   const handleSelect = (invoice: string) => {
-    onSelect(invoice, selectedLocale);
+    onSelect(invoice);
   };
 
   return (
@@ -140,37 +139,6 @@ export default function POVerificationModal({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
-        </div>
-
-        {/* Language Selection */}
-        <div className="px-6 py-3 border-b border-gray-100 bg-gray-50">
-          <div className="flex items-center gap-4">
-            <span className="text-sm font-medium text-gray-700">
-              {t('purchaseOrders.pdfLanguage') || 'PDF Language:'}
-            </span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setSelectedLocale('en')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  selectedLocale === 'en'
-                    ? 'bg-[#515151] text-white'
-                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                English
-              </button>
-              <button
-                onClick={() => setSelectedLocale('es')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  selectedLocale === 'es'
-                    ? 'bg-[#515151] text-white'
-                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                Español
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* Search Bar */}
