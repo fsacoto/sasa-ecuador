@@ -89,8 +89,6 @@ export async function generatePOVerificationPDF({
   const poNumber = formatPONumber(invoiceNumber);
   const invoiceDate = formatDate(orders[0].purchaseDate);
   const currentDate = formatDate(new Date());
-  const destinationStock = orders[0].destinationStock;
-
   // Load logo
   let logoData = '';
   try {
@@ -199,7 +197,7 @@ export async function generatePOVerificationPDF({
     currentY += lineHeight;
     doc.text(`${t.invoiceDate} ${invoiceDate}`, headerX, currentY, { align: 'right' });
     currentY += lineHeight;
-    doc.text(`${t.destinationCountry} ${destinationStock}`, headerX, currentY, { align: 'right' });
+    doc.text(`${t.destinationCountry} Ecuador`, headerX, currentY, { align: 'right' });
     currentY += lineHeight;
     doc.text(`${t.currentDate} ${currentDate}`, headerX, currentY, { align: 'right' });
   };

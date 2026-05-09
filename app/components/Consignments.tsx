@@ -1,7 +1,15 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Consignment, ConsignmentItem, ConsignmentStatus, Client, InventoryItem, SalesInvoiceLine } from '../types';
+import {
+  Consignment,
+  ConsignmentItem,
+  ConsignmentReturnIssueRef,
+  ConsignmentStatus,
+  Client,
+  InventoryItem,
+  SalesInvoiceLine,
+} from '../types';
 import { getAllConsignments, createConsignment, updateConsignment, deleteConsignment } from '../services/consignmentsService';
 import { getAllClients } from '../services/clientsService';
 import { createInvoice } from '../services/invoicesService';
@@ -10,6 +18,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../context/TranslationContext';
 import ConfirmDialog from './ui/ConfirmDialog';
 import AlertDialog from './ui/AlertDialog';
+import ConsignmentReturnModal from './ConsignmentReturnModal';
 
 type View = 'list' | 'create' | 'details';
 
@@ -34,7 +43,7 @@ export default function Consignments() {
   
   // Details view state
   const [salesQuantities, setSalesQuantities] = useState<{[key: number]: number}>({});
-  const [returnQuantities, setReturnQuantities] = useState<{[key: number]: number}>({});
+  const [returnModalOpen, setReturnModalOpen] = useState(false);
   const hasLoadedRef = useRef(false);
 
   // PDF language selection modal state
@@ -288,11 +297,8 @@ export default function Consignments() {
           const inventoryItem = inventory.find(inv => inv.sku === item.sku);
           if (inventoryItem) {
             const newConsignmentStock = (inventoryItem.consignmentStock || 0) - salesQty;
-            const newEcuadorStock = inventoryItem.ecuadorStock + salesQty;
-            
             await updateInventory(inventoryItem.id, {
               consignmentStock: Math.max(0, newConsignmentStock),
-              ecuadorStock: newEcuadorStock
             });
           }
         }
@@ -367,72 +373,56 @@ export default function Consignments() {
     }
   };
 
-  const handleRegisterReturns = async () => {
+  const handleReturnModalSubmit = async ({
+    updatedItems,
+    inventoryPatches,
+  }: {
+    updatedItems: ConsignmentItem[];
+    inventoryPatches: Array<{
+      inventoryId: string;
+      ecuadorDelta: number;
+      consignmentDelta: number;
+      newIssueRefs: ConsignmentReturnIssueRef[];
+    }>;
+  }) => {
     if (!selectedConsignment) return;
 
-    const hasReturns = Object.values(returnQuantities).some(qty => qty > 0);
-    if (!hasReturns) {
-      showAlert(t('consignments.pleaseEnterQuantitiesToReturn'), 'Validation Error');
-      return;
+    const newStatus = calculateStatus(updatedItems);
+    await updateConsignment(selectedConsignment.id, {
+      items: updatedItems,
+      status: newStatus,
+    });
+
+    for (const patch of inventoryPatches) {
+      const inv = inventory.find((i) => i.id === patch.inventoryId);
+      if (!inv) continue;
+      const nextEcuador = inv.ecuadorStock + patch.ecuadorDelta;
+      const nextConsignment = Math.max(0, (inv.consignmentStock || 0) - patch.consignmentDelta);
+      await updateInventory(patch.inventoryId, {
+        ecuadorStock: nextEcuador,
+        consignmentStock: nextConsignment,
+        ...(patch.newIssueRefs.length > 0
+          ? {
+              consignmentReturnIssues: [
+                ...(inv.consignmentReturnIssues ?? []),
+                ...patch.newIssueRefs,
+              ],
+            }
+          : {}),
+      });
     }
 
-    try {
-      // Validate quantities
-      const updatedItems = selectedConsignment.items.map((item, index) => {
-        const returnQty = returnQuantities[index] || 0;
-        const availableQty = item.quantityDelivered - item.quantitySold - item.quantityReturned;
-        
-        if (returnQty > availableQty) {
-          throw new Error(`Cannot return more than available for ${item.sku}. Available: ${availableQty}`);
-        }
-        return { ...item, quantityReturned: item.quantityReturned + returnQty };
-      });
-
-      // Update consignment
-      const newStatus = calculateStatus(updatedItems);
-      await updateConsignment(selectedConsignment.id, {
-        items: updatedItems,
-        status: newStatus
-      });
-
-      // Move from consignment stock back to Ecuador stock
-      for (let i = 0; i < selectedConsignment.items.length; i++) {
-        const returnQty = returnQuantities[i] || 0;
-        if (returnQty > 0) {
-          const item = selectedConsignment.items[i];
-          const inventoryItem = inventory.find(inv => inv.sku === item.sku);
-          if (inventoryItem) {
-            const newConsignmentStock = (inventoryItem.consignmentStock || 0) - returnQty;
-            const newEcuadorStock = inventoryItem.ecuadorStock + returnQty;
-            
-            await updateInventory(inventoryItem.id, {
-              consignmentStock: Math.max(0, newConsignmentStock),
-              ecuadorStock: newEcuadorStock
-            });
-          }
-        }
-      }
-
-      showAlert(t('consignments.returnsRegistered'), 'Success');
-      setReturnQuantities({});
-      loadConsignments();
-      // Reload selected consignment
-      const updated = await getAllConsignments();
-      const updatedConsignment = updated.find(c => c.id === selectedConsignment.id);
-      if (updatedConsignment) {
-        setSelectedConsignment(updatedConsignment);
-      }
-    } catch (error: any) {
-      console.error('Error registering returns:', error);
-      showAlert(error.message || t('consignments.errorRegisteringReturns'), 'Error');
-    }
+    showAlert(t('consignments.returnsRegistered'), 'Success');
+    await loadConsignments();
+    const updated = await getAllConsignments();
+    const refreshed = updated.find((c) => c.id === selectedConsignment.id);
+    if (refreshed) setSelectedConsignment(refreshed);
   };
 
   const handleViewDetails = (consignment: Consignment) => {
     setSelectedConsignment(consignment);
     setView('details');
     setSalesQuantities({});
-    setReturnQuantities({});
   };
 
   const handleDeleteClick = (consignment: Consignment) => {
@@ -485,20 +475,24 @@ export default function Consignments() {
   const generatePDF = async (consignment: Consignment) => {
     try {
       const { convertImageForPDF } = await import('../utils/imageConverter');
-      const logoUrl = typeof window !== 'undefined' 
-        ? `${window.location.origin}/sasa.png` 
-        : '/sasa.png';
+      const { normalizePdfLogoSrc } = await import('../utils/pdfRenderHelpers');
+      const logoUrl =
+        typeof window !== 'undefined' ? `${window.location.origin}/sasa.png` : '/sasa.png';
       const logoBase64 = await convertImageForPDF(logoUrl);
-      
+      const logoSrc = normalizePdfLogoSrc(logoBase64, logoUrl);
+
+      const React = await import('react');
       const [{ pdf }, { default: ConsignmentPDF }] = await Promise.all([
         import('@react-pdf/renderer'),
-        import('./ConsignmentPDF')
+        import('./ConsignmentPDF'),
       ]);
 
-      const pdfDocument = <ConsignmentPDF consignment={consignment} logoSrc={logoBase64 || logoUrl} />;
+      const pdfDocument = React.createElement(ConsignmentPDF, {
+        consignment,
+        logoSrc,
+      });
 
-      const instance = pdf(pdfDocument);
-      const blob = await instance.toBlob();
+      const blob = await pdf(pdfDocument as any).toBlob();
 
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -1075,54 +1069,29 @@ export default function Consignments() {
           </div>
         </div>
 
-        {/* Register Returns Section */}
+        {/* Register Returns — modal with search, quantities, problems & photos per line */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('consignments.registerReturns')}</h3>
-          <div className="space-y-4">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left">{t('consignments.sku')}</th>
-                    <th className="px-3 py-2 text-left">{t('consignments.description')}</th>
-                    <th className="px-3 py-2 text-center">{t('consignments.available')}</th>
-                    <th className="px-3 py-2 text-center">{t('consignments.qtyReturned')}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {selectedConsignment.items.map((item, index) => {
-                    const available = item.quantityDelivered - item.quantitySold - item.quantityReturned;
-                    return (
-                      <tr key={index}>
-                        <td className="px-3 py-2 font-mono text-xs">{item.sku}</td>
-                        <td className="px-3 py-2">{item.description}</td>
-                        <td className="px-3 py-2 text-center">{available}</td>
-                        <td className="px-3 py-2 text-center">
-                          <input
-                            type="number"
-                            min="0"
-                            max={available}
-                            value={returnQuantities[index] || ''}
-                            onChange={(e) => setReturnQuantities({...returnQuantities, [index]: parseInt(e.target.value) || 0})}
-                            className="w-20 px-2 py-1 border border-gray-300 rounded text-center"
-                            disabled={available === 0}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <button
-              onClick={handleRegisterReturns}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              {t('consignments.registerReturnsButton')}
-            </button>
-          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">{t('consignments.registerReturns')}</h3>
+          <p className="text-sm text-gray-600 mb-4">
+            {t('consignments.registerReturnsIntro') ||
+              'Abra el formulario para indicar qué líneas devuelve, cantidades, unidades con problema y fotos por artículo.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => setReturnModalOpen(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            {t('consignments.openReturnModal') || 'Registrar devolución…'}
+          </button>
         </div>
       </div>
+        <ConsignmentReturnModal
+          open={returnModalOpen}
+          consignment={selectedConsignment}
+          inventory={inventory}
+          onClose={() => setReturnModalOpen(false)}
+          onSubmit={handleReturnModalSubmit}
+        />
         {/* Alert Dialog */}
         <AlertDialog
           open={alertDialog.open}

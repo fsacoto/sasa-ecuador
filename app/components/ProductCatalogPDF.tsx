@@ -296,15 +296,16 @@ export default function ProductCatalogPDF({
   products = [],
   catalogTitle,
   includeStock = false,
-  itemsPerPage = 4,
+  itemsPerPage: _itemsPerPage = 4, // reservado: el layout 2×2 fija 4 ítems por página
   orientation = 'landscape',
 }: ProductCatalogPDFProps) {
+  void _itemsPerPage;
   const t = (key: string) => translate(key);
   // Handle empty products
   if (!products || products.length === 0) {
     return (
       <Document>
-        <Page size="A4" orientation="landscape" style={styles.page}>
+        <Page size="A4" orientation={orientation} style={styles.page}>
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
             <Text style={{ fontSize: 14, color: '#666' }}>{t('inventory.catalog.noProductsAvailable')}</Text>
           </View>
@@ -313,7 +314,7 @@ export default function ProductCatalogPDF({
     );
   }
 
-  // Split products into pages - up to 4 per page, only create pages with actual products
+  // Layout fijo 2×2 = 4 productos por página (itemsPerPage del modal no cambia la rejilla aún)
   const pages: InventoryItem[][] = [];
   for (let i = 0; i < products.length; i += 4) {
     const pageProducts = products.slice(i, i + 4);
@@ -332,7 +333,7 @@ export default function ProductCatalogPDF({
         <Page 
           key={pageIndex} 
           size="A4" 
-          orientation="landscape" 
+          orientation={orientation} 
           style={styles.page}
           wrap={false}
         >

@@ -3,6 +3,7 @@
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { SalesInvoice } from '../types';
 import esMessages from '../locales/es.json';
+import { pdfMoney, toPdfDate } from '../utils/pdfRenderHelpers';
 
 const translate = (key: string): string => {
   const keys = key.split('.');
@@ -238,9 +239,8 @@ interface InvoicePDFProps {
 
 export default function InvoicePDF({ invoice, logoSrc = '/sasa.png' }: InvoicePDFProps) {
   const t = (key: string) => translate(key);
-  // Format date
-  const formatDate = (date: Date | string) => {
-    const d = typeof date === 'string' ? new Date(date) : date;
+  const formatDate = (date: unknown) => {
+    const d = toPdfDate(date);
     return d.toLocaleDateString('es-EC', {
       year: 'numeric',
       month: 'long',
@@ -267,16 +267,18 @@ export default function InvoicePDF({ invoice, logoSrc = '/sasa.png' }: InvoicePD
         <View style={styles.header}>
           {/* Left: SASA Logo */}
           <View style={styles.logoSection}>
-            <Image 
-              src={logoSrc} 
-              style={styles.logo}
-              cache={false}
-            />
+            {logoSrc ? (
+              <Image src={logoSrc} style={styles.logo} cache={false} />
+            ) : (
+              <View style={[styles.logo, { backgroundColor: '#f0f0f0' }]} />
+            )}
           </View>
 
           {/* Right: Invoice Info */}
           <View style={styles.invoiceInfoSection}>
-            <Text style={styles.invoiceTitle}>{t('pdf.invoice.title')}</Text>
+            <Text style={styles.invoiceTitle} wrap={false}>
+              {t('pdf.invoice.title')}
+            </Text>
             <Text style={styles.invoiceNumber}>{invoice.invoiceNumber}</Text>
             <Text style={styles.invoiceDate}>{t('pdf.invoice.dateIssued')}: {formatDate(invoice.date)}</Text>
             
@@ -311,8 +313,8 @@ export default function InvoicePDF({ invoice, logoSrc = '/sasa.png' }: InvoicePD
               <Text style={styles.colSku}>{item.sku || '-'}</Text>
               <Text style={styles.colDescription}>{item.description || '-'}</Text>
               <Text style={styles.colQty}>{item.quantity}</Text>
-              <Text style={styles.colPrice}>${item.unitPrice.toFixed(2)}</Text>
-              <Text style={styles.colSubtotal}>${item.totalPrice.toFixed(2)}</Text>
+              <Text style={styles.colPrice}>${pdfMoney(item.unitPrice)}</Text>
+              <Text style={styles.colSubtotal}>${pdfMoney(item.totalPrice)}</Text>
             </View>
           ))}
         </View>
@@ -322,7 +324,7 @@ export default function InvoicePDF({ invoice, logoSrc = '/sasa.png' }: InvoicePD
           <View style={styles.summaryTable}>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>{t('pdf.invoice.subtotalLabel')}</Text>
-              <Text style={styles.summaryValue}>${invoice.subtotal.toFixed(2)}</Text>
+              <Text style={styles.summaryValue}>${pdfMoney(invoice.subtotal)}</Text>
             </View>
             
             {invoice.discountTotal > 0 && (
@@ -330,13 +332,13 @@ export default function InvoicePDF({ invoice, logoSrc = '/sasa.png' }: InvoicePD
                 <Text style={styles.summaryLabel}>
                   {t('pdf.invoice.discount')} {invoice.discountType === 'percentage' ? `(${invoice.discountValue}%)` : ''}
                 </Text>
-                <Text style={styles.summaryValue}>-${invoice.discountTotal.toFixed(2)}</Text>
+                <Text style={styles.summaryValue}>-${pdfMoney(invoice.discountTotal)}</Text>
               </View>
             )}
 
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>{t('pdf.invoice.total')}</Text>
-              <Text style={styles.totalValue}>${invoice.grandTotal.toFixed(2)}</Text>
+              <Text style={styles.totalValue}>${pdfMoney(invoice.grandTotal)}</Text>
             </View>
           </View>
         </View>

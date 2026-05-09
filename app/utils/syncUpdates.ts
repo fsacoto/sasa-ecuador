@@ -2,6 +2,16 @@
 
 import { PurchaseOrder, InventoryItem, VerificationIssueRef } from '../types';
 
+/** Problem units flagged on consignment returns (inventory badge + detail). */
+export function getConsignmentReturnProblemQty(item: InventoryItem): number {
+  return (item.consignmentReturnIssues ?? []).reduce((s, r) => s + r.quantityProblem, 0);
+}
+
+/** Treat as verified regardless of Firestore / legacy string casing. */
+export function isVerifiedPurchaseOrder(order: Pick<PurchaseOrder, 'status'>): boolean {
+  return String(order.status ?? '').trim().toLowerCase() === 'verified';
+}
+
 /** Units physically on hand from a verified PO (good + problem); excludes not received. */
 export function verifiedPhysicalStock(order: PurchaseOrder): number {
   if (order.quantityGood !== undefined || order.quantityProblem !== undefined) {
@@ -51,7 +61,7 @@ export function reconcileVerificationIssuesForItem(
   const out: VerificationIssueRef[] = [];
   for (const poId of linked) {
     const order = purchaseOrders.find((o) => o.id === poId);
-    if (!order || String(order.status).trim().toLowerCase() !== 'verified') continue;
+    if (!order || !isVerifiedPurchaseOrder(order)) continue;
     const qp = Number(order.quantityProblem);
     if (!Number.isFinite(qp) || qp <= 0) continue;
     const row: VerificationIssueRef = {
@@ -59,6 +69,10 @@ export function reconcileVerificationIssuesForItem(
       quantityProblem: qp,
       comment: order.verificationComment?.trim() || undefined,
     };
+    const vm = order.verificationMedia?.filter(Boolean);
+    if (vm && vm.length > 0) {
+      row.mediaUrls = vm;
+    }
     if (order.quantityGood !== undefined && order.quantityGood !== null) {
       const qg = Number(order.quantityGood);
       if (Number.isFinite(qg)) {
@@ -126,6 +140,7 @@ export interface BarcodeGenerationInfo {
   itemId: string;
 }
 
+/** Prior PO row used only to compute inventory stock delta (avoids double-count / pre-linked PO skips). */
 export async function syncPurchaseOrderToInventory(
   updatedOrder: PurchaseOrder,
   inventory: InventoryItem[],
@@ -134,10 +149,16 @@ export async function syncPurchaseOrderToInventory(
   deleteInventoryItem: (id: string) => Promise<void>,
   purchaseOrders: PurchaseOrder[],
   previousSku?: string,
-  generateBarcodeImmediately: boolean = true
+  generateBarcodeImmediately: boolean = true,
+  stockBaselineOrder?: PurchaseOrder
 ): Promise<BarcodeGenerationInfo[]> {
   const barcodesToGenerate: BarcodeGenerationInfo[] = [];
   const poSnapshot = mergePurchaseOrderSnapshot(purchaseOrders, updatedOrder);
+
+  const baseline =
+    stockBaselineOrder ?? purchaseOrders.find((o) => o.id === updatedOrder.id);
+  const baselineWasVerified = baseline != null && isVerifiedPurchaseOrder(baseline);
+  const oldVerifiedPhysical = baselineWasVerified ? verifiedPhysicalStock(baseline) : 0;
 
   // If SKU changed, find inventory item by the old SKU or by linked purchase orders
   let inventoryItem = inventory.find(item => item.sku === updatedOrder.sku);
@@ -155,7 +176,7 @@ export async function syncPurchaseOrderToInventory(
   }
 
   // ACTION: If order is NOT verified, remove it from inventory completely
-  if (updatedOrder.status !== 'Verified') {
+  if (!isVerifiedPurchaseOrder(updatedOrder)) {
     if (inventoryItem) {
       // Remove this purchase order from linked orders
       const linkedOrders = getLinkedPurchaseOrderIds(inventoryItem);
@@ -173,19 +194,12 @@ export async function syncPurchaseOrderToInventory(
         ),
       };
       
-      if (updatedOrder.destinationStock === 'Ecuador') {
-        updates.ecuadorStock = Math.max(0, (inventoryItem.ecuadorStock || 0) - stockQuantity);
-      } else if (updatedOrder.destinationStock === 'USA') {
-        updates.usaStock = Math.max(0, (inventoryItem.usaStock || 0) - stockQuantity);
-      }
+      updates.ecuadorStock = Math.max(0, (inventoryItem.ecuadorStock || 0) - stockQuantity);
       
       // Check if item has other verified purchase orders
       const hasOtherVerifiedOrders = updatedLinkedOrders.some(orderId => {
         const otherOrder = purchaseOrders.find(o => o.id === orderId);
-        return (
-          otherOrder &&
-          String(otherOrder.status).trim().toLowerCase() === 'verified'
-        );
+        return otherOrder != null && isVerifiedPurchaseOrder(otherOrder);
       });
       
       // If item was originally created from purchase orders (has linked orders)
@@ -228,8 +242,10 @@ export async function syncPurchaseOrderToInventory(
     }
 
     // Remove warning flag if order is now complete
-    if (inventoryItem.category.includes('⚠️ NEEDS REVIEW') && !updatedOrder.category.includes('⚠️ NEEDS REVIEW')) {
-      updates.category = updatedOrder.category || '';
+    const invCat = inventoryItem.category ?? '';
+    const ordCat = updatedOrder.category ?? '';
+    if (invCat.includes('⚠️ NEEDS REVIEW') && !ordCat.includes('⚠️ NEEDS REVIEW')) {
+      updates.category = ordCat || '';
     }
 
     // Link this purchase order if not already linked
@@ -238,16 +254,10 @@ export async function syncPurchaseOrderToInventory(
       updates.linkedPurchaseOrders = [...linkedOrders, updatedOrder.id];
     }
 
-    // Update stock when order is verified
-    // Check if this order was already processed (to avoid double-counting)
-    const wasAlreadyLinked = linkedOrders.includes(updatedOrder.id);
-    if (!wasAlreadyLinked) {
-      const stockQuantity = verifiedPhysicalStock(updatedOrder);
-      if (updatedOrder.destinationStock === 'Ecuador') {
-        updates.ecuadorStock = (inventoryItem.ecuadorStock || 0) + stockQuantity;
-      } else if (updatedOrder.destinationStock === 'USA') {
-        updates.usaStock = (inventoryItem.usaStock || 0) + stockQuantity;
-      }
+    const newVerifiedPhysical = verifiedPhysicalStock(updatedOrder);
+    const stockDelta = newVerifiedPhysical - oldVerifiedPhysical;
+    if (stockDelta !== 0) {
+      updates.ecuadorStock = Math.max(0, (inventoryItem.ecuadorStock || 0) + stockDelta);
     }
 
     const projectedLinked = updates.linkedPurchaseOrders ?? linkedOrders;
@@ -259,10 +269,7 @@ export async function syncPurchaseOrderToInventory(
     if (!inventoryItem.barcode && updatedOrder.sku) {
       if (updatedOrder.barcode) {
         updates.barcode = updatedOrder.barcode;
-      } else if (
-        String(updatedOrder.status).trim().toLowerCase() === 'verified' &&
-        generateBarcodeImmediately
-      ) {
+      } else if (isVerifiedPurchaseOrder(updatedOrder) && generateBarcodeImmediately) {
         try {
           await generateBarcodeForInventoryItem(
             updatedOrder.sku,
@@ -282,21 +289,23 @@ export async function syncPurchaseOrderToInventory(
     if (Object.keys(updates).length > 0) {
       await updateInventoryItem(inventoryItem.id, updates);
     }
-  } else if (updatedOrder.sku && updatedOrder.description) {
+  } else if (updatedOrder.sku) {
     // Create new inventory item ONLY when order is verified (good + problem units on hand)
-    const stockQuantity = verifiedPhysicalStock(updatedOrder);
+    const stockQuantity = Math.max(0, verifiedPhysicalStock(updatedOrder) - oldVerifiedPhysical);
 
     if (stockQuantity > 0) {
+      const desc =
+        String(updatedOrder.description ?? '').trim() || String(updatedOrder.sku).trim() || 'Product';
       const newItem: Omit<InventoryItem, 'id' | 'createdAt'> = {
-        name: updatedOrder.description,
+        name: desc,
         sku: updatedOrder.sku,
         supplierSKU: updatedOrder.supplierSKU,
         category: updatedOrder.category || '',
         line: updatedOrder.line || '',
-        description: updatedOrder.description,
+        description: desc,
         images: updatedOrder.images || [],
-        ecuadorStock: updatedOrder.destinationStock === 'Ecuador' ? stockQuantity : 0,
-        usaStock: updatedOrder.destinationStock === 'USA' ? stockQuantity : 0,
+        ecuadorStock: stockQuantity,
+        consignmentStock: 0,
         linkedPurchaseOrders: [updatedOrder.id],
         verificationIssues: reconcileVerificationIssuesForItem(
           { linkedPurchaseOrders: [updatedOrder.id] },
@@ -308,10 +317,7 @@ export async function syncPurchaseOrderToInventory(
       const newItemId = await addInventoryItem(newItem);
 
       if (updatedOrder.sku && !newItem.barcode) {
-        if (
-          String(updatedOrder.status).trim().toLowerCase() === 'verified' &&
-          generateBarcodeImmediately
-        ) {
+        if (isVerifiedPurchaseOrder(updatedOrder) && generateBarcodeImmediately) {
           try {
             await generateBarcodeForInventoryItem(
               updatedOrder.sku,

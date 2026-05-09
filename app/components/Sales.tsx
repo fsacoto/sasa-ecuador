@@ -104,7 +104,7 @@ export default function Sales() {
     }
 
     // Get available stock based on user role
-    const availableStock = user?.role === 'sales' ? product.ecuadorStock : (product.ecuadorStock + product.usaStock);
+    const availableStock = product.ecuadorStock;
 
     const newItem: InvoiceLineWithDetails = {
       sku: product.sku,

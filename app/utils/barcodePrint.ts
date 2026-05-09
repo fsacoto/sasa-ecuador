@@ -41,7 +41,6 @@ export function syntheticInventoryFromOrder(
     category: order.category || '',
     line: order.line || '',
     ecuadorStock: 0,
-    usaStock: 0,
     consignmentStock: 0,
     images: order.images || [],
     barcode: barcodeUrl,
@@ -67,7 +66,6 @@ export function labelCountForFullPrint(
   if (inventoryItem) {
     const n =
       (inventoryItem.ecuadorStock || 0) +
-      (inventoryItem.usaStock || 0) +
       (inventoryItem.consignmentStock || 0);
     if (n > 0) return n;
   }

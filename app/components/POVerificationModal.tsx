@@ -26,7 +26,6 @@ export default function POVerificationModal({
       orders: PurchaseOrder[], 
       hasUnverified: boolean,
       supplierId: string,
-      destinationStock: 'Ecuador' | 'USA',
       purchaseDate: Date
     }>();
     
@@ -36,7 +35,6 @@ export default function POVerificationModal({
           orders: [], 
           hasUnverified: false,
           supplierId: order.supplierId,
-          destinationStock: order.destinationStock,
           purchaseDate: order.purchaseDate
         });
       }
@@ -52,7 +50,6 @@ export default function POVerificationModal({
       invoice: string;
       orders: PurchaseOrder[];
       supplierId: string;
-      destinationStock: 'Ecuador' | 'USA';
       purchaseDate: Date;
     }> = [];
     
@@ -62,7 +59,6 @@ export default function POVerificationModal({
           invoice, 
           orders: data.orders,
           supplierId: data.supplierId,
-          destinationStock: data.destinationStock,
           purchaseDate: data.purchaseDate
         });
       }
@@ -82,7 +78,6 @@ export default function POVerificationModal({
       const supplier = suppliers.find(s => s.id === inv.supplierId);
       const supplierName = supplier?.name.toLowerCase() || '';
       const invoiceLower = inv.invoice.toLowerCase();
-      const destinationLower = inv.destinationStock.toLowerCase();
       const purchaseDateStr = inv.purchaseDate.toLocaleDateString().toLowerCase();
       
       // Check if any order in this invoice matches
@@ -93,7 +88,6 @@ export default function POVerificationModal({
       return (
         invoiceLower.includes(query) ||
         supplierName.includes(query) ||
-        destinationLower.includes(query) ||
         purchaseDateStr.includes(query) ||
         hasMatchingSku
       );
@@ -202,10 +196,6 @@ export default function POVerificationModal({
                           <div>
                             <span className="font-medium">{t('purchaseOrders.invoiceDate') || 'Invoice Date'}:</span>{' '}
                             <span>{invoiceDate}</span>
-                          </div>
-                          <div>
-                            <span className="font-medium">{t('purchaseOrders.destination') || 'Destination'}:</span>{' '}
-                            <span>{inv.destinationStock}</span>
                           </div>
                           <div>
                             <span className="font-medium">{t('purchaseOrders.items') || 'Items'}:</span>{' '}

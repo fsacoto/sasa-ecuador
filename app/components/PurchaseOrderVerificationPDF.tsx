@@ -226,8 +226,6 @@ export default function PurchaseOrderVerificationPDF({
   const invoiceNumber = orders[0].invoice;
   const poNumber = formatPONumber(invoiceNumber);
   const today = formatDate(new Date());
-  const destinationStock = orders[0].destinationStock; // Should be same for all orders in invoice
-
   return (
     <Document>
       <Page size="A4" style={styles.page}>
@@ -256,10 +254,6 @@ export default function PurchaseOrderVerificationPDF({
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Supplier Name:</Text>
               <Text style={styles.infoValue}>{supplier?.name || '-'}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Destination Country:</Text>
-              <Text style={styles.infoValue}>{destinationStock}</Text>
             </View>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Date:</Text>

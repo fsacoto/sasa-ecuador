@@ -118,36 +118,36 @@ export async function getInvoice(invoiceId: string): Promise<SalesInvoice | null
   }
 }
 
-// Generate next sequential invoice number
+/** Extrae el correlativo numérico de FAC-xxxxx o NOTAV-xxx (histórico + nuevo). */
+function extractSalesNoteSequence(invoiceNumber: unknown): number | null {
+  if (typeof invoiceNumber !== 'string') return null;
+  const m = invoiceNumber.match(/^(?:FAC|NOTAV)-(\d+)$/i);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return Number.isNaN(n) ? null : n;
+}
+
+// Generate next sequential nota de venta number (NOTAV-001, … continúa la serie respecto a FAC- antiguos)
 export async function getNextInvoiceNumber(): Promise<string> {
   try {
     const q = query(collection(db, INVOICES_COLLECTION));
     const snapshot = await getDocs(q);
-    
+
     if (snapshot.empty) {
-      // First invoice
-      return 'FAC-00001';
+      return 'NOTAV-001';
     }
-    
-    // Get the last invoice number
+
     let lastNumber = 0;
-    snapshot.docs.forEach(doc => {
-      const invoiceNumber = doc.data().invoiceNumber;
-      if (invoiceNumber && invoiceNumber.startsWith('FAC-')) {
-        const numberPart = parseInt(invoiceNumber.replace('FAC-', ''));
-        if (!isNaN(numberPart) && numberPart > lastNumber) {
-          lastNumber = numberPart;
-        }
-      }
+    snapshot.docs.forEach((d) => {
+      const n = extractSalesNoteSequence(d.data().invoiceNumber);
+      if (n !== null && n > lastNumber) lastNumber = n;
     });
-    
-    // Generate next number
+
     const nextNumber = lastNumber + 1;
-    return `FAC-${String(nextNumber).padStart(5, '0')}`;
+    return `NOTAV-${String(nextNumber).padStart(3, '0')}`;
   } catch (error) {
     console.error('Error generating invoice number:', error);
-    // Fallback to timestamp if error
-    return `FAC-${Date.now().toString().slice(-5)}`;
+    return `NOTAV-${Date.now().toString().slice(-3)}`;
   }
 }
 
@@ -156,9 +156,11 @@ export async function createInvoice(invoice: Omit<SalesInvoice, 'id' | 'createdA
   try {
     const docRef = doc(collection(db, INVOICES_COLLECTION));
     
-    // Generate invoice number if not provided or if it's the old format
     let invoiceNumber = invoice.invoiceNumber;
-    if (!invoiceNumber || !invoiceNumber.startsWith('FAC-')) {
+    const validSeq =
+      typeof invoiceNumber === 'string' &&
+      /^(FAC|NOTAV)-\d+$/i.test(invoiceNumber);
+    if (!invoiceNumber || invoiceNumber === 'TEMP' || !validSeq) {
       invoiceNumber = await getNextInvoiceNumber();
     }
     

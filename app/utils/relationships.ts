@@ -108,7 +108,7 @@ export class DataRelationships {
       const linkedOrders = this.getPurchaseOrdersForItem(item.id, inventory, purchaseOrders);
       if (linkedOrders.length > 0) {
         const avgCost = linkedOrders.reduce((sum, order) => sum + order.costInUSD, 0) / linkedOrders.length;
-        total += avgCost * (item.ecuadorStock + item.usaStock);
+        total += avgCost * item.ecuadorStock;
       }
     });
 
@@ -124,7 +124,7 @@ export class DataRelationships {
     const orders = this.getPurchaseOrdersBySupplier(supplierId, purchaseOrders);
     const items = this.getInventoryItemsBySupplier(supplierId, inventory, purchaseOrders);
     const totalSpent = orders.reduce((sum, order) => sum + order.costInUSD, 0);
-    const totalStock = items.reduce((sum, item) => sum + item.ecuadorStock + item.usaStock, 0);
+    const totalStock = items.reduce((sum, item) => sum + item.ecuadorStock, 0);
 
     return {
       orderCount: orders.length,

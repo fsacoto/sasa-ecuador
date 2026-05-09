@@ -1,15 +1,29 @@
-import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy, QueryDocumentSnapshot, Timestamp } from 'firebase/firestore';
+import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy, QueryDocumentSnapshot, Timestamp, deleteField } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { PurchaseOrder, PurchaseOrderStatus } from '../types';
 
 const COLLECTION_NAME = 'purchaseOrders';
 
-// Helper to convert Firestore data to PurchaseOrder
-const toPurchaseOrder = (doc: QueryDocumentSnapshot): PurchaseOrder => {
-  const data = doc.data();
+/** Firestore / imports may use different casing; keep a single canonical status in the app. */
+export function normalizePurchaseOrderStatus(raw: unknown): PurchaseOrder['status'] {
+  const s = String(raw ?? 'Ordered').trim().toLowerCase();
+  if (s === 'shipped') return 'Shipped';
+  if (s === 'received') return 'Received';
+  if (s === 'verified') return 'Verified';
+  if (s === 'ordered') return 'Ordered';
+  const t = String(raw ?? 'Ordered').trim();
+  if (t === 'Ordered' || t === 'Shipped' || t === 'Received' || t === 'Verified') return t;
+  return 'Ordered';
+}
+
+// Helper to convert Firestore data to PurchaseOrder (drops legacy `destinationStock`)
+const toPurchaseOrder = (docSnap: QueryDocumentSnapshot): PurchaseOrder => {
+  const data = docSnap.data();
+  const { destinationStock: _legacyDest, ...rest } = data as Record<string, unknown>;
   return {
-    id: doc.id,
-    ...(data as Omit<PurchaseOrder, 'id'>),
+    id: docSnap.id,
+    ...(rest as Omit<PurchaseOrder, 'id'>),
+    status: normalizePurchaseOrderStatus(data.status),
     purchaseDate: (data.purchaseDate as Timestamp)?.toDate() || new Date(),
     receivedDate: (data.receivedDate as Timestamp)?.toDate(),
     verifiedDate: (data.verifiedDate as Timestamp)?.toDate(),
@@ -19,10 +33,11 @@ const toPurchaseOrder = (doc: QueryDocumentSnapshot): PurchaseOrder => {
 
 // Helper to convert PurchaseOrder to Firestore data
 const toFirestore = (order: Omit<PurchaseOrder, 'id' | 'createdAt'> | Partial<PurchaseOrder>) => {
-  // Filter out undefined values (Firestore doesn't accept undefined)
-  const cleanOrder: Record<string, any> = {};
+  // Filter out undefined values (Firestore doesn't accept undefined); never persist legacy destination
+  const cleanOrder: Record<string, unknown> = {};
   Object.keys(order).forEach(key => {
-    const value = (order as any)[key];
+    if (key === 'destinationStock') return;
+    const value = (order as Record<string, unknown>)[key];
     if (value !== undefined) {
       cleanOrder[key] = value;
     }
@@ -132,7 +147,7 @@ export async function updatePurchaseOrder(id: string, updates: Partial<PurchaseO
       }
     });
     
-    await updateDoc(docRef, cleanUpdates);
+    await updateDoc(docRef, { ...cleanUpdates, destinationStock: deleteField() });
   } catch (error) {
     console.error('Error updating purchase order:', error);
     throw error;

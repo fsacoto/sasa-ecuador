@@ -1,6 +1,33 @@
 // SKU: [2 letters category][2 letters from line/material][supplier SKU, alphanumeric]
 // Supplier SKU is the distinct key; collisions get -2, -3, …
 
+function stripDiacritics(s: string): string {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+const LINE_STOPWORDS = new Set([
+  'en',
+  'de',
+  'y',
+  'el',
+  'la',
+  'los',
+  'las',
+  'del',
+  'al',
+  'a',
+]);
+
+/** Palabras con letras ASCII para prefijo (español e inglés). */
+function meaningfulLineWords(line: string): string[] {
+  const tokens = stripDiacritics(line || '')
+    .split(/\s+/)
+    .map((t) => t.replace(/[^A-Za-z]/g, '').trim())
+    .filter((t) => t.length >= 2)
+    .filter((t) => !LINE_STOPWORDS.has(t.toLowerCase()));
+  return tokens;
+}
+
 export function sanitizeSupplierSkuPart(supplierSKU: string): string {
   const raw = (supplierSKU || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
   return raw.slice(0, 20);
@@ -8,17 +35,13 @@ export function sanitizeSupplierSkuPart(supplierSKU: string): string {
 
 /** 4-letter prefix: category (2) + line/material (2), same rules as legacy generator. */
 export function buildSkuPrefix(category: string, line: string): string {
-  const categoryCode = (category || 'XX')
-    .replace(/[^a-zA-Z]/g, '')
+  const categoryCode = stripDiacritics(category || 'XX')
+    .replace(/[^A-Za-z]/g, '')
     .toUpperCase()
     .padEnd(2, 'X')
     .substring(0, 2);
 
-  const lineWords = (line || 'XX XX')
-    .replace(/[^a-zA-Z\s]/g, '')
-    .trim()
-    .split(/\s+/)
-    .filter((word) => word.length > 0);
+  const lineWords = meaningfulLineWords(line || 'XX XX');
 
   let lineCode = 'XX';
   if (lineWords.length >= 2) {

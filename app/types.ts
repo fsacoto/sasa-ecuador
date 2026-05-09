@@ -31,7 +31,6 @@ export interface PurchaseOrder {
   quantityNotReceived?: number; // Quantity never received
   verificationComment?: string; // Comment about verification (problems, issues, etc.)
   verificationMedia?: string[]; // Array of media URLs (images, videos) attached to verification
-  destinationStock: 'Ecuador' | 'USA';
   currency: string;
   costPerUnit: number;
   totalCost: number;
@@ -62,6 +61,24 @@ export interface VerificationIssueRef {
   /** Good qty from the same verification (for display: e.g. 2 good + 1 problem = 3 on hand). */
   quantityGoodAtVerification?: number;
   comment?: string;
+  /** Evidence from PO verification (same URLs as PurchaseOrder.verificationMedia). */
+  mediaUrls?: string[];
+}
+
+/** Units reported damaged/problem on consignment return — still on-hand physically (same as PO verification issues). */
+export interface ConsignmentReturnIssueRef {
+  consignmentFirestoreId: string;
+  consignmentNumber: string;
+  sku: string;
+  /** Index in consignment.items when the same SKU appears on multiple lines. */
+  itemIndex?: number;
+  quantityProblem: number;
+  /** Units returned in good condition in this batch (optional, for display). */
+  quantityGoodInReturn?: number;
+  comment?: string;
+  /** Evidence photos; each URL belongs to this SKU line (see popup linking). */
+  mediaUrls?: string[];
+  recordedAt: Date;
 }
 
 export interface InventoryItem {
@@ -74,38 +91,14 @@ export interface InventoryItem {
   category: string;
   line: string;
   ecuadorStock: number;
-  usaStock: number;
   consignmentStock?: number; // Inventory on consignment
   images: string[]; // Array of image URLs or base64 data
   barcode?: string; // Base64 encoded barcode image
   /** Per linked PO: units flagged with problems at verification; click warning in Inventory to read comments. */
   verificationIssues?: VerificationIssueRef[];
+  /** Returns from consignations with reported damage — shown alongside PO verification issues. */
+  consignmentReturnIssues?: ConsignmentReturnIssueRef[];
   createdAt: Date;
-}
-
-export type InventoryCountry = 'Ecuador' | 'USA';
-
-export interface InventoryTransferItem {
-  itemId: string;
-  sku: string;
-  name: string;
-  quantity: number;
-  fromCountry: InventoryCountry;
-  toCountry: InventoryCountry;
-  resultingEcuadorStock?: number;
-  resultingUsaStock?: number;
-}
-
-export interface InventoryTransfer {
-  id: string;
-  transactionId: string; // Unique identifier for the entire transaction
-  items: InventoryTransferItem[]; // Multiple items in one transaction
-  note?: string;
-  createdAt: Date;
-  createdBy?: {
-    uid: string;
-    name?: string;
-  };
 }
 
 export type AdditionalCostType = 'Shipping' | 'Insurance' | 'Duties' | 'Import Fees' | 'Other';

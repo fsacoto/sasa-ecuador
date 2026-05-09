@@ -46,8 +46,8 @@ const TAB_SEARCH_ALIASES: Partial<Record<Tab, string>> = {
   'landed-costs': 'costos destino flete logística importación',
   cms: 'contenido medios marketing catálogo web',
   clients: 'clientes contactos cuentas crm',
-  sales: 'ventas facturas pedidos cobros',
-  'invoice-tracking': 'facturas seguimiento cobranza pagos',
+  sales: 'ventas notas de venta pedidos cobros',
+  'invoice-tracking': 'notas de ventas seguimiento cobranza pagos NOTAV',
   consignments: 'consignaciones consigna',
   settings: 'configuración perfil preferencias integraciones notificaciones escáner contabilidad',
 };
@@ -205,10 +205,15 @@ function IconCog({ className = 'w-5 h-5 shrink-0' }: { className?: string }) {
 const INVENTORY_TABS: Tab[] = ['suppliers', 'purchase-orders', 'inventory', 'landed-costs'];
 const SALES_TABS: Tab[] = ['clients', 'sales', 'invoice-tracking', 'consignments'];
 
+/** Ocultar el CMS en la barra lateral y el contenido. El módulo sigue en el proyecto; poner `true` para mostrarlo de nuevo. */
+const SHOW_CMS_IN_NAVIGATION = false;
+
 function AppContent() {
   const { user, logout, hasPermission, isLoading } = useAuth();
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<Tab>(user?.role === 'marketing' ? 'cms' : 'dashboard');
+  const [activeTab, setActiveTab] = useState<Tab>(
+    user?.role === 'marketing' && SHOW_CMS_IN_NAVIGATION ? 'cms' : 'dashboard'
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(true);
   const [salesOpen, setSalesOpen] = useState(true);
@@ -248,7 +253,16 @@ function AppContent() {
   const photoCropDragRef = useRef({ startX: 0, startY: 0, originX: 0, originY: 0 });
 
   useEffect(() => {
-    if (user?.role === 'marketing' && activeTab !== 'cms' && activeTab !== 'settings') {
+    if (!SHOW_CMS_IN_NAVIGATION && activeTab === 'cms') {
+      setActiveTab('dashboard');
+      return;
+    }
+    if (
+      SHOW_CMS_IN_NAVIGATION &&
+      user?.role === 'marketing' &&
+      activeTab !== 'cms' &&
+      activeTab !== 'settings'
+    ) {
       setActiveTab('cms');
     } else if (user?.role !== 'marketing' && activeTab === 'cms' && !hasPermission('cms.view')) {
       setActiveTab('dashboard');
@@ -503,7 +517,7 @@ function AppContent() {
   };
 
   const getTabs = () => {
-    if (user?.role === 'marketing') {
+    if (user?.role === 'marketing' && SHOW_CMS_IN_NAVIGATION) {
       return [{ id: 'cms' as Tab, label: t('navigation.cms'), permission: 'cms.view' }].filter((tab) =>
         hasPermission(tab.permission)
       );
@@ -521,7 +535,7 @@ function AppContent() {
         { id: 'invoice-tracking', label: t('navigation.invoiceTracking'), permission: 'sales.view' }
       );
     } else {
-      if (hasPermission('cms.view')) {
+      if (SHOW_CMS_IN_NAVIGATION && hasPermission('cms.view')) {
         baseTabs.push({ id: 'cms', label: t('navigation.cms'), permission: 'cms.view' });
       }
       if (
@@ -1405,7 +1419,8 @@ function AppContent() {
             className="mx-auto max-w-7xl"
             style={undefined}
           >
-            {activeTab === 'dashboard' && user?.role !== 'marketing' && (
+            {activeTab === 'dashboard' &&
+              (user?.role !== 'marketing' || !SHOW_CMS_IN_NAVIGATION) && (
               <Dashboard
                 onNavigate={(tab, filters) => {
                   setActiveTab(tab as Tab);
@@ -1418,9 +1433,11 @@ function AppContent() {
             {activeTab === 'suppliers' && hasPermission('suppliers.view') && <Suppliers />}
             {activeTab === 'purchase-orders' && hasPermission('purchase.view') && <PurchaseOrders />}
             {activeTab === 'inventory' &&
-              (hasPermission('inventory.view') || hasPermission('inventory.view.ecuador')) && <Inventory />}
+              (hasPermission('inventory.view') || hasPermission('inventory.view.ecuador')) && (
+                <Inventory darkMode={darkModeOn} />
+              )}
             {activeTab === 'landed-costs' && hasPermission('costs.view') && <LandedCosts />}
-            {activeTab === 'cms' && hasPermission('cms.view') && <CMSModule />}
+            {activeTab === 'cms' && SHOW_CMS_IN_NAVIGATION && hasPermission('cms.view') && <CMSModule />}
             {activeTab === 'clients' &&
               (hasPermission('clients.view') || hasPermission('clients.view.ecuador')) && <Clients />}
             {activeTab === 'sales' && hasPermission('sales.view') && <Sales />}

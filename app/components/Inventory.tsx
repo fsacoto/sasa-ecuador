@@ -6,19 +6,30 @@ import { useAuth } from '../context/AuthContext';
 import { InventoryItem } from '../types';
 import InventoryDetailPanel from './InventoryDetailPanel';
 import ProductCatalogModal from './ProductCatalogModal';
-import InventoryTransferModal from './InventoryTransferModal';
 import { generateUniqueSKU, collectUsedSkus } from '../utils/skuGenerator';
 import {
   syncInventoryToOrders,
   reconcileVerificationIssuesForItem,
+  getConsignmentReturnProblemQty,
 } from '../utils/syncUpdates';
 import { handleMultipleImageUpload, validateImageFile } from '../utils/imageUpload';
 import { generateBarcodeFromSKU, isValidBarcodeInput } from '../utils/barcodeGenerator';
 import { useTranslation } from '../context/TranslationContext';
 import ConfirmDialog from './ui/ConfirmDialog';
 import { deleteMediaFile } from '../services/inventoryMediaService';
+import {
+  PREDEFINED_CATEGORIES_ES,
+  PREDEFINED_LINES_ES,
+  allKnownCategoryKeys,
+  allKnownLineKeys,
+} from '../constants/merchandise';
+import { displayCategory, displayLine } from '../utils/merchandiseLabels';
 
-export default function Inventory() {
+interface InventoryProps {
+  darkMode?: boolean;
+}
+
+export default function Inventory({ darkMode = false }: InventoryProps) {
   const { inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, purchaseOrders, updatePurchaseOrder } = useInventory();
   const { user, hasPermission } = useAuth();
   const { t } = useTranslation();
@@ -38,7 +49,6 @@ export default function Inventory() {
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [verificationIssuesModalItem, setVerificationIssuesModalItem] = useState<InventoryItem | null>(null);
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
-  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [skuManuallyEdited, setSkuManuallyEdited] = useState(false);
   const [categoryMode, setCategoryMode] = useState<'select' | 'new'>('select');
   const [lineMode, setLineMode] = useState<'select' | 'new'>('select');
@@ -51,7 +61,6 @@ export default function Inventory() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterLine, setFilterLine] = useState<string>('all');
-  const [filterCountry, setFilterCountry] = useState<string>('all');
   const [showProblemsOnly, setShowProblemsOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -103,21 +112,17 @@ export default function Inventory() {
   // Ref to track if we're currently editing an item (prevents SKU auto-generation)
   const isEditingRef = useRef(false);
   
-  // Predefined category options
-  const predefinedCategories = ['Necklace', 'Ring', 'Bracelet', 'Set', 'Anklet', 'Earring'];
-  
-  // Predefined line options
-  const predefinedLines = ['Gold Plated', 'Gold Filled', 'Sterling Silver'];
-  
-  // Get unique categories and lines from existing inventory (excluding predefined ones)
+  const knownCategories = allKnownCategoryKeys();
+  const knownLines = allKnownLineKeys();
+
   const existingCategories = [...new Set(inventory
     .map(item => item.category)
-    .filter(cat => cat && !cat.includes('NEEDS REVIEW') && !predefinedCategories.includes(cat))
+    .filter(cat => cat && !cat.includes('NEEDS REVIEW') && !knownCategories.has(cat))
   )].sort();
-  
+
   const existingLines = [...new Set(inventory
     .map(item => item.line)
-    .filter(line => line && line.trim() !== '' && !predefinedLines.includes(line))
+    .filter(line => line && line.trim() !== '' && !knownLines.has(line))
   )].sort();
 
   // Get visible columns for inventory table
@@ -129,7 +134,6 @@ export default function Inventory() {
       { key: 'category', label: t('inventory.category') },
       { key: 'line', label: t('inventory.line') },
       { key: 'ecuadorStock', label: t('inventory.ecuadorStock') },
-      { key: 'usaStock', label: t('inventory.usaStock') },
       { key: 'totalStock', label: t('inventory.totalStock') },
       { key: 'actions', label: t('inventory.actions') }
     ];
@@ -149,7 +153,6 @@ export default function Inventory() {
       { key: 'category', label: 'Category' },
       { key: 'line', label: 'Line' },
       { key: 'ecuadorStock', label: 'Ecuador Stock' },
-      { key: 'usaStock', label: 'USA Stock' },
       { key: 'totalStock', label: 'Total Stock' },
       { key: 'unitCost', label: 'Unit Cost' },
       { key: 'totalValue', label: 'Total Value' }
@@ -187,7 +190,6 @@ export default function Inventory() {
     category: '',
     line: '',
     ecuadorStock: 0,
-    usaStock: 0,
     images: [] as string[],
   });
 
@@ -259,7 +261,7 @@ export default function Inventory() {
       // Sync changes to linked purchase orders
       syncInventoryToOrders(updatedItem, purchaseOrders, updatePurchaseOrder);
     } else {
-      addInventoryItem(formData);
+      addInventoryItem({ ...formData });
     }
     resetForm();
   };
@@ -274,7 +276,6 @@ export default function Inventory() {
       category: '',
       line: '',
       ecuadorStock: 0,
-      usaStock: 0,
       images: [],
     });
     setEditingItem(null);
@@ -303,7 +304,6 @@ export default function Inventory() {
       category: item.category,
       line: item.line,
       ecuadorStock: item.ecuadorStock,
-      usaStock: item.usaStock,
       images: item.images || [],
     });
     
@@ -429,15 +429,14 @@ export default function Inventory() {
     );
 
   const getTotalProblemQty = (item: InventoryItem) =>
-    getLiveVerificationIssues(item).reduce((sum, v) => sum + v.quantityProblem, 0);
+    getLiveVerificationIssues(item).reduce((sum, v) => sum + v.quantityProblem, 0) +
+    getConsignmentReturnProblemQty(item);
 
   const inventoryWithProblemsCount = filteredInventory.filter(
     (item) => getTotalProblemQty(item) > 0
   ).length;
 
-  const getTotalStock = (item: InventoryItem) => {
-    return item.ecuadorStock + item.usaStock;
-  };
+  const getTotalStock = (item: InventoryItem) => item.ecuadorStock;
 
   const handleGenerateBarcode = (item: InventoryItem) => {
     if (!isValidBarcodeInput(item.sku)) {
@@ -504,35 +503,24 @@ export default function Inventory() {
         try {
           const filters = JSON.parse(storedFilters);
           if (filters.filterLowStock) {
-            const totalStock = item.ecuadorStock + item.usaStock;
-            if (totalStock > 2) return false;
+            if (item.ecuadorStock > 2) return false;
           }
         } catch (e) {
           // Ignore parse errors
         }
       }
       
-      // Category filter
-      if (filterCategory !== 'all' && item.category !== filterCategory) {
-        return false;
+      // Category filter (unifica etiquetas EN/ES)
+      if (filterCategory !== 'all') {
+        const itemCat = displayCategory(item.category);
+        const want = displayCategory(filterCategory);
+        if (itemCat !== want) return false;
       }
-      
-      // Line filter
-      if (filterLine !== 'all' && item.line !== filterLine) {
-        return false;
-      }
-      
-      // Country filter
-      if (filterCountry !== 'all') {
-        if (filterCountry === 'ecuador' && item.ecuadorStock === 0) {
-          return false;
-        }
-        if (filterCountry === 'usa' && item.usaStock === 0) {
-          return false;
-        }
-        if (filterCountry === 'both' && (item.ecuadorStock === 0 || item.usaStock === 0)) {
-          return false;
-        }
+
+      if (filterLine !== 'all') {
+        const itemLine = displayLine(item.line);
+        const wantLine = displayLine(filterLine);
+        if (itemLine !== wantLine) return false;
       }
 
       if (showProblemsOnly && getTotalProblemQty(item) === 0) {
@@ -555,20 +543,16 @@ export default function Inventory() {
           bValue = b.sku.toLowerCase();
           break;
         case 'category':
-          aValue = a.category.toLowerCase();
-          bValue = b.category.toLowerCase();
+          aValue = displayCategory(a.category).toLowerCase();
+          bValue = displayCategory(b.category).toLowerCase();
           break;
         case 'line':
-          aValue = a.line.toLowerCase();
-          bValue = b.line.toLowerCase();
+          aValue = displayLine(a.line).toLowerCase();
+          bValue = displayLine(b.line).toLowerCase();
           break;
         case 'ecuadorStock':
           aValue = a.ecuadorStock;
           bValue = b.ecuadorStock;
-          break;
-        case 'usaStock':
-          aValue = a.usaStock;
-          bValue = b.usaStock;
           break;
         case 'totalStock':
           aValue = getTotalStock(a);
@@ -612,17 +596,6 @@ export default function Inventory() {
           <p className="text-sm text-gray-500 mt-1">{t('inventory.subtitle')}</p>
         </div>
         <div className="flex gap-3">
-          {!isReadOnly && (
-            <button
-              onClick={() => setIsTransferModalOpen(true)}
-              className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm"
-            >
-              <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-              </svg>
-              <span className="text-sm font-medium text-gray-700">{t('inventory.transfer.openMove')}</span>
-            </button>
-          )}
           <button
             onClick={() => setIsCatalogModalOpen(true)}
             disabled={inventory.length === 0}
@@ -804,9 +777,9 @@ export default function Inventory() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
             <span className="text-sm font-medium">{t('inventory.filters')}</span>
-            {(filterCategory !== 'all' || filterLine !== 'all' || filterCountry !== 'all') && (
+            {(filterCategory !== 'all' || filterLine !== 'all') && (
               <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
-                {[filterCategory !== 'all', filterLine !== 'all', filterCountry !== 'all'].filter(Boolean).length}
+                {[filterCategory !== 'all', filterLine !== 'all'].filter(Boolean).length}
               </span>
             )}
           </button>
@@ -907,7 +880,7 @@ export default function Inventory() {
       {showFilters && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mt-4">
           <div className="border-t border-gray-200 p-4 bg-gray-50">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* Category Filter */}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">{t('inventory.category')}</label>
@@ -917,11 +890,11 @@ export default function Inventory() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">{t('inventory.allCategories')}</option>
-                  {predefinedCategories.map(cat => (
+                  {[...PREDEFINED_CATEGORIES_ES].map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                   {existingCategories.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
+                    <option key={cat} value={cat}>{displayCategory(cat)}</option>
                   ))}
                 </select>
               </div>
@@ -935,27 +908,12 @@ export default function Inventory() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">{t('inventory.allLines')}</option>
-                  {predefinedLines.map(line => (
+                  {[...PREDEFINED_LINES_ES].map(line => (
                     <option key={line} value={line}>{line}</option>
                   ))}
                   {existingLines.map(line => (
-                    <option key={line} value={line}>{line}</option>
+                    <option key={line} value={line}>{displayLine(line)}</option>
                   ))}
-                </select>
-              </div>
-
-              {/* Country Filter */}
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Country</label>
-                <select
-                  value={filterCountry}
-                  onChange={(e) => setFilterCountry(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
-                >
-                  <option value="all">All Countries</option>
-                  <option value="ecuador">Ecuador Only</option>
-                  <option value="usa">USA Only</option>
-                  <option value="both">Both Countries</option>
                 </select>
               </div>
             </div>
@@ -964,7 +922,6 @@ export default function Inventory() {
             {(searchQuery ||
               filterCategory !== 'all' ||
               filterLine !== 'all' ||
-              filterCountry !== 'all' ||
               showProblemsOnly) && (
               <div className="mt-3 flex justify-end">
                 <button
@@ -972,7 +929,6 @@ export default function Inventory() {
                     setSearchQuery('');
                     setFilterCategory('all');
                     setFilterLine('all');
-                    setFilterCountry('all');
                     setShowProblemsOnly(false);
                   }}
                   className="text-[#515151] hover:text-[#000000] font-medium text-sm"
@@ -1059,7 +1015,7 @@ export default function Inventory() {
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                       >
                         <option value="">{t('inventory.selectCategory')}</option>
-                        {predefinedCategories.map(cat => (
+                        {[...PREDEFINED_CATEGORIES_ES].map(cat => (
                           <option key={cat} value={cat}>{cat}</option>
                         ))}
                         {existingCategories.length > 0 && (
@@ -1119,7 +1075,7 @@ export default function Inventory() {
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                       >
                         <option value="">{t('inventory.selectLine')}</option>
-                        {predefinedLines.map(line => (
+                        {[...PREDEFINED_LINES_ES].map(line => (
                           <option key={line} value={line}>{line}</option>
                         ))}
                         {existingLines.length > 0 && (
@@ -1211,29 +1167,16 @@ export default function Inventory() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('inventory.ecuadorStockLabel')} *</label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    value={formData.ecuadorStock}
-                    onChange={(e) => setFormData({ ...formData, ecuadorStock: parseInt(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('inventory.usaStockLabel')} *</label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    value={formData.usaStock}
-                    onChange={(e) => setFormData({ ...formData, usaStock: parseInt(e.target.value) || 0 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
-                  />
-                </div>
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-700">{t('inventory.ecuadorStockLabel')} *</label>
+                <input
+                  type="number"
+                  required
+                  min="0"
+                  value={formData.ecuadorStock}
+                  onChange={(e) => setFormData({ ...formData, ecuadorStock: parseInt(e.target.value, 10) || 0 })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
+                />
               </div>
 
               {/* Image Upload */}
@@ -1415,17 +1358,6 @@ export default function Inventory() {
                     </div>
                   </th>
                 )}
-                {!hiddenColumns.has('usaStock') && (
-                  <th 
-                    onClick={() => handleSort('usaStock')}
-                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                  >
-                    <div className="flex items-center gap-1 justify-center">
-                      {t('inventory.usaStock')}
-                      <SortIcon field="usaStock" />
-                    </div>
-                  </th>
-                )}
                 {!hiddenColumns.has('totalStock') && (
                   <th 
                     onClick={() => handleSort('totalStock')}
@@ -1578,17 +1510,16 @@ export default function Inventory() {
                       )}
                       {!hiddenColumns.has('category') && (
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                          {needsReview ? '-' : item.category}
+                          {needsReview ? '-' : displayCategory(item.category)}
                         </td>
                       )}
                       {!hiddenColumns.has('line') && (
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.line || '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                          {item.line ? displayLine(item.line) : '-'}
+                        </td>
                       )}
                       {!hiddenColumns.has('ecuadorStock') && (
                         <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-700">{item.ecuadorStock}</td>
-                      )}
-                      {!hiddenColumns.has('usaStock') && (
-                        <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-700">{item.usaStock}</td>
                       )}
                       {!hiddenColumns.has('totalStock') && (
                         <td className="px-6 py-4 text-center align-middle">
@@ -1787,33 +1718,28 @@ export default function Inventory() {
                         {/* Category */}
                         {galleryFields.has('category') && (
                           <div className="text-xs text-gray-500">
-                            <span className="font-medium">Category:</span> {item.category}
+                            <span className="font-medium">Category:</span> {displayCategory(item.category)}
                           </div>
                         )}
 
                         {/* Line */}
                         {galleryFields.has('line') && (
                           <div className="text-xs text-gray-500">
-                            <span className="font-medium">Line:</span> {item.line}
+                            <span className="font-medium">Line:</span> {item.line ? displayLine(item.line) : '-'}
                           </div>
                         )}
 
                         {/* Stock Information */}
-                        {(galleryFields.has('ecuadorStock') || galleryFields.has('usaStock') || galleryFields.has('totalStock')) && (
+                        {(galleryFields.has('ecuadorStock') || galleryFields.has('totalStock')) && (
                           <div className="flex gap-2 text-xs">
                             {galleryFields.has('ecuadorStock') && (
                               <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
                                 EC: {item.ecuadorStock}
                               </span>
                             )}
-                            {galleryFields.has('usaStock') && (
-                              <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full">
-                                US: {item.usaStock}
-                              </span>
-                            )}
                               {galleryFields.has('totalStock') && (
                                 <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded-full font-medium inline-flex items-center gap-1">
-                                  Total: {item.ecuadorStock + item.usaStock}
+                                  Total: {getTotalStock(item)}
                                   {getTotalProblemQty(item) > 0 && (
                                     <span className="text-amber-700" title={t('inventory.verificationProblemHint')}>
                                       ({getTotalProblemQty(item)} {t('inventory.problemUnitsShort')})
@@ -1900,7 +1826,7 @@ export default function Inventory() {
                 const po = purchaseOrders.find((o) => o.id === issue.purchaseOrderId);
                 return (
                   <div
-                    key={issue.purchaseOrderId}
+                    key={`po-${issue.purchaseOrderId}`}
                     className="border border-amber-200 bg-amber-50/80 rounded-lg p-4 space-y-2"
                   >
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -1924,9 +1850,86 @@ export default function Inventory() {
                     ) : (
                       <p className="text-sm text-gray-500 italic">{t('inventory.noVerificationComment')}</p>
                     )}
+                    {issue.mediaUrls && issue.mediaUrls.length > 0 && (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {issue.mediaUrls.map((url) => {
+                          const isVideo = /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url);
+                          return (
+                            <a
+                              key={url}
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block shrink-0"
+                            >
+                              {isVideo ? (
+                                <video
+                                  src={url}
+                                  className="h-20 w-20 object-cover rounded-lg border border-amber-200 hover:opacity-90"
+                                  muted
+                                  playsInline
+                                  preload="metadata"
+                                />
+                              ) : (
+                                <img
+                                  src={url}
+                                  alt=""
+                                  className="h-20 w-20 object-cover rounded-lg border border-amber-200 hover:opacity-90"
+                                />
+                              )}
+                            </a>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
+              {(verificationIssuesModalItem.consignmentReturnIssues ?? []).map((issue, idx) => (
+                <div
+                  key={`csg-${issue.consignmentFirestoreId}-${issue.sku}-${idx}-${issue.recordedAt?.toString?.() ?? idx}`}
+                  className="border border-amber-200 bg-amber-50/80 rounded-lg p-4 space-y-2"
+                >
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-sm font-semibold text-amber-950">
+                      {t('inventory.consignmentReturnBadge') || 'Devolución consignación'} ·{' '}
+                      {issue.consignmentNumber}
+                    </span>
+                  </div>
+                  <p className="text-sm font-bold text-amber-900">
+                    {t('inventory.problemQtyLabel')}: {issue.quantityProblem}
+                    {issue.quantityGoodInReturn != null && issue.quantityGoodInReturn > 0 && (
+                      <span className="font-normal text-gray-700">
+                        {' '}
+                        · {t('inventory.goodReturnQty') || 'Buenas en esta devolución'}:{' '}
+                        {issue.quantityGoodInReturn}
+                      </span>
+                    )}
+                  </p>
+                  {issue.comment ? (
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap">{issue.comment}</p>
+                  ) : null}
+                  {issue.mediaUrls && issue.mediaUrls.length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {issue.mediaUrls.map((url) => (
+                        <a
+                          key={url}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block shrink-0"
+                        >
+                          <img
+                            src={url}
+                            alt=""
+                            className="h-20 w-20 object-cover rounded-lg border border-amber-200 hover:opacity-90"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -1943,20 +1946,9 @@ export default function Inventory() {
       {/* Catalog Modal */}
       {isCatalogModalOpen && (
         <ProductCatalogModal
-          inventory={inventory.filter(item => {
-            // Only include items that have stock (items you currently hold)
-            const totalStock = item.ecuadorStock + item.usaStock;
-            return totalStock > 0;
-          })}
+          inventory={inventory}
+          darkMode={darkMode}
           onClose={() => setIsCatalogModalOpen(false)}
-        />
-      )}
-
-      {/* Transfer Modal */}
-      {isTransferModalOpen && (
-        <InventoryTransferModal
-          isOpen={isTransferModalOpen}
-          onClose={() => setIsTransferModalOpen(false)}
         />
       )}
 

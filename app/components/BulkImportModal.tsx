@@ -6,6 +6,8 @@ import { useInventory } from '../context/InventoryContext';
 import { generateUniqueSKU, collectUsedSkus } from '../utils/skuGenerator';
 import { PurchaseOrder, InventoryItem } from '../types';
 import { getExchangeRates, getExchangeRate, type ExchangeRateResponse } from '../utils/currencyApi';
+import { PREDEFINED_CATEGORIES_ES, PREDEFINED_LINES_ES } from '../constants/merchandise';
+import { canonicalCategory, canonicalLine } from '../utils/merchandiseLabels';
 
 interface BulkImportModalProps {
   onClose: () => void;
@@ -23,7 +25,6 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
   const [defaultCurrency, setDefaultCurrency] = useState<string>('USD');
   const [exchangeRate, setExchangeRate] = useState<number>(1);
   const [exchangeRateManuallySet, setExchangeRateManuallySet] = useState<boolean>(false);
-  const [defaultDestination, setDefaultDestination] = useState<'Ecuador' | 'USA'>('Ecuador');
   const [invoicePrefix, setInvoicePrefix] = useState<string>('');
   const [invoiceLink, setInvoiceLink] = useState<string>('');
   const [purchaseDate, setPurchaseDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -36,10 +37,6 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
 
   // Exchange rates state
   const [exchangeRates, setExchangeRates] = useState<ExchangeRateResponse | null>(null);
-
-  // Predefined categories and lines for matching
-  const predefinedCategories = ['Necklace', 'Ring', 'Bracelet', 'Set', 'Anklet', 'Earring'];
-  const predefinedLines = ['Gold Plated', 'Gold Filled', 'Sterling Silver'];
 
   // Fetch exchange rates when component mounts
   useEffect(() => {
@@ -157,79 +154,43 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
 
   const findMatchingCategory = (categoryName: string): string => {
     if (!categoryName) return '';
-    
-    console.log('Matching category:', categoryName, 'against predefined:', predefinedCategories);
-    
-    // Try exact match with predefined categories
-    const exactMatch = predefinedCategories.find(cat => 
-      cat.toLowerCase() === categoryName.toLowerCase()
+    const canon = canonicalCategory(categoryName.trim());
+    const predefined: string[] = [...PREDEFINED_CATEGORIES_ES];
+    if (predefined.includes(canon)) return canon;
+
+    const lower = categoryName.toLowerCase();
+    const partialMatch = predefined.find(
+      (cat) => cat.toLowerCase().includes(lower) || lower.includes(cat.toLowerCase())
     );
-    if (exactMatch) {
-      console.log('Exact match found:', exactMatch);
-      return exactMatch;
-    }
-    
-    // Try partial match
-    const partialMatch = predefinedCategories.find(cat => 
-      cat.toLowerCase().includes(categoryName.toLowerCase()) ||
-      categoryName.toLowerCase().includes(cat.toLowerCase())
+    if (partialMatch) return partialMatch;
+
+    const existingCategories = [...new Set(inventory.map((item) => item.category))];
+    const existingMatch = existingCategories.find(
+      (cat) => cat && cat.toLowerCase() === categoryName.toLowerCase()
     );
-    if (partialMatch) {
-      console.log('Partial match found:', partialMatch);
-      return partialMatch;
-    }
-    
-    // Try existing categories from inventory
-    const existingCategories = [...new Set(inventory.map(item => item.category))];
-    const existingMatch = existingCategories.find(cat => 
-      cat.toLowerCase() === categoryName.toLowerCase()
-    );
-    if (existingMatch) {
-      console.log('Existing match found:', existingMatch);
-      return existingMatch;
-    }
-    
-    console.log('No match found, returning original:', categoryName);
-    // Return original if no match found (will be flagged for review)
+    if (existingMatch) return canonicalCategory(existingMatch);
+
     return categoryName;
   };
 
   const findMatchingLine = (lineName: string): string => {
     if (!lineName) return '';
-    
-    console.log('Matching line:', lineName, 'against predefined:', predefinedLines);
-    
-    // Try exact match with predefined lines
-    const exactMatch = predefinedLines.find(line => 
-      line.toLowerCase() === lineName.toLowerCase()
+    const canon = canonicalLine(lineName.trim());
+    const predefinedLines: string[] = [...PREDEFINED_LINES_ES];
+    if (predefinedLines.includes(canon)) return canon;
+
+    const lower = lineName.toLowerCase();
+    const partialMatch = predefinedLines.find(
+      (line) => line.toLowerCase().includes(lower) || lower.includes(line.toLowerCase())
     );
-    if (exactMatch) {
-      console.log('Exact match found:', exactMatch);
-      return exactMatch;
-    }
-    
-    // Try partial match
-    const partialMatch = predefinedLines.find(line => 
-      line.toLowerCase().includes(lineName.toLowerCase()) ||
-      lineName.toLowerCase().includes(line.toLowerCase())
+    if (partialMatch) return partialMatch;
+
+    const existingLines = [...new Set(inventory.map((item) => item.line))];
+    const existingMatch = existingLines.find(
+      (line) => line && line.toLowerCase() === lineName.toLowerCase()
     );
-    if (partialMatch) {
-      console.log('Partial match found:', partialMatch);
-      return partialMatch;
-    }
-    
-    // Try existing lines from inventory
-    const existingLines = [...new Set(inventory.map(item => item.line))];
-    const existingMatch = existingLines.find(line => 
-      line.toLowerCase() === lineName.toLowerCase()
-    );
-    if (existingMatch) {
-      console.log('Existing match found:', existingMatch);
-      return existingMatch;
-    }
-    
-    console.log('No match found, returning original:', lineName);
-    // Return original if no match found (will be flagged for review)
+    if (existingMatch) return canonicalLine(existingMatch);
+
     return lineName;
   };
 
@@ -471,7 +432,6 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
         line: autoLinked && matchedInventoryItem ? matchedInventoryItem.line : (lineNeedsReview ? '⚠️ NEEDS REVIEW' : matchedLine),
         images: autoLinked && matchedInventoryItem ? matchedInventoryItem.images : [],
         quantity: quantity,
-        destinationStock: defaultDestination,
         currency: defaultCurrency, // Store the original currency
         costPerUnit: costPerUnit, // Store cost in original currency
         totalCost: quantity * costPerUnit, // Store total in original currency
@@ -654,7 +614,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                     Link to the invoice document (PDF, Google Drive, etc.). This will be applied to all imported purchase orders and linked to inventory items when verified.
                   </p>
                 </div>
-                <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="mb-4">
                   <div>
                     <label className="block text-sm font-medium mb-1 text-gray-700">Supplier (optional)</label>
                     <select
@@ -668,17 +628,6 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                           {supplier.name}
                         </option>
                       ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1 text-gray-700">Destination</label>
-                    <select
-                      value={defaultDestination}
-                      onChange={(e) => setDefaultDestination(e.target.value as 'Ecuador' | 'USA')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
-                    >
-                      <option value="Ecuador">Ecuador</option>
-                      <option value="USA">USA</option>
                     </select>
                   </div>
                 </div>

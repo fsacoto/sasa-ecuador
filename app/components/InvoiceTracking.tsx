@@ -192,7 +192,7 @@ export default function InvoiceTracking() {
       }
     }
 
-    const maxQuantity = product.ecuadorStock + product.usaStock; // Total available stock
+    const maxQuantity = product.ecuadorStock;
 
     const newItem: SalesInvoiceLine & { maxQuantity?: number } = {
       sku: product.sku,
@@ -277,7 +277,7 @@ export default function InvoiceTracking() {
         // For sales role, only use Ecuador stock; otherwise use total stock
         const currentStock = user?.role === 'sales' 
           ? inventoryItem.ecuadorStock 
-          : (inventoryItem.ecuadorStock + inventoryItem.usaStock);
+          : inventoryItem.ecuadorStock;
         const maxQuantity = currentStock + item.quantity;
         
         return {
@@ -924,31 +924,31 @@ export default function InvoiceTracking() {
 
   const generatePDF = async (invoice: SalesInvoice) => {
     try {
-      // Convert logo image for PDF - use full URL for public assets
       const { convertImageForPDF } = await import('../utils/imageConverter');
-      const logoUrl = typeof window !== 'undefined' 
-        ? `${window.location.origin}/sasa.png` 
-        : '/sasa.png';
+      const { normalizePdfLogoSrc } = await import('../utils/pdfRenderHelpers');
+      const logoUrl =
+        typeof window !== 'undefined' ? `${window.location.origin}/sasa.png` : '/sasa.png';
       const logoBase64 = await convertImageForPDF(logoUrl);
-      
-      // Dynamically import PDF components
+      const logoSrc = normalizePdfLogoSrc(logoBase64, logoUrl);
+
+      const React = await import('react');
       const [{ pdf }, { default: InvoicePDF }] = await Promise.all([
         import('@react-pdf/renderer'),
-        import('./InvoicePDF')
+        import('./InvoicePDF'),
       ]);
 
-      // Create PDF document with converted logo and locale
-      const pdfDocument = <InvoicePDF invoice={invoice} logoSrc={logoBase64 || logoUrl} />;
+      const pdfDocument = React.createElement(InvoicePDF, {
+        invoice,
+        logoSrc,
+      });
 
-      // Generate blob
-      const instance = pdf(pdfDocument);
-      const blob = await instance.toBlob();
+      const blob = await pdf(pdfDocument as any).toBlob();
 
       // Create download link
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `invoice-${invoice.invoiceNumber}.pdf`;
+      link.download = `nota-venta-${invoice.invoiceNumber}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

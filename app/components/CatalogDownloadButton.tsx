@@ -46,7 +46,7 @@ export default function CatalogDownloadButton({
       });
     } catch (err) {
       console.error('Error generating PDF:', err);
-      setError(t('inventory.catalogGenerationFailed') || 'No se pudo generar el PDF. Intente de nuevo.');
+      setError(t('inventory.catalog.catalogGenerationFailed'));
     } finally {
       setIsGenerating(false);
     }

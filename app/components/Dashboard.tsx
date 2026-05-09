@@ -5,6 +5,7 @@ import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../context/TranslationContext';
 import type { PurchaseOrder } from '../types';
+import { displayCategory } from '../utils/merchandiseLabels';
 
 const iconStroke = { strokeWidth: 1.5 };
 
@@ -252,7 +253,6 @@ export default function Dashboard({ onNavigate }: DashboardProps = {}) {
 
   const getInventoryValueByCountry = () => {
     let ecuadorValue = 0;
-    let usaValue = 0;
     
     inventory.forEach(item => {
       const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
@@ -271,15 +271,14 @@ export default function Dashboard({ onNavigate }: DashboardProps = {}) {
       if (linkedOrders.length > 0) {
         const avgCost = linkedOrders.reduce((sum, order) => sum + order.costInUSD, 0) / linkedOrders.length;
         ecuadorValue += avgCost * item.ecuadorStock;
-        usaValue += avgCost * item.usaStock;
       }
     });
     
-    return { ecuador: ecuadorValue, usa: usaValue, total: ecuadorValue + usaValue };
+    return { ecuador: ecuadorValue, total: ecuadorValue };
   };
 
-  const getTotalInventoryValue = () => {
-    return getInventoryValueByCountry().total;
+  const getEcuadorInventoryValue = () => {
+    return getInventoryValueByCountry().ecuador;
   };
 
   const getEcuadorStock = () => {
@@ -297,36 +296,6 @@ export default function Dashboard({ onNavigate }: DashboardProps = {}) {
     }, 0);
   };
 
-  const getUSAStock = () => {
-    return inventory.reduce((sum, item) => {
-      const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
-        const order = purchaseOrders.find(o => o.id === orderId);
-        return order && order.status === 'Verified';
-      });
-      const isStandaloneItem = item.linkedPurchaseOrders.length === 0;
-      
-      if (item.linkedPurchaseOrders.length > 0 && !hasVerifiedOrder) return sum;
-      if (!hasVerifiedOrder && !isStandaloneItem) return sum;
-      
-      return sum + item.usaStock;
-    }, 0);
-  };
-
-  const getTotalStock = () => {
-    return inventory.reduce((sum, item) => {
-      const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
-        const order = purchaseOrders.find(o => o.id === orderId);
-        return order && order.status === 'Verified';
-      });
-      const isStandaloneItem = item.linkedPurchaseOrders.length === 0;
-      
-      if (item.linkedPurchaseOrders.length > 0 && !hasVerifiedOrder) return sum;
-      if (!hasVerifiedOrder && !isStandaloneItem) return sum;
-      
-      return sum + item.ecuadorStock + item.usaStock;
-    }, 0);
-  };
-
   const getLowStockItems = () => {
     return inventory.filter(item => {
       const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
@@ -338,7 +307,7 @@ export default function Dashboard({ onNavigate }: DashboardProps = {}) {
       if (item.linkedPurchaseOrders.length > 0 && !hasVerifiedOrder) return false;
       if (!hasVerifiedOrder && !isStandaloneItem) return false;
       
-      return (item.ecuadorStock + item.usaStock) <= 2;
+      return item.ecuadorStock <= 2;
     });
   };
 
@@ -388,7 +357,8 @@ export default function Dashboard({ onNavigate }: DashboardProps = {}) {
       if (item.linkedPurchaseOrders.length > 0 && !hasVerifiedOrder) return;
       if (!hasVerifiedOrder && !isStandaloneItem) return;
       
-      const category = item.category || t('dashboard.uncategorized');
+      const raw = item.category || t('dashboard.uncategorized');
+      const category = raw === t('dashboard.uncategorized') ? raw : displayCategory(raw);
       categoryCounts[category] = (categoryCounts[category] || 0) + 1;
     });
     
@@ -474,8 +444,8 @@ export default function Dashboard({ onNavigate }: DashboardProps = {}) {
           <div className="mb-4">
             <IconLayers className="h-5 w-5 text-gray-500 group-hover:text-gray-700" />
           </div>
-          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">{t('dashboard.totalStock')}</p>
-          <p className="text-3xl font-semibold tabular-nums text-gray-900">{getTotalStock()}</p>
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">{t('dashboard.stockEcuador')}</p>
+          <p className="text-3xl font-semibold tabular-nums text-gray-900">{getEcuadorStock()}</p>
           <MetricMoMVariance
             thisMonth={momVerifiedUnitsThis}
             lastMonth={momVerifiedUnitsLast}
@@ -524,10 +494,7 @@ export default function Dashboard({ onNavigate }: DashboardProps = {}) {
                 </div>
                 <div className="flex items-center justify-between border-t border-gray-200/80 pt-2">
                   <div className="text-sm font-semibold tabular-nums tracking-tight text-gray-900">
-                    {item.ecuadorStock + item.usaStock} {t('dashboard.units')}
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    EC: {item.ecuadorStock} · USA: {item.usaStock}
+                    {item.ecuadorStock} {t('dashboard.units')}
                   </div>
                 </div>
               </button>
@@ -548,7 +515,7 @@ export default function Dashboard({ onNavigate }: DashboardProps = {}) {
         </div>
       )}
 
-      {/* Charts and analytics */}
+      {/* Stock y valor (solo Ecuador) */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <button
           type="button"
@@ -559,80 +526,10 @@ export default function Dashboard({ onNavigate }: DashboardProps = {}) {
             <IconMapPin className="h-5 w-5 text-gray-500 group-hover:text-gray-700" />
           </div>
           <p className="mb-4 text-xs font-medium uppercase tracking-wide text-gray-500">
-            {t('dashboard.stockByLocation')}
+            {t('dashboard.stockEcuador')}
           </p>
-
-          <div className="flex items-center gap-6">
-            <div className="relative h-32 w-32 shrink-0">
-              <svg className="h-32 w-32 -rotate-90 transform" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r="40" fill="none" stroke="#f3f4f6" strokeWidth="8" />
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="40"
-                  fill="none"
-                  stroke="#525252"
-                  strokeWidth="8"
-                  strokeDasharray={`${getTotalStock() > 0 ? (getEcuadorStock() / getTotalStock()) * 251.2 : 0} 251.2`}
-                  strokeDashoffset="0"
-                  className="transition-all duration-1000 ease-out"
-                />
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="40"
-                  fill="none"
-                  stroke="#a3a3a3"
-                  strokeWidth="8"
-                  strokeDasharray={`${getTotalStock() > 0 ? (getUSAStock() / getTotalStock()) * 251.2 : 0} 251.2`}
-                  strokeDashoffset={`-${getTotalStock() > 0 ? (getEcuadorStock() / getTotalStock()) * 251.2 : 0}`}
-                  className="transition-all duration-1000 ease-out"
-                />
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center px-1">
-                <div className="mx-auto max-w-[3.75rem] text-center sm:max-w-[4.25rem]">
-                  <div className="text-2xl font-semibold tabular-nums tracking-tight text-gray-900">{getTotalStock()}</div>
-                  <div className="mt-0.5 text-[0.625rem] font-medium uppercase leading-snug tracking-tight text-gray-500 sm:text-[0.6875rem]">
-                    {t('dashboard.totalUnits')}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="min-w-0 flex-1 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  <div className="h-2.5 w-2.5 shrink-0 rounded-full bg-zinc-600" />
-                  <span className="truncate text-sm font-medium text-gray-600">{t('dashboard.ecuador')}</span>
-                </div>
-                <span className="shrink-0 text-sm font-semibold tabular-nums tracking-tight text-gray-900">
-                  {getEcuadorStock()} {t('dashboard.units')}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  <div className="h-2.5 w-2.5 shrink-0 rounded-full bg-zinc-400" />
-                  <span className="truncate text-sm font-medium text-gray-600">{t('dashboard.usa')}</span>
-                </div>
-                <span className="shrink-0 text-sm font-semibold tabular-nums tracking-tight text-gray-900">
-                  {getUSAStock()} {t('dashboard.units')}
-                </span>
-              </div>
-
-              <div className="border-t border-gray-100 pt-2">
-                <div className="flex justify-between text-xs font-medium tabular-nums text-gray-500">
-                  <span>
-                    {t('dashboard.ecuador')}:{' '}
-                    {getTotalStock() > 0 ? ((getEcuadorStock() / getTotalStock()) * 100).toFixed(1) : 0}%
-                  </span>
-                  <span>
-                    {t('dashboard.usa')}: {getTotalStock() > 0 ? ((getUSAStock() / getTotalStock()) * 100).toFixed(1) : 0}%
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <p className="text-4xl font-semibold tabular-nums tracking-tight text-gray-900">{getEcuadorStock()}</p>
+          <p className="mt-2 text-sm text-gray-500">{t('dashboard.totalUnits')}</p>
         </button>
 
         {hasPermission('costs.view') && (
@@ -641,55 +538,12 @@ export default function Dashboard({ onNavigate }: DashboardProps = {}) {
               <IconGlobe className="h-5 w-5 text-gray-500 group-hover:text-gray-700" />
             </div>
             <p className="mb-4 text-xs font-medium uppercase tracking-wide text-gray-500">
-              {t('dashboard.inventoryValueByCountry')}
+              {t('dashboard.inventoryValue')}
             </p>
-
-            <div className="space-y-4">
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-600">{t('dashboard.ecuador')}</span>
-                  <span className="text-sm font-semibold tabular-nums tracking-tight text-gray-900">
-                    ${getInventoryValueByCountry().ecuador.toFixed(2)}
-                  </span>
-                </div>
-                <div className="h-2 w-full rounded-full bg-gray-100">
-                  <div
-                    className="h-2 rounded-full bg-zinc-500 transition-all duration-500"
-                    style={{
-                      width: `${getInventoryValueByCountry().total > 0 ? (getInventoryValueByCountry().ecuador / getInventoryValueByCountry().total) * 100 : 0}%`,
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-600">{t('dashboard.usa')}</span>
-                  <span className="text-sm font-semibold tabular-nums tracking-tight text-gray-900">
-                    ${getInventoryValueByCountry().usa.toFixed(2)}
-                  </span>
-                </div>
-                <div className="h-2 w-full rounded-full bg-gray-100">
-                  <div
-                    className="h-2 rounded-full bg-zinc-400 transition-all duration-500"
-                    style={{
-                      width: `${getInventoryValueByCountry().total > 0 ? (getInventoryValueByCountry().usa / getInventoryValueByCountry().total) * 100 : 0}%`,
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div className="border-t border-gray-100 pt-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                    {t('dashboard.totalValueLabel')}
-                  </span>
-                  <span className="text-3xl font-semibold tabular-nums tracking-tight text-gray-900">
-                    ${getTotalInventoryValue().toFixed(2)}
-                  </span>
-                </div>
-              </div>
-            </div>
+            <p className="text-4xl font-semibold tabular-nums tracking-tight text-gray-900">
+              ${getEcuadorInventoryValue().toFixed(2)}
+            </p>
+            <p className="mt-2 text-sm text-gray-500">{t('dashboard.totalValueLabel')}</p>
           </button>
         )}
       </div>

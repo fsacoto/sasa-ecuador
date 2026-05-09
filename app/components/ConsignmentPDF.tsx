@@ -1,8 +1,9 @@
 'use client';
 
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
-import { Consignment } from '../types';
+import { Consignment, ConsignmentStatus } from '../types';
 import esMessages from '../locales/es.json';
+import { toPdfDate } from '../utils/pdfRenderHelpers';
 
 const translate = (key: string): string => {
   const keys = key.split('.');
@@ -228,11 +229,23 @@ interface ConsignmentPDFProps {
   logoSrc?: string;
 }
 
+function statusLabelEs(status: ConsignmentStatus, tr: (k: string) => string): string {
+  switch (status) {
+    case 'Open':
+      return tr('pdf.consignment.statusOpen');
+    case 'Partially Closed':
+      return tr('pdf.consignment.statusPartiallyClosed');
+    case 'Closed':
+      return tr('pdf.consignment.statusClosed');
+    default:
+      return status;
+  }
+}
+
 export default function ConsignmentPDF({ consignment, logoSrc = '/sasa.png' }: ConsignmentPDFProps) {
   const t = (key: string) => translate(key);
-  // Format date
-  const formatDate = (date: Date | string) => {
-    const d = typeof date === 'string' ? new Date(date) : date;
+  const formatDate = (date: unknown) => {
+    const d = toPdfDate(date);
     return d.toLocaleDateString('es-EC', {
       year: 'numeric',
       month: 'long',
@@ -262,16 +275,18 @@ export default function ConsignmentPDF({ consignment, logoSrc = '/sasa.png' }: C
         <View style={styles.header}>
           {/* Left: SASA Logo */}
           <View style={styles.logoSection}>
-            <Image 
-              src={logoSrc} 
-              style={styles.logo}
-              cache={false}
-            />
+            {logoSrc ? (
+              <Image src={logoSrc} style={styles.logo} cache={false} />
+            ) : (
+              <View style={[styles.logo, { backgroundColor: '#f0f0f0' }]} />
+            )}
           </View>
 
           {/* Right: Consignment Info */}
           <View style={styles.consignmentInfoSection}>
-            <Text style={styles.consignmentTitle}>{t('pdf.consignment.title')}</Text>
+            <Text style={styles.consignmentTitle} wrap={false}>
+              {t('pdf.consignment.title')}
+            </Text>
             <Text style={styles.consignmentNumber}>{consignment.consignmentId}</Text>
             <Text style={styles.consignmentDate}>{t('pdf.consignment.dateIssued')}: {formatDate(consignment.dateCreated)}</Text>
             
@@ -320,7 +335,7 @@ export default function ConsignmentPDF({ consignment, logoSrc = '/sasa.png' }: C
             
             <View style={styles.statusRow}>
               <Text style={styles.statusLabel}>{t('pdf.consignment.status')}</Text>
-              <Text style={styles.statusValue}>{consignment.status}</Text>
+              <Text style={styles.statusValue}>{statusLabelEs(consignment.status, t)}</Text>
             </View>
           </View>
         </View>

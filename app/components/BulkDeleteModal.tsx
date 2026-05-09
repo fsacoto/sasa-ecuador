@@ -195,7 +195,6 @@ export default function BulkDeleteModal({ purchaseOrders, onClose, onBulkDelete 
                           <span className="w-20">{order.quantity} units</span>
                           <span className="w-20">${order.costPerUnitWithDiscount.toFixed(2)}</span>
                           <span className="w-20">{order.status}</span>
-                          <span className="w-20">{order.destinationStock}</span>
                         </div>
                       ))}
                     </div>

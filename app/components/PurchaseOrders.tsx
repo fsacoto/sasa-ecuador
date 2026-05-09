@@ -15,15 +15,19 @@ import {
   syncPurchaseOrderToInventory,
   cleanupInventoryAfterOrderDeletion,
   generateBarcodeForInventoryItem,
-  mergePurchaseOrderSnapshot,
-  reconcileVerificationIssuesForItem,
-  verifiedPhysicalStock,
   attachBarcodeToPurchaseOrderIfNeeded,
 } from '../utils/syncUpdates';
 import { useTranslation } from '../context/TranslationContext';
 import POVerificationModal from './POVerificationModal';
 import { generatePOVerificationPDF } from '../utils/poVerificationPDF';
 import ConfirmDialog from './ui/ConfirmDialog';
+import {
+  PREDEFINED_CATEGORIES_ES,
+  PREDEFINED_LINES_ES,
+  allKnownCategoryKeys,
+  allKnownLineKeys,
+} from '../constants/merchandise';
+import { displayCategory, displayLine } from '../utils/merchandiseLabels';
 
 export default function PurchaseOrders() {
   const { purchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, suppliers, inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, addSupplier } = useInventory();
@@ -44,7 +48,7 @@ export default function PurchaseOrders() {
   const [statusChangeConfirmOpen, setStatusChangeConfirmOpen] = useState(false);
   const [statusChangeData, setStatusChangeData] = useState<{oldStatus: string, newStatus: string, order: PurchaseOrder, updatedOrder: PurchaseOrder, orderData: any, previousSku?: string} | null>(null);
   const [quantityMismatchConfirmOpen, setQuantityMismatchConfirmOpen] = useState(false);
-  const [quantityMismatchData, setQuantityMismatchData] = useState<{expected: number, received: number, difference: string, order: PurchaseOrder, actualQuantity: number, orderData?: any, previousSku?: string, statusUpdate?: Partial<PurchaseOrder>} | null>(null);
+  const [quantityMismatchData, setQuantityMismatchData] = useState<{expected: number, received: number, difference: string, order: PurchaseOrder, orderData?: any, previousSku?: string, statusUpdate?: Partial<PurchaseOrder>} | null>(null);
   const [verificationModalOpen, setVerificationModalOpen] = useState(false);
   const [verificationData, setVerificationData] = useState<{order: PurchaseOrder, orderData?: any, previousSku?: string, isEditing?: boolean, updatedOrder?: PurchaseOrder} | null>(null);
   const [verificationQuantity, setVerificationQuantity] = useState<string>('');
@@ -74,7 +78,6 @@ export default function PurchaseOrders() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterSupplier, setFilterSupplier] = useState<string>('all');
-  const [filterDestination, setFilterDestination] = useState<string>('all');
   const [filterDuplicateSku, setFilterDuplicateSku] = useState<boolean>(false);
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterLine, setFilterLine] = useState<string>('all');
@@ -117,11 +120,8 @@ export default function PurchaseOrders() {
   const [showBulkDropdown, setShowBulkDropdown] = useState(false);
   const bulkDropdownRef = useRef<HTMLDivElement>(null);
   
-  // Predefined category options
-  const predefinedCategories = ['Necklace', 'Ring', 'Bracelet', 'Set', 'Anklet', 'Earring'];
-  
-  // Predefined line options
-  const predefinedLines = ['Gold Plated', 'Gold Filled', 'Sterling Silver'];
+  const knownPoCategories = allKnownCategoryKeys();
+  const knownPoLines = allKnownLineKeys();
   
   // Get visible columns based on current view mode
   const getVisibleColumns = () => {
@@ -131,7 +131,6 @@ export default function PurchaseOrders() {
       { key: 'description', label: t('purchaseOrders.description') },
       { key: 'sku', label: t('purchaseOrders.sku') },
       { key: 'quantity', label: t('purchaseOrders.quantity') },
-      { key: 'destination', label: t('purchaseOrders.destination') },
       { key: 'status', label: t('purchaseOrders.status') },
       { key: 'landedCost', label: t('purchaseOrders.costPerUnit') }
     ];
@@ -147,7 +146,6 @@ export default function PurchaseOrders() {
       { key: 'supplier', label: t('purchaseOrders.supplier') },
       { key: 'category', label: t('purchaseOrders.category') },
       { key: 'line', label: t('purchaseOrders.line') },
-      { key: 'destination', label: t('purchaseOrders.destination') },
       { key: 'status', label: t('purchaseOrders.status') },
       { key: 'createdAt', label: t('purchaseOrders.dateCreated') },
     ];
@@ -155,7 +153,7 @@ export default function PurchaseOrders() {
 
   // Get visible column keys for rendering
   const getVisibleColumnKeys = () => {
-    const allColumns = ['invoice', 'supplier', 'description', 'sku', 'quantity', 'destination', 'status', 'landedCost'];
+    const allColumns = ['invoice', 'supplier', 'description', 'sku', 'quantity', 'status', 'landedCost'];
     return allColumns.filter(key => !hiddenColumns.has(key));
   };
   
@@ -198,12 +196,12 @@ export default function PurchaseOrders() {
   const existingCategories = [...new Set([
     ...inventory.map(item => item.category),
     ...purchaseOrders.map(order => order.category)
-  ].filter(cat => cat && !cat.includes('NEEDS REVIEW') && !predefinedCategories.includes(cat)))].sort();
+  ].filter(cat => cat && !cat.includes('NEEDS REVIEW') && !knownPoCategories.has(cat)))].sort();
   
   const existingLines = [...new Set([
     ...inventory.map(item => item.line),
     ...purchaseOrders.map(order => order.line)
-  ].filter(line => line && line.trim() !== '' && !predefinedLines.includes(line)))].sort();
+  ].filter(line => line && line.trim() !== '' && !knownPoLines.has(line)))].sort();
 
   // Get SKUs that appear multiple times across purchase orders
   const getDuplicateSkus = () => {
@@ -229,7 +227,6 @@ export default function PurchaseOrders() {
     line: '',
     images: [] as string[],
     quantity: 0,
-    destinationStock: 'Ecuador' as 'Ecuador' | 'USA',
     currency: 'USD',
     costPerUnit: 0,
     discountPerUnit: 0,
@@ -580,7 +577,8 @@ export default function PurchaseOrders() {
         deleteInventoryItem,
         purchaseOrders,
         previousSku,
-        orderForSync.status === 'Verified'
+        orderForSync.status === 'Verified',
+        editingOrder
       );
     } else {
       const newId = await addPurchaseOrder(orderData as Omit<PurchaseOrder, 'id' | 'createdAt'>);
@@ -619,7 +617,6 @@ export default function PurchaseOrders() {
       line: '',
       images: [],
       quantity: 0,
-      destinationStock: 'Ecuador',
       currency: 'USD',
       costPerUnit: 0,
       discountPerUnit: 0,
@@ -741,9 +738,13 @@ export default function PurchaseOrders() {
       setUploadingMedia(false);
     }
 
-    // Close modal first
-    setVerificationModalOpen(false);
+    // Close modal first (capture baseline before clearing — used for inventory stock delta)
     const data = verificationData;
+    // Always use `order`: the row as it was when the modal opened. `updatedOrder` (form→verify flow)
+    // is already merged with status Verified + form fields before quantities are confirmed, which
+    // made baseline look "verified" and zeroed stock delta — so inventory never updated/created.
+    const stockBaselineOrder = data.order;
+    setVerificationModalOpen(false);
     setVerificationData(null);
     setVerificationQuantity('');
     setVerificationQuantityGood('');
@@ -753,8 +754,8 @@ export default function PurchaseOrders() {
     setVerificationMedia([]);
     setVerificationMediaUrls([]);
 
-    // If editing verification only (not through form), update the order directly
-    if (data.isEditing && data.updatedOrder && !data.orderData) {
+    // Edit verification only (e.g. "Edit verification" on a verified order) — not full form submit
+    if (data.isEditing && data.updatedOrder && data.orderData == null) {
       const updateData: Partial<PurchaseOrder> = {
         quantityReceived: actualQuantity,
         quantityGood: quantityGood,
@@ -772,54 +773,17 @@ export default function PurchaseOrders() {
       } as PurchaseOrder;
       mergedPo = await attachBarcodeToPurchaseOrderIfNeeded(mergedPo, updatePurchaseOrder);
 
-      const poSnap = mergePurchaseOrderSnapshot(purchaseOrders, mergedPo);
-
-      const oldPhysical = verifiedPhysicalStock(data.updatedOrder);
-      const newPhysical = quantityGood + quantityProblem;
-      const physicalDifference = newPhysical - oldPhysical;
-
-      const inventoryItem = inventory.find((item) => item.sku === mergedPo.sku);
-      if (inventoryItem) {
-        const stockUpdate: Partial<InventoryItem> = {
-          verificationIssues: reconcileVerificationIssuesForItem(
-            { linkedPurchaseOrders: inventoryItem.linkedPurchaseOrders },
-            poSnap
-          ),
-        };
-        if (physicalDifference !== 0) {
-          if (order.destinationStock === 'Ecuador') {
-            stockUpdate.ecuadorStock = Math.max(0, (inventoryItem.ecuadorStock || 0) + physicalDifference);
-          } else {
-            stockUpdate.usaStock = Math.max(0, (inventoryItem.usaStock || 0) + physicalDifference);
-          }
-        }
-        await updateInventoryItem(inventoryItem.id, stockUpdate);
-      } else if (newPhysical > 0) {
-        const newItemPayload: Omit<InventoryItem, 'id' | 'createdAt'> = {
-          sku: mergedPo.sku,
-          supplierSKU: mergedPo.supplierSKU,
-          name: mergedPo.description,
-          description: mergedPo.description,
-          category: mergedPo.category,
-          line: mergedPo.line,
-          images: mergedPo.images || [],
-          ecuadorStock: mergedPo.destinationStock === 'Ecuador' ? newPhysical : 0,
-          usaStock: mergedPo.destinationStock === 'USA' ? newPhysical : 0,
-          consignmentStock: 0,
-          linkedPurchaseOrders: [mergedPo.id],
-          verificationIssues: reconcileVerificationIssuesForItem(
-            { linkedPurchaseOrders: [mergedPo.id] },
-            poSnap
-          ),
-          ...(mergedPo.barcode ? { barcode: mergedPo.barcode } : {}),
-        };
-        const newItemId = await addInventoryItem(newItemPayload);
-        if (mergedPo.sku && !mergedPo.barcode) {
-          await generateBarcodeForInventoryItem(mergedPo.sku, updateInventoryItem, newItemId);
-        }
-      }
-      
-      // Reload to show updated data
+      await syncPurchaseOrderToInventory(
+        mergedPo,
+        inventory,
+        updateInventoryItem,
+        addInventoryItem,
+        deleteInventoryItem,
+        purchaseOrders,
+        undefined,
+        true,
+        stockBaselineOrder
+      );
       return;
     } else if (data.isEditing && data.orderData && data.updatedOrder) {
       // Editing through form submission flow
@@ -844,7 +808,6 @@ export default function PurchaseOrders() {
           received: actualQuantity,
           difference: diffText,
           order: updatedOrder,
-          actualQuantity: quantityGood, // Only good items go to inventory
           orderData,
           previousSku: data.previousSku
         });
@@ -872,7 +835,8 @@ export default function PurchaseOrders() {
         deleteInventoryItem,
         purchaseOrders,
         previousSku,
-        true
+        true,
+        stockBaselineOrder
       );
       resetForm();
     } else {
@@ -904,7 +868,6 @@ export default function PurchaseOrders() {
           received: actualQuantity,
           difference: diffText,
           order,
-          actualQuantity: quantityGood, // Only good items go to inventory
           statusUpdate
         });
         setQuantityMismatchConfirmOpen(true);
@@ -931,7 +894,8 @@ export default function PurchaseOrders() {
         deleteInventoryItem,
         purchaseOrders,
         undefined,
-        true
+        true,
+        stockBaselineOrder
       );
     }
   };
@@ -981,6 +945,7 @@ export default function PurchaseOrders() {
       return; // Wait for modal confirmation
     }
     
+    const stockBaselineOrder = order;
     await updatePurchaseOrder(order.id, statusUpdate);
 
     let updatedOrder: PurchaseOrder = { ...order, ...statusUpdate } as PurchaseOrder;
@@ -998,7 +963,8 @@ export default function PurchaseOrders() {
       deleteInventoryItem,
       purchaseOrders,
       undefined,
-      updatedOrder.status === 'Verified'
+      updatedOrder.status === 'Verified',
+      stockBaselineOrder
     );
   };
 
@@ -1021,7 +987,6 @@ export default function PurchaseOrders() {
       line: order.line,
       images: order.images || [],
       quantity: order.quantity,
-      destinationStock: order.destinationStock,
       currency: order.currency,
       costPerUnit: order.costPerUnit,
       discountPerUnit: order.discountPerUnit,
@@ -1038,7 +1003,6 @@ export default function PurchaseOrders() {
       order,
       isEditing: true,
       updatedOrder: order,
-      orderData: {}
     });
     setVerificationQuantity(order.quantityReceived?.toString() || order.quantity.toString());
     setVerificationQuantityGood(order.quantityGood?.toString() || order.quantityReceived?.toString() || order.quantity.toString());
@@ -1139,24 +1103,22 @@ export default function PurchaseOrders() {
         return false;
       }
       
-      // Destination filter
-      if (filterDestination !== 'all' && order.destinationStock !== filterDestination) {
-        return false;
-      }
-      
       // Duplicate SKU filter
       if (filterDuplicateSku && !duplicateSkus.includes(order.sku)) {
         return false;
       }
       
-      // Category filter
-      if (filterCategory !== 'all' && order.category !== filterCategory) {
-        return false;
+      // Category filter (unifica EN/ES)
+      if (filterCategory !== 'all') {
+        const oc = displayCategory(order.category);
+        const want = displayCategory(filterCategory);
+        if (oc !== want) return false;
       }
-      
-      // Line filter
-      if (filterLine !== 'all' && order.line !== filterLine) {
-        return false;
+
+      if (filterLine !== 'all') {
+        const ol = displayLine(order.line || '');
+        const wantL = displayLine(filterLine);
+        if (ol !== wantL) return false;
       }
       
       // Quantity issues filter (problems or missing items)
@@ -1204,10 +1166,6 @@ export default function PurchaseOrders() {
           aValue = a.quantity;
           bValue = b.quantity;
           break;
-        case 'destination':
-          aValue = a.destinationStock;
-          bValue = b.destinationStock;
-          break;
         case 'status':
           const statusOrder = { 'Ordered': 1, 'Shipped': 2, 'Received': 3, 'Verified': 4 };
           aValue = statusOrder[a.status] || 0;
@@ -1252,13 +1210,10 @@ export default function PurchaseOrders() {
           groupKey = supplier ? supplier.name : 'Unknown Supplier';
           break;
         case 'category':
-          groupKey = order.category || 'No Category';
+          groupKey = displayCategory(order.category) || 'No Category';
           break;
         case 'line':
-          groupKey = order.line || 'No Line';
-          break;
-        case 'destination':
-          groupKey = order.destinationStock;
+          groupKey = order.line ? displayLine(order.line) : 'No Line';
           break;
         case 'status':
           groupKey = order.status;
@@ -1299,7 +1254,17 @@ export default function PurchaseOrders() {
     // Remove inventory that was previously added
     if (oldStatus === 'Verified' && newStatus !== 'Verified') {
       // Use sync function to remove order from inventory
-      await syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, previousSku, false);
+      await syncPurchaseOrderToInventory(
+        updatedOrder,
+        inventory,
+        updateInventoryItem,
+        addInventoryItem,
+        deleteInventoryItem,
+        purchaseOrders,
+        previousSku,
+        false,
+        order
+      );
     }
     
     // Continue with the form submission or status update
@@ -1317,7 +1282,8 @@ export default function PurchaseOrders() {
         deleteInventoryItem,
         purchaseOrders,
         previousSku,
-        o.status === 'Verified'
+        o.status === 'Verified',
+        editingOrder
       );
       resetForm();
     } else if (orderData) {
@@ -1327,11 +1293,7 @@ export default function PurchaseOrders() {
       const inventoryItem = inventory.find((item) => item.sku === order.sku);
       if (inventoryItem) {
         const stockUpdate: Partial<InventoryItem> = {};
-        if (order.destinationStock === 'Ecuador') {
-          stockUpdate.ecuadorStock = Math.max(0, inventoryItem.ecuadorStock - quantityToRemove);
-        } else {
-          stockUpdate.usaStock = Math.max(0, inventoryItem.usaStock - quantityToRemove);
-        }
+        stockUpdate.ecuadorStock = Math.max(0, inventoryItem.ecuadorStock - quantityToRemove);
         updateInventoryItem(inventoryItem.id, stockUpdate);
       }
 
@@ -1347,7 +1309,8 @@ export default function PurchaseOrders() {
         deleteInventoryItem,
         purchaseOrders,
         undefined,
-        o.status === 'Verified'
+        o.status === 'Verified',
+        order
       );
     }
     
@@ -1358,7 +1321,7 @@ export default function PurchaseOrders() {
   const handleQuantityMismatchConfirm = async () => {
     if (!quantityMismatchData) return;
     
-    const { order, actualQuantity, orderData, previousSku, statusUpdate } = quantityMismatchData;
+    const { order, orderData, previousSku, statusUpdate } = quantityMismatchData;
     
     // Continue with the form submission or status update
     if (editingOrder && orderData) {
@@ -1378,41 +1341,12 @@ export default function PurchaseOrders() {
         deleteInventoryItem,
         purchaseOrders,
         previousSku,
-        updatedOrder.status === 'Verified'
+        updatedOrder.status === 'Verified',
+        editingOrder
       );
       resetForm();
     } else if (statusUpdate) {
-      // Handle status change from dropdown
       await updatePurchaseOrder(order.id, statusUpdate);
-      
-      // Add to inventory using actual quantity
-      const inventoryItem = inventory.find(item => item.sku === order.sku);
-      if (inventoryItem) {
-        const stockUpdate: Partial<InventoryItem> = {};
-        if (order.destinationStock === 'Ecuador') {
-          stockUpdate.ecuadorStock = inventoryItem.ecuadorStock + actualQuantity;
-        } else {
-          stockUpdate.usaStock = inventoryItem.usaStock + actualQuantity;
-        }
-        updateInventoryItem(inventoryItem.id, stockUpdate);
-      } else {
-        // Create new inventory item
-        const newInventoryItem: Omit<InventoryItem, 'id' | 'createdAt'> = {
-          sku: order.sku,
-          supplierSKU: order.supplierSKU || '',
-          name: order.description,
-          description: order.description,
-          category: order.category || '',
-          line: order.line || '',
-          images: order.images || [],
-          ecuadorStock: order.destinationStock === 'Ecuador' ? actualQuantity : 0,
-          usaStock: order.destinationStock === 'USA' ? actualQuantity : 0,
-          consignmentStock: 0,
-          linkedPurchaseOrders: [order.id],
-          ...(order.barcode ? { barcode: order.barcode } : {}),
-        };
-        addInventoryItem(newInventoryItem);
-      }
 
       let updatedOrder: PurchaseOrder = { ...order, ...statusUpdate } as PurchaseOrder;
       updatedOrder = await attachBarcodeToPurchaseOrderIfNeeded(
@@ -1427,7 +1361,8 @@ export default function PurchaseOrders() {
         deleteInventoryItem,
         purchaseOrders,
         undefined,
-        updatedOrder.status === 'Verified'
+        updatedOrder.status === 'Verified',
+        order
       );
     }
     
@@ -1582,9 +1517,9 @@ export default function PurchaseOrders() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
             <span className="text-sm font-medium">{t('purchaseOrders.filters')}</span>
-            {(filterStatus !== 'all' || filterSupplier !== 'all' || filterDestination !== 'all' || filterDuplicateSku || filterCategory !== 'all' || filterLine !== 'all' || filterQuantityIssues !== 'all') && (
+            {(filterStatus !== 'all' || filterSupplier !== 'all' || filterDuplicateSku || filterCategory !== 'all' || filterLine !== 'all' || filterQuantityIssues !== 'all') && (
               <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
-                {[filterStatus !== 'all', filterSupplier !== 'all', filterDestination !== 'all', filterDuplicateSku, filterCategory !== 'all', filterLine !== 'all', filterQuantityIssues !== 'all'].filter(Boolean).length}
+                {[filterStatus !== 'all', filterSupplier !== 'all', filterDuplicateSku, filterCategory !== 'all', filterLine !== 'all', filterQuantityIssues !== 'all'].filter(Boolean).length}
               </span>
             )}
           </button>
@@ -1803,20 +1738,6 @@ export default function PurchaseOrders() {
                 </select>
               </div>
               
-              {/* Destination Filter */}
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">{t('purchaseOrders.destination')}</label>
-                <select
-                  value={filterDestination}
-                  onChange={(e) => setFilterDestination(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
-                >
-                  <option value="all">{t('purchaseOrders.allDestinations')}</option>
-                  <option value="Ecuador">{t('purchaseOrders.ecuador')}</option>
-                  <option value="USA">{t('purchaseOrders.usa')}</option>
-                </select>
-              </div>
-              
               {/* Category Filter */}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">{t('purchaseOrders.category')}</label>
@@ -1826,7 +1747,7 @@ export default function PurchaseOrders() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">{t('purchaseOrders.allCategories')}</option>
-                  {predefinedCategories.map(cat => (
+                  {[...PREDEFINED_CATEGORIES_ES].map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                   {existingCategories.length > 0 && (
@@ -1848,7 +1769,7 @@ export default function PurchaseOrders() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">{t('purchaseOrders.allLines')}</option>
-                  {predefinedLines.map(line => (
+                  {[...PREDEFINED_LINES_ES].map(line => (
                     <option key={line} value={line}>{line}</option>
                   ))}
                   {existingLines.length > 0 && (
@@ -1893,14 +1814,13 @@ export default function PurchaseOrders() {
             </div>
             
             {/* Clear filters button */}
-            {(searchQuery || filterStatus !== 'all' || filterSupplier !== 'all' || filterDestination !== 'all' || filterDuplicateSku || filterCategory !== 'all' || filterLine !== 'all' || filterQuantityIssues !== 'all') && (
+            {(searchQuery || filterStatus !== 'all' || filterSupplier !== 'all' || filterDuplicateSku || filterCategory !== 'all' || filterLine !== 'all' || filterQuantityIssues !== 'all') && (
               <div className="mt-3 flex justify-end">
                 <button
                   onClick={() => {
                     setSearchQuery('');
                     setFilterStatus('all');
                     setFilterSupplier('all');
-                    setFilterDestination('all');
                     setFilterDuplicateSku(false);
                     setFilterCategory('all');
                     setFilterLine('all');
@@ -2140,7 +2060,7 @@ export default function PurchaseOrders() {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                       >
                         <option value="">{t('purchaseOrders.select')}</option>
-                        {predefinedCategories.map(cat => (
+                        {[...PREDEFINED_CATEGORIES_ES].map(cat => (
                           <option key={cat} value={cat}>{cat}</option>
                         ))}
                         {existingCategories.length > 0 && (
@@ -2201,7 +2121,7 @@ export default function PurchaseOrders() {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                       >
                         <option value="">{t('purchaseOrders.select')}</option>
-                        {predefinedLines.map(line => (
+                        {[...PREDEFINED_LINES_ES].map(line => (
                           <option key={line} value={line}>{line}</option>
                         ))}
                         {existingLines.length > 0 && (
@@ -2278,7 +2198,7 @@ export default function PurchaseOrders() {
                 )}
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.quantityLabel')}</label>
                   <input
@@ -2289,18 +2209,6 @@ export default function PurchaseOrders() {
                     onChange={(e) => setFormData({ ...formData, quantity: parseFloat(e.target.value) || 0 })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.destinationStock')}</label>
-                  <select
-                    required
-                    value={formData.destinationStock}
-                    onChange={(e) => setFormData({ ...formData, destinationStock: e.target.value as 'Ecuador' | 'USA' })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
-                  >
-                    <option value="Ecuador">Ecuador</option>
-                    <option value="USA">USA</option>
-                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.currency')}</label>
@@ -2538,17 +2446,6 @@ export default function PurchaseOrders() {
                   </div>
                 </th>
                   )}
-                  {!hiddenColumns.has('destination') && (
-                <th 
-                  onClick={() => handleSort('destination')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    {t('purchaseOrders.destination')}
-                    <SortIcon field="destination" />
-                  </div>
-                </th>
-                  )}
                   {!hiddenColumns.has('status') && (
                 <th 
                   onClick={() => handleSort('status')}
@@ -2627,17 +2524,6 @@ export default function PurchaseOrders() {
                   </div>
                 </th>
                   )}
-                  {!hiddenColumns.has('destination') && (
-                <th 
-                  onClick={() => handleSort('destination')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    {t('purchaseOrders.destination')}
-                    <SortIcon field="destination" />
-                  </div>
-                </th>
-                  )}
                   {!hiddenColumns.has('status') && (
                 <th 
                   onClick={() => handleSort('status')}
@@ -2669,7 +2555,7 @@ export default function PurchaseOrders() {
             <tbody className="divide-y divide-gray-100">
               {filteredAndSortedOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={!groupByField ? 10 - hiddenColumns.size : 9 - hiddenColumns.size} className="px-6 py-12 text-center text-sm text-gray-500">
+                  <td colSpan={9 - hiddenColumns.size} className="px-6 py-12 text-center text-sm text-gray-500">
                     {purchaseOrders.length === 0 
                       ? t('purchaseOrders.noOrdersYet')
                       : t('purchaseOrders.noOrdersMatchFilters')}
@@ -2746,9 +2632,6 @@ export default function PurchaseOrders() {
                           )}
                         </div>
                       </td>
-                      )}
-                      {!hiddenColumns.has('destination') && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.destinationStock}</td>
                       )}
                       {!hiddenColumns.has('status') && (
                       <td className="px-4 py-4 whitespace-nowrap">
@@ -2977,13 +2860,6 @@ export default function PurchaseOrders() {
                                     </div>
                                   )}
                                 </div>
-                              </td>
-                            )}
-                            
-                            {/* Destination */}
-                            {!hiddenColumns.has('destination') && (
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {order.destinationStock}
                               </td>
                             )}
                             
@@ -3263,9 +3139,9 @@ export default function PurchaseOrders() {
 
       {/* Quantity Verification Modal */}
       {verificationModalOpen && verificationData && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-lg">
-            <div className="px-6 py-5 border-b border-gray-100">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl w-full max-w-md max-h-[min(90vh,calc(100dvh-2rem))] shadow-lg flex flex-col min-h-0 my-auto">
+            <div className="px-6 py-5 border-b border-gray-100 shrink-0">
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
                   <svg className="w-6 h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3281,7 +3157,7 @@ export default function PurchaseOrders() {
               </p>
             </div>
             
-            <div className="px-6 py-5 space-y-4">
+            <div className="px-6 py-5 space-y-4 overflow-y-auto flex-1 min-h-0 overscroll-contain">
               <div className="bg-gray-50 rounded-lg p-4 space-y-3">
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
@@ -3295,10 +3171,6 @@ export default function PurchaseOrders() {
                   <div>
                     <span className="text-gray-500">{t('purchaseOrders.expectedQuantity') || 'Expected Quantity'}:</span>
                     <p className="font-medium text-gray-900 mt-1">{verificationData.order.quantity}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">{t('purchaseOrders.destination')}:</span>
-                    <p className="font-medium text-gray-900 mt-1">{verificationData.order.destinationStock}</p>
                   </div>
                 </div>
               </div>
@@ -3488,7 +3360,7 @@ export default function PurchaseOrders() {
               </div>
             </div>
             
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 shrink-0 bg-white">
               <button
                 onClick={() => {
                   setVerificationModalOpen(false);
@@ -3539,11 +3411,11 @@ export default function PurchaseOrders() {
             statusChangeData.oldStatus === 'Verified' && statusChangeData.newStatus !== 'Verified'
               ? t('purchaseOrders.warningVerifiedStatus')
                   .replace('{quantity}', (statusChangeData.order.quantityReceived || statusChangeData.order.quantity).toString())
-                  .replace('{destination}', statusChangeData.order.destinationStock)
+                  .replace('{destination}', 'Ecuador')
               : t('purchaseOrders.warningVerifiedStatusChange')
                   .replace('{status}', statusChangeData.newStatus)
                   .replace('{quantity}', (statusChangeData.order.quantityReceived || statusChangeData.order.quantity).toString())
-                  .replace('{destination}', statusChangeData.order.destinationStock)
+                  .replace('{destination}', 'Ecuador')
           }
           confirmText={t('common.confirm')}
           cancelText={t('common.cancel')}

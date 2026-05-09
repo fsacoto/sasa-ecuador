@@ -138,10 +138,10 @@ export default function SupplierDetailPanel({ supplier, onClose }: SupplierDetai
                       </div>
                       <div className="text-right">
                         <div className="font-medium text-sm text-gray-900">
-                          {item.ecuadorStock + item.usaStock} units
+                          {item.ecuadorStock} units
                         </div>
                         <div className="text-xs text-gray-500">
-                          EC: {item.ecuadorStock} · USA: {item.usaStock}
+                          Stock: {item.ecuadorStock}
                         </div>
                       </div>
                     </div>

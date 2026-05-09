@@ -36,18 +36,12 @@ export default function CMSModule() {
         !item.sku.toLowerCase().includes(filters.search.toLowerCase())) return false;
     
     if (filters.availability !== 'all') {
-      const totalStock = item.ecuadorStock + item.usaStock;
+      const totalStock = item.ecuadorStock;
       switch (filters.availability) {
         case 'in-stock':
           return totalStock > 0;
         case 'out-of-stock':
           return totalStock === 0;
-        case 'ecuador-only':
-          return item.ecuadorStock > 0 && item.usaStock === 0;
-        case 'usa-only':
-          return item.usaStock > 0 && item.ecuadorStock === 0;
-        case 'both-countries':
-          return item.ecuadorStock > 0 && item.usaStock > 0;
       }
     }
     
@@ -122,7 +116,7 @@ export default function CMSModule() {
     content += `Generated on: ${new Date().toLocaleDateString()}\n\n`;
     
     selectedInventory.forEach((item, index) => {
-      const totalStock = item.ecuadorStock + item.usaStock;
+      const totalStock = item.ecuadorStock;
       const availability = totalStock > 0 ? 'In Stock' : 'Out of Stock';
       
       content += `${index + 1}. ${item.name}\n`;
@@ -131,8 +125,7 @@ export default function CMSModule() {
       content += `   Category: ${item.category}\n`;
       content += `   Line: ${item.line}\n`;
       content += `   Availability: ${availability}\n`;
-      content += `   Ecuador Stock: ${item.ecuadorStock} units\n`;
-      content += `   USA Stock: ${item.usaStock} units\n`;
+      content += `   Stock: ${item.ecuadorStock} units\n`;
       content += `   Description: ${item.description || 'No description available'}\n`;
       content += `   Images: ${item.images?.length || 0} available\n\n`;
     });
@@ -158,7 +151,7 @@ export default function CMSModule() {
     let content = `#SASA #ProductCatalog #Inventory\n\n`;
     
     selectedInventory.forEach((item, index) => {
-      const totalStock = item.ecuadorStock + item.usaStock;
+      const totalStock = item.ecuadorStock;
       const availability = totalStock > 0 ? '✅ In Stock' : '❌ Out of Stock';
       
       content += `🛍️ ${item.name}\n`;
@@ -251,9 +244,6 @@ export default function CMSModule() {
               <option value="all">All Items</option>
               <option value="in-stock">In Stock</option>
               <option value="out-of-stock">Out of Stock</option>
-              <option value="ecuador-only">Ecuador Only</option>
-              <option value="usa-only">USA Only</option>
-              <option value="both-countries">Both Countries</option>
             </select>
           </div>
           
@@ -346,7 +336,7 @@ export default function CMSModule() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {filteredInventory.map((item) => {
-                const totalStock = item.ecuadorStock + item.usaStock;
+                const totalStock = item.ecuadorStock;
                 const isSelected = selectedItems.has(item.id);
                 
                 return (
@@ -406,8 +396,7 @@ export default function CMSModule() {
                       </div>
                       
                       <div className="text-xs text-gray-500">
-                        <div>Ecuador: {item.ecuadorStock} units</div>
-                        <div>USA: {item.usaStock} units</div>
+                        <div>Stock: {item.ecuadorStock} units</div>
                       </div>
                     </div>
                   </div>
