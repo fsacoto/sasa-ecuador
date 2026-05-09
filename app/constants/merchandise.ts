@@ -8,7 +8,7 @@ export const PREDEFINED_CATEGORIES_ES = [
   'Aretes',
 ] as const;
 
-export const PREDEFINED_LINES_ES = ['Baño en oro', 'Enchapado en oro', 'Plata esterlina'] as const;
+export const PREDEFINED_LINES_ES = ['Baño en oro', 'Bañado en oro', 'Plata esterlina'] as const;
 
 /** Valores en inglés legados (misma jerarquía que las categorías ES). */
 const LEGACY_CATEGORIES_EN = [
@@ -51,8 +51,11 @@ for (const c of PREDEFINED_CATEGORIES_ES) {
 export const LINE_TO_ES: Record<string, string> = {
   'gold plated': 'Baño en oro',
   [LEGACY_LINES_EN[0]]: 'Baño en oro',
-  'gold filled': 'Enchapado en oro',
-  [LEGACY_LINES_EN[1]]: 'Enchapado en oro',
+  /** Gold filled / oro relleno → etiqueta comercial: bañado en oro */
+  'gold filled': 'Bañado en oro',
+  [LEGACY_LINES_EN[1]]: 'Bañado en oro',
+  'oro relleno': 'Bañado en oro',
+  'enchapado en oro': 'Bañado en oro',
   'sterling silver': 'Plata esterlina',
   [LEGACY_LINES_EN[2]]: 'Plata esterlina',
 };

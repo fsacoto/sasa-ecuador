@@ -43,7 +43,13 @@ const translateMaterialName = (materialName: string): string => {
     if (materialLower.includes('gold plated') || materialLower.includes('oro laminado')) {
       return materialTranslations.goldPlated || materialTranslations.oroLaminado || materialName.toUpperCase();
     }
-    if (materialLower.includes('gold filled') || materialLower.includes('oro relleno')) {
+    if (
+      materialLower.includes('gold filled') ||
+      materialLower.includes('oro relleno') ||
+      materialLower.includes('bañado en oro') ||
+      materialLower.includes('banado en oro') ||
+      materialLower.includes('enchapado en oro')
+    ) {
       return materialTranslations.goldFilled || materialTranslations.oroRelleno || materialName.toUpperCase();
     }
     if (materialLower.includes('sterling silver') || materialLower.includes('plata')) {
@@ -248,7 +254,13 @@ const getMaterialBadgeStyle = (line: string | undefined) => {
       backgroundColor: '#E6D089',
       color: '#6A5500',
     };
-  } else if (lineLower.includes('gold filled') || lineLower.includes('oro relleno')) {
+  } else if (
+    lineLower.includes('gold filled') ||
+    lineLower.includes('oro relleno') ||
+    lineLower.includes('bañado en oro') ||
+    lineLower.includes('banado en oro') ||
+    lineLower.includes('enchapado en oro')
+  ) {
     return {
       backgroundColor: '#F8D87A',
       color: '#5F4A00',

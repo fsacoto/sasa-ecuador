@@ -1260,6 +1260,12 @@ export default function InvoiceTracking() {
                     >
                       {invoice.invoiceNumber}
                     </div>
+                    {invoice.sourceConsignmentId && (
+                      <div className="mt-1 text-xs text-amber-800 font-medium">
+                        {t('consignments.sourceConsignmentTag') || 'Consignación'}:{' '}
+                        {invoice.sourceConsignmentId}
+                      </div>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm font-medium text-gray-900">{invoice.clientName}</div>
@@ -1811,6 +1817,14 @@ export default function InvoiceTracking() {
                     <span className="text-gray-600">{t('invoiceTracking.currency')}:</span>
                     <span className="ml-2 font-medium">{detailsInvoice.currency}</span>
                   </div>
+                  {detailsInvoice.sourceConsignmentId && (
+                    <div className="col-span-2">
+                      <span className="text-gray-600">{t('consignments.sourceConsignmentTag') || 'Consignación'}:</span>
+                      <span className="ml-2 font-medium text-amber-900">
+                        {detailsInvoice.sourceConsignmentId}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -2062,86 +2076,107 @@ export default function InvoiceTracking() {
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && invoiceToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-2xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="text-4xl">🗑️</div>
-              <h3 className="text-xl font-bold text-red-600">{t('invoiceTracking.deleteInvoice')}</h3>
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-gray-200 bg-white shadow-2xl">
+            <div className="border-b border-gray-200 px-6 py-5">
+              <h3 className="text-xl font-semibold text-gray-900">
+                {t('invoiceTracking.deleteInvoice')}
+              </h3>
+              <p className="mt-2 text-sm text-gray-600">
+                {t('invoiceTracking.deleteInvoiceOptions')}
+              </p>
             </div>
-            
-            <p className="text-gray-700 mb-6 font-medium">
-              {t('invoiceTracking.deleteInvoiceOptions')}
-            </p>
-            
-            {itemsReturningToStock.length > 0 && (
-              <div className="bg-blue-50 rounded-lg p-4 mb-6">
-                <h4 className="font-semibold text-gray-900 mb-3">{t('invoiceTracking.itemsReturningToStock')}</h4>
-                <p className="text-sm text-gray-700 mb-3">{t('invoiceTracking.itemsReturningToStockMessage')}</p>
-                <div className="space-y-2">
-                  {itemsReturningToStock.map((item, index) => (
-                    <div key={index} className="flex justify-between items-center bg-white rounded p-2">
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900">{item.description}</div>
-                        <div className="text-sm text-gray-600">{t('invoiceTracking.quantityReturning')}: {item.quantity} {t('invoiceTracking.units')}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm text-gray-600">{t('invoiceTracking.ecuadorStock')}</div>
-                        <div className="font-semibold text-green-600">
-                          {item.currentStock} → {item.newStock}
+
+            <div className="px-6 py-5 space-y-4">
+              {itemsReturningToStock.length > 0 && (
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <h4 className="font-semibold text-gray-900 mb-1">
+                    {t('invoiceTracking.itemsReturningToStock')}
+                  </h4>
+                  <p className="text-sm text-gray-600 mb-3">
+                    {t('invoiceTracking.itemsReturningToStockMessage')}
+                  </p>
+                  <div className="space-y-2">
+                    {itemsReturningToStock.map((item, index) => (
+                      <div
+                        key={index}
+                        className="flex justify-between items-center rounded-lg border border-gray-200 bg-white px-3 py-2"
+                      >
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-900">{item.description}</div>
+                          <div className="text-sm text-gray-600">
+                            {t('invoiceTracking.quantityReturning')}: {item.quantity}{' '}
+                            {t('invoiceTracking.units')}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs uppercase tracking-wide text-gray-500">
+                            {t('invoiceTracking.ecuadorStock')}
+                          </div>
+                          <div className="font-semibold text-gray-900">
+                            {item.currentStock} <span className="text-gray-400">→</span>{' '}
+                            <span className="text-emerald-600">{item.newStock}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
+              )}
+
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    if (invoiceToDelete) {
+                      deleteInvoiceAndReturnItems(invoiceToDelete, itemsReturningToStock);
+                    }
+                    setInvoiceToDelete(null);
+                    setItemsReturningToStock([]);
+                  }}
+                  className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-left transition-colors hover:bg-emerald-100"
+                >
+                  <div className="font-semibold text-emerald-800">
+                    {t('invoiceTracking.reverseAndReturn')}
+                  </div>
+                  <div className="text-sm text-emerald-700 mt-1">
+                    {t('invoiceTracking.reverseAndReturnDescription')}
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    if (invoiceToDelete) {
+                      deleteInvoiceAndReturnItems(invoiceToDelete, []);
+                    }
+                    setInvoiceToDelete(null);
+                    setItemsReturningToStock([]);
+                  }}
+                  className="w-full rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-left transition-colors hover:bg-rose-100"
+                >
+                  <div className="font-semibold text-rose-800">
+                    {t('invoiceTracking.cancelWithoutAffecting')}
+                  </div>
+                  <div className="text-sm text-rose-700 mt-1">
+                    {t('invoiceTracking.cancelWithoutAffectingDescription')}
+                  </div>
+                </button>
               </div>
-            )}
-            
-            {/* Two Options */}
-            <div className="space-y-3 mb-6">
-              {/* Option 1: Reverse and Return */}
+            </div>
+
+            <div className="border-t border-gray-200 px-6 py-4">
               <button
                 onClick={() => {
                   setShowDeleteModal(false);
-                  if (invoiceToDelete) {
-                    deleteInvoiceAndReturnItems(invoiceToDelete, itemsReturningToStock);
-                  }
                   setInvoiceToDelete(null);
                   setItemsReturningToStock([]);
                 }}
-                className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-left transition-colors"
+                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-700 font-medium transition-colors hover:bg-gray-50"
               >
-                <div className="font-semibold mb-1">{t('invoiceTracking.reverseAndReturn')}</div>
-                <div className="text-sm opacity-90">{t('invoiceTracking.reverseAndReturnDescription')}</div>
-              </button>
-              
-              {/* Option 2: Cancel without affecting */}
-              <button
-                onClick={() => {
-                  setShowDeleteModal(false);
-                  if (invoiceToDelete) {
-                    deleteInvoiceAndReturnItems(invoiceToDelete, []);
-                  }
-                  setInvoiceToDelete(null);
-                  setItemsReturningToStock([]);
-                }}
-                className="w-full px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium text-left transition-colors"
-              >
-                <div className="font-semibold mb-1">{t('invoiceTracking.cancelWithoutAffecting')}</div>
-                <div className="text-sm opacity-90">{t('invoiceTracking.cancelWithoutAffectingDescription')}</div>
+                {t('invoiceTracking.cancel')}
               </button>
             </div>
-            
-            {/* Cancel Button */}
-            <button
-              onClick={() => {
-                setShowDeleteModal(false);
-                setInvoiceToDelete(null);
-                setItemsReturningToStock([]);
-              }}
-              className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
-            >
-              {t('invoiceTracking.cancel')}
-            </button>
           </div>
         </div>
       )}

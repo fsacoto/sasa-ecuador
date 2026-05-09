@@ -1910,21 +1910,30 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                     <p className="text-sm text-gray-800 whitespace-pre-wrap">{issue.comment}</p>
                   ) : null}
                   {issue.mediaUrls && issue.mediaUrls.length > 0 && (
-                    <div className="flex flex-wrap gap-2 pt-1">
+                    <div className="flex flex-wrap gap-3 pt-1">
                       {issue.mediaUrls.map((url) => (
-                        <a
-                          key={url}
-                          href={url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block shrink-0"
-                        >
-                          <img
-                            src={url}
-                            alt=""
-                            className="h-20 w-20 object-cover rounded-lg border border-amber-200 hover:opacity-90"
-                          />
-                        </a>
+                        <figure key={url} className="shrink-0 w-[5.5rem]">
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block"
+                          >
+                            <img
+                              src={url}
+                              alt={t('inventory.consignmentReturnPhotoAlt')
+                                .replace('{consignment}', issue.consignmentNumber)
+                                .replace('{sku}', issue.sku)}
+                              className="h-20 w-20 object-cover rounded-lg border border-amber-200 hover:opacity-90 mx-auto"
+                            />
+                          </a>
+                          <figcaption className="text-[10px] text-amber-950 text-center mt-1 leading-tight px-0.5">
+                            {t('inventory.consignmentReturnPhotoCaption').replace(
+                              '{consignment}',
+                              issue.consignmentNumber
+                            )}
+                          </figcaption>
+                        </figure>
                       ))}
                     </div>
                   )}

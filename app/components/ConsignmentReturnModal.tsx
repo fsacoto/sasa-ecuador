@@ -151,21 +151,25 @@ export default function ConsignmentReturnModal({
           const files = filesByIndex[index] || [];
           let mediaUrls: string[] = [];
           if (files.length > 0) {
-            const basePath = `consignment-returns/${consignment.id}/${batchTs}/${item.sku.replace(/[^a-zA-Z0-9-_]/g, '_')}/`;
+            const consignmentLabel = consignment.consignmentId.replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 64);
+            const skuSeg = item.sku.replace(/[^a-zA-Z0-9-_]/g, '_');
+            // Path includes Firestore id + human-readable CSG-xxxxx for support / Storage browser
+            const basePath = `consignment-returns/${consignment.id}/${consignmentLabel}/${batchTs}/${skuSeg}/`;
             mediaUrls = await uploadMultipleFiles(files, basePath);
           }
           const good = r - p;
-          cur.refs.push({
+          const ref: ConsignmentReturnIssueRef = {
             consignmentFirestoreId: consignment.id,
             consignmentNumber: consignment.consignmentId,
             sku: item.sku,
             itemIndex: index,
             quantityProblem: p,
-            quantityGoodInReturn: good > 0 ? good : undefined,
-            comment: cmt || undefined,
-            mediaUrls: mediaUrls.length > 0 ? mediaUrls : undefined,
             recordedAt: new Date(),
-          });
+          };
+          if (good > 0) ref.quantityGoodInReturn = good;
+          if (cmt) ref.comment = cmt;
+          if (mediaUrls.length > 0) ref.mediaUrls = mediaUrls;
+          cur.refs.push(ref);
         }
         issuesByInventoryId.set(inv.id, cur);
       }

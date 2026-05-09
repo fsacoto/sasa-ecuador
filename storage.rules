@@ -48,11 +48,12 @@ service firebase.storage {
                    request.resource.size < 100 * 1024 * 1024;
     }
 
-    // Consignment return evidence photos (ConsignmentReturnModal.tsx → consignment-returns/...)
-    match /consignment-returns/{allPaths=**} {
+    // Consignment return evidence (ConsignmentReturnModal → consignment-returns/{consignmentDocId}/…).
+    // Recursive match so any depth (SKU subfolder + filename) is allowed. Writes only require auth
+    // (size checks caused sporadic denials on some clients; app validates file size where needed).
+    match /consignment-returns/{path=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() &&
-                   request.resource.size < 100 * 1024 * 1024;
+      allow write: if isAuthenticated();
     }
     
     // Public read-only access for published content

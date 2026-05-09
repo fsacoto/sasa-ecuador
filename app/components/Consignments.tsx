@@ -8,6 +8,7 @@ import {
   ConsignmentStatus,
   Client,
   InventoryItem,
+  PaymentRecord,
   SalesInvoiceLine,
 } from '../types';
 import { getAllConsignments, createConsignment, updateConsignment, deleteConsignment } from '../services/consignmentsService';
@@ -43,6 +44,12 @@ export default function Consignments() {
   
   // Details view state
   const [salesQuantities, setSalesQuantities] = useState<{[key: number]: number}>({});
+  /** Unit sale price (USD) per consignment line index — used when registering sales */
+  const [saleUnitPrices, setSaleUnitPrices] = useState<Record<number, string>>({});
+  const [salePaymentStatus, setSalePaymentStatus] = useState<'Unpaid' | 'Partially Paid' | 'Paid'>('Unpaid');
+  const [saleAmountPaidInput, setSaleAmountPaidInput] = useState('');
+  const [salePaymentMethod, setSalePaymentMethod] = useState('');
+  const [salePaymentComment, setSalePaymentComment] = useState('');
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const hasLoadedRef = useRef(false);
 
@@ -71,6 +78,16 @@ export default function Consignments() {
       loadClients();
     }
   }, [userIdString]); // Always a string, array always has 1 element
+
+  useEffect(() => {
+    if (view !== 'details' || !selectedConsignment) return;
+    setSalesQuantities({});
+    setSaleUnitPrices({});
+    setSalePaymentStatus('Unpaid');
+    setSaleAmountPaidInput('');
+    setSalePaymentMethod('');
+    setSalePaymentComment('');
+  }, [view, selectedConsignment?.id]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -260,6 +277,8 @@ export default function Consignments() {
     }
   };
 
+  const roundMoney2 = (n: number) => Math.round(n * 100) / 100;
+
   const handleRegisterSales = async () => {
     if (!selectedConsignment) return;
 
@@ -270,7 +289,7 @@ export default function Consignments() {
     }
 
     try {
-      // Validate quantities
+      // Validate quantities + unit prices for lines being sold
       const updatedItems = selectedConsignment.items.map((item, index) => {
         const salesQty = salesQuantities[index] || 0;
         const availableQty = item.quantityDelivered - item.quantitySold - item.quantityReturned;
@@ -278,8 +297,96 @@ export default function Consignments() {
         if (salesQty > availableQty) {
           throw new Error(`Cannot sell more than available for ${item.sku}. Available: ${availableQty}`);
         }
+        if (salesQty > 0) {
+          const raw = (saleUnitPrices[index] ?? '').trim();
+          const unitPrice = parseFloat(raw.replace(',', '.'));
+          if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+            throw new Error(
+              t('consignments.saleUnitPriceRequired') ||
+                `Indique un precio unitario válido (> 0) para ${item.sku}.`
+            );
+          }
+        }
         return { ...item, quantitySold: item.quantitySold + salesQty };
       });
+
+      const salesItems: SalesInvoiceLine[] = selectedConsignment.items
+        .map((item, index) => {
+          const salesQty = salesQuantities[index] || 0;
+          if (salesQty <= 0) return null;
+          const unitPrice = roundMoney2(
+            parseFloat((saleUnitPrices[index] ?? '').trim().replace(',', '.'))
+          );
+          const totalPrice = roundMoney2(unitPrice * salesQty);
+          return {
+            sku: item.sku,
+            description: item.description,
+            quantity: salesQty,
+            unitPrice,
+            totalPrice,
+            line: item.line,
+            category: item.category,
+          } as SalesInvoiceLine;
+        })
+        .filter((item): item is SalesInvoiceLine => item !== null);
+
+      const subtotal = roundMoney2(salesItems.reduce((sum, line) => sum + line.totalPrice, 0));
+      const grandTotal = subtotal;
+
+      let amountPaid = 0;
+      let remainingBalance = grandTotal;
+      let paymentStatus: 'Unpaid' | 'Partially Paid' | 'Paid' = 'Unpaid';
+      let paymentDate: Date | undefined;
+
+      if (salePaymentStatus === 'Paid') {
+        amountPaid = grandTotal;
+        remainingBalance = 0;
+        paymentStatus = 'Paid';
+        paymentDate = new Date();
+      } else if (salePaymentStatus === 'Partially Paid') {
+        const paid = roundMoney2(parseFloat(saleAmountPaidInput.trim().replace(',', '.')));
+        if (!Number.isFinite(paid) || paid <= 0) {
+          throw new Error(
+            t('consignments.salePartialAmountRequired') ||
+              'Indique el monto cobrado para un pago parcial (mayor que 0).'
+          );
+        }
+        if (paid >= grandTotal - 0.005) {
+          throw new Error(
+            t('consignments.salePartialMustBeLessThanTotal') ||
+              'Para marcar como pago total use "Pagado". El monto parcial debe ser menor al total.'
+          );
+        }
+        amountPaid = paid;
+        remainingBalance = roundMoney2(grandTotal - paid);
+        paymentStatus = 'Partially Paid';
+        paymentDate = new Date();
+      } else {
+        amountPaid = 0;
+        remainingBalance = grandTotal;
+        paymentStatus = 'Unpaid';
+      }
+
+      const paymentMethodTrim = salePaymentMethod.trim();
+      const paymentCommentTrim = salePaymentComment.trim();
+
+      let paymentHistory: PaymentRecord[] | undefined;
+      if (amountPaid > 0) {
+        const rec: PaymentRecord = {
+          date: new Date(),
+          amount: amountPaid,
+        };
+        if (paymentMethodTrim) rec.method = paymentMethodTrim;
+        if (paymentCommentTrim) rec.comment = paymentCommentTrim;
+        paymentHistory = [rec];
+      }
+
+      const notesBase =
+        t('consignments.saleNoteConsignmentPrefix')?.replace(
+          '{id}',
+          selectedConsignment.consignmentId
+        ) || `Venta consignación ${selectedConsignment.consignmentId}`;
+      const notes = notesBase;
 
       // Update consignment
       const newStatus = calculateStatus(updatedItems);
@@ -304,38 +411,7 @@ export default function Consignments() {
         }
       }
 
-      // Create invoice for sales
-      const salesItems: SalesInvoiceLine[] = selectedConsignment.items
-        .map((item, index) => {
-          const salesQty = salesQuantities[index] || 0;
-          if (salesQty > 0) {
-            // Calculate unit price from landed cost (with markup)
-            let unitPrice = 25; // Default price
-            const inventoryItem = inventory.find(inv => inv.sku === item.sku);
-            if (inventoryItem && inventoryItem.linkedPurchaseOrders.length > 0) {
-              // Try to get average landed cost
-              const linkedOrders = inventory.filter(inv => 
-                inventoryItem.linkedPurchaseOrders.includes(inv.id)
-              );
-              // For now, use default price
-            }
-            
-            return {
-              sku: item.sku,
-              description: item.description,
-              quantity: salesQty,
-              unitPrice,
-              totalPrice: unitPrice * salesQty,
-              line: item.line,
-              category: item.category
-            } as SalesInvoiceLine;
-          }
-          return null;
-        })
-        .filter((item): item is SalesInvoiceLine => item !== null) as SalesInvoiceLine[];
-
       if (salesItems.length > 0) {
-        const subtotal = salesItems.reduce((sum, item) => sum + item.totalPrice, 0);
         await createInvoice({
           invoiceNumber: 'TEMP',
           clientId: selectedConsignment.clientId,
@@ -346,15 +422,21 @@ export default function Consignments() {
           discountType: 'percentage',
           discountValue: 0,
           discountTotal: 0,
-          grandTotal: subtotal,
+          grandTotal,
           date: new Date(),
-          notes: `Consignment sale from ${selectedConsignment.consignmentId}`,
+          notes,
           salesAgent: user?.name || user?.email || '',
           currency: 'USD',
           deliveryStatus: 'Delivered',
-          paymentStatus: 'Unpaid',
-          amountPaid: 0,
-          remainingBalance: subtotal
+          paymentStatus,
+          amountPaid,
+          remainingBalance,
+          paymentDate,
+          ...(paymentMethodTrim ? { paymentMethod: paymentMethodTrim } : {}),
+          ...(paymentCommentTrim ? { paymentComment: paymentCommentTrim } : {}),
+          ...(paymentHistory ? { paymentHistory } : {}),
+          sourceConsignmentId: selectedConsignment.consignmentId,
+          sourceConsignmentFirestoreId: selectedConsignment.id,
         });
       }
 
@@ -1023,21 +1105,34 @@ export default function Consignments() {
 
         {/* Register Sales Section */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('consignments.registerSales')}</h3>
-          <div className="space-y-4">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">{t('consignments.registerSales')}</h3>
+          <p className="text-sm text-gray-600 mb-4">
+            {t('consignments.registerSalesIntro') ||
+              'Indique cantidades, precio unitario (USD) por línea y el estado de pago. Se creará una nota de venta en el seguimiento.'}
+          </p>
+          <div className="space-y-6">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm min-w-[640px]">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-3 py-2 text-left">{t('consignments.sku')}</th>
                     <th className="px-3 py-2 text-left">{t('consignments.description')}</th>
                     <th className="px-3 py-2 text-center">{t('consignments.available')}</th>
                     <th className="px-3 py-2 text-center">{t('consignments.qtySold')}</th>
+                    <th className="px-3 py-2 text-center">{t('consignments.saleUnitPriceUsd')}</th>
+                    <th className="px-3 py-2 text-right">{t('consignments.saleLineTotalUsd')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {selectedConsignment.items.map((item, index) => {
                     const available = item.quantityDelivered - item.quantitySold - item.quantityReturned;
+                    const qty = salesQuantities[index] || 0;
+                    const unitRaw = (saleUnitPrices[index] ?? '').trim().replace(',', '.');
+                    const unit = parseFloat(unitRaw);
+                    const lineTotal =
+                      qty > 0 && Number.isFinite(unit) && unit > 0
+                        ? roundMoney2(qty * unit)
+                        : null;
                     return (
                       <tr key={index}>
                         <td className="px-3 py-2 font-mono text-xs">{item.sku}</td>
@@ -1048,11 +1143,32 @@ export default function Consignments() {
                             type="number"
                             min="0"
                             max={available}
-                            value={salesQuantities[index] || ''}
-                            onChange={(e) => setSalesQuantities({...salesQuantities, [index]: parseInt(e.target.value) || 0})}
+                            value={salesQuantities[index] ?? ''}
+                            onChange={(e) =>
+                              setSalesQuantities({
+                                ...salesQuantities,
+                                [index]: parseInt(e.target.value, 10) || 0,
+                              })
+                            }
                             className="w-20 px-2 py-1 border border-gray-300 rounded text-center"
                             disabled={available === 0}
                           />
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="0.00"
+                            value={saleUnitPrices[index] ?? ''}
+                            onChange={(e) =>
+                              setSaleUnitPrices({ ...saleUnitPrices, [index]: e.target.value })
+                            }
+                            className="w-24 px-2 py-1 border border-gray-300 rounded text-center"
+                            disabled={available === 0}
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-800 font-medium">
+                          {lineTotal != null ? `$${lineTotal.toFixed(2)}` : '—'}
                         </td>
                       </tr>
                     );
@@ -1060,9 +1176,78 @@ export default function Consignments() {
                 </tbody>
               </table>
             </div>
+
+            <div className="border border-gray-200 rounded-xl p-4 bg-gray-50/80 space-y-4">
+              <h4 className="text-sm font-semibold text-gray-900">
+                {t('consignments.salePaymentSection') || 'Pago de esta venta'}
+              </h4>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {t('consignments.salePaymentStatus') || 'Estado de pago'}
+                  </label>
+                  <select
+                    value={salePaymentStatus}
+                    onChange={(e) =>
+                      setSalePaymentStatus(e.target.value as 'Unpaid' | 'Partially Paid' | 'Paid')
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                  >
+                    <option value="Unpaid">{t('invoiceTracking.unpaid')}</option>
+                    <option value="Paid">{t('invoiceTracking.paid')}</option>
+                    <option value="Partially Paid">{t('invoiceTracking.partial')}</option>
+                  </select>
+                </div>
+                {salePaymentStatus === 'Partially Paid' && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      {t('consignments.saleAmountReceived') || 'Monto cobrado (USD)'}
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={saleAmountPaidInput}
+                      onChange={(e) => setSaleAmountPaidInput(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      placeholder="0.00"
+                    />
+                  </div>
+                )}
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {t('consignments.salePaymentMethod') || 'Método de pago (opcional)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={salePaymentMethod}
+                    onChange={(e) => setSalePaymentMethod(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    placeholder={t('consignments.salePaymentMethodPh') || 'Efectivo, transferencia…'}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    {t('consignments.salePaymentComment') || 'Comentario (opcional)'}
+                  </label>
+                  <textarea
+                    value={salePaymentComment}
+                    onChange={(e) => setSalePaymentComment(e.target.value)}
+                    rows={2}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    placeholder={t('consignments.salePaymentCommentPh') || 'Referencia, banco, acuerdos…'}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">
+                {t('consignments.salePaymentHint') ||
+                  'La nota de venta quedará con el mismo estado en Seguimiento de notas de ventas; puede ajustar pagos después allí.'}
+              </p>
+            </div>
+
             <button
+              type="button"
               onClick={handleRegisterSales}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
             >
               {t('consignments.registerSalesButton')}
             </button>

@@ -4,6 +4,24 @@ import { ConsignmentReturnIssueRef, InventoryItem } from '../types';
 
 const COLLECTION_NAME = 'inventory';
 
+/** Firestore rejects `undefined` anywhere in update payloads (including nested maps / arrays). */
+function stripUndefinedDeep(value: unknown): unknown {
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== 'object') return value;
+  if (value instanceof Date) return value;
+  if (Array.isArray(value)) {
+    return value.map((v) => stripUndefinedDeep(v)).filter((v) => v !== undefined);
+  }
+  const obj = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === undefined) continue;
+    const next = stripUndefinedDeep(v);
+    if (next !== undefined) out[k] = next;
+  }
+  return out;
+}
+
 function normalizeConsignmentReturnIssues(raw: unknown): ConsignmentReturnIssueRef[] | undefined {
   if (!Array.isArray(raw) || raw.length === 0) return undefined;
   return raw.map((entry) => {
@@ -55,7 +73,7 @@ const toInventoryItem = (docSnap: QueryDocumentSnapshot | DocumentSnapshot): Inv
 /** Never persist legacy USA bucket (hub Ecuador). */
 const toFirestore = (item: Omit<InventoryItem, 'id' | 'createdAt'> | Partial<InventoryItem>) => {
   const { usaStock: _omit, ...rest } = item as Record<string, unknown>;
-  return rest;
+  return stripUndefinedDeep(rest) as Record<string, unknown>;
 };
 
 // Get all inventory items

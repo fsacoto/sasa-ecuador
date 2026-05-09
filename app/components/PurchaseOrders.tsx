@@ -29,6 +29,29 @@ import {
 } from '../constants/merchandise';
 import { displayCategory, displayLine } from '../utils/merchandiseLabels';
 
+/** Row used to validate supplier + internal SKU before verification (inventory sync requires both). */
+function purchaseOrderSnapshotForSkuGate(data: {
+  order: PurchaseOrder;
+  updatedOrder?: PurchaseOrder;
+  orderData?: Partial<PurchaseOrder>;
+  isEditing?: boolean;
+}): PurchaseOrder {
+  if (data.isEditing && data.updatedOrder && data.orderData != null) {
+    return { ...data.updatedOrder, ...data.orderData } as PurchaseOrder;
+  }
+  if (data.updatedOrder) {
+    return data.updatedOrder;
+  }
+  return data.order;
+}
+
+function purchaseOrderHasSkusForVerification(po: PurchaseOrder): boolean {
+  return (
+    String(po.supplierSKU ?? '').trim().length > 0 &&
+    String(po.sku ?? '').trim().length > 0
+  );
+}
+
 export default function PurchaseOrders() {
   const { purchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, suppliers, inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, addSupplier } = useInventory();
   const { t } = useTranslation();
@@ -542,6 +565,13 @@ export default function PurchaseOrders() {
       }
       // Moving TO Verified - show modal for actual quantity and add to inventory
       else if (oldStatus !== 'Verified' && newStatus === 'Verified') {
+        if (!purchaseOrderHasSkusForVerification(updatedOrder as PurchaseOrder)) {
+          alert(
+            t('purchaseOrders.cannotVerifyMissingSkus') ||
+              'No se puede verificar: falta el SKU del proveedor y/o el SKU interno. Complételos en la orden antes de verificar.'
+          );
+          return;
+        }
         setVerificationData({
           order: editingOrder,
             orderData,
@@ -711,6 +741,15 @@ export default function PurchaseOrders() {
     const totalAccounted = quantityGood + quantityProblem + quantityNotReceived;
     if (totalAccounted !== actualQuantity) {
       alert(t('purchaseOrders.quantitiesMustMatch') || `Quantities must add up: Good (${quantityGood}) + Problems (${quantityProblem}) + Not Received (${quantityNotReceived}) = ${totalAccounted}, but Total Received = ${actualQuantity}`);
+      return;
+    }
+
+    const poForSku = purchaseOrderSnapshotForSkuGate(verificationData);
+    if (!purchaseOrderHasSkusForVerification(poForSku)) {
+      alert(
+        t('purchaseOrders.cannotVerifyMissingSkus') ||
+          'No se puede verificar: falta el SKU del proveedor y/o el SKU interno. Complételos en la orden antes de verificar.'
+      );
       return;
     }
 
@@ -929,6 +968,13 @@ export default function PurchaseOrders() {
     
     // VERIFICATION: When moving to Verified, show modal for actual quantity received
     if (oldStatus !== 'Verified' && newStatus === 'Verified') {
+      if (!purchaseOrderHasSkusForVerification(order)) {
+        alert(
+          t('purchaseOrders.cannotVerifyMissingSkus') ||
+            'No se puede verificar: falta el SKU del proveedor y/o el SKU interno. Complételos en la orden antes de verificar.'
+        );
+        return;
+      }
       setVerificationData({
         order,
         orderData: statusUpdate,
@@ -1322,6 +1368,23 @@ export default function PurchaseOrders() {
     if (!quantityMismatchData) return;
     
     const { order, orderData, previousSku, statusUpdate } = quantityMismatchData;
+
+    const mergedForSku =
+      editingOrder && orderData
+        ? ({ ...editingOrder, ...orderData } as PurchaseOrder)
+        : statusUpdate
+          ? ({ ...order, ...statusUpdate } as PurchaseOrder)
+          : order;
+    if (
+      String(mergedForSku.status ?? '').trim().toLowerCase() === 'verified' &&
+      !purchaseOrderHasSkusForVerification(mergedForSku)
+    ) {
+      alert(
+        t('purchaseOrders.cannotVerifyMissingSkus') ||
+          'No se puede verificar: falta el SKU del proveedor y/o el SKU interno. Complételos en la orden antes de verificar.'
+      );
+      return;
+    }
     
     // Continue with the form submission or status update
     if (editingOrder && orderData) {

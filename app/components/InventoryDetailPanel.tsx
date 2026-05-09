@@ -441,21 +441,30 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
                         <p className="text-sm text-gray-800 whitespace-pre-wrap">{issue.comment}</p>
                       ) : null}
                       {issue.mediaUrls && issue.mediaUrls.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-3">
                           {issue.mediaUrls.map((url) => (
-                            <a
-                              key={url}
-                              href={url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="block"
-                            >
-                              <img
-                                src={url}
-                                alt=""
-                                className="h-16 w-16 object-cover rounded-lg border border-amber-200"
-                              />
-                            </a>
+                            <figure key={url} className="shrink-0 w-[4.75rem]">
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block"
+                              >
+                                <img
+                                  src={url}
+                                  alt={t('inventory.consignmentReturnPhotoAlt')
+                                    .replace('{consignment}', issue.consignmentNumber)
+                                    .replace('{sku}', issue.sku)}
+                                  className="h-16 w-16 object-cover rounded-lg border border-amber-200 mx-auto"
+                                />
+                              </a>
+                              <figcaption className="text-[10px] text-amber-950 text-center mt-1 leading-tight px-0.5">
+                                {t('inventory.consignmentReturnPhotoCaption').replace(
+                                  '{consignment}',
+                                  issue.consignmentNumber
+                                )}
+                              </figcaption>
+                            </figure>
                           ))}
                         </div>
                       )}
