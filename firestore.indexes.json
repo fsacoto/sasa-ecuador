@@ -87,27 +87,6 @@
         { "fieldPath": "deliveryStatus", "order": "ASCENDING" },
         { "fieldPath": "date", "order": "DESCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "consignments",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "dateCreated", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "inventoryTransfers",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "inventoryTransfers",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "transactionId", "order": "ASCENDING" }
-      ]
     }
   ],
   "fieldOverrides": []

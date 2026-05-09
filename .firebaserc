@@ -1,7 +1,6 @@
 {
   "projects": {
-    "default": "sasa-a837d",
-    "sasa dev": "sasa-dev-8b025"
+    "default": "sasa-ecuador-dev"
   },
   "targets": {},
   "etags": {}
