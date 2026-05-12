@@ -12,14 +12,14 @@ interface InventoryContextType {
   // Suppliers
   suppliers: Supplier[];
   isLoading: boolean;
-  addSupplier: (supplier: Omit<Supplier, 'id' | 'createdAt'>) => Promise<void>;
+  addSupplier: (supplier: Omit<Supplier, 'id' | 'createdAt'>) => Promise<string>;
   updateSupplier: (id: string, supplier: Partial<Supplier>) => Promise<void>;
   deleteSupplier: (id: string) => Promise<void>;
   
   // Purchase Orders
   purchaseOrders: PurchaseOrder[];
   addPurchaseOrder: (order: Omit<PurchaseOrder, 'id' | 'createdAt'>) => Promise<string>;
-  addPurchaseOrdersBulk: (orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]) => Promise<void>;
+  addPurchaseOrdersBulk: (orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]) => Promise<PurchaseOrder[]>;
   updatePurchaseOrder: (id: string, order: Partial<PurchaseOrder>) => Promise<void>;
   deletePurchaseOrder: (id: string) => Promise<void>;
   
@@ -84,7 +84,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   }, [user?.id, authLoading, loadAllData]);
 
   // Supplier operations
-  const addSupplier = async (supplier: Omit<Supplier, 'id' | 'createdAt'>) => {
+  const addSupplier = async (supplier: Omit<Supplier, 'id' | 'createdAt'>): Promise<string> => {
     try {
       const newId = await suppliersService.addSupplier(supplier);
       const newSupplier: Supplier = {
@@ -92,7 +92,8 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         id: newId,
         createdAt: new Date(),
       };
-      setSuppliers([...suppliers, newSupplier]);
+      setSuppliers((prev) => [...prev, newSupplier]);
+      return newId;
     } catch (error) {
       console.error('Error adding supplier:', error);
       throw error;
@@ -137,7 +138,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   };
 
   // Bulk add multiple purchase orders
-  const addPurchaseOrdersBulk = async (orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]) => {
+  const addPurchaseOrdersBulk = async (orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]): Promise<PurchaseOrder[]> => {
     try {
       const newIds = await purchaseOrdersService.addPurchaseOrdersBulk(orders);
       const newOrders: PurchaseOrder[] = orders.map((order, index) => ({
@@ -145,7 +146,8 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         id: newIds[index],
         createdAt: new Date(),
       }));
-      setPurchaseOrders(prev => [...prev, ...newOrders]);
+      setPurchaseOrders((prev) => [...prev, ...newOrders]);
+      return newOrders;
     } catch (error) {
       console.error('Error adding purchase orders in bulk:', error);
       throw error;

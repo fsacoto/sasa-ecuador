@@ -8,7 +8,7 @@ import { useTranslation } from '../context/TranslationContext';
 interface BulkStatusChangeModalProps {
   purchaseOrders: PurchaseOrder[];
   onClose: () => void;
-  onBulkStatusChange: (orderIds: string[], newStatus: PurchaseOrderStatus) => void;
+  onBulkStatusChange: (orderIds: string[], newStatus: PurchaseOrderStatus) => void | Promise<void>;
 }
 
 export default function BulkStatusChangeModal({ purchaseOrders, onClose, onBulkStatusChange }: BulkStatusChangeModalProps) {

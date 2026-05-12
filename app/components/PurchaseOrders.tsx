@@ -7,7 +7,7 @@ import { PurchaseOrder, Supplier, InventoryItem, PurchaseOrderStatus } from '../
 import SupplierDetailPanel from './SupplierDetailPanel';
 import { generateUniqueSKU, collectUsedSkus } from '../utils/skuGenerator';
 import { getExchangeRates, getExchangeRate, formatLastUpdate, type ExchangeRateResponse } from '../utils/currencyApi';
-import BulkImportModal from './BulkImportModal';
+import BulkImportModal, { type BulkImportModalMode } from './BulkImportModal';
 import BulkDeleteModal from './BulkDeleteModal';
 import BulkStatusChangeModal from './BulkStatusChangeModal';
 import BarcodePrintModal from './BarcodePrintModal';
@@ -17,6 +17,11 @@ import {
   generateBarcodeForInventoryItem,
   attachBarcodeToPurchaseOrderIfNeeded,
 } from '../utils/syncUpdates';
+import {
+  listBulkImportSessionsMeta,
+  deleteBulkImportSession,
+  type BulkImportSessionListItem,
+} from '../utils/bulkImportDraftStorage';
 import { useTranslation } from '../context/TranslationContext';
 import POVerificationModal from './POVerificationModal';
 import { generatePOVerificationPDF } from '../utils/poVerificationPDF';
@@ -58,6 +63,10 @@ export default function PurchaseOrders() {
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [bulkImportModalMode, setBulkImportModalMode] = useState<BulkImportModalMode>('new');
+  const [bulkImportResumeSessionId, setBulkImportResumeSessionId] = useState<string | null>(null);
+  const [bulkImportSessionPickerOpen, setBulkImportSessionPickerOpen] = useState(false);
+  const [bulkImportSessionPickerList, setBulkImportSessionPickerList] = useState<BulkImportSessionListItem[]>([]);
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [isBulkStatusChangeOpen, setIsBulkStatusChangeOpen] = useState(false);
   const [isPOVerificationModalOpen, setIsPOVerificationModalOpen] = useState(false);
@@ -214,6 +223,11 @@ export default function PurchaseOrders() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showColumnDropdown, showSearchDropdown, showGroupByDropdown, showBulkDropdown]);
+
+  useEffect(() => {
+    if (!bulkImportSessionPickerOpen) return;
+    setBulkImportSessionPickerList(listBulkImportSessionsMeta());
+  }, [bulkImportSessionPickerOpen]);
   
   // Get unique categories and lines from existing data (excluding predefined ones)
   const existingCategories = [...new Set([
@@ -418,61 +432,43 @@ export default function PurchaseOrders() {
       return '';
     }
 
-    const trimmedName = supplierName.trim();
-    
-    // First, check local state (fastest)
-    const existingSupplier = suppliers.find(
-      s => s.name.toLowerCase() === trimmedName.toLowerCase()
-    );
-    
+    const displayName = supplierName.trim();
+    const key = displayName.toLowerCase();
+
+    const existingSupplier = suppliers.find((s) => s.name.trim().toLowerCase() === key);
+
     if (existingSupplier) {
       return existingSupplier.id;
     }
-    
-    // If not in local state, check database directly to avoid duplicates
-    // This is important to prevent race conditions
+
     try {
-      const { searchSuppliersByName } = await import('../services/suppliersService');
-      const foundSuppliers = await searchSuppliersByName(trimmedName);
-      const dbMatch = foundSuppliers.find(s => s.name.toLowerCase() === trimmedName.toLowerCase());
-      
+      const { getSuppliers } = await import('../services/suppliersService');
+      const allSuppliers = await getSuppliers();
+      const dbMatch = allSuppliers.find((s) => s.name.trim().toLowerCase() === key);
+
       if (dbMatch) {
         return dbMatch.id;
       }
-      
-      // Only create if it truly doesn't exist in the database
-      // Create supplier via context - it will handle both DB and state update
-      await addSupplier({
-        name: trimmedName,
+
+      return await addSupplier({
+        name: displayName,
         email: '',
         phone: '',
         country: '',
         currency: formData.currency || 'USD',
         notes: 'Auto-created from purchase order',
       });
-      
-      // After creation, search again to get the ID
-      const createdSuppliers = await searchSuppliersByName(trimmedName);
-      const createdMatch = createdSuppliers.find(s => s.name.toLowerCase() === trimmedName.toLowerCase());
-      
-      if (createdMatch) {
-        return createdMatch.id;
-      }
-      
-      throw new Error('Failed to create or find supplier');
     } catch (error) {
       console.error('Error creating supplier:', error);
-      // If creation failed, it might be because it was created by another process
-      // Try one more time to find it
       try {
-        const { searchSuppliersByName } = await import('../services/suppliersService');
-        const foundSuppliers = await searchSuppliersByName(trimmedName);
-        const match = foundSuppliers.find(s => s.name.toLowerCase() === trimmedName.toLowerCase());
+        const { getSuppliers } = await import('../services/suppliersService');
+        const allSuppliers = await getSuppliers();
+        const match = allSuppliers.find((s) => s.name.trim().toLowerCase() === key);
         if (match) {
           return match.id;
         }
       } catch (retryError) {
-        console.error('Error retrying supplier search:', retryError);
+        console.error('Error retrying supplier lookup:', retryError);
       }
       throw error;
     }
@@ -595,6 +591,7 @@ export default function PurchaseOrders() {
       orderForSync = await attachBarcodeToPurchaseOrderIfNeeded(
         orderForSync,
         updatePurchaseOrder,
+        inventory,
         { forceRegenerate: skuChanged }
       );
 
@@ -608,7 +605,8 @@ export default function PurchaseOrders() {
         purchaseOrders,
         previousSku,
         orderForSync.status === 'Verified',
-        editingOrder
+        editingOrder,
+        updatePurchaseOrder
       );
     } else {
       const newId = await addPurchaseOrder(orderData as Omit<PurchaseOrder, 'id' | 'createdAt'>);
@@ -619,7 +617,11 @@ export default function PurchaseOrders() {
       } as PurchaseOrder;
 
       if (orderForSync.sku) {
-        orderForSync = await attachBarcodeToPurchaseOrderIfNeeded(orderForSync, updatePurchaseOrder);
+        orderForSync = await attachBarcodeToPurchaseOrderIfNeeded(
+          orderForSync,
+          updatePurchaseOrder,
+          inventory
+        );
         await syncPurchaseOrderToInventory(
           orderForSync,
           inventory,
@@ -628,7 +630,9 @@ export default function PurchaseOrders() {
           deleteInventoryItem,
           purchaseOrders,
           undefined,
-          orderForSync.status === 'Verified'
+          orderForSync.status === 'Verified',
+          undefined,
+          updatePurchaseOrder
         );
       }
     }
@@ -810,7 +814,7 @@ export default function PurchaseOrders() {
         ...data.updatedOrder,
         ...updateData,
       } as PurchaseOrder;
-      mergedPo = await attachBarcodeToPurchaseOrderIfNeeded(mergedPo, updatePurchaseOrder);
+      mergedPo = await attachBarcodeToPurchaseOrderIfNeeded(mergedPo, updatePurchaseOrder, inventory);
 
       await syncPurchaseOrderToInventory(
         mergedPo,
@@ -821,7 +825,8 @@ export default function PurchaseOrders() {
         purchaseOrders,
         undefined,
         true,
-        stockBaselineOrder
+        stockBaselineOrder,
+        updatePurchaseOrder
       );
       return;
     } else if (data.isEditing && data.orderData && data.updatedOrder) {
@@ -864,7 +869,8 @@ export default function PurchaseOrders() {
       } as PurchaseOrder;
       orderWithGoodQuantity = await attachBarcodeToPurchaseOrderIfNeeded(
         orderWithGoodQuantity,
-        updatePurchaseOrder
+        updatePurchaseOrder,
+        inventory
       );
       await syncPurchaseOrderToInventory(
         orderWithGoodQuantity,
@@ -875,7 +881,8 @@ export default function PurchaseOrders() {
         purchaseOrders,
         previousSku,
         true,
-        stockBaselineOrder
+        stockBaselineOrder,
+        updatePurchaseOrder
       );
       resetForm();
     } else {
@@ -923,7 +930,8 @@ export default function PurchaseOrders() {
       } as PurchaseOrder;
       orderWithGoodQuantity = await attachBarcodeToPurchaseOrderIfNeeded(
         orderWithGoodQuantity,
-        updatePurchaseOrder
+        updatePurchaseOrder,
+        inventory
       );
       await syncPurchaseOrderToInventory(
         orderWithGoodQuantity,
@@ -934,7 +942,8 @@ export default function PurchaseOrders() {
         purchaseOrders,
         undefined,
         true,
-        stockBaselineOrder
+        stockBaselineOrder,
+        updatePurchaseOrder
       );
     }
   };
@@ -995,10 +1004,11 @@ export default function PurchaseOrders() {
     await updatePurchaseOrder(order.id, statusUpdate);
 
     let updatedOrder: PurchaseOrder = { ...order, ...statusUpdate } as PurchaseOrder;
-    if (String(updatedOrder.status).trim().toLowerCase() === 'verified') {
+    if (updatedOrder.sku) {
       updatedOrder = await attachBarcodeToPurchaseOrderIfNeeded(
         updatedOrder,
-        updatePurchaseOrder
+        updatePurchaseOrder,
+        inventory
       );
     }
     await syncPurchaseOrderToInventory(
@@ -1010,7 +1020,8 @@ export default function PurchaseOrders() {
       purchaseOrders,
       undefined,
       updatedOrder.status === 'Verified',
-      stockBaselineOrder
+      stockBaselineOrder,
+      updatePurchaseOrder
     );
   };
 
@@ -1309,7 +1320,8 @@ export default function PurchaseOrders() {
         purchaseOrders,
         previousSku,
         false,
-        order
+        order,
+        updatePurchaseOrder
       );
     }
     
@@ -1317,8 +1329,8 @@ export default function PurchaseOrders() {
     if (editingOrder && orderData) {
       await updatePurchaseOrder(editingOrder.id, orderData);
       let o: PurchaseOrder = { ...editingOrder, ...orderData } as PurchaseOrder;
-      if (String(o.status).trim().toLowerCase() === 'verified') {
-        o = await attachBarcodeToPurchaseOrderIfNeeded(o, updatePurchaseOrder);
+      if (o.sku) {
+        o = await attachBarcodeToPurchaseOrderIfNeeded(o, updatePurchaseOrder, inventory);
       }
       await syncPurchaseOrderToInventory(
         o,
@@ -1329,7 +1341,8 @@ export default function PurchaseOrders() {
         purchaseOrders,
         previousSku,
         o.status === 'Verified',
-        editingOrder
+        editingOrder,
+        updatePurchaseOrder
       );
       resetForm();
     } else if (orderData) {
@@ -1344,8 +1357,8 @@ export default function PurchaseOrders() {
       }
 
       let o: PurchaseOrder = { ...order, ...orderData } as PurchaseOrder;
-      if (String(o.status).trim().toLowerCase() === 'verified') {
-        o = await attachBarcodeToPurchaseOrderIfNeeded(o, updatePurchaseOrder);
+      if (o.sku) {
+        o = await attachBarcodeToPurchaseOrderIfNeeded(o, updatePurchaseOrder, inventory);
       }
       await syncPurchaseOrderToInventory(
         o,
@@ -1356,7 +1369,8 @@ export default function PurchaseOrders() {
         purchaseOrders,
         undefined,
         o.status === 'Verified',
-        order
+        order,
+        updatePurchaseOrder
       );
     }
     
@@ -1390,10 +1404,11 @@ export default function PurchaseOrders() {
     if (editingOrder && orderData) {
       await updatePurchaseOrder(editingOrder.id, orderData);
       let updatedOrder: PurchaseOrder = { ...editingOrder, ...orderData } as PurchaseOrder;
-      if (String(updatedOrder.status).trim().toLowerCase() === 'verified') {
+      if (updatedOrder.sku) {
         updatedOrder = await attachBarcodeToPurchaseOrderIfNeeded(
           updatedOrder,
-          updatePurchaseOrder
+          updatePurchaseOrder,
+          inventory
         );
       }
       await syncPurchaseOrderToInventory(
@@ -1405,17 +1420,21 @@ export default function PurchaseOrders() {
         purchaseOrders,
         previousSku,
         updatedOrder.status === 'Verified',
-        editingOrder
+        editingOrder,
+        updatePurchaseOrder
       );
       resetForm();
     } else if (statusUpdate) {
       await updatePurchaseOrder(order.id, statusUpdate);
 
       let updatedOrder: PurchaseOrder = { ...order, ...statusUpdate } as PurchaseOrder;
-      updatedOrder = await attachBarcodeToPurchaseOrderIfNeeded(
-        updatedOrder,
-        updatePurchaseOrder
-      );
+      if (updatedOrder.sku) {
+        updatedOrder = await attachBarcodeToPurchaseOrderIfNeeded(
+          updatedOrder,
+          updatePurchaseOrder,
+          inventory
+        );
+      }
       await syncPurchaseOrderToInventory(
         updatedOrder,
         inventory,
@@ -1425,7 +1444,8 @@ export default function PurchaseOrders() {
         purchaseOrders,
         undefined,
         updatedOrder.status === 'Verified',
-        order
+        order,
+        updatePurchaseOrder
       );
     }
     
@@ -1511,10 +1531,12 @@ export default function PurchaseOrders() {
           </button>
 
             {showBulkDropdown && (
-              <div ref={bulkDropdownRef} className="absolute top-full right-0 mt-2 w-48 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
+              <div ref={bulkDropdownRef} className="absolute top-full right-0 mt-2 min-w-[15rem] w-60 bg-white border border-gray-200 rounded-xl shadow-lg z-10">
                 <div className="p-2">
           <button
                     onClick={() => {
+                      setBulkImportResumeSessionId(null);
+                      setBulkImportModalMode('new');
                       setIsBulkImportOpen(true);
                       setShowBulkDropdown(false);
                     }}
@@ -1524,6 +1546,20 @@ export default function PurchaseOrders() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
                     </svg>
                     {t('purchaseOrders.importOrders')}
+                  </button>
+                  <button
+                    type="button"
+                    title={t('purchaseOrders.editSavedBulkImport')}
+                    onClick={() => {
+                      setShowBulkDropdown(false);
+                      setBulkImportSessionPickerOpen(true);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors text-gray-700 hover:bg-gray-50"
+                  >
+                    <svg className="w-4 h-4 shrink-0 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    <span className="text-left leading-snug">{t('purchaseOrders.editSavedBulkImport')}</span>
                   </button>
                   <button
                     onClick={() => {
@@ -3040,9 +3076,98 @@ export default function PurchaseOrders() {
         />
       )}
 
+      {/* Bulk import: choose which saved session to edit */}
+      {bulkImportSessionPickerOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setBulkImportSessionPickerOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-xl"
+            role="dialog"
+            aria-labelledby="bulk-session-picker-title"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h2 id="bulk-session-picker-title" className="text-lg font-semibold text-gray-900">
+              {t('bulkImport.sessionPickerTitle')}
+            </h2>
+            <p className="mt-1 text-sm text-gray-600">{t('bulkImport.sessionPickerSubtitle')}</p>
+            <ul className="mt-4 max-h-80 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-100">
+              {bulkImportSessionPickerList.length === 0 ? (
+                <li className="px-3 py-6 text-center text-sm text-gray-500">{t('bulkImport.sessionPickerEmpty')}</li>
+              ) : (
+                bulkImportSessionPickerList.map((item) => (
+                  <li key={item.id} className="flex items-stretch gap-1">
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 px-3 py-3 text-left text-sm transition-colors hover:bg-gray-50"
+                      onClick={() => {
+                        setBulkImportResumeSessionId(item.id);
+                        setBulkImportModalMode('resume');
+                        setIsBulkImportOpen(true);
+                        setBulkImportSessionPickerOpen(false);
+                      }}
+                    >
+                      <div className="truncate font-medium text-gray-900">{item.label}</div>
+                      <div className="mt-0.5 text-xs text-gray-500">
+                        {t('bulkImport.sessionPickerRows').replace('{count}', String(item.rowCount))}
+                        {' · '}
+                        {new Date(item.savedAt).toLocaleString('es-EC', {
+                          dateStyle: 'short',
+                          timeStyle: 'short',
+                        })}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className="shrink-0 px-3 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                      title={t('bulkImport.deleteSessionAria')}
+                      aria-label={t('bulkImport.deleteSessionAria')}
+                      onClick={() => {
+                        if (!window.confirm(t('bulkImport.deleteSessionConfirm'))) return;
+                        deleteBulkImportSession(item.id);
+                        setBulkImportSessionPickerList(listBulkImportSessionsMeta());
+                      }}
+                    >
+                      <svg className="mx-auto h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        />
+                      </svg>
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+            <button
+              type="button"
+              className="mt-4 w-full rounded-lg border border-gray-200 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              onClick={() => setBulkImportSessionPickerOpen(false)}
+            >
+              {t('bulkImport.sessionPickerClose')}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Bulk Import Modal */}
       {isBulkImportOpen && (
-        <BulkImportModal onClose={() => setIsBulkImportOpen(false)} />
+        <BulkImportModal
+          key={`bulk-import-${bulkImportModalMode}-${bulkImportModalMode === 'resume' ? bulkImportResumeSessionId ?? '' : 'new'}`}
+          mode={bulkImportModalMode}
+          resumeSessionId={bulkImportResumeSessionId}
+          onClose={() => {
+            setIsBulkImportOpen(false);
+            setBulkImportModalMode('new');
+            setBulkImportResumeSessionId(null);
+          }}
+        />
       )}
 
       {/* PO Verification Modal */}
@@ -3063,29 +3188,51 @@ export default function PurchaseOrders() {
         <BulkStatusChangeModal
           purchaseOrders={purchaseOrders}
           onClose={() => setIsBulkStatusChangeOpen(false)}
-          onBulkStatusChange={(orderIds, newStatus) => {
-            orderIds.forEach(orderId => {
-              const order = purchaseOrders.find(o => o.id === orderId);
-              if (order) {
-                const statusUpdate: Partial<PurchaseOrder> = { status: newStatus };
-                
-                // Set receivedDate if status is Received and it's not already set
-                if (newStatus === 'Received' && !order.receivedDate) {
-                  statusUpdate.receivedDate = new Date();
-                }
-                
-                updatePurchaseOrder(orderId, statusUpdate);
-                
-                // Sync to inventory if needed (only for non-verified orders)
-                if (order.status !== 'Verified') {
-                  const updatedOrder = { ...order, ...statusUpdate };
-                  syncPurchaseOrderToInventory(updatedOrder, inventory, updateInventoryItem, addInventoryItem, deleteInventoryItem, purchaseOrders, undefined, updatedOrder.status === 'Verified').catch(err => {
-                    console.error('Error syncing to inventory:', err);
-                  });
+          onBulkStatusChange={async (orderIds, newStatus) => {
+            for (const orderId of orderIds) {
+              const order = purchaseOrders.find((o) => o.id === orderId);
+              if (!order) continue;
+
+              const statusUpdate: Partial<PurchaseOrder> = { status: newStatus };
+
+              if (newStatus === 'Received' && !order.receivedDate) {
+                statusUpdate.receivedDate = new Date();
+              }
+
+              await updatePurchaseOrder(orderId, statusUpdate);
+
+              let updatedOrder: PurchaseOrder = { ...order, ...statusUpdate } as PurchaseOrder;
+              if (updatedOrder.sku) {
+                updatedOrder = await attachBarcodeToPurchaseOrderIfNeeded(
+                  updatedOrder,
+                  updatePurchaseOrder,
+                  inventory
+                );
+              }
+
+              if (order.status !== 'Verified') {
+                try {
+                  await syncPurchaseOrderToInventory(
+                    updatedOrder,
+                    inventory,
+                    updateInventoryItem,
+                    addInventoryItem,
+                    deleteInventoryItem,
+                    purchaseOrders,
+                    undefined,
+                    updatedOrder.status === 'Verified',
+                    undefined,
+                    updatePurchaseOrder
+                  );
+                } catch (err) {
+                  console.error('Error syncing to inventory:', err);
                 }
               }
-            });
-            setToastMessage(t('purchaseOrders.statusChangedSuccessfully')?.replace('{count}', orderIds.length.toString()) || `Status changed successfully for ${orderIds.length} order(s)`);
+            }
+            setToastMessage(
+              t('purchaseOrders.statusChangedSuccessfully')?.replace('{count}', orderIds.length.toString()) ||
+                `Status changed successfully for ${orderIds.length} order(s)`
+            );
             setTimeout(() => setToastMessage(null), 3000);
           }}
         />

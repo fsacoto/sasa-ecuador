@@ -50,7 +50,7 @@ export interface PurchaseOrder {
   receivedDate?: Date;
   verifiedDate?: Date;
   createdAt: Date;
-  /** Firebase Storage URL for label image; derived from SKU, set when PO is saved. */
+  /** Label image URL (Firebase Storage): set when the PO is saved with SKU — reuses inventory barcode if the SKU already exists. */
   barcode?: string;
 }
 

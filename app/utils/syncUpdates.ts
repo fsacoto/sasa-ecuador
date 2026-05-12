@@ -1,6 +1,7 @@
 // Smart update functions to keep Purchase Orders and Inventory in sync
 
 import { PurchaseOrder, InventoryItem, VerificationIssueRef } from '../types';
+import { findInventoryForPurchaseOrder } from './barcodePrint';
 
 /** Problem units flagged on consignment returns (inventory badge + detail). */
 export function getConsignmentReturnProblemQty(item: InventoryItem): number {
@@ -84,14 +85,37 @@ export function reconcileVerificationIssuesForItem(
   return out;
 }
 
-/** Ensure PO has a stored barcode image URL when SKU exists but barcode is missing (e.g. legacy rows). */
+/**
+ * Ensure each PO line has a barcode URL for labels: reuse inventory when the SKU
+ * already exists; otherwise upload a new image. Runs on create/update (any status),
+ * not only after inventory sync.
+ */
 export async function attachBarcodeToPurchaseOrderIfNeeded(
   order: PurchaseOrder,
   updatePurchaseOrder: (id: string, item: Partial<PurchaseOrder>) => Promise<void>,
+  inventory: InventoryItem[],
   options?: { forceRegenerate?: boolean }
 ): Promise<PurchaseOrder> {
   if (!order.sku) return order;
   if (order.barcode && !options?.forceRegenerate) return order;
+
+  const invMatch = findInventoryForPurchaseOrder(order, inventory);
+  const invBarcode = (invMatch?.barcode || '').trim();
+
+  if (options?.forceRegenerate) {
+    if (invBarcode) {
+      await updatePurchaseOrder(order.id, { barcode: invBarcode });
+      return { ...order, barcode: invBarcode };
+    }
+  } else if (order.barcode) {
+    return order;
+  }
+
+  if (invBarcode) {
+    await updatePurchaseOrder(order.id, { barcode: invBarcode });
+    return { ...order, barcode: invBarcode };
+  }
+
   const url = await ensurePurchaseOrderBarcodeUrl(order.sku);
   if (!url) return order;
   await updatePurchaseOrder(order.id, { barcode: url });
@@ -125,13 +149,15 @@ export async function generateBarcodeForInventoryItem(
   sku: string,
   updateInventoryItem: (id: string, item: Partial<InventoryItem>) => Promise<void>,
   itemId: string
-): Promise<void> {
+): Promise<string | null> {
   const barcodeUrl = await ensurePurchaseOrderBarcodeUrl(sku);
-  if (!barcodeUrl) return;
+  if (!barcodeUrl) return null;
   try {
     await updateInventoryItem(itemId, { barcode: barcodeUrl });
+    return barcodeUrl;
   } catch (error) {
     console.error(`Error saving barcode for SKU ${sku}:`, error);
+    return null;
   }
 }
 
@@ -150,7 +176,8 @@ export async function syncPurchaseOrderToInventory(
   purchaseOrders: PurchaseOrder[],
   previousSku?: string,
   generateBarcodeImmediately: boolean = true,
-  stockBaselineOrder?: PurchaseOrder
+  stockBaselineOrder?: PurchaseOrder,
+  updatePurchaseOrder?: (id: string, item: Partial<PurchaseOrder>) => Promise<void>
 ): Promise<BarcodeGenerationInfo[]> {
   const barcodesToGenerate: BarcodeGenerationInfo[] = [];
   const poSnapshot = mergePurchaseOrderSnapshot(purchaseOrders, updatedOrder);
@@ -266,16 +293,23 @@ export async function syncPurchaseOrderToInventory(
       poSnapshot
     );
 
-    if (!inventoryItem.barcode && updatedOrder.sku) {
-      if (updatedOrder.barcode) {
-        updates.barcode = updatedOrder.barcode;
-      } else if (isVerifiedPurchaseOrder(updatedOrder) && generateBarcodeImmediately) {
+    const poBc = (updatedOrder.barcode || '').trim();
+    if (poBc && (!inventoryItem.barcode || inventoryItem.barcode !== poBc)) {
+      updates.barcode = poBc;
+    } else if (!inventoryItem.barcode && updatedOrder.sku && !poBc) {
+      if (isVerifiedPurchaseOrder(updatedOrder) && generateBarcodeImmediately) {
         try {
-          await generateBarcodeForInventoryItem(
+          const generatedUrl = await generateBarcodeForInventoryItem(
             updatedOrder.sku,
             updateInventoryItem,
             inventoryItem.id
           );
+          if (generatedUrl && updatePurchaseOrder) {
+            await updatePurchaseOrder(updatedOrder.id, { barcode: generatedUrl });
+          }
+          if (!generatedUrl) {
+            barcodesToGenerate.push({ sku: updatedOrder.sku, itemId: inventoryItem.id });
+          }
         } catch (error) {
           console.error('Error generating barcode for existing item:', error);
           barcodesToGenerate.push({ sku: updatedOrder.sku, itemId: inventoryItem.id });
@@ -319,11 +353,17 @@ export async function syncPurchaseOrderToInventory(
       if (updatedOrder.sku && !newItem.barcode) {
         if (isVerifiedPurchaseOrder(updatedOrder) && generateBarcodeImmediately) {
           try {
-            await generateBarcodeForInventoryItem(
+            const generatedUrl = await generateBarcodeForInventoryItem(
               updatedOrder.sku,
               updateInventoryItem,
               newItemId
             );
+            if (generatedUrl && updatePurchaseOrder) {
+              await updatePurchaseOrder(updatedOrder.id, { barcode: generatedUrl });
+            }
+            if (!generatedUrl) {
+              barcodesToGenerate.push({ sku: updatedOrder.sku, itemId: newItemId });
+            }
           } catch (error) {
             console.error('Error generating barcode for new item:', error);
             barcodesToGenerate.push({ sku: updatedOrder.sku, itemId: newItemId });
@@ -349,6 +389,8 @@ export function syncInventoryToOrders(
     linkedPurchaseOrderIds.includes(order.id) || order.sku === updatedItem.sku
   );
 
+  const invBarcode = (updatedItem.barcode || '').trim();
+
   linkedOrders.forEach(order => {
     const updates: Partial<PurchaseOrder> = {};
 
@@ -357,12 +399,18 @@ export function syncInventoryToOrders(
       updates.sku = updatedItem.sku;
     }
 
+    const postSku = updates.sku ?? order.sku;
+
     // Update category/line if changed and not empty
     if (updatedItem.category && updatedItem.category !== '⚠️ NEEDS REVIEW' && order.category !== updatedItem.category) {
       updates.category = updatedItem.category;
     }
     if (updatedItem.line && order.line !== updatedItem.line) {
       updates.line = updatedItem.line;
+    }
+
+    if (invBarcode && postSku === updatedItem.sku && (order.barcode || '').trim() !== invBarcode) {
+      updates.barcode = invBarcode;
     }
 
     // Apply updates if any

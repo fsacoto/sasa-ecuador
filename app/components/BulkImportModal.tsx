@@ -3,20 +3,35 @@
 import { useState, useRef, useEffect } from 'react';
 import { parseCSV, detectColumnMapping, cleanNumericValue, ParsedRow } from '../utils/csvParser';
 import { useInventory } from '../context/InventoryContext';
+import { attachBarcodeToPurchaseOrderIfNeeded } from '../utils/syncUpdates';
 import { generateUniqueSKU, collectUsedSkus } from '../utils/skuGenerator';
 import { PurchaseOrder, InventoryItem } from '../types';
 import { getExchangeRates, getExchangeRate, type ExchangeRateResponse } from '../utils/currencyApi';
 import { PREDEFINED_CATEGORIES_ES, PREDEFINED_LINES_ES } from '../constants/merchandise';
 import { canonicalCategory, canonicalLine } from '../utils/merchandiseLabels';
+import { useTranslation } from '../context/TranslationContext';
+import { upsertBulkImportSession, loadBulkImportSession } from '../utils/bulkImportDraftStorage';
+
+export type BulkImportModalMode = 'new' | 'resume';
 
 interface BulkImportModalProps {
   onClose: () => void;
+  /** `resume` loads a saved CSV session (mapping, invoice link, etc.) from this browser. */
+  mode?: BulkImportModalMode;
+  /** Required when `mode` is `resume`: session id from the picker. */
+  resumeSessionId?: string | null;
 }
 
 type ImportStep = 'upload' | 'mapping' | 'preview' | 'complete';
 
-export default function BulkImportModal({ onClose }: BulkImportModalProps) {
-  const { addPurchaseOrdersBulk, inventory, purchaseOrders, suppliers, addSupplier } = useInventory();
+export default function BulkImportModal({
+  onClose,
+  mode = 'new',
+  resumeSessionId = null,
+}: BulkImportModalProps) {
+  const { t } = useTranslation();
+  const { addPurchaseOrdersBulk, inventory, purchaseOrders, suppliers, addSupplier, updatePurchaseOrder } =
+    useInventory();
   const [step, setStep] = useState<ImportStep>('upload');
   const [parsedData, setParsedData] = useState<ParsedRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -29,11 +44,22 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
   const [invoiceLink, setInvoiceLink] = useState<string>('');
   const [purchaseDate, setPurchaseDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [importResults, setImportResults] = useState<{ success: number; warnings: number; autoLinked?: number }>({ success: 0, warnings: 0, autoLinked: 0 });
-  
+  const [resumeLoading, setResumeLoading] = useState(() => mode === 'resume');
+  const resumeHydrateConsumedRef = useRef(false);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [sessionLabel, setSessionLabel] = useState('');
+  const activeSessionIdRef = useRef<string | null>(null);
+
   // Cache to track suppliers being created during import to prevent duplicates
   const supplierCacheRef = useRef<Map<string, Promise<string>>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  const mapFieldLabel = (dbField: string) => {
+    const key = `bulkImport.mapField_${dbField}`;
+    const label = t(key);
+    return label === key ? dbField : label;
+  };
 
   // Exchange rates state
   const [exchangeRates, setExchangeRates] = useState<ExchangeRateResponse | null>(null);
@@ -61,94 +87,144 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultCurrency, exchangeRates, exchangeRateManuallySet]);
 
+  useEffect(() => {
+    if (mode !== 'resume') {
+      setResumeLoading(false);
+      return;
+    }
+    if (resumeHydrateConsumedRef.current) {
+      return;
+    }
+    resumeHydrateConsumedRef.current = true;
+
+    if (!resumeSessionId) {
+      alert(t('bulkImport.sessionNotFound'));
+      onClose();
+      setResumeLoading(false);
+      return;
+    }
+
+    const draft = loadBulkImportSession(resumeSessionId);
+    if (!draft) {
+      alert(t('bulkImport.noDraftSaved'));
+      onClose();
+      setResumeLoading(false);
+      return;
+    }
+    supplierCacheRef.current.clear();
+    setActiveSessionId(draft.id);
+    activeSessionIdRef.current = draft.id;
+    setSessionLabel(draft.label);
+    setHeaders(draft.headers);
+    setParsedData(draft.parsedData);
+    setColumnMapping(draft.columnMapping);
+    setInvoicePrefix(draft.invoicePrefix ?? '');
+    setInvoiceLink(draft.invoiceLink ?? '');
+    setPurchaseDate(draft.purchaseDate || new Date().toISOString().split('T')[0]);
+    setDefaultSupplier(draft.defaultSupplier ?? '');
+    setDefaultCurrency(draft.defaultCurrency || 'USD');
+    setExchangeRate(typeof draft.exchangeRate === 'number' && !Number.isNaN(draft.exchangeRate) ? draft.exchangeRate : 1);
+    setExchangeRateManuallySet(Boolean(draft.exchangeRateManuallySet));
+    setImportResults({ success: 0, warnings: 0, autoLinked: 0 });
+    setStep('mapping');
+    setResumeLoading(false);
+  }, [mode, resumeSessionId, onClose, t]);
+
+  useEffect(() => {
+    if (resumeLoading) return;
+    if ((step !== 'mapping' && step !== 'complete') || parsedData.length === 0) return;
+    const label = sessionLabel.trim() || t('bulkImport.defaultSessionLabel');
+    const idArg = activeSessionIdRef.current;
+    const nextId = upsertBulkImportSession({
+      id: idArg ?? undefined,
+      label,
+      headers,
+      parsedData,
+      columnMapping,
+      invoicePrefix,
+      invoiceLink,
+      purchaseDate,
+      defaultSupplier,
+      defaultCurrency,
+      exchangeRate,
+      exchangeRateManuallySet,
+    });
+    if (nextId) {
+      activeSessionIdRef.current = nextId;
+    }
+    if (nextId && nextId !== activeSessionId) {
+      setActiveSessionId(nextId);
+    }
+  }, [
+    resumeLoading,
+    step,
+    activeSessionId,
+    sessionLabel,
+    t,
+    headers,
+    parsedData,
+    columnMapping,
+    invoicePrefix,
+    invoiceLink,
+    purchaseDate,
+    defaultSupplier,
+    defaultCurrency,
+    exchangeRate,
+    exchangeRateManuallySet,
+  ]);
+
   // Helper functions to match values with database
   const findMatchingSupplier = async (supplierName: string, currency: string = 'USD'): Promise<string> => {
     if (!supplierName || supplierName.trim() === '') return defaultSupplier;
-    
-    const trimmedName = supplierName.trim().toLowerCase();
-    
-    // Check if we're already creating this supplier (prevent duplicates during bulk import)
-    if (supplierCacheRef.current.has(trimmedName)) {
-      return await supplierCacheRef.current.get(trimmedName)!;
+
+    const displayName = supplierName.trim();
+    const key = displayName.toLowerCase();
+
+    if (supplierCacheRef.current.has(key)) {
+      return await supplierCacheRef.current.get(key)!;
     }
-    
-    // Try exact match first in local state
-    const exactMatch = suppliers.find(s => s.name.toLowerCase() === trimmedName);
-    if (exactMatch) {
-      supplierCacheRef.current.set(trimmedName, Promise.resolve(exactMatch.id));
-      return exactMatch.id;
+
+    const exactLocal = suppliers.find((s) => s.name.trim().toLowerCase() === key);
+    if (exactLocal) {
+      supplierCacheRef.current.set(key, Promise.resolve(exactLocal.id));
+      return exactLocal.id;
     }
-    
-    // Try partial match in local state
-    const partialMatch = suppliers.find(s => 
-      s.name.toLowerCase().includes(trimmedName) ||
-      trimmedName.includes(s.name.toLowerCase())
-    );
-    if (partialMatch) {
-      supplierCacheRef.current.set(trimmedName, Promise.resolve(partialMatch.id));
-      return partialMatch.id;
-    }
-    
-    // Create a promise for supplier creation to prevent duplicates
+
     const supplierPromise = (async () => {
       try {
-        // Check database directly before creating to avoid race conditions
-        const { searchSuppliersByName } = await import('../services/suppliersService');
-        const foundSuppliers = await searchSuppliersByName(trimmedName);
-        const dbMatch = foundSuppliers.find(s => s.name.toLowerCase() === trimmedName);
-        
-        if (dbMatch) {
-          return dbMatch.id;
+        const { getSuppliers } = await import('../services/suppliersService');
+        let allSuppliers = await getSuppliers();
+        const exactDb = allSuppliers.find((s) => s.name.trim().toLowerCase() === key);
+        if (exactDb) {
+          return exactDb.id;
         }
-        
-        // Only create if it truly doesn't exist in the database
-        await addSupplier({
-          name: trimmedName,
+
+        return await addSupplier({
+          name: displayName,
           email: '',
           phone: '',
           country: '',
           currency: currency || 'USD',
           notes: 'Auto-created from bulk import',
         });
-        
-        // After creation, search again to get the ID
-        const createdSuppliers = await searchSuppliersByName(trimmedName);
-        const createdMatch = createdSuppliers.find(s => s.name.toLowerCase() === trimmedName);
-        
-        if (createdMatch) {
-          return createdMatch.id;
-        }
-        
-        // If creation failed, it might be because it was created by another process
-        // Try one more time to find it
-        const retrySuppliers = await searchSuppliersByName(trimmedName);
-        const retryMatch = retrySuppliers.find(s => s.name.toLowerCase() === trimmedName);
-        if (retryMatch) {
-          return retryMatch.id;
-        }
-        
-        console.warn(`Failed to find newly created supplier: ${trimmedName}`);
-        return defaultSupplier;
       } catch (error) {
-        console.error('Error creating supplier:', error);
-        // If creation failed, try to find it one more time (might have been created by another process)
+        console.error('Error resolving supplier:', error);
         try {
-          const { searchSuppliersByName } = await import('../services/suppliersService');
-          const foundSuppliers = await searchSuppliersByName(trimmedName);
-          const match = foundSuppliers.find(s => s.name.toLowerCase() === trimmedName);
+          const { getSuppliers } = await import('../services/suppliersService');
+          const allSuppliers = await getSuppliers();
+          const match = allSuppliers.find((s) => s.name.trim().toLowerCase() === key);
           if (match) {
             return match.id;
           }
         } catch (retryError) {
-          console.error('Error retrying supplier search:', retryError);
+          console.error('Error retrying supplier lookup:', retryError);
         }
         return defaultSupplier;
       }
     })();
-    
-    // Cache the promise so other calls with the same supplier name wait for this one
-    supplierCacheRef.current.set(trimmedName, supplierPromise);
-    
+
+    supplierCacheRef.current.set(key, supplierPromise);
+
     return await supplierPromise;
   };
 
@@ -202,7 +278,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
     if (!file) return;
 
     if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-      alert('Please export your Excel file as CSV first.\n\nIn Excel: File → Save As → Format: CSV (.csv)');
+      alert(t('bulkImport.excelExportCsv'));
       resetFileInput();
       return;
     }
@@ -212,7 +288,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
       const text = event.target?.result as string;
 
       if (text.includes('PK!') || text.includes('<?xml')) {
-        alert('This appears to be an Excel file. Please export as CSV first.\n\nIn Excel: File → Save As → Format: CSV (.csv)');
+        alert(t('bulkImport.excelBinary'));
         resetFileInput();
         return;
       }
@@ -225,15 +301,22 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
         setParsedData(rows);
 
         const detectedMapping = detectColumnMapping(fileHeaders);
+        const sanitizedMapping = Object.fromEntries(
+          Object.entries(detectedMapping).filter(([, v]) => v !== 'sku')
+        );
 
         console.log('CSV Headers detected:', fileHeaders);
-        console.log('Auto-detected mapping:', detectedMapping);
+        console.log('Auto-detected mapping:', sanitizedMapping);
 
-        setColumnMapping(detectedMapping);
+        setColumnMapping(sanitizedMapping);
+
+        setSessionLabel(file.name);
+        setActiveSessionId(null);
+        activeSessionIdRef.current = null;
 
         setStep('mapping');
       } else {
-        alert('Could not parse file. Please make sure it\'s a valid CSV file.');
+        alert(t('bulkImport.parseError'));
         resetFileInput();
       }
     };
@@ -311,7 +394,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
       // Validate that all invoice numbers are the same
       const uniqueInvoices = [...new Set(invoicesFromCSV)];
       if (uniqueInvoices.length > 1) {
-        alert(`❌ ERROR: All items in the CSV must have the same invoice number!\n\nFound different invoice numbers: ${uniqueInvoices.join(', ')}\n\nPlease fix your CSV file and try again.`);
+        alert(t('bulkImport.invoiceMismatchError').replace('{invoices}', uniqueInvoices.join(', ')));
         return;
       }
       batchInvoiceNumber = uniqueInvoices[0];
@@ -324,6 +407,20 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
 
     const baseExistingSkus = collectUsedSkus(inventory, purchaseOrders);
     const allocatedSkus: string[] = [];
+    /** Same supplier SKU → same internal SKU within this import and vs DB (by supplier SKU). */
+    const internalSkuBySupplierSkuKey = new Map<string, string>();
+
+    const findInternalSkuFromExistingPurchaseOrders = (supplierSkuRaw: string): string | undefined => {
+      const needle = supplierSkuRaw.trim().toLowerCase();
+      if (!needle) return undefined;
+      const hits = purchaseOrders.filter(
+        (o) =>
+          (o.supplierSKU || '').trim().toLowerCase() === needle && String(o.sku || '').trim() !== ''
+      );
+      if (hits.length === 0) return undefined;
+      hits.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      return String(hits[0].sku).trim();
+    };
 
     // Process rows and create suppliers as needed
     for (let index = 0; index < parsedData.length; index++) {
@@ -334,10 +431,13 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
         mappedData[dbField] = row[csvColumn];
       });
 
-      const sku = (mappedData.sku as string) || '';
       const description = String(mappedData.description || 'Imported Item');
       const quantity = cleanNumericValue(String(mappedData.quantity || 1));
-      const costPerUnit = cleanNumericValue(String(mappedData.costPerUnit || 0));
+      let costPerUnit = cleanNumericValue(String(mappedData.costPerUnit || 0));
+      const totalCostRow = cleanNumericValue(String(mappedData.totalCost || 0));
+      if (costPerUnit <= 0 && totalCostRow > 0 && quantity > 0) {
+        costPerUnit = totalCostRow / quantity;
+      }
       const supplierSKU = (mappedData.supplierSKU as string) || '';
       const rawCategory = (mappedData.category as string) || '';
       const rawLine = (mappedData.line as string) || '';
@@ -358,39 +458,56 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
         );
       }
 
-      // Generate proper internal SKU based on category and line
-      let internalSku = sku; // Start with CSV SKU as fallback
+      const supKey = supplierSKU.trim().toLowerCase();
+
+      // Internal SKU: inventory → reuse by supplier SKU (same batch / existing POs) → generate → placeholder
+      let internalSku = '';
       let autoLinked = false;
-      
+
       if (matchedInventoryItem) {
-        // Use the matched item's internal SKU
         internalSku = matchedInventoryItem.sku;
         autoLinked = true;
         autoLinkedCount++;
-      } else if (matchedCategory && matchedLine) {
-        const existingSkus = [...baseExistingSkus, ...allocatedSkus];
-        internalSku = generateUniqueSKU(
-          matchedCategory,
-          matchedLine,
-          supplierSKU.trim() || 'NOSKU',
-          existingSkus
-        );
-      } else if (!sku) {
-        // Generate a placeholder SKU if missing category/line and no CSV SKU
-        internalSku = `IMP${timestamp.toString().slice(-5)}${String(index).padStart(3, '0')}`;
+        if (supKey) internalSkuBySupplierSkuKey.set(supKey, internalSku);
+      } else if (supKey && internalSkuBySupplierSkuKey.has(supKey)) {
+        internalSku = internalSkuBySupplierSkuKey.get(supKey)!;
+      } else {
+        const poSku = findInternalSkuFromExistingPurchaseOrders(supplierSKU);
+        if (poSku) {
+          internalSku = poSku;
+          if (supKey) internalSkuBySupplierSkuKey.set(supKey, internalSku);
+        } else if (matchedCategory && matchedLine) {
+          const existingSkus = [...baseExistingSkus, ...allocatedSkus];
+          internalSku = generateUniqueSKU(
+            matchedCategory,
+            matchedLine,
+            supplierSKU.trim() || 'NOSKU',
+            existingSkus
+          );
+          if (supKey) internalSkuBySupplierSkuKey.set(supKey, internalSku);
+        } else {
+          internalSku = `IMP${timestamp.toString().slice(-5)}${String(index).padStart(3, '0')}`;
+          if (supKey) internalSkuBySupplierSkuKey.set(supKey, internalSku);
+        }
       }
-      // If we have a CSV SKU but no category/line, keep the CSV SKU
 
       allocatedSkus.push(internalSku);
 
-      // Determine if this order needs review
-      // Only flag for review if critical fields are missing, not category/line
-      const needsReview = !autoLinked && (!defaultSupplier || !sku || !description || costPerUnit === 0);
-      
-      // Determine if category/line need review (separate from order review)
       const categoryNeedsReview = !autoLinked && !matchedCategory && rawCategory;
       const lineNeedsReview = !autoLinked && !matchedLine && rawLine;
-      
+
+      const supplierIdResolved = (matchedSupplier || defaultSupplier || '').trim();
+      const finalCategoryForOrder =
+        autoLinked && matchedInventoryItem
+          ? matchedInventoryItem.category
+          : categoryNeedsReview
+            ? '⚠️ NEEDS REVIEW'
+            : matchedCategory;
+
+      // Same rule as PurchaseOrders table: category ⚠️ or missing supplier
+      const orderShowsNeedsReviewInTab =
+        (finalCategoryForOrder || '').includes('NEEDS REVIEW') || !supplierIdResolved;
+
       // Debug logging
       if (rawCategory || rawLine) {
         console.log(`Row ${index + 1}:`, {
@@ -399,11 +516,11 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
           rawLine,
           matchedLine,
           columnMapping,
-          needsReview,
+          orderShowsNeedsReviewInTab,
           categoryNeedsReview,
           lineNeedsReview,
           autoLinked,
-          originalSku: sku,
+          supplierSKU,
           generatedSku: internalSku,
           finalCategory: autoLinked && matchedInventoryItem ? matchedInventoryItem.category : (categoryNeedsReview ? '⚠️ NEEDS REVIEW' : matchedCategory),
           finalLine: autoLinked && matchedInventoryItem ? matchedInventoryItem.line : (lineNeedsReview ? '⚠️ NEEDS REVIEW' : matchedLine)
@@ -456,14 +573,24 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
       // Inventory items will ONLY be created when purchase orders are marked as 'Verified'
       // This ensures inventory only contains items from verified orders
 
-      if (needsReview) {
+      if (orderShowsNeedsReviewInTab) {
         warningCount++;
       }
     }
 
-    // Add all orders in bulk
-    // Inventory items will be created automatically when orders are marked as 'Verified'
-    addPurchaseOrdersBulk(ordersToAdd);
+    // Add all orders in bulk, then attach barcodes (reuse inventory URL or generate)
+    try {
+      const newOrders = await addPurchaseOrdersBulk(ordersToAdd);
+      for (const o of newOrders) {
+        if (o.sku) {
+          await attachBarcodeToPurchaseOrderIfNeeded(o, updatePurchaseOrder, inventory);
+        }
+      }
+    } catch (error) {
+      console.error('Error during bulk import or barcode setup:', error);
+      alert(t('bulkImport.importError'));
+      return;
+    }
 
     setImportResults({ success: ordersToAdd.length, warnings: warningCount, autoLinked: autoLinkedCount });
     setStep('complete');
@@ -472,16 +599,27 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-5xl max-h-[90vh] overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-300">
+      <div className="relative bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-5xl max-h-[90vh] overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-300">
+        {resumeLoading && (
+          <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center gap-2 bg-white/90">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#515151] border-t-transparent" aria-hidden />
+            <p className="text-sm text-gray-600">{t('bulkImport.loadingDraft')}</p>
+          </div>
+        )}
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">Bulk Import Purchase Orders</h3>
+            <h3 className="text-lg font-semibold text-gray-900">{t('bulkImport.title')}</h3>
             <p className="text-sm text-gray-500 mt-0.5">
-              {step === 'upload' && 'Upload your CSV or Excel file'}
-              {step === 'mapping' && 'Map columns to database fields'}
-              {step === 'preview' && 'Review and confirm import'}
-              {step === 'complete' && 'Import complete'}
+              {mode === 'resume' && !resumeLoading && (
+                <span className="mr-2 inline-block rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-800">
+                  {t('bulkImport.resumeBadge')}
+                </span>
+              )}
+              {step === 'upload' && t('bulkImport.stepUpload')}
+              {step === 'mapping' && t('bulkImport.stepMapping')}
+              {step === 'preview' && t('bulkImport.stepPreview')}
+              {step === 'complete' && t('bulkImport.stepComplete')}
             </p>
           </div>
           <button
@@ -502,7 +640,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
               <div
                 role="button"
                 tabIndex={0}
-                aria-label="Upload or drop CSV file"
+                aria-label={t('bulkImport.uploadAria')}
                 onDragEnter={handleDragEnter}
                 onDragLeave={handleDragLeave}
                 onDragOver={handleDragOver}
@@ -535,32 +673,30 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                 >
                   <div className="text-6xl mb-4">📄</div>
                   <div className="text-base font-medium text-gray-900 mb-2">
-                    {isDragging ? 'Drop CSV file here' : 'Click or drag CSV file here'}
+                    {isDragging ? t('bulkImport.uploadDrop') : t('bulkImport.uploadClick')}
                   </div>
-                  <div className="text-sm text-gray-500">
-                    CSV format only (.csv)
-                  </div>
+                  <div className="text-sm text-gray-500">{t('bulkImport.csvOnly')}</div>
                 </label>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h4 className="text-sm font-semibold text-blue-900 mb-2">How to Export from Excel</h4>
+                  <h4 className="text-sm font-semibold text-blue-900 mb-2">{t('bulkImport.howToExportTitle')}</h4>
                   <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-                    <li>Open your Excel file</li>
-                    <li>Click <strong>File → Save As</strong></li>
-                    <li>Choose <strong>CSV UTF-8</strong> format</li>
-                    <li>Upload the .csv file here</li>
+                    <li>{t('bulkImport.howToExport1')}</li>
+                    <li>{t('bulkImport.howToExport2')}</li>
+                    <li>{t('bulkImport.howToExport3')}</li>
+                    <li>{t('bulkImport.howToExport4')}</li>
                   </ol>
                 </div>
 
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <h4 className="text-sm font-semibold text-gray-900 mb-2">What Happens</h4>
+                  <h4 className="text-sm font-semibold text-gray-900 mb-2">{t('bulkImport.whatHappensTitle')}</h4>
                   <ul className="text-sm text-gray-700 space-y-1">
-                    <li>• Each row = separate purchase order</li>
-                    <li>• Products auto-added to inventory</li>
-                    <li>• Missing info flagged for review</li>
-                    <li>• You can update details later</li>
+                    <li>• {t('bulkImport.whatHappens1')}</li>
+                    <li>• {t('bulkImport.whatHappens2')}</li>
+                    <li>• {t('bulkImport.whatHappens3')}</li>
+                    <li>• {t('bulkImport.whatHappens4')}</li>
                   </ul>
                 </div>
               </div>
@@ -572,25 +708,30 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
             <div className="space-y-6">
               {/* Default Values */}
               <div className="bg-gray-50 rounded-lg p-4 space-y-4">
-                <h4 className="text-sm font-semibold text-gray-900">Order Information (Applied to All {parsedData.length} Orders)</h4>
+                <h4 className="text-sm font-semibold text-gray-900">
+                  {t('bulkImport.orderInfoTitle').replace('{count}', String(parsedData.length))}
+                </h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-1 text-gray-700">Invoice Prefix</label>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">{t('bulkImport.invoicePrefix')}</label>
                     <input
                       type="text"
                       value={invoicePrefix}
                       onChange={(e) => setInvoicePrefix(e.target.value)}
-                      placeholder="e.g., INV-2025-OCT"
+                      placeholder={t('bulkImport.invoicePrefixPlaceholder')}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                     />
                     <p className="text-xs text-gray-500 mt-1">
-                      {Object.values(columnMapping).includes('invoice') 
-                        ? 'Using invoice number from CSV (must be same for all rows)' 
-                        : `Auto-generated: ${invoicePrefix || 'IMPORT-###'}-${Date.now().toString().slice(-6)}`}
+                      {Object.values(columnMapping).includes('invoice')
+                        ? t('bulkImport.invoiceFromCsv')
+                        : t('bulkImport.invoiceAuto').replace(
+                            '{hint}',
+                            `${invoicePrefix || 'IMPORT-###'}-${Date.now().toString().slice(-6)}`
+                          )}
                     </p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1 text-gray-700">Purchase Date</label>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">{t('bulkImport.purchaseDate')}</label>
                     <input
                       type="date"
                       value={purchaseDate}
@@ -601,28 +742,27 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1 text-gray-700">
-                    Invoice Link <span className="text-gray-400 font-normal">(optional)</span>
+                    {t('bulkImport.invoiceLink')}{' '}
+                    <span className="text-gray-400 font-normal">({t('bulkImport.optional')})</span>
                   </label>
                   <input
                     type="url"
                     value={invoiceLink}
                     onChange={(e) => setInvoiceLink(e.target.value)}
-                    placeholder="https://example.com/invoice.pdf or Google Drive link"
+                    placeholder={t('bulkImport.invoiceLinkPlaceholder')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Link to the invoice document (PDF, Google Drive, etc.). This will be applied to all imported purchase orders and linked to inventory items when verified.
-                  </p>
+                  <p className="text-xs text-gray-500 mt-1">{t('bulkImport.invoiceLinkHint')}</p>
                 </div>
                 <div className="mb-4">
                   <div>
-                    <label className="block text-sm font-medium mb-1 text-gray-700">Supplier (optional)</label>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">{t('bulkImport.defaultSupplier')}</label>
                     <select
                       value={defaultSupplier}
                       onChange={(e) => setDefaultSupplier(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
                     >
-                      <option value="">None (add later)</option>
+                      <option value="">{t('bulkImport.defaultSupplierNone')}</option>
                       {suppliers.map((supplier) => (
                         <option key={supplier.id} value={supplier.id}>
                           {supplier.name}
@@ -632,11 +772,11 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                   </div>
                 </div>
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
-                  <h5 className="text-sm font-semibold text-blue-900 mb-2">Currency & Exchange Rate</h5>
+                  <h5 className="text-sm font-semibold text-blue-900 mb-2">{t('bulkImport.currencyExchangeTitle')}</h5>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium mb-1 text-gray-700">
-                        Currency <span className="text-red-500">*</span>
+                        {t('bulkImport.currency')} <span className="text-red-500">*</span>
                       </label>
                       <select
                         value={defaultCurrency}
@@ -653,12 +793,13 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                         <option value="CNY">CNY - Chinese Yuan</option>
                       </select>
                       <p className="text-xs text-gray-500 mt-1">
-                        All cost values in CSV will be treated as {defaultCurrency}
+                        {t('bulkImport.currencyHint').replace('{currency}', defaultCurrency)}
                       </p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1 text-gray-700">
-                        Exchange Rate ({defaultCurrency} → USD) <span className="text-red-500">*</span>
+                        {t('bulkImport.exchangeRate').replace('{from}', defaultCurrency)}{' '}
+                        <span className="text-red-500">*</span>
                       </label>
                       <div className="flex items-center gap-2">
                         <input
@@ -681,23 +822,24 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                               setExchangeRateManuallySet(true);
                             }}
                             className="px-3 py-2 text-xs bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
-                            title="Use current market rate"
+                            title={t('bulkImport.exchangeRateMarketTitle')}
                           >
-                            Use Market Rate
+                            {t('bulkImport.exchangeRateMarket')}
                           </button>
                         )}
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
-                        {defaultCurrency === 'USD' 
-                          ? 'No conversion needed (already USD)'
-                          : `1 ${defaultCurrency} = ${exchangeRate.toFixed(6)} USD`}
+                        {defaultCurrency === 'USD'
+                          ? t('bulkImport.noConversion')
+                          : t('bulkImport.conversionLine')
+                              .replace('{currency}', defaultCurrency)
+                              .replace('{rate}', exchangeRate.toFixed(6))}
                       </p>
                     </div>
                   </div>
                   {defaultCurrency !== 'USD' && (
                     <div className="bg-white border border-blue-200 rounded p-2 text-xs text-blue-800">
-                      <strong>Note:</strong> All costs will be converted to USD using this exchange rate. 
-                      Purchase orders will display USD values in the Purchase Orders tab.
+                      {t('bulkImport.fxNote')}
                     </div>
                   )}
                 </div>
@@ -705,8 +847,8 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
 
               {/* Column Mapping */}
               <div>
-                <h4 className="text-sm font-semibold text-gray-900 mb-3">Map Your Columns</h4>
-                <p className="text-xs text-gray-500 mb-4">Match your CSV columns to our database fields</p>
+                <h4 className="text-sm font-semibold text-gray-900 mb-3">{t('bulkImport.mapColumnsTitle')}</h4>
+                <p className="text-xs text-gray-500 mb-4">{t('bulkImport.mapColumnsHint')}</p>
                 <div className="space-y-3">
                   {headers.map((header) => (
                     <div key={header} className="flex items-center gap-4">
@@ -718,20 +860,23 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                       </svg>
                       <select
                         value={columnMapping[header] || ''}
-                        onChange={(e) => setColumnMapping({ ...columnMapping, [header]: e.target.value })}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === 'sku') return;
+                          setColumnMapping({ ...columnMapping, [header]: v });
+                        }}
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] text-sm"
                       >
-                        <option value="">Skip this column</option>
-                        <option value="invoice">Invoice Number</option>
-                        <option value="sku">SKU (Internal)</option>
-                        <option value="supplierSKU">Supplier SKU</option>
-                        <option value="supplier">Supplier Name</option>
-                        <option value="description">Description/Name</option>
-                        <option value="quantity">Quantity</option>
-                        <option value="costPerUnit">Cost Per Unit</option>
-                        <option value="totalCost">Total Cost (ignored if Cost Per Unit mapped)</option>
-                        <option value="category">Category</option>
-                        <option value="line">Line</option>
+                        <option value="">{t('bulkImport.skipColumn')}</option>
+                        <option value="invoice">{mapFieldLabel('invoice')}</option>
+                        <option value="supplierSKU">{mapFieldLabel('supplierSKU')}</option>
+                        <option value="supplier">{mapFieldLabel('supplier')}</option>
+                        <option value="description">{mapFieldLabel('description')}</option>
+                        <option value="quantity">{mapFieldLabel('quantity')}</option>
+                        <option value="costPerUnit">{mapFieldLabel('costPerUnit')}</option>
+                        <option value="totalCost">{mapFieldLabel('totalCost')}</option>
+                        <option value="category">{mapFieldLabel('category')}</option>
+                        <option value="line">{mapFieldLabel('line')}</option>
                       </select>
                     </div>
                   ))}
@@ -741,13 +886,14 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
               {/* Preview first row */}
               {parsedData.length > 0 && (
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="text-sm font-semibold text-gray-900 mb-2">Preview First Row</h4>
+                  <h4 className="text-sm font-semibold text-gray-900 mb-2">{t('bulkImport.previewFirstRow')}</h4>
                   <div className="text-xs text-gray-700 space-y-1 font-mono">
                     {Object.entries(columnMapping).map(([csvCol, dbField]) => {
                       if (dbField) {
                         return (
                           <div key={csvCol}>
-                            <span className="text-[#515151] font-semibold">{dbField}:</span> {parsedData[0][csvCol]}
+                            <span className="text-[#515151] font-semibold">{mapFieldLabel(dbField)}:</span>{' '}
+                            {parsedData[0][csvCol]}
                           </div>
                         );
                       }
@@ -764,8 +910,10 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
                 <div className="text-4xl mb-4">⏳</div>
-                <div className="text-lg font-medium text-gray-900">Importing {parsedData.length} items...</div>
-                <div className="text-sm text-gray-500 mt-1">This may take a moment</div>
+                <div className="text-lg font-medium text-gray-900">
+                  {t('bulkImport.importing').replace('{count}', String(parsedData.length))}
+                </div>
+                <div className="text-sm text-gray-500 mt-1">{t('bulkImport.importingWait')}</div>
               </div>
             </div>
           )}
@@ -774,19 +922,22 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
           {step === 'complete' && (
             <div className="text-center py-8">
               <div className="text-5xl mb-4">✅</div>
-              <h4 className="text-xl font-semibold text-gray-900 mb-2">Import Complete!</h4>
+              <h4 className="text-xl font-semibold text-gray-900 mb-2">{t('bulkImport.completeTitle')}</h4>
               <div className="space-y-2 text-sm">
                 <p className="text-gray-700">
-                  Successfully imported <span className="font-semibold text-[#515151]">{importResults.success}</span> purchase orders
+                  {t('bulkImport.successCount').replace('{count}', String(importResults.success))}
                 </p>
-                {importResults.autoLinked && importResults.autoLinked > 0 && (
+                {(importResults.autoLinked ?? 0) > 0 && (
                   <p className="text-green-600 font-medium">
-                    🔗 {importResults.autoLinked} {importResults.autoLinked === 1 ? 'item was' : 'items were'} automatically linked to existing products by Supplier SKU!
+                    🔗{' '}
+                    {importResults.autoLinked === 1
+                      ? t('bulkImport.autoLinkedOne')
+                      : t('bulkImport.autoLinkedMany').replace('{count}', String(importResults.autoLinked))}
                   </p>
                 )}
                 {importResults.warnings > 0 && (
                   <p className="text-amber-600">
-                    ⚠️ {importResults.warnings} items need review (marked with &quot;⚠️ NEEDS REVIEW&quot;)
+                    ⚠️ {t('bulkImport.warnings').replace('{count}', String(importResults.warnings))}
                   </p>
                 )}
               </div>
@@ -794,7 +945,7 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
                 onClick={onClose}
                 className="mt-6 bg-[#515151] hover:bg-[#000000] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm"
               >
-                Done
+                {t('bulkImport.done')}
               </button>
             </div>
           )}
@@ -808,14 +959,14 @@ export default function BulkImportModal({ onClose }: BulkImportModalProps) {
               onClick={() => setStep('upload')}
               className="flex-1 px-6 py-2.5 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all font-medium text-gray-700"
             >
-              Back
+              {t('common.back')}
             </button>
             <button
               type="button"
               onClick={handleImport}
               className="flex-1 bg-[#515151] hover:bg-[#000000] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
             >
-              Import {parsedData.length} Items
+              {t('bulkImport.importNItems').replace('{count}', String(parsedData.length))}
             </button>
           </div>
         )}

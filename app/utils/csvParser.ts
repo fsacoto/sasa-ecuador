@@ -62,31 +62,117 @@ export function parseCSV(csvText: string): ParsedRow[] {
   return rows;
 }
 
+/** Normalize header for matching (lowercase, strip common accents). */
+function normalizeHeaderForMatch(header: string): string {
+  return header
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
 export function detectColumnMapping(headers: string[]): {
   [key: string]: string;
 } {
   const mapping: { [key: string]: string } = {};
-  
-  // Common patterns for each field
-  const patterns = {
-    invoice: ['invoice', 'invoice number', 'invoice no', 'order number', 'po number', 'po#'],
-    sku: ['sku', 'item no', 'item number', 'product code', 'code'],
-    description: ['description', 'name', 'product name', 'item name', 'desc'],
-    quantity: ['qty', 'quantity', 'amount', 'units', 'pcs'],
-    costPerUnit: ['price', 'price per unit', 'unit price', 'cost', 'cost per unit', 'unit cost'],
-    totalCost: ['total', 'total price', 'total cost', 'amount'],
-    supplierSKU: ['supplier sku', 'vendor sku', 'supplier code'],
-    supplier: ['supplier', 'vendor', 'supplier name', 'vendor name'],
-    category: ['category', 'cat', 'type', 'product type', 'item type'],
-    line: ['line', 'collection', 'series', 'product line', 'style'],
+
+  /**
+   * Order matters: more specific keys first (e.g. supplier SKU before generic "supplier").
+   * Internal SKU is never auto-mapped — it is generated or taken from inventory after import.
+   */
+  const patterns: Record<string, string[]> = {
+    invoice: [
+      'invoice',
+      'invoice number',
+      'invoice no',
+      'order number',
+      'po number',
+      'po#',
+      'factura',
+      'numero de factura',
+      'nro factura',
+    ],
+    supplierSKU: [
+      'sku proveedor',
+      'sku del proveedor',
+      'sku supplier',
+      'supplier sku',
+      'vendor sku',
+      'supplier code',
+      'codigo proveedor',
+      'codigo del proveedor',
+      'ref proveedor',
+      'referencia proveedor',
+      'ref. proveedor',
+    ],
+    supplier: [
+      'supplier name',
+      'supplier',
+      'vendor name',
+      'vendor',
+      'proveedor',
+      'nombre proveedor',
+      'nombre del proveedor',
+    ],
+    description: [
+      'description',
+      'name',
+      'product name',
+      'item name',
+      'desc',
+      'descripcion',
+      'nombre',
+      'articulo',
+    ],
+    totalCost: [
+      'total cost',
+      'total price',
+      'coste total',
+      'costo total',
+      'importe total',
+      'total linea',
+      'total line',
+      'subtotal',
+    ],
+    quantity: ['qty', 'quantity', 'amount', 'units', 'pcs', 'cantidad', 'unidades'],
+    costPerUnit: [
+      'price per unit',
+      'unit price',
+      'cost per unit',
+      'unit cost',
+      'precio unitario',
+      'coste unitario',
+      'costo unitario',
+      'costo por unidad',
+      'coste por unidad',
+      'precio por unidad',
+      'p. unit',
+      'pu ',
+    ],
+    category: ['category', 'cat', 'type', 'product type', 'item type', 'categoria', 'rubro'],
+    line: ['line', 'collection', 'series', 'product line', 'style', 'linea', 'coleccion'],
   };
 
   headers.forEach((header) => {
     const lowerHeader = header.toLowerCase();
-    
-    // Check each pattern
+    const norm = normalizeHeaderForMatch(header);
+    const trimmed = lowerHeader.trim();
+
+    // Short headers: unit cost (avoid matching "total cost" etc. — totalCost is listed first above)
+    if (
+      ['cost', 'price', 'precio', 'coste', 'costo', 'pvp'].includes(trimmed) &&
+      !lowerHeader.includes('total')
+    ) {
+      mapping[header] = 'costPerUnit';
+      return;
+    }
+
     for (const [field, keywords] of Object.entries(patterns)) {
-      if (keywords.some(keyword => lowerHeader.includes(keyword))) {
+      const hit = keywords.some((keyword) => {
+        const k = keyword.toLowerCase();
+        const kn = normalizeHeaderForMatch(keyword);
+        return lowerHeader.includes(k) || norm.includes(kn);
+      });
+      if (hit) {
         mapping[header] = field;
         break;
       }
