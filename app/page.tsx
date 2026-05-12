@@ -903,9 +903,9 @@ function AppContent() {
       </aside>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="fixed left-0 right-0 top-0 z-[90] flex h-12 shrink-0 items-center justify-end gap-3 bg-[#101010] px-3 lg:px-5">
+        <header className="fixed left-0 right-0 top-0 z-[90] flex h-12 min-w-0 shrink-0 items-center gap-2 bg-[#101010] px-3 lg:px-5">
           <div
-            className="absolute left-0 top-1/2 flex -translate-y-1/2 items-center gap-2 px-3 lg:px-5"
+            className="flex min-w-0 shrink-0 items-center gap-2 overflow-hidden"
             style={{ width: Math.max(SIDEBAR_EXPANDED_PX, 220) }}
           >
             <Image
@@ -913,17 +913,15 @@ function AppContent() {
               alt="SASA"
               width={100}
               height={33}
-              className="h-7 w-auto max-w-[88px] object-contain invert"
+              className="h-7 w-auto max-w-[88px] shrink-0 object-contain invert"
               priority
             />
-            <span className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-[#c5c5c5]">
+            <span className="min-w-0 truncate whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-[#c5c5c5]">
               Business Hub
             </span>
           </div>
-          <div
-            ref={navSearchRef}
-            className="absolute left-1/2 top-1/2 z-[5] w-full max-w-xl -translate-x-1/2 -translate-y-1/2 px-3"
-          >
+          <div className="min-w-0 flex-1 px-1 sm:px-2">
+            <div ref={navSearchRef} className="relative z-[5] mx-auto w-full min-w-0 max-w-xl">
             <IconSearch className="pointer-events-none absolute left-6 top-1/2 z-[1] h-3.5 w-3.5 -translate-y-1/2 text-[#c5c5c5]" />
             <input
               ref={navSearchInputRef}
@@ -1010,12 +1008,14 @@ function AppContent() {
                 )}
               </div>
             )}
+            </div>
           </div>
 
+          <div className="flex shrink-0 items-center gap-3">
           <button
             type="button"
             onClick={() => setDarkModeOn((v) => !v)}
-            className="ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#c5c5c5] transition-colors hover:bg-[#1a1a1a]"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#c5c5c5] transition-colors hover:bg-[#1a1a1a]"
             aria-label={darkModeOn ? 'Turn dark mode off' : 'Turn dark mode on'}
             title={darkModeOn ? 'Dark mode on' : 'Dark mode off'}
           >
@@ -1118,6 +1118,7 @@ function AppContent() {
                 </button>
               </div>
             )}
+          </div>
           </div>
         </header>
 
