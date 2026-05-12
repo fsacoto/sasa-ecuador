@@ -1,29 +1,7 @@
 // Smart update functions to keep Purchase Orders and Inventory in sync
 
 import { PurchaseOrder, InventoryItem, VerificationIssueRef } from '../types';
-import { findInventoryForPurchaseOrder } from './barcodePrint';
-
-function normalizeSkuKey(sku: string): string {
-  return String(sku ?? '').trim().toLowerCase();
-}
-
-/** Reuse barcode URL from another PO line with the same internal SKU (prefers same invoice). */
-export function findReuseBarcodeFromPurchaseOrders(
-  order: Pick<PurchaseOrder, 'id' | 'sku' | 'invoice'>,
-  pool: PurchaseOrder[]
-): string | undefined {
-  const key = normalizeSkuKey(order.sku);
-  if (!key) return undefined;
-  const withBarcode = pool.filter(
-    (p) =>
-      p.id !== order.id &&
-      normalizeSkuKey(p.sku) === key &&
-      String(p.barcode ?? '').trim().length > 0
-  );
-  if (withBarcode.length === 0) return undefined;
-  const sameInvoice = withBarcode.find((p) => p.invoice === order.invoice);
-  return (sameInvoice ?? withBarcode[0]).barcode?.trim();
-}
+import { findInventoryForPurchaseOrder, findReuseBarcodeFromPurchaseOrders } from './barcodePrint';
 
 /** Problem units flagged on consignment returns (inventory badge + detail). */
 export function getConsignmentReturnProblemQty(item: InventoryItem): number {

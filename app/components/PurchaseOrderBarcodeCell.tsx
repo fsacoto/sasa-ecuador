@@ -4,6 +4,10 @@ import { useMemo, useState } from 'react';
 import type { PurchaseOrder, InventoryItem } from '../types';
 import { attachBarcodeToPurchaseOrderIfNeeded } from '../utils/syncUpdates';
 import { isValidBarcodeInput } from '../utils/barcodeGenerator';
+import {
+  findInventoryForPurchaseOrder,
+  resolveBarcodeUrlForPrint,
+} from '../utils/barcodePrint';
 
 interface PurchaseOrderBarcodeCellProps {
   order: PurchaseOrder;
@@ -37,7 +41,11 @@ export default function PurchaseOrderBarcodeCell({
     return { ...fromList, ...order };
   }, [purchaseOrders, order]);
 
-  const url = (live.barcode || '').trim();
+  const displayUrl = useMemo(() => {
+    const inv = findInventoryForPurchaseOrder(live, inventory);
+    return resolveBarcodeUrlForPrint(live, inv, purchaseOrders);
+  }, [live, inventory, purchaseOrders]);
+
   const skuOk = isValidBarcodeInput(live.sku);
 
   const run = async (e: React.MouseEvent, forceRegenerate: boolean) => {
@@ -56,7 +64,7 @@ export default function PurchaseOrderBarcodeCell({
         forceRegenerate ? { forceRegenerate: true } : undefined,
         purchaseOrders
       );
-      if (!(result.barcode || '').trim()) {
+      if (!resolveBarcodeUrlForPrint(result, findInventoryForPurchaseOrder(result, inventory), purchaseOrders)) {
         alert(labels.failed);
       }
     } catch (err) {
@@ -69,11 +77,11 @@ export default function PurchaseOrderBarcodeCell({
 
   const inner = (
     <div className="flex flex-col items-center gap-1.5 min-w-[5.5rem]">
-      {url ? (
+      {displayUrl ? (
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={url}
+            src={displayUrl}
             alt={labels.alt}
             className="h-10 w-auto max-w-[7rem] object-contain"
           />

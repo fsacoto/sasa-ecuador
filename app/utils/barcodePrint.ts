@@ -1,5 +1,27 @@
 import { PurchaseOrder, InventoryItem } from '../types';
 
+function normalizeSkuKey(sku: string): string {
+  return String(sku ?? '').trim().toLowerCase();
+}
+
+/** Reuse barcode URL from another PO line with the same internal SKU (prefers same invoice). */
+export function findReuseBarcodeFromPurchaseOrders(
+  order: Pick<PurchaseOrder, 'id' | 'sku' | 'invoice'>,
+  pool: PurchaseOrder[]
+): string | undefined {
+  const key = normalizeSkuKey(order.sku);
+  if (!key) return undefined;
+  const withBarcode = pool.filter(
+    (p) =>
+      p.id !== order.id &&
+      normalizeSkuKey(p.sku) === key &&
+      String(p.barcode ?? '').trim().length > 0
+  );
+  if (withBarcode.length === 0) return undefined;
+  const sameInvoice = withBarcode.find((p) => p.invoice === order.invoice);
+  return (sameInvoice ?? withBarcode[0]).barcode?.trim();
+}
+
 /** One printable line: always tied to a PO; barcode may come from PO or inventory. */
 export interface BarcodePrintRow {
   order: PurchaseOrder;
@@ -21,10 +43,17 @@ export function findInventoryForPurchaseOrder(
 
 export function resolveBarcodeUrlForPrint(
   order: PurchaseOrder,
-  inventoryItem?: InventoryItem | null
+  inventoryItem?: InventoryItem | null,
+  /** When set, same-SKU lines on other PO rows can supply the image URL (mirrors attach-time reuse). */
+  allPurchaseOrders?: PurchaseOrder[]
 ): string {
-  const u = (order.barcode || inventoryItem?.barcode || '').trim();
-  return u;
+  const direct = (order.barcode || inventoryItem?.barcode || '').trim();
+  if (direct) return direct;
+  if (allPurchaseOrders && allPurchaseOrders.length > 0) {
+    const fromSibling = findReuseBarcodeFromPurchaseOrders(order, allPurchaseOrders);
+    if (fromSibling) return fromSibling;
+  }
+  return '';
 }
 
 export function syntheticInventoryFromOrder(
@@ -96,7 +125,7 @@ export function buildPrintRowsByInvoice(
       map[invoiceKey].orders.push(order);
     }
     const invItem = findInventoryForPurchaseOrder(order, inventory);
-    const barcodeUrl = resolveBarcodeUrlForPrint(order, invItem);
+    const barcodeUrl = resolveBarcodeUrlForPrint(order, invItem, purchaseOrders);
     if (!barcodeUrl) return;
     map[invoiceKey].rows.push({
       order,

@@ -97,7 +97,12 @@ export default function BarcodeLabelPDF({ items }: BarcodeLabelPDFProps) {
   return (
     <Document>
       {expandedItems.map((item, index) => {
-        if (!item.inventoryItem || !item.inventoryItem.barcode) {
+        const barcodeSrc = (
+          item.inventoryItem?.barcode ||
+          item.order?.barcode ||
+          ''
+        ).trim();
+        if (!barcodeSrc) {
           return null;
         }
 
@@ -129,7 +134,7 @@ export default function BarcodeLabelPDF({ items }: BarcodeLabelPDFProps) {
               {/* Barcode - bigger and centered */}
               <View style={styles.barcodeContainer}>
                 <Image
-                  src={inventoryItem.barcode}
+                  src={barcodeSrc}
                   style={styles.barcode}
                   cache={false}
                 />
