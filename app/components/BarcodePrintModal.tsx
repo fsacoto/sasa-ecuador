@@ -467,8 +467,14 @@ export default function BarcodePrintModal({
                                     {row.order.description} ({row.order.sku})
                                   </span>
                                   {!row.inventoryItem && (
-                                    <span className="text-xs text-amber-700">
-                                      ({t('purchaseOrders.poOnly') || 'PO only'})
+                                    <span
+                                      className={`text-xs ${
+                                        (row.order.barcode || '').trim() ? 'text-gray-500' : 'text-amber-700'
+                                      }`}
+                                    >
+                                      {(row.order.barcode || '').trim()
+                                        ? `(${t('purchaseOrders.labelFromPO')})`
+                                        : `(${t('purchaseOrders.poOnly')})`}
                                     </span>
                                   )}
                                 </div>
@@ -545,8 +551,14 @@ export default function BarcodePrintModal({
                             </span>
                           )}
                           {!row.inventoryItem && (
-                            <span className="text-amber-700">
-                              {t('purchaseOrders.poOnly') || 'Not in inventory yet'}
+                            <span
+                              className={`text-xs ${
+                                (row.order.barcode || '').trim() ? 'text-gray-500' : 'text-amber-700'
+                              }`}
+                            >
+                              {(row.order.barcode || '').trim()
+                                ? t('purchaseOrders.labelFromPO')
+                                : t('purchaseOrders.poOnly')}
                             </span>
                           )}
                         </div>

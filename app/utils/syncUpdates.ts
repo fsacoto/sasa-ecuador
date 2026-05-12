@@ -3,6 +3,28 @@
 import { PurchaseOrder, InventoryItem, VerificationIssueRef } from '../types';
 import { findInventoryForPurchaseOrder } from './barcodePrint';
 
+function normalizeSkuKey(sku: string): string {
+  return String(sku ?? '').trim().toLowerCase();
+}
+
+/** Reuse barcode URL from another PO line with the same internal SKU (prefers same invoice). */
+export function findReuseBarcodeFromPurchaseOrders(
+  order: Pick<PurchaseOrder, 'id' | 'sku' | 'invoice'>,
+  pool: PurchaseOrder[]
+): string | undefined {
+  const key = normalizeSkuKey(order.sku);
+  if (!key) return undefined;
+  const withBarcode = pool.filter(
+    (p) =>
+      p.id !== order.id &&
+      normalizeSkuKey(p.sku) === key &&
+      String(p.barcode ?? '').trim().length > 0
+  );
+  if (withBarcode.length === 0) return undefined;
+  const sameInvoice = withBarcode.find((p) => p.invoice === order.invoice);
+  return (sameInvoice ?? withBarcode[0]).barcode?.trim();
+}
+
 /** Problem units flagged on consignment returns (inventory badge + detail). */
 export function getConsignmentReturnProblemQty(item: InventoryItem): number {
   return (item.consignmentReturnIssues ?? []).reduce((s, r) => s + r.quantityProblem, 0);
@@ -94,10 +116,13 @@ export async function attachBarcodeToPurchaseOrderIfNeeded(
   order: PurchaseOrder,
   updatePurchaseOrder: (id: string, item: Partial<PurchaseOrder>) => Promise<void>,
   inventory: InventoryItem[],
-  options?: { forceRegenerate?: boolean }
+  options?: { forceRegenerate?: boolean },
+  /** Other PO lines (rest of app + same import batch) to reuse the same barcode URL when internal SKU matches. */
+  purchaseOrdersForSkuReuse?: PurchaseOrder[]
 ): Promise<PurchaseOrder> {
-  if (!order.sku) return order;
-  if (order.barcode && !options?.forceRegenerate) return order;
+  if (!String(order.sku ?? '').trim()) return order;
+  const existingBc = (order.barcode || '').trim();
+  if (existingBc && !options?.forceRegenerate) return order;
 
   const invMatch = findInventoryForPurchaseOrder(order, inventory);
   const invBarcode = (invMatch?.barcode || '').trim();
@@ -107,7 +132,7 @@ export async function attachBarcodeToPurchaseOrderIfNeeded(
       await updatePurchaseOrder(order.id, { barcode: invBarcode });
       return { ...order, barcode: invBarcode };
     }
-  } else if (order.barcode) {
+  } else if (existingBc) {
     return order;
   }
 
@@ -116,10 +141,38 @@ export async function attachBarcodeToPurchaseOrderIfNeeded(
     return { ...order, barcode: invBarcode };
   }
 
-  const url = await ensurePurchaseOrderBarcodeUrl(order.sku);
+  const siblingBarcode =
+    purchaseOrdersForSkuReuse && purchaseOrdersForSkuReuse.length > 0
+      ? findReuseBarcodeFromPurchaseOrders(order, purchaseOrdersForSkuReuse)
+      : undefined;
+  if (siblingBarcode) {
+    await updatePurchaseOrder(order.id, { barcode: siblingBarcode });
+    return { ...order, barcode: siblingBarcode };
+  }
+
+  const url = await ensurePurchaseOrderBarcodeValue(order.sku);
   if (!url) return order;
   await updatePurchaseOrder(order.id, { barcode: url });
   return { ...order, barcode: url };
+}
+
+/**
+ * Barcode value for a PO line: prefer a short Storage URL for Firestore; if upload fails,
+ * fall back to an inline PNG data URL (same as inventario) so la etiqueta funcione sin Storage.
+ */
+export async function ensurePurchaseOrderBarcodeValue(sku: string): Promise<string | null> {
+  const uploaded = await ensurePurchaseOrderBarcodeUrl(sku);
+  if (uploaded) return uploaded;
+  try {
+    const { generateBarcodeFromSKU, isValidBarcodeInput } = await import('./barcodeGenerator');
+    if (isValidBarcodeInput(sku) && typeof document !== 'undefined') {
+      const dataUrl = generateBarcodeFromSKU(sku);
+      if ((dataUrl || '').trim().length > 0) return dataUrl;
+    }
+  } catch (e) {
+    console.warn(`Inline barcode failed for SKU ${sku}:`, e);
+  }
+  return null;
 }
 
 export async function ensurePurchaseOrderBarcodeUrl(sku: string): Promise<string | null> {
@@ -150,7 +203,7 @@ export async function generateBarcodeForInventoryItem(
   updateInventoryItem: (id: string, item: Partial<InventoryItem>) => Promise<void>,
   itemId: string
 ): Promise<string | null> {
-  const barcodeUrl = await ensurePurchaseOrderBarcodeUrl(sku);
+  const barcodeUrl = await ensurePurchaseOrderBarcodeValue(sku);
   if (!barcodeUrl) return null;
   try {
     await updateInventoryItem(itemId, { barcode: barcodeUrl });

@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import React from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { PurchaseOrder, Supplier, InventoryItem, PurchaseOrderStatus } from '../types';
 import SupplierDetailPanel from './SupplierDetailPanel';
+import PurchaseOrderLineDetailPanel from './PurchaseOrderLineDetailPanel';
+import PurchaseOrderBarcodeCell from './PurchaseOrderBarcodeCell';
 import { generateUniqueSKU, collectUsedSkus } from '../utils/skuGenerator';
 import { getExchangeRates, getExchangeRate, formatLastUpdate, type ExchangeRateResponse } from '../utils/currencyApi';
 import BulkImportModal, { type BulkImportModalMode } from './BulkImportModal';
@@ -61,6 +63,7 @@ export default function PurchaseOrders() {
   const { purchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, suppliers, inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, addSupplier } = useInventory();
   const { t } = useTranslation();
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
+  const [poLineDetailOrder, setPoLineDetailOrder] = useState<PurchaseOrder | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [bulkImportModalMode, setBulkImportModalMode] = useState<BulkImportModalMode>('new');
@@ -162,6 +165,7 @@ export default function PurchaseOrders() {
       { key: 'supplier', label: t('purchaseOrders.supplier') },
       { key: 'description', label: t('purchaseOrders.description') },
       { key: 'sku', label: t('purchaseOrders.sku') },
+      { key: 'barcode', label: t('purchaseOrders.barcodeColumn') },
       { key: 'quantity', label: t('purchaseOrders.quantity') },
       { key: 'status', label: t('purchaseOrders.status') },
       { key: 'landedCost', label: t('purchaseOrders.costPerUnit') }
@@ -185,7 +189,7 @@ export default function PurchaseOrders() {
 
   // Get visible column keys for rendering
   const getVisibleColumnKeys = () => {
-    const allColumns = ['invoice', 'supplier', 'description', 'sku', 'quantity', 'status', 'landedCost'];
+    const allColumns = ['invoice', 'supplier', 'description', 'sku', 'barcode', 'quantity', 'status', 'landedCost'];
     return allColumns.filter(key => !hiddenColumns.has(key));
   };
   
@@ -271,6 +275,14 @@ export default function PurchaseOrders() {
     purchaseDate: new Date().toISOString().split('T')[0],
     status: 'Ordered' as 'Ordered' | 'Shipped' | 'Received' | 'Verified',
   });
+
+  /** Orden en contexto + SKU del formulario (para generar código antes de guardar otros campos). */
+  const mergedOrderForFormBarcode = useMemo((): PurchaseOrder | null => {
+    if (!editingOrder?.id) return null;
+    const live = purchaseOrders.find((o) => o.id === editingOrder.id) ?? editingOrder;
+    const sku = (formData.sku || '').trim() || (live.sku || '').trim();
+    return { ...live, sku };
+  }, [editingOrder, purchaseOrders, formData.sku]);
 
   /** Debounce supplier SKU so the internal SKU does not change on every keystroke. */
   const [supplierSkuStable, setSupplierSkuStable] = useState('');
@@ -592,7 +604,8 @@ export default function PurchaseOrders() {
         orderForSync,
         updatePurchaseOrder,
         inventory,
-        { forceRegenerate: skuChanged }
+        { forceRegenerate: skuChanged },
+        purchaseOrders
       );
 
       const previousSku = originalSku !== orderForSync.sku ? originalSku : undefined;
@@ -620,7 +633,9 @@ export default function PurchaseOrders() {
         orderForSync = await attachBarcodeToPurchaseOrderIfNeeded(
           orderForSync,
           updatePurchaseOrder,
-          inventory
+          inventory,
+          undefined,
+          purchaseOrders
         );
         await syncPurchaseOrderToInventory(
           orderForSync,
@@ -814,7 +829,13 @@ export default function PurchaseOrders() {
         ...data.updatedOrder,
         ...updateData,
       } as PurchaseOrder;
-      mergedPo = await attachBarcodeToPurchaseOrderIfNeeded(mergedPo, updatePurchaseOrder, inventory);
+      mergedPo = await attachBarcodeToPurchaseOrderIfNeeded(
+        mergedPo,
+        updatePurchaseOrder,
+        inventory,
+        undefined,
+        purchaseOrders
+      );
 
       await syncPurchaseOrderToInventory(
         mergedPo,
@@ -870,7 +891,9 @@ export default function PurchaseOrders() {
       orderWithGoodQuantity = await attachBarcodeToPurchaseOrderIfNeeded(
         orderWithGoodQuantity,
         updatePurchaseOrder,
-        inventory
+        inventory,
+        undefined,
+        purchaseOrders
       );
       await syncPurchaseOrderToInventory(
         orderWithGoodQuantity,
@@ -931,7 +954,9 @@ export default function PurchaseOrders() {
       orderWithGoodQuantity = await attachBarcodeToPurchaseOrderIfNeeded(
         orderWithGoodQuantity,
         updatePurchaseOrder,
-        inventory
+        inventory,
+        undefined,
+        purchaseOrders
       );
       await syncPurchaseOrderToInventory(
         orderWithGoodQuantity,
@@ -1008,7 +1033,9 @@ export default function PurchaseOrders() {
       updatedOrder = await attachBarcodeToPurchaseOrderIfNeeded(
         updatedOrder,
         updatePurchaseOrder,
-        inventory
+        inventory,
+        undefined,
+        purchaseOrders
       );
     }
     await syncPurchaseOrderToInventory(
@@ -1023,6 +1050,12 @@ export default function PurchaseOrders() {
       stockBaselineOrder,
       updatePurchaseOrder
     );
+  };
+
+  const handlePoRowActivate = (order: PurchaseOrder, e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, select, option, label')) return;
+    setPoLineDetailOrder(order);
   };
 
   const handleEdit = (order: PurchaseOrder) => {
@@ -1330,7 +1363,7 @@ export default function PurchaseOrders() {
       await updatePurchaseOrder(editingOrder.id, orderData);
       let o: PurchaseOrder = { ...editingOrder, ...orderData } as PurchaseOrder;
       if (o.sku) {
-        o = await attachBarcodeToPurchaseOrderIfNeeded(o, updatePurchaseOrder, inventory);
+        o = await attachBarcodeToPurchaseOrderIfNeeded(o, updatePurchaseOrder, inventory, undefined, purchaseOrders);
       }
       await syncPurchaseOrderToInventory(
         o,
@@ -1358,7 +1391,7 @@ export default function PurchaseOrders() {
 
       let o: PurchaseOrder = { ...order, ...orderData } as PurchaseOrder;
       if (o.sku) {
-        o = await attachBarcodeToPurchaseOrderIfNeeded(o, updatePurchaseOrder, inventory);
+        o = await attachBarcodeToPurchaseOrderIfNeeded(o, updatePurchaseOrder, inventory, undefined, purchaseOrders);
       }
       await syncPurchaseOrderToInventory(
         o,
@@ -1408,7 +1441,9 @@ export default function PurchaseOrders() {
         updatedOrder = await attachBarcodeToPurchaseOrderIfNeeded(
           updatedOrder,
           updatePurchaseOrder,
-          inventory
+          inventory,
+          undefined,
+          purchaseOrders
         );
       }
       await syncPurchaseOrderToInventory(
@@ -1432,7 +1467,9 @@ export default function PurchaseOrders() {
         updatedOrder = await attachBarcodeToPurchaseOrderIfNeeded(
           updatedOrder,
           updatePurchaseOrder,
-          inventory
+          inventory,
+          undefined,
+          purchaseOrders
         );
       }
       await syncPurchaseOrderToInventory(
@@ -2295,6 +2332,28 @@ export default function PurchaseOrders() {
                     {t('purchaseOrders.tipUpdateCategory')}
                   </p>
                 )}
+                {mergedOrderForFormBarcode && (
+                  <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {t('purchaseOrders.barcodeColumn')}
+                    </label>
+                    <p className="text-xs text-gray-500 mb-3">{t('purchaseOrders.formBarcodeHint')}</p>
+                    <PurchaseOrderBarcodeCell
+                      variant="block"
+                      order={mergedOrderForFormBarcode}
+                      purchaseOrders={purchaseOrders}
+                      inventory={inventory}
+                      updatePurchaseOrder={updatePurchaseOrder}
+                      labels={{
+                        generate: t('purchaseOrders.generateBarcode'),
+                        regenerate: t('purchaseOrders.regenerateBarcode'),
+                        alt: t('purchaseOrders.barcodeAlt'),
+                        needSku: t('purchaseOrders.lineDetailNeedSku'),
+                        failed: t('purchaseOrders.barcodeGenerateFailed'),
+                      }}
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -2534,6 +2593,11 @@ export default function PurchaseOrders() {
                   </div>
                 </th>
                   )}
+                  {!hiddenColumns.has('barcode') && (
+                <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {t('purchaseOrders.barcodeColumn')}
+                </th>
+                  )}
                   {!hiddenColumns.has('quantity') && (
                 <th 
                   onClick={() => handleSort('quantity')}
@@ -2612,6 +2676,11 @@ export default function PurchaseOrders() {
                       </div>
                     </th>
                   )}
+                  {!hiddenColumns.has('barcode') && (
+                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {t('purchaseOrders.barcodeColumn')}
+                    </th>
+                  )}
                   {!hiddenColumns.has('quantity') && (
                     <th 
                       onClick={() => handleSort('quantity')}
@@ -2654,7 +2723,7 @@ export default function PurchaseOrders() {
             <tbody className="divide-y divide-gray-100">
               {filteredAndSortedOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={9 - hiddenColumns.size} className="px-6 py-12 text-center text-sm text-gray-500">
+                  <td colSpan={2 + getVisibleColumnKeys().length} className="px-6 py-12 text-center text-sm text-gray-500">
                     {purchaseOrders.length === 0 
                       ? t('purchaseOrders.noOrdersYet')
                       : t('purchaseOrders.noOrdersMatchFilters')}
@@ -2665,7 +2734,11 @@ export default function PurchaseOrders() {
                   const supplier = suppliers.find(s => s.id === order.supplierId);
                   const needsReview = order.category.includes('NEEDS REVIEW') || !order.supplierId;
                   return (
-                    <tr key={order.id} className={`hover:bg-gray-50 transition-colors ${needsReview ? 'bg-amber-50/30' : ''}`}>
+                    <tr
+                      key={order.id}
+                      className={`cursor-pointer hover:bg-gray-50 transition-colors ${needsReview ? 'bg-amber-50/30' : ''}`}
+                      onClick={(e) => handlePoRowActivate(order, e)}
+                    >
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
                         {index + 1}
                       </td>
@@ -2700,6 +2773,21 @@ export default function PurchaseOrders() {
                       )}
                       {!hiddenColumns.has('sku') && (
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.sku}</td>
+                      )}
+                      {!hiddenColumns.has('barcode') && (
+                        <PurchaseOrderBarcodeCell
+                          order={order}
+                          purchaseOrders={purchaseOrders}
+                          inventory={inventory}
+                          updatePurchaseOrder={updatePurchaseOrder}
+                          labels={{
+                            generate: t('purchaseOrders.generateBarcode'),
+                            regenerate: t('purchaseOrders.regenerateBarcode'),
+                            alt: t('purchaseOrders.barcodeAlt'),
+                            needSku: t('purchaseOrders.lineDetailNeedSku'),
+                            failed: t('purchaseOrders.barcodeGenerateFailed'),
+                          }}
+                        />
                       )}
                       {!hiddenColumns.has('quantity') && (
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
@@ -2840,7 +2928,7 @@ export default function PurchaseOrders() {
                     <React.Fragment key={groupKey}>
                       {/* Group Header Row */}
                       <tr className="bg-gray-50 border-t-2 border-gray-200">
-                        <td colSpan={9 - hiddenColumns.size} className="px-6 py-4">
+                        <td colSpan={2 + getVisibleColumnKeys().length} className="px-6 py-4">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
                               <button
@@ -2886,7 +2974,11 @@ export default function PurchaseOrders() {
                         const supplier = suppliers.find(s => s.id === order.supplierId);
                         const needsReview = order.category.includes('NEEDS REVIEW') || !order.supplierId;
                         return (
-                          <tr key={order.id} className={`hover:bg-gray-50 transition-colors ${needsReview ? 'bg-amber-50/30' : ''}`}>
+                          <tr
+                            key={order.id}
+                            className={`cursor-pointer hover:bg-gray-50 transition-colors ${needsReview ? 'bg-amber-50/30' : ''}`}
+                            onClick={(e) => handlePoRowActivate(order, e)}
+                          >
                             {/* Row Number */}
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
                               {orderIndex + 1}
@@ -2927,6 +3019,21 @@ export default function PurchaseOrders() {
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                 {order.sku}
                               </td>
+                            )}
+                            {!hiddenColumns.has('barcode') && (
+                              <PurchaseOrderBarcodeCell
+                                order={order}
+                                purchaseOrders={purchaseOrders}
+                                inventory={inventory}
+                                updatePurchaseOrder={updatePurchaseOrder}
+                                labels={{
+                                  generate: t('purchaseOrders.generateBarcode'),
+                                  regenerate: t('purchaseOrders.regenerateBarcode'),
+                                  alt: t('purchaseOrders.barcodeAlt'),
+                                  needSku: t('purchaseOrders.lineDetailNeedSku'),
+                                  failed: t('purchaseOrders.barcodeGenerateFailed'),
+                                }}
+                              />
                             )}
                             
                             {/* Quantity */}
@@ -3064,6 +3171,8 @@ export default function PurchaseOrders() {
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <span>{t('purchaseOrders.rowNumbersReset')}</span>
+            <span className="hidden text-gray-400 sm:inline">·</span>
+            <span className="hidden max-w-xl sm:inline">{t('purchaseOrders.lineDetailRowHint')}</span>
           </div>
         </div>
       </div>
@@ -3073,6 +3182,17 @@ export default function PurchaseOrders() {
         <SupplierDetailPanel
           supplier={selectedSupplier}
           onClose={() => setSelectedSupplier(null)}
+        />
+      )}
+
+      {poLineDetailOrder && (
+        <PurchaseOrderLineDetailPanel
+          order={poLineDetailOrder}
+          purchaseOrders={purchaseOrders}
+          inventory={inventory}
+          suppliers={suppliers}
+          updatePurchaseOrder={updatePurchaseOrder}
+          onClose={() => setPoLineDetailOrder(null)}
         />
       )}
 
@@ -3206,7 +3326,9 @@ export default function PurchaseOrders() {
                 updatedOrder = await attachBarcodeToPurchaseOrderIfNeeded(
                   updatedOrder,
                   updatePurchaseOrder,
-                  inventory
+                  inventory,
+                  undefined,
+                  purchaseOrders
                 );
               }
 

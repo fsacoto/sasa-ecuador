@@ -581,10 +581,17 @@ export default function BulkImportModal({
     // Add all orders in bulk, then attach barcodes (reuse inventory URL or generate)
     try {
       const newOrders = await addPurchaseOrdersBulk(ordersToAdd);
+      const barcodeContext: PurchaseOrder[] = [...purchaseOrders];
       for (const o of newOrders) {
-        if (o.sku) {
-          await attachBarcodeToPurchaseOrderIfNeeded(o, updatePurchaseOrder, inventory);
-        }
+        if (!o.sku) continue;
+        const withBarcode = await attachBarcodeToPurchaseOrderIfNeeded(
+          o,
+          updatePurchaseOrder,
+          inventory,
+          undefined,
+          barcodeContext
+        );
+        barcodeContext.push(withBarcode);
       }
     } catch (error) {
       console.error('Error during bulk import or barcode setup:', error);
