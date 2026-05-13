@@ -61,6 +61,17 @@ const translateMaterialName = (materialName: string): string => {
   return materialName.toUpperCase();
 };
 
+/** Reemplaza `-` y espacios para que el SKU no parta en el guion ni en espacios. */
+function formatSkuNonBreaking(sku: string): string {
+  return sku.replace(/-/g, '\u2011').replace(/ /g, '\u00A0');
+}
+
+/** Fondo catálogo (página). */
+const CATALOG_PAGE_BG = '#FFFFFF';
+/** Pastilla “línea” (material): rosa marca más intenso que el fondo. */
+const CATALOG_LINE_PILL_BG = '#E8879A';
+const CATALOG_LINE_PILL_TEXT = '#2D141C';
+
 // A4 Landscape dimensions at 72 DPI: 842 × 595 px
 // Margin: 32px on all sides
 // Available content area: 778 × 531 px (842-64 × 595-64)
@@ -73,7 +84,7 @@ const translateMaterialName = (materialName: string): string => {
 
 const styles = StyleSheet.create({
   page: {
-    backgroundColor: '#FAF7F2',
+    backgroundColor: CATALOG_PAGE_BG,
     padding: 32,
     paddingTop: 32,
     paddingBottom: 32,
@@ -149,48 +160,47 @@ const styles = StyleSheet.create({
     display: 'flex', // Use flex for react-pdf compatibility
     alignItems: 'center',
     justifyContent: 'center',
-    // NO width property - let it grow naturally based on content
-    // NO maxWidth - completely removed
-    // NO minWidth - completely removed
-    // NO flexBasis - completely removed
-    backgroundColor: '#E6D089', // Always use same gold color
-    flexShrink: 0, // Prevent shrinking
-    flexGrow: 0, // Prevent growing beyond content
-    flexWrap: 'nowrap', // Prevent wrapping
+    backgroundColor: CATALOG_LINE_PILL_BG,
+    flexShrink: 0,
+    flexGrow: 0,
+    flexWrap: 'nowrap',
+    maxWidth: '100%',
   },
   materialBadgeText: {
-    fontSize: 9, // 9px for shorter text like "GOLD PLATED"
-    fontWeight: 600, // Semibold
+    fontSize: 10,
+    fontWeight: 'normal',
     textTransform: 'uppercase',
-    letterSpacing: 0.12, // Reduced letter spacing for tighter fit
-    fontFamily: 'Helvetica', // Clean sans-serif
-    color: '#5F4A00', // Always use same text color
-    // NO width property - let text determine badge width
-    // NO maxWidth - completely removed
-    flexShrink: 0, // Prevent text from shrinking
-    flexGrow: 0, // Prevent text from growing beyond content
-    // Note: react-pdf doesn't support word-break, overflow-wrap, or hyphens
-    //  on Text component handles single-line enforcement
+    letterSpacing: 0.1,
+    fontFamily: 'Helvetica',
+    color: CATALOG_LINE_PILL_TEXT,
+    flexShrink: 0,
+    flexGrow: 0,
   },
   materialBadgeTextSmall: {
-    fontSize: 8, // 8px for longer text like "STERLING SILVER"
-    fontWeight: 600, // Semibold
+    fontSize: 8,
+    fontWeight: 'normal',
     textTransform: 'uppercase',
-    letterSpacing: 0.08, // Minimal letter spacing for maximum fit
-    fontFamily: 'Helvetica', // Clean sans-serif
-    color: '#5F4A00', // Always use same text color
-    // NO width property - let text determine badge width
-    // NO maxWidth - completely removed
-    flexShrink: 0, // Prevent text from shrinking
-    flexGrow: 0, // Prevent text from growing beyond content
-    // Note: react-pdf doesn't support word-break, overflow-wrap, or hyphens
-    //  on Text component handles single-line enforcement
+    letterSpacing: 0.06,
+    fontFamily: 'Helvetica',
+    color: CATALOG_LINE_PILL_TEXT,
+    flexShrink: 0,
+    flexGrow: 0,
+  },
+  materialBadgeTextTiny: {
+    fontSize: 7,
+    fontWeight: 'normal',
+    textTransform: 'uppercase',
+    letterSpacing: 0.04,
+    fontFamily: 'Helvetica',
+    color: CATALOG_LINE_PILL_TEXT,
+    flexShrink: 0,
+    flexGrow: 0,
   },
   productName: {
     fontSize: 15, // 14-16px range (using 15px for balance)
     fontWeight: 'medium',
     color: '#333333',
-    marginBottom: 8, // 8px spacing below product name (name → SKU)
+    marginBottom: 4,
     textTransform: 'uppercase',
     lineHeight: 1.2, // Slightly more breathing room
     letterSpacing: 0.15, // +1% letter spacing (15px * 0.01 = 0.15)
@@ -201,18 +211,45 @@ const styles = StyleSheet.create({
     whiteSpace: 'nowrap', // Never wrap to second line
     textOverflow: 'ellipsis', // Truncate if too long (after font reduction)
   },
+  descriptionWrap: {
+    maxHeight: 30,
+    overflow: 'hidden',
+    width: '100%',
+    marginBottom: 4,
+  },
+  productDescription: {
+    fontSize: 7,
+    fontWeight: 'normal',
+    color: '#444444',
+    lineHeight: 1.2,
+    fontFamily: 'Helvetica',
+    maxWidth: '100%',
+  },
   sku: {
-    fontSize: 11, // 11-12px range (using 11px)
+    fontSize: 6,
     fontWeight: 'normal',
     color: '#333333',
-    marginBottom: 8, // 8px spacing from SKU to price placeholder
+    marginBottom: 6,
     fontFamily: 'Helvetica',
-    letterSpacing: 0.22, // +2% letter spacing (11px * 0.02 = 0.22)
-    lineHeight: 1.1, // Tight and compact
+    letterSpacing: 0.04,
+    lineHeight: 1,
     maxWidth: '100%',
     overflow: 'hidden',
-    whiteSpace: 'nowrap', // Never wrap to second line
-    textOverflow: 'ellipsis', // Truncate if too long (after font reduction)
+    whiteSpace: 'nowrap',
+    textOverflow: 'ellipsis',
+  },
+  categoryLine: {
+    fontSize: 10,
+    fontWeight: 'normal',
+    color: '#333333',
+    marginBottom: 8,
+    fontFamily: 'Helvetica',
+    letterSpacing: 0.12,
+    lineHeight: 1.1,
+    maxWidth: '100%',
+    overflow: 'hidden',
+    whiteSpace: 'nowrap',
+    textOverflow: 'ellipsis',
   },
   pricePlaceholder: {
     backgroundColor: '#F7F7F7',
@@ -238,63 +275,82 @@ const styles = StyleSheet.create({
   },
 });
 
-// Get material badge style based on line type
-const getMaterialBadgeStyle = (line: string | undefined) => {
-  if (!line) {
-    return {
-      backgroundColor: '#E5E5E5',
-      color: '#555555',
-    };
-  }
-
-  const lineLower = line.toLowerCase();
-  
-  if (lineLower.includes('gold plated') || lineLower.includes('oro laminado')) {
-    return {
-      backgroundColor: '#E6D089',
-      color: '#6A5500',
-    };
-  } else if (
-    lineLower.includes('gold filled') ||
-    lineLower.includes('oro relleno') ||
-    lineLower.includes('bañado en oro') ||
-    lineLower.includes('banado en oro') ||
-    lineLower.includes('enchapado en oro')
-  ) {
-    return {
-      backgroundColor: '#F8D87A',
-      color: '#5F4A00',
-    };
-  } else if (lineLower.includes('sterling silver') || lineLower.includes('plata')) {
-    return {
-      backgroundColor: '#E5E5E5',
-      color: '#555555',
-    };
-  }
-  
-  // Default
-  return {
-    backgroundColor: '#E5E5E5',
-    color: '#555555',
-  };
+/** Categoría u otros textos en panel estrecho: una línea, tipografía adaptativa. */
+const getNarrowSingleLineStyles = (
+  text: string,
+  base: typeof styles.categoryLine
+): (typeof styles.categoryLine | { fontSize: number; letterSpacing: number })[] => {
+  const len = text.length;
+  if (len <= 15) return [base];
+  if (len <= 22) return [base, { fontSize: 9, letterSpacing: 0.08 }];
+  if (len <= 30) return [base, { fontSize: 8, letterSpacing: 0.04 }];
+  return [base, { fontSize: 7, letterSpacing: 0.02 }];
 };
 
-// Determine badge text style based on text length (auto-shrink logic, no ellipsis)
+/** SKU muy pequeño; si sigue largo, baja aún más el cuerpo (siempre una línea). */
+const getSkuSingleLineStyles = (
+  text: string
+): (typeof styles.sku | { fontSize: number; letterSpacing: number })[] => {
+  const len = text.length;
+  if (len <= 26) return [styles.sku];
+  if (len <= 40) return [styles.sku, { fontSize: 5, letterSpacing: 0.02 }];
+  return [styles.sku, { fontSize: 4, letterSpacing: 0.01 }];
+};
+
 const getBadgeTextStyle = (text: string) => {
   const textLength = text.length;
-  // Badge can expand horizontally with no width limits
-  // Padding: 8px each side = 16px total (reduced for better fit)
-  // Character width estimates: 9px font ≈ 4-5px per char, 8px ≈ 3-4px
-  // "GOLD PLATED" = 11 chars, "GOLD FILLED" = 11 chars, "STERLING SILVER" = 15 chars
-  
-  if (textLength <= 12) {
-    // Shorter text like "GOLD PLATED" - use 9px (badge expands to fit)
-    return styles.materialBadgeText;
-  } else {
-    // Longer text (13+ chars) including "STERLING SILVER" (15 chars) - use 8px
-    return styles.materialBadgeTextSmall;
-  }
+  if (textLength <= 10) return styles.materialBadgeText;
+  if (textLength <= 16) return styles.materialBadgeTextSmall;
+  return styles.materialBadgeTextTiny;
 };
+
+function CatalogProductTextColumn({ product }: { product: InventoryItem }) {
+  const t = (key: string) => translate(key);
+  const skuDisplay = product.sku || t('inventory.catalog.noSku');
+  const skuPdf = formatSkuNonBreaking(skuDisplay);
+  const descriptionTrim = (product.description || '').trim();
+  const categoryTrim = (product.category || '').trim();
+  const categoryDisplay = categoryTrim ? categoryTrim.toUpperCase() : '';
+  const lineLabel = product.line ? translateMaterialName(product.line) : '';
+  const skuTextStyles = getSkuSingleLineStyles(skuDisplay);
+  const categoryTextStyles = categoryDisplay
+    ? getNarrowSingleLineStyles(categoryDisplay, styles.categoryLine)
+    : [];
+
+  return (
+    <View style={styles.textPanel}>
+      {lineLabel ? (
+        <View style={styles.materialBadge}>
+          <Text style={getBadgeTextStyle(lineLabel)} wrap={false}>
+            {lineLabel}
+          </Text>
+        </View>
+      ) : null}
+
+      {categoryDisplay ? (
+        <Text style={categoryTextStyles} wrap={false}>
+          {categoryDisplay}
+        </Text>
+      ) : null}
+
+      <Text style={styles.productName} wrap={false}>
+        {product.name ? product.name.toUpperCase() : t('inventory.catalog.noName')}
+      </Text>
+
+      {descriptionTrim ? (
+        <View style={styles.descriptionWrap}>
+          <Text style={styles.productDescription}>{descriptionTrim}</Text>
+        </View>
+      ) : null}
+
+      <Text style={skuTextStyles} wrap={false}>
+        {skuPdf}
+      </Text>
+
+      <View style={styles.pricePlaceholder} />
+    </View>
+  );
+}
 
 interface ProductCatalogPDFProps {
   products: InventoryItem[];
@@ -312,6 +368,8 @@ export default function ProductCatalogPDF({
   orientation = 'landscape',
 }: ProductCatalogPDFProps) {
   void _itemsPerPage;
+  void catalogTitle;
+  void includeStock;
   const t = (key: string) => translate(key);
   // Handle empty products
   if (!products || products.length === 0) {
@@ -372,40 +430,7 @@ export default function ProductCatalogPDF({
                         )}
                       </View>
 
-                      {/* RIGHT PANEL: Textual Information (30% width) */}
-                      <View style={styles.textPanel}>
-                        {/* 1. Material Badge - Single line, no ellipsis, auto-expand, always gold color */}
-                        {product.line && (() => {
-                          const badgeText = translateMaterialName(product.line);
-                          const textStyle = getBadgeTextStyle(badgeText);
-                          return (
-                            <View style={styles.materialBadge}>
-                              <Text 
-                                style={textStyle}
-                              >
-                                {badgeText}
-                              </Text>
-                            </View>
-                          );
-                        })()}
-
-                        {/* 2. Product Name - Single line only */}
-                        <Text 
-                          style={styles.productName}
-                        >
-                          {product.name ? product.name.toUpperCase() : t('inventory.catalog.noName')}
-                        </Text>
-
-                        {/* 3. SKU Code - Single line only */}
-                        <Text 
-                          style={styles.sku}
-                        >
-                          {product.sku || t('inventory.catalog.noSku')}
-                        </Text>
-
-                        {/* 4. Price Placeholder (empty space) */}
-                        <View style={styles.pricePlaceholder} />
-                      </View>
+                      <CatalogProductTextColumn product={product} />
                     </View>
                   );
                 })}
@@ -433,40 +458,7 @@ export default function ProductCatalogPDF({
                         )}
                       </View>
 
-                      {/* RIGHT PANEL: Textual Information (30% width) */}
-                      <View style={styles.textPanel}>
-                        {/* 1. Material Badge - Single line, no ellipsis, auto-expand, always gold color */}
-                        {product.line && (() => {
-                          const badgeText = translateMaterialName(product.line);
-                          const textStyle = getBadgeTextStyle(badgeText);
-                          return (
-                            <View style={styles.materialBadge}>
-                              <Text 
-                                style={textStyle}
-                              >
-                                {badgeText}
-                              </Text>
-                            </View>
-                          );
-                        })()}
-
-                        {/* 2. Product Name - Single line only */}
-                        <Text 
-                          style={styles.productName}
-                        >
-                          {product.name ? product.name.toUpperCase() : t('inventory.catalog.noName')}
-                        </Text>
-
-                        {/* 3. SKU Code - Single line only */}
-                        <Text 
-                          style={styles.sku}
-                        >
-                          {product.sku || t('inventory.catalog.noSku')}
-                        </Text>
-
-                        {/* 4. Price Placeholder (empty space) */}
-                        <View style={styles.pricePlaceholder} />
-                      </View>
+                      <CatalogProductTextColumn product={product} />
                     </View>
                   );
                 })}
