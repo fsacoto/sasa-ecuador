@@ -1,5 +1,51 @@
 // Convert WebP base64 images to JPEG for PDF compatibility
 // @react-pdf/renderer has limited WebP support, so we convert to JPEG
+// SVG barcodes (Storage / data URLs) must be rasterized: react-pdf Image does not render SVG reliably.
+
+export async function convertSvgDataUrlToPng(dataUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    img.onload = () => {
+      let w = img.naturalWidth || img.width;
+      let h = img.naturalHeight || img.height;
+      if (!w || !h) {
+        w = 400;
+        h = 120;
+      }
+      w = Math.min(Math.max(w, 1), 1200);
+      h = Math.min(Math.max(h, 1), 600);
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Could not get canvas context'));
+        return;
+      }
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0);
+      try {
+        resolve(canvas.toDataURL('image/png', 1));
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error(String(e)));
+      }
+    };
+    img.onerror = () => reject(new Error('Failed to load SVG for PDF'));
+    img.src = dataUrl;
+  });
+}
+
+function looksLikeSvg(url: string, mimeHint?: string): boolean {
+  const u = url.toLowerCase();
+  const m = (mimeHint || '').toLowerCase();
+  return (
+    m === 'image/svg+xml' ||
+    u.includes('image/svg+xml') ||
+    u.includes('data:image/svg') ||
+    (u.startsWith('http') && u.includes('.svg'))
+  );
+}
 
 export async function convertWebPToJPEG(base64Data: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -44,6 +90,14 @@ export async function convertImageForPDF(imageUrl: string | undefined): Promise<
   
   // If it's already a base64 data URL, handle it
   if (imageUrl.startsWith('data:')) {
+    if (looksLikeSvg(imageUrl)) {
+      try {
+        return await convertSvgDataUrlToPng(imageUrl);
+      } catch (error) {
+        console.error('Failed to convert SVG to PNG for PDF:', error);
+        return null;
+      }
+    }
     // If it's WebP, convert to JPEG
     if (imageUrl.includes('image/webp')) {
       try {
@@ -78,6 +132,15 @@ export async function convertImageForPDF(imageUrl: string | undefined): Promise<
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64String = reader.result as string;
+        if (looksLikeSvg(imageUrl, blob.type) || looksLikeSvg(base64String, blob.type)) {
+          convertSvgDataUrlToPng(base64String)
+            .then(resolve)
+            .catch((err) => {
+              console.warn('Failed to convert fetched SVG to PNG for PDF:', err);
+              reject(err instanceof Error ? err : new Error(String(err)));
+            });
+          return;
+        }
         // If it's WebP, convert to JPEG
         if (blob.type === 'image/webp' || base64String.includes('image/webp')) {
           convertWebPToJPEG(base64String)

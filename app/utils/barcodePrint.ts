@@ -35,10 +35,12 @@ export function findInventoryForPurchaseOrder(
 ): InventoryItem | undefined {
   const linked = inventory.find((i) => i.linkedPurchaseOrders?.includes(order.id));
   if (linked) return linked;
-  if (order.sku) {
-    return inventory.find((i) => i.sku === order.sku);
-  }
-  return undefined;
+  const want = String(order.sku ?? '').trim();
+  if (!want) return undefined;
+  const exact = inventory.find((i) => String(i.sku ?? '').trim() === want);
+  if (exact) return exact;
+  const lower = want.toLowerCase();
+  return inventory.find((i) => String(i.sku ?? '').trim().toLowerCase() === lower);
 }
 
 export function resolveBarcodeUrlForPrint(

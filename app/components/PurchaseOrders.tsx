@@ -3421,21 +3421,34 @@ export default function PurchaseOrders() {
                   if (!rawUrl) {
                     return item;
                   }
-                  const convertedBarcode = await convertImageForPDF(rawUrl);
-                  if (convertedBarcode) {
-                    return {
-                      ...item,
-                      inventoryItem: {
-                        ...item.inventoryItem,
-                        barcode: convertedBarcode,
-                      },
-                    };
+                  let convertedBarcode: string | null = null;
+                  try {
+                    convertedBarcode = await convertImageForPDF(rawUrl);
+                  } catch (e) {
+                    console.warn('Barcode image convert for PDF:', rawUrl.slice(0, 80), e);
                   }
+                  const svgish =
+                    rawUrl.includes('image/svg+xml') ||
+                    rawUrl.toLowerCase().includes('.svg') ||
+                    rawUrl.includes('data:image/svg');
+                  if (!convertedBarcode && svgish && item.order?.sku) {
+                    try {
+                      const { generateBarcodeFromSKU, isValidBarcodeInput } = await import(
+                        '../utils/barcodeGenerator'
+                      );
+                      if (isValidBarcodeInput(item.order.sku)) {
+                        convertedBarcode = generateBarcodeFromSKU(item.order.sku);
+                      }
+                    } catch (e) {
+                      console.warn('Fallback PNG barcode from SKU failed:', e);
+                    }
+                  }
+                  const barcode = (convertedBarcode || rawUrl).trim();
                   return {
                     ...item,
                     inventoryItem: {
                       ...item.inventoryItem,
-                      barcode: rawUrl,
+                      barcode,
                     },
                   };
                 })

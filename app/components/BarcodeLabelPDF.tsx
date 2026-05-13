@@ -37,7 +37,7 @@ const styles = StyleSheet.create({
     minHeight: 6,
   },
   sku: {
-    fontSize: 6,
+    fontSize: 3,
     fontWeight: 'bold',
     color: '#000000',
     fontFamily: 'Helvetica-Bold',
@@ -94,17 +94,19 @@ export default function BarcodeLabelPDF({ items }: BarcodeLabelPDFProps) {
     }
   });
 
+  const printable = expandedItems.filter((item) => {
+    const src = (item.inventoryItem?.barcode || item.order?.barcode || '').trim();
+    return src.length > 0;
+  });
+
   return (
     <Document>
-      {expandedItems.map((item, index) => {
+      {printable.map((item, index) => {
         const barcodeSrc = (
           item.inventoryItem?.barcode ||
           item.order?.barcode ||
           ''
         ).trim();
-        if (!barcodeSrc) {
-          return null;
-        }
 
         const { order, inventoryItem } = item;
         const name = order?.description || inventoryItem.name || inventoryItem.description || '';
