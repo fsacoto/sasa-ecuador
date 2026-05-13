@@ -199,8 +199,8 @@ export async function generatePOVerificationPDF({
     // Use the headerRowHeight calculated above (includes padding)
     let x = margin;
     
-    // Darker background for header
-    doc.setFillColor(230, 230, 230);
+    // Fondo cabecera: gris un poco más oscuro que las filas (245) para jerarquía clara
+    doc.setFillColor(212, 212, 212);
     doc.rect(x, startY, usableWidth, headerRowHeight, 'F');
     
     doc.setFontSize(10);
@@ -286,9 +286,9 @@ export async function generatePOVerificationPDF({
 
   // Draw table row with dynamic height
   const drawTableRow = (order: PurchaseOrder, rowY: number, globalRowIndex: number, rowHeight: number, isEven: boolean): number => {
-    // Alternating row colors
+    // Filas alternas: gris muy claro (cabecera ~212 — más oscuro)
     if (isEven) {
-      doc.setFillColor(250, 247, 229); // #FAF7E5
+      doc.setFillColor(245, 245, 245);
     } else {
       doc.setFillColor(255, 255, 255); // White
     }
