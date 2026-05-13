@@ -906,6 +906,127 @@ export default function InvoiceTracking() {
     }
   };
 
+  const activeFiltersCount = [
+    filters.clientId,
+    filters.paymentStatus,
+    filters.deliveryStatus,
+    filters.filterMonth,
+    filters.dateFrom,
+    filters.dateTo,
+  ].filter(Boolean).length;
+
+  const groupDisplayLabel = (groupKey: string) => {
+    if (groupByField === 'month') {
+      return `${t('salesNotes.monthLabel')}: ${formatTrackingMonthGroupLabel(groupKey)}`;
+    }
+    if (groupByField === 'clientName') return groupKey;
+    if (groupByField === 'paymentStatus') {
+      if (groupKey === 'Paid') return t('invoiceTracking.paid');
+      if (groupKey === 'Partially Paid') return t('invoiceTracking.partial');
+      return t('invoiceTracking.unpaid');
+    }
+    if (groupByField === 'deliveryStatus') {
+      if (groupKey === 'Delivered') return t('invoiceTracking.delivered');
+      if (groupKey === 'Partially Delivered') return t('invoiceTracking.partiallyDelivered');
+      if (groupKey === 'Canceled') return t('invoiceTracking.canceled');
+      return t('invoiceTracking.pending');
+    }
+    return groupKey;
+  };
+
+  const renderInvoiceRow = (invoice: SalesInvoice) => (
+    <tr
+      key={invoice.id}
+      id={`invoice-tracking-row-${invoice.id}`}
+      className={`transition-[background-color,box-shadow] duration-500 ${
+        highlightFocusRowId === invoice.id
+          ? 'bg-gray-100 shadow-[inset_0_0_0_2px_rgba(107,114,128,0.55)] hover:bg-gray-100'
+          : 'hover:bg-gray-50'
+      }`}
+    >
+      <td className="px-6 py-4 whitespace-nowrap">
+        <div
+          className="text-xl font-bold text-[#515151] cursor-pointer hover:text-[#000000] transition-colors"
+          onClick={() => {
+            setDetailsInvoice(invoice);
+            setShowInvoiceDetailsModal(true);
+          }}
+          title={t('invoiceTracking.clickToViewDetails')}
+        >
+          {invoice.invoiceNumber}
+        </div>
+        {invoice.sourceConsignmentId && (
+          <div className="mt-1 text-xs font-medium text-amber-800">
+            {t('consignments.sourceConsignmentTag') || 'Consignación'}: {invoice.sourceConsignmentId}
+          </div>
+        )}
+      </td>
+      <td className="px-6 py-4">
+        <div className="text-sm font-medium text-gray-900">{invoice.clientName}</div>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap">
+        <div className="text-sm text-gray-700">{formatDateDMY(invoice.date)}</div>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap text-right">
+        <div className="text-lg font-bold text-[#515151]">${invoice.grandTotal.toFixed(2)}</div>
+        <div className="text-xs text-gray-500">{invoice.currency}</div>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap">
+        <select
+          value={invoice.paymentStatus}
+          onChange={(e) => handleUpdatePayment(invoice, e.target.value as SalesInvoice['paymentStatus'])}
+          className="rounded border border-gray-300 px-3 py-1 text-sm"
+        >
+          <option value="Unpaid">🔴 {t('invoiceTracking.unpaid')}</option>
+          <option value="Partially Paid">🟡 {t('invoiceTracking.partial')}</option>
+          <option value="Paid">🟢 {t('invoiceTracking.paid')}</option>
+        </select>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap">
+        <select
+          value={invoice.deliveryStatus}
+          onChange={(e) => handleUpdateDelivery(invoice, e.target.value as SalesInvoice['deliveryStatus'])}
+          className="rounded border border-gray-300 px-3 py-1 text-sm"
+        >
+          <option value="Pending">⏳ {t('invoiceTracking.pending')}</option>
+          <option value="Partially Delivered">📦 {t('invoiceTracking.partiallyDelivered')}</option>
+          <option value="Delivered">✅ {t('invoiceTracking.delivered')}</option>
+          <option value="Canceled">❌ {t('invoiceTracking.canceled')}</option>
+        </select>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap text-right">
+        <div className="text-sm font-medium text-green-600">${invoice.amountPaid.toFixed(2)}</div>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap text-right">
+        <div className="text-sm font-medium text-red-600">${invoice.remainingBalance.toFixed(2)}</div>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap text-center">
+        <div className="inline-flex justify-center" data-invoice-actions-root>
+          <button
+            type="button"
+            onClick={(e) => {
+              const opening = invoiceActionsMenuId !== invoice.id;
+              if (opening) {
+                invoiceActionsButtonRef.current = e.currentTarget;
+                setInvoiceActionsMenuId(invoice.id);
+              } else {
+                closeInvoiceActionsMenu();
+              }
+            }}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+            aria-expanded={invoiceActionsMenuId === invoice.id}
+            aria-haspopup="menu"
+          >
+            {t('invoiceTracking.actions')}
+            <svg className="h-3.5 w-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+
   const invoiceForActionsMenu = invoiceActionsMenuId
     ? invoicesSearchFiltered.find((inv) => inv.id === invoiceActionsMenuId)
     : undefined;
@@ -943,85 +1064,251 @@ export default function InvoiceTracking() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('invoiceTracking.filter')}</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">{t('salesNotes.filterByMonth')}</label>
-            <MonthYearSelectEs
-              value={filters.filterMonth}
-              onChange={(filterMonth) => setFilters({ ...filters, filterMonth })}
-              selectClassName="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-[#515151]"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.dateFrom')}</label>
-            <input
-              type="date"
-              value={filters.dateFrom}
-              onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.dateTo')}</label>
-            <input
-              type="date"
-              value={filters.dateTo}
-              onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.customer')}</label>
-            <select
-              value={filters.clientId}
-              onChange={(e) => setFilters({ ...filters, clientId: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+      <div ref={toolbarRef} className="space-y-4">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setShowFiltersPanel((v) => !v);
+                setShowGroupByPanel(false);
+                setShowSearchPanel(false);
+              }}
+              className={`flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm transition-all duration-200 hover:bg-gray-50 hover:shadow-md ${
+                showFiltersPanel ? 'border-[#515151] bg-[#515151] text-white' : ''
+              }`}
             >
-              <option value="">{t('invoiceTracking.allCustomers')}</option>
-              {uniqueClients.map((client) => (
-                <option key={client.id} value={client.id}>
-                  {client.name}
-                </option>
-              ))}
-            </select>
+              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                />
+              </svg>
+              <span className="font-medium">{t('inventory.filters')}</span>
+              {activeFiltersCount > 0 && (
+                <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800">
+                  {activeFiltersCount}
+                </span>
+              )}
+            </button>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.paymentStatus')}</label>
-            <select
-              value={filters.paymentStatus}
-              onChange={(e) => setFilters({ ...filters, paymentStatus: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setShowGroupByPanel((v) => !v);
+                setShowFiltersPanel(false);
+                setShowSearchPanel(false);
+              }}
+              className={`flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm transition-all duration-200 hover:bg-gray-50 hover:shadow-md ${
+                groupByField ? 'border-[#515151] bg-[#515151] text-white' : ''
+              }`}
             >
-              <option value="">{t('invoiceTracking.all')}</option>
-              <option value="Unpaid">{t('invoiceTracking.unpaid')}</option>
-              <option value="Partially Paid">{t('invoiceTracking.partial')}</option>
-              <option value="Paid">{t('invoiceTracking.paid')}</option>
-            </select>
+              <GroupByLayersIcon />
+              <span className="font-medium">{t('purchaseOrders.groupBy')}</span>
+              {groupByField ? (
+                <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800">1</span>
+              ) : null}
+            </button>
+            {showGroupByPanel && (
+              <div className="absolute right-0 top-full z-20 mt-2 w-64 rounded-xl border border-gray-200 bg-white shadow-lg">
+                <div className="p-4">
+                  <div className="mb-3 text-sm font-medium text-gray-700">{t('purchaseOrders.groupByField')}</div>
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGroupByField('');
+                        setShowGroupByPanel(false);
+                      }}
+                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                        !groupByField ? 'bg-[#515151] text-white' : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      {t('purchaseOrders.noGrouping')}
+                    </button>
+                    {(
+                      [
+                        ['month', t('salesNotes.groupMonth')] as const,
+                        ['clientName', t('salesNotes.groupClient')] as const,
+                        ['paymentStatus', t('salesNotes.groupPayment')] as const,
+                        ['deliveryStatus', t('salesNotes.groupDelivery')] as const,
+                      ] as const
+                    ).map(([key, label]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => {
+                          setGroupByField(key);
+                          setShowGroupByPanel(false);
+                        }}
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                          groupByField === key ? 'bg-[#515151] text-white' : 'text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <GroupByLayersIcon />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.deliveryStatus')}</label>
-            <select
-              value={filters.deliveryStatus}
-              onChange={(e) => setFilters({ ...filters, deliveryStatus: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setShowSearchPanel((v) => !v);
+                setShowFiltersPanel(false);
+                setShowGroupByPanel(false);
+              }}
+              className={`rounded-lg border border-gray-300 p-2 text-gray-600 transition-all duration-200 hover:bg-gray-50 hover:shadow-md ${
+                showSearchPanel ? 'border-[#515151] bg-[#515151] text-white' : ''
+              }`}
+              aria-label={t('inventory.search')}
+              title={t('inventory.search')}
             >
-              <option value="">{t('invoiceTracking.all')}</option>
-              <option value="Pending">{t('invoiceTracking.pending')}</option>
-              <option value="Partially Delivered">{t('invoiceTracking.partiallyDelivered')}</option>
-              <option value="Delivered">{t('invoiceTracking.delivered')}</option>
-              <option value="Canceled">{t('invoiceTracking.canceled')}</option>
-            </select>
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </button>
+            {showSearchPanel && (
+              <div className="absolute right-0 top-full z-20 mt-2 w-80 rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
+                <div className="mb-3 text-sm font-medium text-gray-700">{t('inventory.search')}</div>
+                <div className="relative">
+                  <input
+                    type="search"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={t('invoiceTracking.searchPlaceholder')}
+                    className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 text-sm focus:border-transparent focus:ring-2 focus:ring-[#515151]"
+                  />
+                  <svg
+                    className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+              </div>
+            )}
           </div>
         </div>
+
+        {showFiltersPanel && (
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+            <div className="border-t border-gray-200 bg-gray-50 p-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">{t('salesNotes.filterByMonth')}</label>
+                  <MonthYearSelectEs
+                    value={filters.filterMonth}
+                    onChange={(filterMonth) => setFilters({ ...filters, filterMonth })}
+                    selectClassName="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-[#515151]"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">{t('invoiceTracking.dateFrom')}</label>
+                  <input
+                    type="date"
+                    lang="es"
+                    value={filters.dateFrom}
+                    onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">{t('invoiceTracking.dateTo')}</label>
+                  <input
+                    type="date"
+                    lang="es"
+                    value={filters.dateTo}
+                    onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">{t('invoiceTracking.customer')}</label>
+                  <select
+                    value={filters.clientId}
+                    onChange={(e) => setFilters({ ...filters, clientId: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                  >
+                    <option value="">{t('invoiceTracking.allCustomers')}</option>
+                    {uniqueClients.map((client) => (
+                      <option key={client.id} value={client.id}>
+                        {client.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">{t('invoiceTracking.paymentStatus')}</label>
+                  <select
+                    value={filters.paymentStatus}
+                    onChange={(e) => setFilters({ ...filters, paymentStatus: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                  >
+                    <option value="">{t('invoiceTracking.all')}</option>
+                    <option value="Unpaid">{t('invoiceTracking.unpaid')}</option>
+                    <option value="Partially Paid">{t('invoiceTracking.partial')}</option>
+                    <option value="Paid">{t('invoiceTracking.paid')}</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">{t('invoiceTracking.deliveryStatus')}</label>
+                  <select
+                    value={filters.deliveryStatus}
+                    onChange={(e) => setFilters({ ...filters, deliveryStatus: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                  >
+                    <option value="">{t('invoiceTracking.all')}</option>
+                    <option value="Pending">{t('invoiceTracking.pending')}</option>
+                    <option value="Partially Delivered">{t('invoiceTracking.partiallyDelivered')}</option>
+                    <option value="Delivered">{t('invoiceTracking.delivered')}</option>
+                    <option value="Canceled">{t('invoiceTracking.canceled')}</option>
+                  </select>
+                </div>
+              </div>
+              {activeFiltersCount > 0 && (
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFilters({
+                        clientId: '',
+                        paymentStatus: '',
+                        deliveryStatus: '',
+                        filterMonth: '',
+                        dateFrom: '',
+                        dateTo: '',
+                      })
+                    }
+                    className="text-sm font-medium text-[#515151] hover:text-black"
+                  >
+                    {t('invoiceTracking.clearFilters')}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Invoices List */}
       {loading ? (
         <div className="text-center py-12">{t('invoiceTracking.loadingInvoices')}</div>
-      ) : invoices.length === 0 ? (
+      ) : sortedInvoices.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
           <p className="text-gray-500">{t('invoiceTracking.noInvoices')}</p>
         </div>
@@ -1109,99 +1396,30 @@ export default function InvoiceTracking() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {sortedInvoices.map((invoice) => (
-                <tr
-                  key={invoice.id}
-                  id={`invoice-tracking-row-${invoice.id}`}
-                  className={`transition-[background-color,box-shadow] duration-500 ${
-                    highlightFocusRowId === invoice.id
-                      ? 'bg-gray-100 shadow-[inset_0_0_0_2px_rgba(107,114,128,0.55)] hover:bg-gray-100'
-                      : 'hover:bg-gray-50'
-                  }`}
-                >
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div 
-                      className="text-xl font-bold text-[#515151] cursor-pointer hover:text-[#000000] transition-colors" 
-                      onClick={() => {
-                        setDetailsInvoice(invoice);
-                        setShowInvoiceDetailsModal(true);
-                      }}
-                      title={t('invoiceTracking.clickToViewDetails')}
-                    >
-                      {invoice.invoiceNumber}
-                    </div>
-                    {invoice.sourceConsignmentId && (
-                      <div className="mt-1 text-xs text-amber-800 font-medium">
-                        {t('consignments.sourceConsignmentTag') || 'Consignación'}:{' '}
-                        {invoice.sourceConsignmentId}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm font-medium text-gray-900">{invoice.clientName}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-700">{formatDateDMY(invoice.date)}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <div className="text-lg font-bold text-[#515151]">${invoice.grandTotal.toFixed(2)}</div>
-                    <div className="text-xs text-gray-500">{invoice.currency}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <select
-                      value={invoice.paymentStatus}
-                      onChange={(e) => handleUpdatePayment(invoice, e.target.value as SalesInvoice['paymentStatus'])}
-                      className="px-3 py-1 border border-gray-300 rounded text-sm"
-                    >
-                      <option value="Unpaid">🔴 {t('invoiceTracking.unpaid')}</option>
-                      <option value="Partially Paid">🟡 {t('invoiceTracking.partial')}</option>
-                      <option value="Paid">🟢 {t('invoiceTracking.paid')}</option>
-                    </select>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <select
-                      value={invoice.deliveryStatus}
-                      onChange={(e) => handleUpdateDelivery(invoice, e.target.value as SalesInvoice['deliveryStatus'])}
-                      className="px-3 py-1 border border-gray-300 rounded text-sm"
-                    >
-                      <option value="Pending">⏳ {t('invoiceTracking.pending')}</option>
-                      <option value="Partially Delivered">📦 {t('invoiceTracking.partiallyDelivered')}</option>
-                      <option value="Delivered">✅ {t('invoiceTracking.delivered')}</option>
-                      <option value="Canceled">❌ {t('invoiceTracking.canceled')}</option>
-                    </select>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <div className="text-sm font-medium text-green-600">${invoice.amountPaid.toFixed(2)}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <div className="text-sm font-medium text-red-600">${invoice.remainingBalance.toFixed(2)}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <div className="inline-flex justify-center" data-invoice-actions-root>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          const opening = invoiceActionsMenuId !== invoice.id;
-                          if (opening) {
-                            invoiceActionsButtonRef.current = e.currentTarget;
-                            setInvoiceActionsMenuId(invoice.id);
-                          } else {
-                            closeInvoiceActionsMenu();
-                          }
-                        }}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
-                        aria-expanded={invoiceActionsMenuId === invoice.id}
-                        aria-haspopup="menu"
+              {!groupByField
+                ? sortedInvoices.map((invoice) => renderInvoiceRow(invoice))
+                : sortedGroupEntries.map(([groupKey, items]) => (
+                    <Fragment key={groupKey}>
+                      <tr
+                        className="cursor-pointer bg-gray-50 transition-colors hover:bg-gray-100"
+                        onClick={() =>
+                          setExpandedGroups((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(groupKey)) next.delete(groupKey);
+                            else next.add(groupKey);
+                            return next;
+                          })
+                        }
                       >
-                        {t('invoiceTracking.actions')}
-                        <svg className="h-3.5 w-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        <td colSpan={9} className="px-6 py-3 text-sm font-semibold text-gray-800">
+                          <span className="mr-2 text-gray-500">{expandedGroups.has(groupKey) ? '▼' : '▶'}</span>
+                          {groupDisplayLabel(groupKey)}
+                          <span className="ml-2 font-normal text-gray-500">({items.length})</span>
+                        </td>
+                      </tr>
+                      {expandedGroups.has(groupKey) && items.map((invoice) => renderInvoiceRow(invoice))}
+                    </Fragment>
+                  ))}
             </tbody>
           </table>
         </div>
