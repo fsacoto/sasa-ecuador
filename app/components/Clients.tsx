@@ -290,68 +290,68 @@ export default function Clients() {
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50 border-b-2 border-gray-200">
+            <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th
-                  className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleSort('name')}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {t('clients.name')}
                     <SortIcon columnKey="name" />
                   </div>
                 </th>
                 <th
-                  className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleSort('email')}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {t('clients.email')}
                     <SortIcon columnKey="email" />
                   </div>
                 </th>
                 <th
-                  className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleSort('phone')}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {t('clients.phone')}
                     <SortIcon columnKey="phone" />
                   </div>
                 </th>
                 <th
-                  className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleSort('address')}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {t('clients.address')}
                     <SortIcon columnKey="address" />
                   </div>
                 </th>
                 <th
-                  className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleSort('city')}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {t('clients.city')}
                     <SortIcon columnKey="city" />
                   </div>
                 </th>
                 <th
-                  className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleSort('country')}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {t('clients.country')}
                     <SortIcon columnKey="country" />
                   </div>
                 </th>
-                <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase">{t('clients.actions')}</th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('clients.actions')}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-gray-100">
               {sortedClients.map((client) => (
-                <tr key={client.id} className="hover:bg-gray-50">
+                <tr key={client.id} className="transition-colors hover:bg-gray-50">
                   <td className="px-6 py-4">
                     <div className="font-medium text-gray-900">{client.name}</div>
                   </td>

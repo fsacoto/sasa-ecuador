@@ -2,6 +2,7 @@
 
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { PurchaseOrder, Supplier } from '../types';
+import { formatDateLong } from '../utils/formatDate';
 
 const styles = StyleSheet.create({
   page: {
@@ -203,15 +204,7 @@ export default function PurchaseOrderVerificationPDF({
   supplier, 
   logoSrc = '/sasa.png' 
 }: PurchaseOrderVerificationPDFProps) {
-  // Format date
-  const formatDate = (date: Date | string) => {
-    const d = typeof date === 'string' ? new Date(date) : date;
-    return d.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    });
-  };
+  const formatDate = (date: Date | string) => formatDateLong(typeof date === 'string' ? new Date(date) : date);
 
   if (!orders || orders.length === 0) {
     return (

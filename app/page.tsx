@@ -18,6 +18,7 @@ import LandedCosts from './components/LandedCosts';
 import CMSModule from './components/CMSModuleNew';
 import Clients from './components/Clients';
 import Sales from './components/Sales';
+import SalesNotesHistory from './components/SalesNotesHistory';
 import InvoiceTracking from './components/InvoiceTracking';
 import Consignments from './components/Consignments';
 import SettingsHub from './components/SettingsHub';
@@ -33,6 +34,7 @@ type Tab =
   | 'sales-suite'
   | 'clients'
   | 'sales'
+  | 'sales-notes'
   | 'invoice-tracking'
   | 'consignments'
   | 'settings';
@@ -46,7 +48,8 @@ const TAB_SEARCH_ALIASES: Partial<Record<Tab, string>> = {
   'landed-costs': 'costos destino flete logística importación',
   cms: 'contenido medios marketing catálogo web',
   clients: 'clientes contactos cuentas crm',
-  sales: 'ventas notas de venta pedidos cobros',
+  sales: 'generación notas de venta NOTAV emitir registrar pedidos cobros',
+  'sales-notes': 'historial notas ventas listado NOTAV pdf',
   'invoice-tracking': 'notas de ventas seguimiento cobranza pagos NOTAV',
   consignments: 'consignaciones consigna',
   settings: 'configuración perfil preferencias integraciones notificaciones escáner contabilidad',
@@ -203,7 +206,7 @@ function IconCog({ className = 'w-5 h-5 shrink-0' }: { className?: string }) {
 }
 
 const INVENTORY_TABS: Tab[] = ['suppliers', 'purchase-orders', 'inventory', 'landed-costs'];
-const SALES_TABS: Tab[] = ['clients', 'sales', 'invoice-tracking', 'consignments'];
+const SALES_TABS: Tab[] = ['clients', 'sales', 'sales-notes', 'invoice-tracking', 'consignments'];
 
 /** Ocultar el CMS en la barra lateral y el contenido. El módulo sigue en el proyecto; poner `true` para mostrarlo de nuevo. */
 const SHOW_CMS_IN_NAVIGATION = false;
@@ -532,6 +535,7 @@ function AppContent() {
         { id: 'inventory', label: t('navigation.inventoryEC'), permission: 'inventory.view.ecuador' },
         { id: 'clients', label: t('navigation.clients'), permission: 'clients.view.ecuador' },
         { id: 'sales', label: t('navigation.sales'), permission: 'sales.view' },
+        { id: 'sales-notes', label: t('navigation.salesNotes'), permission: 'sales.view' },
         { id: 'invoice-tracking', label: t('navigation.invoiceTracking'), permission: 'sales.view' }
       );
     } else {
@@ -599,6 +603,12 @@ function AppContent() {
       visible: hasPermission('clients.view') || hasPermission('clients.view.ecuador'),
     },
     { id: 'sales' as Tab, label: t('navigation.sales'), IconEl: IconShopping, visible: hasPermission('sales.view') },
+    {
+      id: 'sales-notes' as Tab,
+      label: t('navigation.salesNotes'),
+      IconEl: IconClipboard,
+      visible: hasPermission('sales.view'),
+    },
     {
       id: 'invoice-tracking' as Tab,
       label: t('navigation.invoiceTracking'),
@@ -843,11 +853,13 @@ function AppContent() {
                       ? IconUsers
                       : tab.id === 'sales'
                         ? IconShopping
-                        : tab.id === 'invoice-tracking'
-                          ? IconDocument
-                          : tab.id === 'settings'
-                            ? IconCog
-                          : IconDashboard;
+                        : tab.id === 'sales-notes'
+                          ? IconClipboard
+                          : tab.id === 'invoice-tracking'
+                            ? IconDocument
+                            : tab.id === 'settings'
+                              ? IconCog
+                              : IconDashboard;
 
             return (
               <button
@@ -1442,6 +1454,9 @@ function AppContent() {
             {activeTab === 'clients' &&
               (hasPermission('clients.view') || hasPermission('clients.view.ecuador')) && <Clients />}
             {activeTab === 'sales' && hasPermission('sales.view') && <Sales />}
+            {activeTab === 'sales-notes' && hasPermission('sales.view') && (
+              <SalesNotesHistory onOpenInTracking={() => setActiveTab('invoice-tracking')} />
+            )}
             {activeTab === 'invoice-tracking' && hasPermission('sales.view') && <InvoiceTracking />}
             {activeTab === 'consignments' &&
               (hasPermission('sales.view') || hasPermission('sales.create')) && <Consignments />}

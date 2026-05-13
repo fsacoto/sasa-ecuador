@@ -1,6 +1,7 @@
 'use client';
 
 import * as JsBarcodePkg from 'jsbarcode';
+import type { InventoryItem } from '../types';
 
 /**
  * Barcodes via JsBarcode (https://github.com/lindell/JsBarcode).
@@ -290,6 +291,39 @@ export function isValidBarcodeInput(sku: string): boolean {
 
 export function getUPCAFromSKU(sku: string): string {
   return generateFallbackDigitPayload(sku);
+}
+
+/**
+ * Resolves a scanner read to an inventory row using the same rules as label generation
+ * (CODE128 primary = normalized SKU, fallback = 12-digit UPC payload). Also matches internal
+ * SKU, supplier SKU, case-insensitive where appropriate.
+ */
+export function findInventoryItemByBarcodeScan(
+  inventory: InventoryItem[],
+  scannedRaw: string
+): InventoryItem | null {
+  const scanned = scannedRaw.trim();
+  if (!scanned) return null;
+  const lower = scanned.toLowerCase();
+
+  for (const item of inventory) {
+    const normalized = normalizeSkuForBarcode(item.sku);
+    if (normalized && (normalized === scanned || normalized.toLowerCase() === lower)) {
+      return item;
+    }
+    const skuTrim = item.sku.trim();
+    if (skuTrim === scanned || skuTrim.toLowerCase() === lower) {
+      return item;
+    }
+    if (generateFallbackDigitPayload(item.sku) === scanned) {
+      return item;
+    }
+    const sup = item.supplierSKU?.trim();
+    if (sup && (sup === scanned || sup.toLowerCase() === lower)) {
+      return item;
+    }
+  }
+  return null;
 }
 
 export function isFirebaseStorageBarcode(barcode: string): boolean {

@@ -16,6 +16,7 @@ import {
   isGalleryVideoUrl,
 } from '../utils/inventoryMediaGallery';
 import SupplierDetailPanel from './SupplierDetailPanel';
+import { formatDateMedium } from '../utils/formatDate';
 
 interface InventoryDetailPanelProps {
   item: InventoryItem;
@@ -565,11 +566,7 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
                           </div>
                         </div>
                         <div className="text-xs text-gray-500">
-                          {new Date(order.purchaseDate).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}
+                          {formatDateMedium(new Date(order.purchaseDate))}
                         </div>
                       </div>
                     );

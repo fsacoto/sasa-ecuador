@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { InventoryItem } from '../types';
@@ -24,6 +24,7 @@ import {
   allKnownLineKeys,
 } from '../constants/merchandise';
 import { displayCategory, displayLine } from '../utils/merchandiseLabels';
+import { HUB_GROUP_STACK_ICON_PATH } from '../constants/businessHubUi';
 
 interface InventoryProps {
   darkMode?: boolean;
@@ -63,6 +64,10 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
   const [filterLine, setFilterLine] = useState<string>('all');
   const [showProblemsOnly, setShowProblemsOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [groupByField, setGroupByField] = useState<string>('');
+  const [showGroupByDropdown, setShowGroupByDropdown] = useState(false);
+  const groupByDropdownRef = useRef<HTMLDivElement>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // Load filters from sessionStorage when component mounts (from dashboard navigation)
   useEffect(() => {
@@ -174,6 +179,9 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
       }
       if (showSearchDropdown && searchDropdownRef.current && !searchDropdownRef.current.contains(event.target as Node)) {
         setShowSearchDropdown(false);
+      }
+      if (showGroupByDropdown && groupByDropdownRef.current && !groupByDropdownRef.current.contains(event.target as Node)) {
+        setShowGroupByDropdown(false);
       }
     };
     
@@ -569,6 +577,33 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
       return 0;
     });
 
+  const groupedInventory = useMemo(() => {
+    if (!groupByField) return {} as Record<string, InventoryItem[]>;
+    const groups: Record<string, InventoryItem[]> = {};
+    for (const item of filteredAndSortedInventory) {
+      let key: string;
+      if (groupByField === 'category') {
+        key = item.category.includes('NEEDS REVIEW')
+          ? t('inventory.needsReview')
+          : displayCategory(item.category);
+      } else if (groupByField === 'line') {
+        key = item.line ? displayLine(item.line) : '—';
+      } else if (groupByField === 'month') {
+        const d = item.createdAt instanceof Date ? item.createdAt : new Date(item.createdAt as unknown as string);
+        key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      } else {
+        key = '—';
+      }
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(item);
+    }
+    return groups;
+  }, [filteredAndSortedInventory, groupByField, t]);
+
+  useEffect(() => {
+    setExpandedGroups(new Set());
+  }, [groupByField]);
+
   const SortIcon = ({ field }: { field: string }) => {
     if (sortField !== field) {
       return (
@@ -585,6 +620,193 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
       <svg className="w-4 h-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
       </svg>
+    );
+  };
+
+  const renderInventoryGridRow = (item: InventoryItem, index: number) => {
+    const needsReview = item.category.includes('NEEDS REVIEW');
+    return (
+      <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${needsReview ? 'bg-amber-50/30' : ''}`}>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">{index + 1}</td>
+        {!hiddenColumns.has('name') && (
+          <td className="px-6 py-4">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelectedItem(item)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setSelectedItem(item);
+                }
+              }}
+              className="flex cursor-pointer items-center gap-3 rounded-md text-left outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-[#515151] focus-visible:ring-offset-2"
+            >
+              {item.images && item.images.length > 0 ? (
+                <div className="relative">
+                  <img
+                    src={item.images[0]}
+                    alt={item.name}
+                    className="h-12 w-12 rounded-lg border border-gray-200 object-cover"
+                  />
+                  {item.images.length > 1 && (
+                    <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#515151] text-xs font-medium text-white">
+                      {item.images.length}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-gray-200 bg-gray-100">
+                  <svg className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                  </svg>
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-[#515151] hover:underline">{item.name}</span>
+                {needsReview && (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                    {t('inventory.needsReview')}
+                  </span>
+                )}
+                {getTotalProblemQty(item) > 0 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setVerificationIssuesModalItem(item);
+                    }}
+                    className="inline-flex max-w-[10rem] items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-900 transition-colors hover:bg-amber-100"
+                    title={t('inventory.verificationProblemHint')}
+                  >
+                    <svg className="h-3.5 w-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
+                      <path
+                        fillRule="evenodd"
+                        d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                    <span className="text-left leading-tight">
+                      {t('inventory.includesProblemUnits').replace('{{count}}', String(getTotalProblemQty(item)))}
+                    </span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </td>
+        )}
+        {!hiddenColumns.has('sku') && (
+          <td className="whitespace-nowrap px-6 py-4 font-mono text-sm text-gray-700">{item.sku}</td>
+        )}
+        {!hiddenColumns.has('barcode') && (
+          <td className="whitespace-nowrap px-6 py-4 text-sm">
+            {item.barcode ? (
+              <div className="flex items-center gap-2">
+                <img
+                  src={item.barcode}
+                  alt={`Barcode for ${item.sku}`}
+                  className="h-12 w-auto rounded border border-gray-200"
+                />
+                {!isReadOnly && (
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateBarcode(item)}
+                    className="text-gray-400 transition-colors hover:text-[#515151]"
+                    title={t('inventory.regenerateBarcode') || 'Regenerate barcode'}
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                      />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                disabled={isReadOnly}
+                onClick={() => handleGenerateBarcode(item)}
+                className="flex items-center gap-1 text-sm font-medium text-[#515151] transition-colors hover:text-[#000000] disabled:pointer-events-none disabled:opacity-50"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Generate
+              </button>
+            )}
+          </td>
+        )}
+        {!hiddenColumns.has('category') && (
+          <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">
+            {needsReview ? '-' : displayCategory(item.category)}
+          </td>
+        )}
+        {!hiddenColumns.has('line') && (
+          <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">{item.line ? displayLine(item.line) : '-'}</td>
+        )}
+        {!hiddenColumns.has('ecuadorStock') && (
+          <td className="whitespace-nowrap px-6 py-4 text-center text-sm text-gray-700">{item.ecuadorStock}</td>
+        )}
+        {!hiddenColumns.has('totalStock') && (
+          <td className="px-6 py-4 text-center align-middle">
+            <div className="flex flex-col items-center justify-center gap-1.5">
+              <span className="text-lg font-semibold tabular-nums text-gray-900">{getTotalStock(item)}</span>
+              <span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                {t('inventory.totalOnHandShort')}
+              </span>
+              {getTotalProblemQty(item) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setVerificationIssuesModalItem(item)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-950 shadow-sm transition-colors hover:bg-amber-100"
+                  title={t('inventory.verificationProblemHint')}
+                >
+                  <svg className="h-3.5 w-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
+                    <path
+                      fillRule="evenodd"
+                      d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  {t('inventory.includesProblemUnits').replace('{{count}}', String(getTotalProblemQty(item)))}
+                </button>
+              )}
+            </div>
+          </td>
+        )}
+        {!hiddenColumns.has('actions') && (
+          <td className="whitespace-nowrap px-6 py-4 text-right text-sm">
+            {!isReadOnly && (
+              <>
+                <button
+                  onClick={() => handleEdit(item)}
+                  className="mr-4 font-medium text-[#515151] transition-colors hover:text-[#000000]"
+                >
+                  {needsReview ? 'Complete Info' : 'Edit'}
+                </button>
+                <button
+                  onClick={() => {
+                    setItemToDelete(item);
+                    setDeleteConfirmOpen(true);
+                  }}
+                  className="font-medium text-red-600 transition-colors hover:text-red-700"
+                >
+                  Delete
+                </button>
+              </>
+            )}
+          </td>
+        )}
+      </tr>
     );
   };
 
@@ -768,7 +990,10 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
         {/* Filter Button */}
         <div className="relative">
           <button
-            onClick={() => setShowFilters(!showFilters)}
+            onClick={() => {
+              setShowFilters(!showFilters);
+              setShowGroupByDropdown(false);
+            }}
             className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
               showFilters ? 'bg-[#515151] text-white border-[#515151]' : ''
             }`}
@@ -785,11 +1010,114 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
           </button>
         </div>
 
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => {
+              setShowGroupByDropdown((v) => !v);
+              setShowFilters(false);
+              setShowColumnDropdown(false);
+              setShowSearchDropdown(false);
+            }}
+            className={`flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm transition-all duration-200 hover:bg-gray-50 hover:shadow-md ${
+              groupByField ? 'border-[#515151] bg-[#515151] text-white' : ''
+            }`}
+          >
+            <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={HUB_GROUP_STACK_ICON_PATH} />
+            </svg>
+            <span className="text-sm font-medium">{t('purchaseOrders.groupBy')}</span>
+            {groupByField ? (
+              <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800">1</span>
+            ) : null}
+          </button>
+          {showGroupByDropdown && (
+            <div
+              ref={groupByDropdownRef}
+              className="absolute right-0 top-full z-10 mt-2 w-64 rounded-xl border border-gray-200 bg-white shadow-lg"
+            >
+              <div className="p-4">
+                <div className="mb-3 text-sm font-medium text-gray-700">{t('purchaseOrders.groupByField')}</div>
+                {groupByField && Object.keys(groupedInventory).length > 0 && (
+                  <div className="mb-3 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExpandedGroups(new Set(Object.keys(groupedInventory)));
+                        setShowGroupByDropdown(false);
+                      }}
+                      className="flex-1 rounded-lg bg-green-50 px-3 py-1.5 text-xs text-green-700 transition-colors hover:bg-green-100"
+                    >
+                      {t('purchaseOrders.expandAll') || 'Expand All'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExpandedGroups(new Set());
+                        setShowGroupByDropdown(false);
+                      }}
+                      className="flex-1 rounded-lg bg-gray-50 px-3 py-1.5 text-xs text-gray-700 transition-colors hover:bg-gray-100"
+                    >
+                      {t('purchaseOrders.collapseAll') || 'Collapse All'}
+                    </button>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGroupByField('');
+                      setShowGroupByDropdown(false);
+                      setExpandedGroups(new Set());
+                    }}
+                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                      !groupByField ? 'bg-[#515151] text-white' : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    {t('purchaseOrders.noGrouping')}
+                  </button>
+                  {(
+                    [
+                      { key: 'category', label: t('inventory.category') },
+                      { key: 'line', label: t('inventory.line') },
+                      { key: 'month', label: t('inventory.groupByMonth') },
+                    ] as const
+                  ).map((field) => (
+                    <button
+                      key={field.key}
+                      type="button"
+                      onClick={() => {
+                        setGroupByField(field.key);
+                        setShowGroupByDropdown(false);
+                        setExpandedGroups(new Set());
+                      }}
+                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                        groupByField === field.key ? 'bg-[#515151] text-white' : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={HUB_GROUP_STACK_ICON_PATH} />
+                      </svg>
+                      {field.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Column Visibility Control (only show in grid view) */}
         {viewMode === 'grid' && (
           <div className="relative">
             <button
-              onClick={() => setShowColumnDropdown(!showColumnDropdown)}
+              onClick={() => {
+                setShowColumnDropdown(!showColumnDropdown);
+                setShowGroupByDropdown(false);
+              }}
               className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm"
             >
               <svg className={`w-4 h-4 ${hiddenColumns.size > 0 ? 'text-gray-400' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -846,7 +1174,10 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
         {/* Search Button */}
         <div className="relative">
           <button
-            onClick={() => setShowSearchDropdown(!showSearchDropdown)}
+            onClick={() => {
+              setShowSearchDropdown(!showSearchDropdown);
+              setShowGroupByDropdown(false);
+            }}
             className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm"
           >
             <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1385,198 +1716,55 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                       : t('inventory.noItemsMatchFilters')}
                   </td>
                 </tr>
+              ) : !groupByField ? (
+                filteredAndSortedInventory.map((item, index) => renderInventoryGridRow(item, index))
               ) : (
-                filteredAndSortedInventory.map((item, index) => {
-                  const needsReview = item.category.includes('NEEDS REVIEW');
+                Object.entries(groupedInventory).map(([groupKey, items]) => {
+                  const isExpanded = expandedGroups.has(groupKey);
+                  const toggleGroup = () => {
+                    setExpandedGroups((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(groupKey)) next.delete(groupKey);
+                      else next.add(groupKey);
+                      return next;
+                    });
+                  };
                   return (
-                    <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${needsReview ? 'bg-amber-50/30' : ''}`}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
-                        {index + 1}
-                      </td>
-                      {!hiddenColumns.has('name') && (
-                        <td className="px-6 py-4">
-                          <div
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => setSelectedItem(item)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                setSelectedItem(item);
-                              }
-                            }}
-                            className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity cursor-pointer rounded-md outline-none focus-visible:ring-2 focus-visible:ring-[#515151] focus-visible:ring-offset-2"
-                          >
-                            {item.images && item.images.length > 0 ? (
-                              <div className="relative">
-                                <img 
-                                  src={item.images[0]} 
-                                  alt={item.name} 
-                                  className="w-12 h-12 object-cover rounded-lg border border-gray-200" 
-                                />
-                                {item.images.length > 1 && (
-                                  <div className="absolute -bottom-1 -right-1 bg-[#515151] text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-medium">
-                                    {item.images.length}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="w-12 h-12 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
-                                <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                </svg>
-                              </div>
-                            )}
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-medium text-[#515151] hover:underline">{item.name}</span>
-                              {needsReview && (
-                                <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
-                                  {t('inventory.needsReview')}
-                                </span>
-                              )}
-                              {getTotalProblemQty(item) > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setVerificationIssuesModalItem(item);
-                                  }}
-                                  className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 text-amber-900 px-2 py-0.5 text-xs font-semibold hover:bg-amber-100 transition-colors max-w-[10rem]"
-                                  title={t('inventory.verificationProblemHint')}
-                                >
-                                  <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
-                                    <path
-                                      fillRule="evenodd"
-                                      d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                                      clipRule="evenodd"
-                                    />
-                                  </svg>
-                                  <span className="text-left leading-tight">
-                                    {t('inventory.includesProblemUnits').replace(
-                                      '{{count}}',
-                                      String(getTotalProblemQty(item))
-                                    )}
-                                  </span>
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                      )}
-                      {!hiddenColumns.has('sku') && (
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-mono">{item.sku}</td>
-                      )}
-                      {!hiddenColumns.has('barcode') && (
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          {item.barcode ? (
-                            <div className="flex items-center gap-2">
-                              <img
-                                src={item.barcode}
-                                alt={`Barcode for ${item.sku}`}
-                                className="h-12 w-auto border border-gray-200 rounded"
-                              />
-                              {!isReadOnly && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleGenerateBarcode(item)}
-                                  className="text-gray-400 hover:text-[#515151] transition-colors"
-                                  title={t('inventory.regenerateBarcode') || 'Regenerate barcode'}
-                                >
-                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                                    />
-                                  </svg>
-                                </button>
-                              )}
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              disabled={isReadOnly}
-                              onClick={() => handleGenerateBarcode(item)}
-                              className="text-[#515151] hover:text-[#000000] font-medium text-sm transition-colors flex items-center gap-1 disabled:opacity-50 disabled:pointer-events-none"
-                            >
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                              </svg>
-                              Generate
-                            </button>
-                          )}
-                        </td>
-                      )}
-                      {!hiddenColumns.has('category') && (
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                          {needsReview ? '-' : displayCategory(item.category)}
-                        </td>
-                      )}
-                      {!hiddenColumns.has('line') && (
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                          {item.line ? displayLine(item.line) : '-'}
-                        </td>
-                      )}
-                      {!hiddenColumns.has('ecuadorStock') && (
-                        <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-700">{item.ecuadorStock}</td>
-                      )}
-                      {!hiddenColumns.has('totalStock') && (
-                        <td className="px-6 py-4 text-center align-middle">
-                          <div className="flex flex-col items-center justify-center gap-1.5">
-                            <span className="text-lg font-semibold text-gray-900 tabular-nums">
-                              {getTotalStock(item)}
-                            </span>
-                            <span className="text-[10px] uppercase tracking-wide text-gray-400 font-medium">
-                              {t('inventory.totalOnHandShort')}
-                            </span>
-                            {getTotalProblemQty(item) > 0 && (
+                    <Fragment key={groupKey}>
+                      <tr className="border-t border-gray-200 bg-gray-50">
+                        <td colSpan={getVisibleColumnCount() + 1} className="px-6 py-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
                               <button
                                 type="button"
-                                onClick={() => setVerificationIssuesModalItem(item)}
-                                className="inline-flex items-center justify-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-950 hover:bg-amber-100 transition-colors shadow-sm"
-                                title={t('inventory.verificationProblemHint')}
+                                onClick={toggleGroup}
+                                className="flex items-center gap-2 text-left transition-opacity hover:opacity-80"
+                                title={
+                                  isExpanded
+                                    ? t('purchaseOrders.collapseGroup') || 'Collapse'
+                                    : t('purchaseOrders.expandGroup') || 'Expand'
+                                }
                               >
-                                <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                                    clipRule="evenodd"
-                                  />
+                                <svg
+                                  className={`h-5 w-5 text-gray-600 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  stroke="currentColor"
+                                >
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                 </svg>
-                                {t('inventory.includesProblemUnits').replace(
-                                  '{{count}}',
-                                  String(getTotalProblemQty(item))
-                                )}
+                                <span className="text-lg font-semibold text-gray-900">{groupKey}</span>
                               </button>
-                            )}
+                              <span className="rounded-full bg-[#515151] px-2 py-1 text-xs font-medium text-white">
+                                {items.length}{' '}
+                                {items.length !== 1 ? t('inventory.footerItems') : t('common.item')}
+                              </span>
+                            </div>
                           </div>
                         </td>
-                      )}
-                      {!hiddenColumns.has('actions') && (
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                          {!isReadOnly && (
-                            <>
-                              <button
-                                onClick={() => handleEdit(item)}
-                                className="text-[#515151] hover:text-[#000000] font-medium mr-4 transition-colors"
-                              >
-                                {needsReview ? 'Complete Info' : 'Edit'}
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setItemToDelete(item);
-                                  setDeleteConfirmOpen(true);
-                                }}
-                                className="text-red-600 hover:text-red-700 font-medium transition-colors"
-                              >
-                                Delete
-                              </button>
-                            </>
-                          )}
-                        </td>
-                      )}
-                    </tr>
+                      </tr>
+                      {isExpanded && items.map((item, orderIndex) => renderInventoryGridRow(item, orderIndex))}
+                    </Fragment>
                   );
                 })
               )}

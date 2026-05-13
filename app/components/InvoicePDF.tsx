@@ -4,6 +4,7 @@ import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/render
 import { SalesInvoice } from '../types';
 import esMessages from '../locales/es.json';
 import { pdfMoney, toPdfDate } from '../utils/pdfRenderHelpers';
+import { formatDateLong } from '../utils/formatDate';
 
 const translate = (key: string): string => {
   const keys = key.split('.');
@@ -239,14 +240,7 @@ interface InvoicePDFProps {
 
 export default function InvoicePDF({ invoice, logoSrc = '/sasa.png' }: InvoicePDFProps) {
   const t = (key: string) => translate(key);
-  const formatDate = (date: unknown) => {
-    const d = toPdfDate(date);
-    return d.toLocaleDateString('es-EC', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-  };
+  const formatDate = (date: unknown) => formatDateLong(toPdfDate(date));
 
   // Parse client address
   const parseAddress = (address: string): string[] => {

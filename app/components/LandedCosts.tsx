@@ -6,6 +6,7 @@ import { AdditionalCost, AdditionalCostType, LandedCostCalculation } from '../ty
 import { useTranslation } from '../context/TranslationContext';
 import ConfirmDialog from './ui/ConfirmDialog';
 import AlertDialog from './ui/AlertDialog';
+import { formatDateMedium } from '../utils/formatDate';
 
 export default function LandedCosts() {
   const { 
@@ -258,11 +259,7 @@ export default function LandedCosts() {
                       </div>
                       <div className="text-sm text-gray-600 mt-1">{cost.description}</div>
                       <div className="text-xs text-gray-500 mt-1">
-                        {new Date(cost.date).toLocaleDateString('en-US', { 
-                          month: 'short', 
-                          day: 'numeric', 
-                          year: 'numeric' 
-                        })}
+                        {formatDateMedium(new Date(cost.date))}
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -319,31 +316,31 @@ export default function LandedCosts() {
               {/* Item Breakdown */}
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="text-xs font-medium text-gray-500 border-b border-gray-200">
+                  <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      <th className="text-left pb-3 uppercase tracking-wider">{t('landedCosts.sku')}</th>
-                      <th className="text-left pb-3 uppercase tracking-wider">{t('landedCosts.description')}</th>
-                      <th className="text-right pb-3 uppercase tracking-wider">{t('landedCosts.quantity')}</th>
-                      <th className="text-right pb-3 uppercase tracking-wider">{t('landedCosts.baseCostPerUnit')}</th>
-                      <th className="text-right pb-3 uppercase tracking-wider">{t('landedCosts.baseTotal')}</th>
-                      <th className="text-right pb-3 uppercase tracking-wider">{t('landedCosts.allocationPercent')}</th>
-                      <th className="text-right pb-3 uppercase tracking-wider">{t('landedCosts.additionalCost')}</th>
-                      <th className="text-right pb-3 uppercase tracking-wider">{t('landedCosts.finalCostPerUnit')}</th>
-                      <th className="text-right pb-3 uppercase tracking-wider">{t('landedCosts.finalTotal')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.sku')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.description')}</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.quantity')}</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.baseCostPerUnit')}</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.baseTotal')}</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.allocationPercent')}</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.additionalCost')}</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.finalCostPerUnit')}</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.finalTotal')}</th>
                     </tr>
                   </thead>
-                  <tbody className="text-sm divide-y divide-gray-100">
+                  <tbody className="divide-y divide-gray-100 text-sm">
                     {landedCostCalculation.items.map((item) => (
-                      <tr key={item.purchaseOrderId} className="hover:bg-gray-50 transition-colors">
-                        <td className="py-3 text-gray-900 font-mono">{item.sku}</td>
-                        <td className="py-3 text-gray-700">{item.description}</td>
-                        <td className="py-3 text-right text-gray-700">{item.quantity}</td>
-                        <td className="py-3 text-right text-gray-700">${item.baseCostPerUnit.toFixed(2)}</td>
-                        <td className="py-3 text-right text-gray-700">${item.baseItemTotal.toFixed(2)}</td>
-                        <td className="py-3 text-right text-gray-700">{item.proportionalShare.toFixed(1)}%</td>
-                        <td className="py-3 text-right text-gray-700">${item.additionalCostAllocation.toFixed(2)}</td>
-                        <td className="py-3 text-right font-medium text-[#515151]">${item.finalCostPerUnit.toFixed(2)}</td>
-                        <td className="py-3 text-right font-semibold text-[#515151]">${item.finalItemTotal.toFixed(2)}</td>
+                      <tr key={item.purchaseOrderId} className="transition-colors hover:bg-gray-50">
+                        <td className="whitespace-nowrap px-6 py-4 font-mono text-gray-900">{item.sku}</td>
+                        <td className="px-6 py-4 text-gray-700">{item.description}</td>
+                        <td className="whitespace-nowrap px-6 py-4 text-right text-gray-700">{item.quantity}</td>
+                        <td className="whitespace-nowrap px-6 py-4 text-right text-gray-700">${item.baseCostPerUnit.toFixed(2)}</td>
+                        <td className="whitespace-nowrap px-6 py-4 text-right text-gray-700">${item.baseItemTotal.toFixed(2)}</td>
+                        <td className="whitespace-nowrap px-6 py-4 text-right text-gray-700">{item.proportionalShare.toFixed(1)}%</td>
+                        <td className="whitespace-nowrap px-6 py-4 text-right text-gray-700">${item.additionalCostAllocation.toFixed(2)}</td>
+                        <td className="whitespace-nowrap px-6 py-4 text-right font-medium text-[#515151]">${item.finalCostPerUnit.toFixed(2)}</td>
+                        <td className="whitespace-nowrap px-6 py-4 text-right font-semibold text-[#515151]">${item.finalItemTotal.toFixed(2)}</td>
                       </tr>
                     ))}
                   </tbody>

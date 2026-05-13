@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { SalesInvoiceLine, Client, InventoryItem, SalesInvoice } from '../types';
-import { getAllClients } from '../services/clientsService';
+import { getAllClients, createClient } from '../services/clientsService';
 import { createInvoice } from '../services/invoicesService';
+import { downloadSalesInvoicePdf } from '../utils/salesInvoicePdf';
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../context/TranslationContext';
+import { findInventoryItemByBarcodeScan } from '../utils/barcodeGenerator';
 import AlertDialog from './ui/AlertDialog';
 
 interface InvoiceLineWithDetails extends SalesInvoiceLine {
@@ -26,10 +28,25 @@ export default function Sales() {
   const [discountType, setDiscountType] = useState<'percentage' | 'flat'>('percentage');
   const [discountValue, setDiscountValue] = useState(0);
   const [showClientModal, setShowClientModal] = useState(false);
+  const [clientModalMode, setClientModalMode] = useState<'select' | 'create'>('select');
+  const [clientModalSearch, setClientModalSearch] = useState('');
+  const [creatingClient, setCreatingClient] = useState(false);
+  const [newClientForm, setNewClientForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    address: '',
+    city: '',
+    country: 'Ecuador' as 'Ecuador' | 'USA',
+    notes: ''
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const barcodeGlobalBufferRef = useRef('');
+  const barcodeGlobalLastTsRef = useRef(0);
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash' | 'transfer' | ''>('');
   const [paymentComment, setPaymentComment] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
@@ -76,6 +93,32 @@ export default function Sales() {
     return inventory;
   };
 
+  const buildLineFromProduct = (product: InventoryItem): InvoiceLineWithDetails => {
+    let unitPrice = 25;
+    if (product.linkedPurchaseOrders.length > 0) {
+      const linkedOrders = purchaseOrders.filter(
+        po => product.linkedPurchaseOrders.includes(po.id) && po.status === 'Verified'
+      );
+      if (linkedOrders.length > 0) {
+        const avgLandedCost =
+          linkedOrders.reduce((sum, po) => sum + po.landedCostPerUnit, 0) / linkedOrders.length;
+        unitPrice = avgLandedCost * 2.5;
+      }
+    }
+    const availableStock = product.ecuadorStock;
+    return {
+      sku: product.sku,
+      description: product.description || product.name,
+      line: product.line,
+      category: product.category,
+      quantity: 1,
+      unitPrice,
+      totalPrice: unitPrice,
+      maxQuantity: availableStock,
+      availableStock
+    };
+  };
+
   // Filter inventory based on search term
   const getFilteredInventory = () => {
     if (!searchTerm.trim()) return [];
@@ -88,40 +131,116 @@ export default function Sales() {
   };
 
   const addProductToInvoice = (product: InventoryItem) => {
-    // Calculate unit price from landed cost (with markup)
-    let unitPrice = 25; // Default price
-    
-    // Try to get average landed cost per unit
-    if (product.linkedPurchaseOrders.length > 0) {
-      const linkedOrders = purchaseOrders.filter(po => 
-        product.linkedPurchaseOrders.includes(po.id) && po.status === 'Verified'
-      );
-      
-      if (linkedOrders.length > 0) {
-        const avgLandedCost = linkedOrders.reduce((sum, po) => sum + po.landedCostPerUnit, 0) / linkedOrders.length;
-        unitPrice = avgLandedCost * 2.5; // 2.5x markup for sales price
+    const newLine = buildLineFromProduct(product);
+    setInvoiceItems(prev => {
+      const idx = prev.findIndex(i => i.sku === product.sku);
+      if (idx >= 0) {
+        const row = prev[idx];
+        const nextQty = row.quantity + 1;
+        if (nextQty > row.maxQuantity) {
+          queueMicrotask(() =>
+            showAlert(`${t('sales.cannotExceedStock')} ${row.maxQuantity}`, t('sales.barcodeScanTitle'))
+          );
+          return prev;
+        }
+        const copy = [...prev];
+        copy[idx] = {
+          ...row,
+          quantity: nextQty,
+          totalPrice: row.unitPrice * nextQty
+        };
+        return copy;
       }
-    }
-
-    // Get available stock based on user role
-    const availableStock = product.ecuadorStock;
-
-    const newItem: InvoiceLineWithDetails = {
-      sku: product.sku,
-      description: product.description || product.name,
-      line: product.line,
-      category: product.category,
-      quantity: 1,
-      unitPrice: unitPrice,
-      totalPrice: unitPrice,
-      maxQuantity: availableStock,
-      availableStock: availableStock
-    };
-
-    setInvoiceItems([...invoiceItems, newItem]);
+      return [...prev, newLine];
+    });
     setSearchTerm('');
     setShowDropdown(false);
   };
+
+  const processBarcodeScan = useCallback(
+    (raw: string) => {
+      const code = raw.trim();
+      if (!code) return;
+
+      const matched = findInventoryItemByBarcodeScan(inventory, code);
+      if (!matched) {
+        showAlert(t('sales.barcodeNotInSystem'), t('sales.barcodeScanTitle'));
+        return;
+      }
+
+      const pool = getAvailableInventory();
+      const product = pool.find(p => p.sku === matched.sku);
+      if (!product) {
+        showAlert(t('sales.barcodeNoStock'), t('sales.barcodeScanTitle'));
+        return;
+      }
+
+      const newLine = buildLineFromProduct(product);
+      setInvoiceItems(prev => {
+        const idx = prev.findIndex(i => i.sku === product.sku);
+        if (idx >= 0) {
+          const row = prev[idx];
+          const nextQty = row.quantity + 1;
+          if (nextQty > row.maxQuantity) {
+            queueMicrotask(() =>
+              showAlert(`${t('sales.cannotExceedStock')} ${row.maxQuantity}`, t('sales.barcodeScanTitle'))
+            );
+            return prev;
+          }
+          const copy = [...prev];
+          copy[idx] = {
+            ...row,
+            quantity: nextQty,
+            totalPrice: row.unitPrice * nextQty
+          };
+          return copy;
+        }
+        return [...prev, newLine];
+      });
+    },
+    [inventory, purchaseOrders, user?.role, t]
+  );
+
+  /** Pistola lectora: captura fuera de campos de texto; término con Enter (típico del lector). */
+  useEffect(() => {
+    const MAX_CHAR_GAP_MS = 85;
+
+    const shouldIgnoreTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      if (target === barcodeInputRef.current) return true;
+      if (target.isContentEditable) return true;
+      const tag = target.tagName.toLowerCase();
+      return tag === 'textarea' || tag === 'select' || tag === 'input';
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (showClientModal || alertDialog.open) return;
+      if (shouldIgnoreTarget(e.target)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      const now = Date.now();
+      if (now - barcodeGlobalLastTsRef.current > MAX_CHAR_GAP_MS) {
+        barcodeGlobalBufferRef.current = '';
+      }
+      barcodeGlobalLastTsRef.current = now;
+
+      if (e.key === 'Enter') {
+        const buf = barcodeGlobalBufferRef.current.trim();
+        barcodeGlobalBufferRef.current = '';
+        if (buf) {
+          e.preventDefault();
+          processBarcodeScan(buf);
+        }
+        return;
+      }
+      if (e.key.length === 1) {
+        barcodeGlobalBufferRef.current += e.key;
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [showClientModal, alertDialog.open, processBarcodeScan]);
 
   const handleQuantityChange = (index: number, quantity: number) => {
     const updatedItems = [...invoiceItems];
@@ -204,14 +323,21 @@ export default function Sales() {
         newInvoice.paymentComment = paymentComment;
       }
 
-      await createInvoice(newInvoice);
-      
+      const created = await createInvoice(newInvoice);
+
+      let pdfOk = true;
+      try {
+        await downloadSalesInvoicePdf(created);
+      } catch (pdfErr) {
+        pdfOk = false;
+        console.error('PDF download after sale:', pdfErr);
+      }
+
       showAlert(
-        t('sales.invoiceSubmitted'),
+        pdfOk ? t('sales.invoiceSubmitted') : `${t('sales.invoiceSubmitted')} ${t('sales.pdfDownloadFailedHint')}`,
         'Success'
       );
-      
-      // Reset form
+
       setInvoiceItems([]);
       setSelectedClient(null);
       setPaymentMethod('');
@@ -220,6 +346,74 @@ export default function Sales() {
     } catch (error) {
       console.error('Error submitting invoice:', error);
       showAlert(t('sales.errorSubmitting'), 'Error');
+    }
+  };
+
+  const canCreateClient =
+    hasPermission('clients.create') || hasPermission('clients.create.ecuador');
+
+  const resetNewClientForm = () => {
+    setNewClientForm({
+      name: '',
+      email: '',
+      phone: '',
+      address: '',
+      city: '',
+      country: 'Ecuador',
+      notes: ''
+    });
+  };
+
+  const openClientModal = (mode: 'select' | 'create' = 'select') => {
+    if (mode === 'create' && !canCreateClient) return;
+    setClientModalMode(mode);
+    setClientModalSearch('');
+    if (mode === 'create') resetNewClientForm();
+    setShowClientModal(true);
+  };
+
+  const closeClientModal = () => {
+    setShowClientModal(false);
+    setCreatingClient(false);
+  };
+
+  const clientsModalFiltered = clients.filter((client) => {
+    const q = clientModalSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      client.name.toLowerCase().includes(q) ||
+      client.email?.toLowerCase().includes(q) ||
+      client.phone?.includes(clientModalSearch.trim())
+    );
+  });
+
+  const handleNewClientSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canCreateClient) return;
+    if (user?.role === 'sales' && newClientForm.country !== 'Ecuador') {
+      showAlert(t('clients.onlyCreateEcuador'), 'Validación');
+      return;
+    }
+    setCreatingClient(true);
+    try {
+      const created = await createClient({
+        name: newClientForm.name.trim(),
+        email: newClientForm.email.trim() || undefined,
+        phone: newClientForm.phone.trim() || undefined,
+        address: newClientForm.address.trim(),
+        city: newClientForm.city.trim(),
+        country: newClientForm.country,
+        notes: newClientForm.notes.trim() || undefined
+      });
+      await loadClients();
+      setSelectedClient(created);
+      closeClientModal();
+      resetNewClientForm();
+    } catch (error) {
+      console.error('Error creating client:', error);
+      showAlert(t('clients.errorSaving'), 'Error');
+    } finally {
+      setCreatingClient(false);
     }
   };
 
@@ -281,14 +475,25 @@ export default function Sales() {
                   </div>
                 )}
               </div>
-              <div className="flex gap-2 ml-4">
+              <div className="flex flex-wrap gap-2 ml-0 md:ml-4 shrink-0">
                 <button
-                  onClick={() => setShowClientModal(true)}
+                  type="button"
+                  onClick={() => openClientModal('select')}
                   className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
                 >
                   {t('sales.changeClient')}
                 </button>
+                {canCreateClient && (
+                  <button
+                    type="button"
+                    onClick={() => openClientModal('create')}
+                    className="px-4 py-2 border border-gray-300 text-gray-800 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    {t('sales.newClient')}
+                  </button>
+                )}
                 <button
+                  type="button"
                   onClick={() => setSelectedClient(null)}
                   className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
                 >
@@ -298,17 +503,32 @@ export default function Sales() {
             </div>
           </div>
         ) : (
-          <div className="flex items-center gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
             <span className="text-gray-500 italic">{t('sales.walkInCustomer')}</span>
-            <button
-              onClick={() => setShowClientModal(true)}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors"
-            >
-              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-              </svg>
-              {t('sales.selectClient')}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => openClientModal('select')}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors"
+              >
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                </svg>
+                {t('sales.selectClient')}
+              </button>
+              {canCreateClient && (
+                <button
+                  type="button"
+                  onClick={() => openClientModal('create')}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 text-gray-800 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  {t('sales.newClient')}
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -316,6 +536,30 @@ export default function Sales() {
       {/* Products Table */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('sales.invoiceItems')}</h3>
+
+          <div className="mb-4 rounded-lg border border-dashed border-gray-300 bg-gray-50/80 p-4">
+            <label htmlFor="sales-barcode-scan" className="block text-sm font-medium text-gray-800 mb-1">
+              {t('sales.barcodeScanLabel')}
+            </label>
+            <p className="text-xs text-gray-600 mb-2">{t('sales.barcodeScanHint')}</p>
+            <input
+              id="sales-barcode-scan"
+              ref={barcodeInputRef}
+              type="text"
+              autoComplete="off"
+              placeholder={t('sales.barcodeScanPlaceholder')}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent bg-white font-mono text-sm"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const el = e.currentTarget;
+                  const v = el.value.trim();
+                  el.value = '';
+                  if (v) processBarcodeScan(v);
+                }
+              }}
+            />
+          </div>
           
           <div className="mb-4 relative" ref={dropdownRef}>
             <label className="block text-sm font-medium text-gray-700 mb-2">{t('sales.searchSku')}</label>
@@ -352,34 +596,34 @@ export default function Sales() {
           {invoiceItems.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-50 border-b-2 border-gray-200">
+                <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.sku')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.description')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.line')}</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.category')}</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.quantity')}</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.unitPrice')}</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.totalPrice')}</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.actions')}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.sku')}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.description')}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.line')}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.category')}</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.quantity')}</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.unitPrice')}</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.totalPrice')}</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.actions')}</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="divide-y divide-gray-100 bg-white">
                   {invoiceItems.map((item, index) => (
-                    <tr key={index} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 whitespace-nowrap">
+                    <tr key={index} className="transition-colors hover:bg-gray-50">
+                      <td className="whitespace-nowrap px-6 py-4">
                         <div className="font-mono text-sm font-medium text-gray-900">{item.sku}</div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-6 py-4">
                         <div className="text-sm text-gray-900">{item.description}</div>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className="whitespace-nowrap px-6 py-4">
                         <div className="text-sm text-gray-900">{item.line || '-'}</div>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className="whitespace-nowrap px-6 py-4">
                         <div className="text-sm text-gray-900">{item.category || '-'}</div>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-center">
+                      <td className="whitespace-nowrap px-6 py-4 text-center">
                         <div className="flex flex-col items-center gap-1">
                           <input
                             type="number"
@@ -394,7 +638,7 @@ export default function Sales() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-right">
+                      <td className="whitespace-nowrap px-6 py-4 text-right">
                         <input
                           type="number"
                           min="0"
@@ -404,10 +648,10 @@ export default function Sales() {
                           className="w-24 px-2 py-1 border border-gray-300 rounded text-right"
                         />
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-right">
+                      <td className="whitespace-nowrap px-6 py-4 text-right">
                         <div className="text-sm font-semibold text-gray-900">${item.totalPrice.toFixed(2)}</div>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-center">
+                      <td className="whitespace-nowrap px-6 py-4 text-center">
                         <button
                           onClick={() => removeItem(index)}
                           className="text-red-600 hover:text-red-700 text-sm font-medium"
@@ -516,39 +760,191 @@ export default function Sales() {
         </div>
       )}
 
-      {/* Client Selection Modal */}
+      {/* Client picker: listar o registrar (estilo facturación) */}
       {showClientModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-            <h3 className="text-xl font-semibold mb-4">{t('sales.selectClient')}</h3>
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {clients.map((client) => (
-                <div
-                  key={client.id}
-                  onClick={() => {
-                    setSelectedClient(client);
-                    setShowClientModal(false);
-                  }}
-                  className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto shadow-xl">
+            <h3 className="text-xl font-semibold text-gray-900 mb-4">{t('sales.clientPickerTitle')}</h3>
+
+            {canCreateClient ? (
+              <div className="flex rounded-lg border border-gray-200 p-1 mb-4 bg-gray-50">
+                <button
+                  type="button"
+                  onClick={() => setClientModalMode('select')}
+                  className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
+                    clientModalMode === 'select'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
                 >
-                  <div className="font-semibold text-gray-900">{client.name}</div>
-                  <div className="text-sm text-gray-500 mt-1">
-                    {client.address}, {client.city}, {client.country}
-                  </div>
-                  {(client.phone || client.email) && (
-                    <div className="text-xs text-gray-400 mt-1">
-                      {client.phone && `📞 ${client.phone}`} {client.email && `📧 ${client.email}`}
-                    </div>
+                  {t('sales.tabSelectClient')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setClientModalMode('create');
+                    resetNewClientForm();
+                  }}
+                  className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
+                    clientModalMode === 'create'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  {t('sales.tabNewClient')}
+                </button>
+              </div>
+            ) : null}
+
+            {!canCreateClient || clientModalMode === 'select' ? (
+              <>
+                <label className="block text-sm font-medium text-gray-700 mb-2">{t('sales.selectClient')}</label>
+                <input
+                  type="search"
+                  autoComplete="off"
+                  placeholder={t('sales.searchClientsPlaceholder')}
+                  value={clientModalSearch}
+                  onChange={(e) => setClientModalSearch(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg mb-3 focus:ring-2 focus:ring-[#515151] focus:border-transparent"
+                />
+                <div className="space-y-2 max-h-[min(24rem,50vh)] overflow-y-auto pr-1">
+                  {clientsModalFiltered.length === 0 ? (
+                    <p className="text-sm text-gray-500 py-6 text-center">
+                      {clients.length === 0 ? t('sales.noClientsYet') : t('sales.noClientsMatch')}
+                    </p>
+                  ) : (
+                    clientsModalFiltered.map((client) => (
+                      <button
+                        key={client.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedClient(client);
+                          closeClientModal();
+                        }}
+                        className="w-full text-left border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="font-semibold text-gray-900">{client.name}</div>
+                        <div className="text-sm text-gray-500 mt-1">
+                          {client.address}, {client.city}, {client.country}
+                        </div>
+                        {(client.phone || client.email) && (
+                          <div className="text-xs text-gray-400 mt-1">
+                            {client.phone && `${client.phone}`}
+                            {client.phone && client.email ? ' · ' : ''}
+                            {client.email && `${client.email}`}
+                          </div>
+                        )}
+                      </button>
+                    ))
                   )}
                 </div>
-              ))}
-            </div>
-            <button
-              onClick={() => setShowClientModal(false)}
-              className="mt-4 w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-            >
-              {t('common.cancel')}
-            </button>
+              </>
+            ) : (
+              <form onSubmit={handleNewClientSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('clients.nameRequired')}</label>
+                    <input
+                      type="text"
+                      required
+                      value={newClientForm.name}
+                      onChange={(e) => setNewClientForm({ ...newClientForm, name: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('clients.countryRequired')}</label>
+                    <select
+                      required
+                      value={newClientForm.country}
+                      onChange={(e) =>
+                        setNewClientForm({ ...newClientForm, country: e.target.value as 'Ecuador' | 'USA' })
+                      }
+                      disabled={user?.role === 'sales'}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] disabled:bg-gray-100"
+                    >
+                      <option value="Ecuador">Ecuador</option>
+                      <option value="USA">USA</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('clients.email')}</label>
+                    <input
+                      type="email"
+                      value={newClientForm.email}
+                      onChange={(e) => setNewClientForm({ ...newClientForm, email: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('clients.phone')}</label>
+                    <input
+                      type="tel"
+                      value={newClientForm.phone}
+                      onChange={(e) => setNewClientForm({ ...newClientForm, phone: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('clients.addressRequired')}</label>
+                  <input
+                    type="text"
+                    required
+                    value={newClientForm.address}
+                    onChange={(e) => setNewClientForm({ ...newClientForm, address: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('clients.cityRequired')}</label>
+                  <input
+                    type="text"
+                    required
+                    value={newClientForm.city}
+                    onChange={(e) => setNewClientForm({ ...newClientForm, city: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('clients.notes')}</label>
+                  <textarea
+                    value={newClientForm.notes}
+                    onChange={(e) => setNewClientForm({ ...newClientForm, notes: e.target.value })}
+                    rows={2}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
+                  />
+                </div>
+                <div className="flex flex-col-reverse sm:flex-row gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={closeClientModal}
+                    className="w-full sm:flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={creatingClient}
+                    className="w-full sm:flex-1 px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000] disabled:opacity-60"
+                  >
+                    {creatingClient ? t('sales.savingClient') : t('sales.saveClientAndUse')}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {(!canCreateClient || clientModalMode === 'select') && (
+              <button
+                type="button"
+                onClick={closeClientModal}
+                className="mt-4 w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+              >
+                {t('common.cancel')}
+              </button>
+            )}
           </div>
         </div>
       )}

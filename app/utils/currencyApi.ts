@@ -1,6 +1,8 @@
 // Currency Exchange Rate API Integration
 // Using ExchangeRate-API Free Open Access Endpoint
 
+import { formatDateTimeShort } from './formatDate';
+
 export interface ExchangeRateResponse {
   result: string;
   base_code: string;
@@ -80,13 +82,7 @@ export function getExchangeRate(fromCurrency: string, toCurrency: string, rates:
 
 export function formatLastUpdate(utcString: string): string {
   try {
-    const date = new Date(utcString);
-    return date.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
+    return formatDateTimeShort(new Date(utcString));
   } catch {
     return utcString;
   }

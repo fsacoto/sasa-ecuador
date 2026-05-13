@@ -12,6 +12,7 @@ import ConfirmDialog from './ui/ConfirmDialog';
 import AlertDialog from './ui/AlertDialog';
 import { deleteMediaFile } from '../services/inventoryMediaService';
 import { mergeCmsImageUploadsIntoInventory } from '../utils/cmsInventorySync';
+import { formatDateDMY, formatDateTimeShort } from '../utils/formatDate';
 
 type CmsMediaUploadItem = { file: File; linkedSku?: string };
 
@@ -1736,8 +1737,8 @@ export default function CMSModuleNew() {
             )}
 
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-gray-100">
+                <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       {t('cms.preview')}
@@ -1801,7 +1802,7 @@ export default function CMSModuleNew() {
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-white divide-y divide-gray-100">
                   {filteredContent.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
@@ -1969,7 +1970,7 @@ export default function CMSModuleNew() {
                           {item.authorName}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {item.metadata.createdAt.toLocaleDateString()}
+                          {formatDateDMY(item.metadata.createdAt)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
                           <div className="flex items-center justify-center gap-1.5 flex-wrap">
@@ -2485,7 +2486,7 @@ function ContentDetailModal({
                   <h4 className="text-sm font-medium text-red-800 mb-1">Last Rejection Reason</h4>
                   <p className="text-sm text-red-700 leading-relaxed">{lastRejection.notes}</p>
                   <p className="text-xs text-red-600 mt-2 opacity-75">
-                    Rejected on {lastRejection.timestamp.toLocaleString()}
+                    Rejected on {formatDateTimeShort(lastRejection.timestamp)}
                   </p>
                 </div>
               </div>
@@ -2799,7 +2800,7 @@ function ContentDetailModal({
                             {history.status}
                           </span>
                           <span className="text-xs text-gray-500">
-                            {history.timestamp.toLocaleString()}
+                            {formatDateTimeShort(history.timestamp)}
                           </span>
                         </div>
                         <p className="text-xs text-gray-600">User ID: {history.userId}</p>
@@ -2821,22 +2822,22 @@ function ContentDetailModal({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <span className="text-xs font-medium text-gray-500">Created At</span>
-                  <p className="text-sm text-gray-900 mt-1">{content.metadata.createdAt.toLocaleString()}</p>
+                  <p className="text-sm text-gray-900 mt-1">{formatDateTimeShort(content.metadata.createdAt)}</p>
                 </div>
                 <div>
                   <span className="text-xs font-medium text-gray-500">Updated At</span>
-                  <p className="text-sm text-gray-900 mt-1">{content.metadata.updatedAt.toLocaleString()}</p>
+                  <p className="text-sm text-gray-900 mt-1">{formatDateTimeShort(content.metadata.updatedAt)}</p>
                 </div>
                 {content.metadata.publishedAt && (
                   <div>
                     <span className="text-xs font-medium text-gray-500">Published At</span>
-                    <p className="text-sm text-gray-900 mt-1">{content.metadata.publishedAt.toLocaleString()}</p>
+                    <p className="text-sm text-gray-900 mt-1">{formatDateTimeShort(content.metadata.publishedAt)}</p>
                   </div>
                 )}
                 {content.metadata.archivedAt && (
                   <div>
                     <span className="text-xs font-medium text-gray-500">Archived At</span>
-                    <p className="text-sm text-gray-900 mt-1">{content.metadata.archivedAt.toLocaleString()}</p>
+                    <p className="text-sm text-gray-900 mt-1">{formatDateTimeShort(content.metadata.archivedAt)}</p>
                   </div>
                 )}
                 {content.metadata.reviewerId && (
@@ -2860,7 +2861,7 @@ function ContentDetailModal({
                 {content.metadata.lastResubmittedAt && (
                   <div>
                     <span className="text-xs font-medium text-gray-500">Last Resubmitted</span>
-                    <p className="text-sm text-gray-900 mt-1">{content.metadata.lastResubmittedAt.toLocaleString()}</p>
+                    <p className="text-sm text-gray-900 mt-1">{formatDateTimeShort(content.metadata.lastResubmittedAt)}</p>
                   </div>
                 )}
               </div>

@@ -1,21 +1,47 @@
 'use client';
 
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from 'react';
 import { createPortal } from 'react-dom';
-import { SalesInvoice, SalesInvoiceLine, InventoryItem, Client, PaymentRecord } from '../types';
+import { SalesInvoice, Client, PaymentRecord } from '../types';
 import { getAllInvoices, updateInvoice, deleteInvoice } from '../services/invoicesService';
 import { getAllClients } from '../services/clientsService';
 import { useAuth } from '../context/AuthContext';
 import { useInventory } from '../context/InventoryContext';
 import { useTranslation } from '../context/TranslationContext';
+import { downloadSalesInvoicePdf } from '../utils/salesInvoicePdf';
 import AlertDialog from './ui/AlertDialog';
 import ConfirmDialog from './ui/ConfirmDialog';
+import InvoiceEditModal from './InvoiceEditModal';
+import MonthYearSelectEs from './ui/MonthYearSelectEs';
+import { formatDateDMY, formatMonthYearLong } from '../utils/formatDate';
+
+function GroupByLayersIcon({ className = 'h-4 w-4 shrink-0' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+      />
+    </svg>
+  );
+}
+
+function formatTrackingMonthGroupLabel(ymKey: string): string {
+  const parts = ymKey.split('-');
+  if (parts.length !== 2) return ymKey;
+  const y = parseInt(parts[0], 10);
+  const mo = parseInt(parts[1], 10);
+  if (Number.isNaN(y) || Number.isNaN(mo) || mo < 1 || mo > 12) return ymKey;
+  const raw = formatMonthYearLong(new Date(y, mo - 1, 1));
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
 
 export default function InvoiceTracking() {
   const { user } = useAuth();
-  const { inventory, updateInventoryItem, purchaseOrders } = useInventory();
+  const { inventory, updateInventoryItem } = useInventory();
   const { t } = useTranslation();
-  const editDropdownRef = useRef<HTMLDivElement>(null);
   const [allInvoices, setAllInvoices] = useState<SalesInvoice[]>([]);
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,24 +50,23 @@ export default function InvoiceTracking() {
     clientId: '',
     paymentStatus: '',
     deliveryStatus: '',
+    filterMonth: '',
     dateFrom: '',
     dateTo: ''
   });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [groupByField, setGroupByField] = useState<string>('');
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [showFiltersPanel, setShowFiltersPanel] = useState(false);
+  const [showGroupByPanel, setShowGroupByPanel] = useState(false);
+  const [showSearchPanel, setShowSearchPanel] = useState(false);
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc' | 'desc'}>({key: 'date', direction: 'desc'});
   const [selectedInvoice, setSelectedInvoice] = useState<SalesInvoice | null>(null);
   const [showModal, setShowModal] = useState(false);
   
-  // Edit state
+  // Edit modal (shared component)
   const [editingInvoice, setEditingInvoice] = useState<SalesInvoice | null>(null);
-  const [editItems, setEditItems] = useState<SalesInvoiceLine[]>([]);
-  const [editDiscountType, setEditDiscountType] = useState<'percentage' | 'flat'>('percentage');
-  const [editDiscountValue, setEditDiscountValue] = useState(0);
-  const [editPaymentMethod, setEditPaymentMethod] = useState('');
-  const [editPaymentComment, setEditPaymentComment] = useState('');
-  
-  // Search state for edit modal
-  const [editSearchTerm, setEditSearchTerm] = useState('');
-  const [editShowDropdown, setEditShowDropdown] = useState(false);
   
   // Payment modal state
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -77,6 +102,11 @@ export default function InvoiceTracking() {
   const [invoiceActionsMenuId, setInvoiceActionsMenuId] = useState<string | null>(null);
   const [actionsMenuPos, setActionsMenuPos] = useState<{ top: number; left: number } | null>(null);
   const invoiceActionsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const highlightFocusTimeoutRef = useRef<number | null>(null);
+  const focusScrollTimeoutRef = useRef<number | null>(null);
+
+  /** Fila resaltada al llegar desde Notas de ventas → Ver en seguimiento */
+  const [highlightFocusRowId, setHighlightFocusRowId] = useState<string | null>(null);
 
   const MENU_MIN_WIDTH = 192; // matches min-w-[12rem]
 
@@ -111,6 +141,18 @@ export default function InvoiceTracking() {
 
   useEffect(() => {
     loadInvoices();
+  }, []);
+
+  useEffect(() => {
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (!toolbarRef.current?.contains(e.target as Node)) {
+        setShowFiltersPanel(false);
+        setShowGroupByPanel(false);
+        setShowSearchPanel(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => document.removeEventListener('mousedown', onDocMouseDown);
   }, []);
 
   useEffect(() => {
@@ -166,49 +208,8 @@ export default function InvoiceTracking() {
     }
   }, [allInvoices]);
 
-  // Filter inventory for edit modal
-  const getFilteredEditInventory = () => {
-    if (!editSearchTerm.trim()) return [];
-    const searchLower = editSearchTerm.toLowerCase();
-    return inventory.filter(item =>
-      item.sku.toLowerCase().includes(searchLower) ||
-      item.name.toLowerCase().includes(searchLower) ||
-      item.description?.toLowerCase().includes(searchLower)
-    ).slice(0, 10);
-  };
-
-  const addProductToEditItems = (product: InventoryItem) => {
-    // Calculate unit price from landed cost
-    let unitPrice = 25; // Default price
-    
-    if (product.linkedPurchaseOrders.length > 0) {
-      const linkedOrders = purchaseOrders.filter(po => 
-        product.linkedPurchaseOrders.includes(po.id) && po.status === 'Verified'
-      );
-      
-      if (linkedOrders.length > 0) {
-        const avgLandedCost = linkedOrders.reduce((sum, po) => sum + po.landedCostPerUnit, 0) / linkedOrders.length;
-        unitPrice = avgLandedCost * 2.5;
-      }
-    }
-
-    const maxQuantity = product.ecuadorStock;
-
-    const newItem: SalesInvoiceLine & { maxQuantity?: number } = {
-      sku: product.sku,
-      description: product.description || product.name,
-      line: product.line,
-      category: product.category,
-      quantity: 1,
-      unitPrice: unitPrice,
-      totalPrice: unitPrice,
-      maxQuantity: maxQuantity
-    };
-
-    setEditItems([...editItems, newItem]);
-    setEditSearchTerm('');
-    setEditShowDropdown(false);
-  };
+  const openEditModal = (inv: SalesInvoice) => setEditingInvoice(inv);
+  const closeEditModal = () => setEditingInvoice(null);
 
   const loadInvoices = async () => {
     try {
@@ -235,6 +236,18 @@ export default function InvoiceTracking() {
       if (filters.deliveryStatus) {
         filteredData = filteredData.filter(inv => inv.deliveryStatus === filters.deliveryStatus);
       }
+
+      if (filters.filterMonth) {
+        const parts = filters.filterMonth.split('-');
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        if (!Number.isNaN(y) && !Number.isNaN(m)) {
+          filteredData = filteredData.filter((inv) => {
+            const d = new Date(inv.date);
+            return d.getFullYear() === y && d.getMonth() === m;
+          });
+        }
+      }
       
       if (filters.dateFrom) {
         const fromDate = new Date(filters.dateFrom);
@@ -243,6 +256,7 @@ export default function InvoiceTracking() {
       
       if (filters.dateTo) {
         const toDate = new Date(filters.dateTo);
+        toDate.setHours(23, 59, 59, 999);
         filteredData = filteredData.filter(inv => inv.date <= toDate);
       }
       
@@ -262,258 +276,60 @@ export default function InvoiceTracking() {
     loadInvoices();
   }, [filters]);
 
-  const openEditModal = (invoice: SalesInvoice) => {
-    setEditingInvoice(invoice);
-    
-    // Copy items and enrich with maxQuantity from inventory
-    const enrichedItems = invoice.items.map(item => {
-      // Find the inventory item by SKU
-      const inventoryItem = inventory.find(inv => inv.sku === item.sku);
-      
-      if (inventoryItem) {
-        // Calculate maxQuantity: current stock + original quantity
-        // This allows increasing quantity up to available stock
-        // (original quantity might have been deducted from stock when invoice was created)
-        // For sales role, only use Ecuador stock; otherwise use total stock
-        const currentStock = user?.role === 'sales' 
-          ? inventoryItem.ecuadorStock 
-          : inventoryItem.ecuadorStock;
-        const maxQuantity = currentStock + item.quantity;
-        
-        return {
-          ...item,
-          maxQuantity: maxQuantity
-        } as SalesInvoiceLine & { maxQuantity?: number };
+  useEffect(() => {
+    return () => {
+      if (highlightFocusTimeoutRef.current) {
+        window.clearTimeout(highlightFocusTimeoutRef.current);
+        highlightFocusTimeoutRef.current = null;
       }
-      
-      // If inventory item not found, still include the item but without maxQuantity
-      // This handles cases where items might have been deleted from inventory
-      return item;
+      if (focusScrollTimeoutRef.current) {
+        window.clearTimeout(focusScrollTimeoutRef.current);
+        focusScrollTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  /** Abrir fila desde Notas de ventas (misma colección Firestore): scroll + resaltado temporal. */
+  useEffect(() => {
+    if (loading || invoices.length === 0) return;
+    const id = sessionStorage.getItem('sasa_focus_invoice_tracking_id');
+    if (!id) return;
+    const q = searchQuery.trim().toLowerCase();
+    const visible = !q
+      ? invoices
+      : invoices.filter(
+          (inv) =>
+            inv.invoiceNumber.toLowerCase().includes(q) ||
+            inv.clientName.toLowerCase().includes(q) ||
+            inv.items.some(
+              (i) => i.sku.toLowerCase().includes(q) || i.description.toLowerCase().includes(q)
+            )
+        );
+    if (!visible.some((inv) => inv.id === id)) return;
+    sessionStorage.removeItem('sasa_focus_invoice_tracking_id');
+
+    const scrollToRow = () => {
+      document.getElementById(`invoice-tracking-row-${id}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest',
+      });
+    };
+    requestAnimationFrame(() => {
+      requestAnimationFrame(scrollToRow);
     });
-    
-    setEditItems(enrichedItems);
-    setEditDiscountType(invoice.discountType || 'percentage');
-    setEditDiscountValue(invoice.discountValue || 0);
-    setEditPaymentMethod(invoice.paymentMethod || '');
-    setEditPaymentComment(invoice.paymentComment || '');
-  };
+    if (focusScrollTimeoutRef.current) window.clearTimeout(focusScrollTimeoutRef.current);
+    focusScrollTimeoutRef.current = window.setTimeout(scrollToRow, 200);
 
-  const closeEditModal = () => {
-    setEditingInvoice(null);
-    setEditItems([]);
-    setEditDiscountType('percentage');
-    setEditDiscountValue(0);
-    setEditPaymentMethod('');
-    setEditPaymentComment('');
-  };
-
-  const handleEditItem = (index: number, field: string, value: string | number) => {
-    const updatedItems = [...editItems];
-    if (field === 'quantity' || field === 'unitPrice') {
-      let parsedValue = parseFloat(String(value)) || 0;
-      
-        // For quantity, validate against max stock
-        if (field === 'quantity') {
-          const item = updatedItems[index] as SalesInvoiceLine & { maxQuantity?: number };
-        if (item.maxQuantity) {
-          parsedValue = Math.min(Math.max(1, parsedValue), item.maxQuantity);
-          if (parseFloat(String(value)) > item.maxQuantity) {
-            showAlert(`${t('invoiceTracking.cannotExceedStock')} ${item.maxQuantity}`, 'Stock Limit');
-          }
-        }
-      }
-      
-      updatedItems[index] = {
-        ...updatedItems[index],
-        [field]: parsedValue
-      };
-      updatedItems[index].totalPrice = updatedItems[index].quantity * updatedItems[index].unitPrice;
-    } else {
-      updatedItems[index] = {
-        ...updatedItems[index],
-        [field]: value
-      };
+    setHighlightFocusRowId(id);
+    if (highlightFocusTimeoutRef.current) {
+      window.clearTimeout(highlightFocusTimeoutRef.current);
     }
-    setEditItems(updatedItems);
-  };
-
-  const removeEditItem = (index: number) => {
-    setEditItems(editItems.filter((_, i) => i !== index));
-  };
-
-  const addEditItem = () => {
-    setEditItems([...editItems, {
-      sku: '',
-      description: '',
-      quantity: 1,
-      unitPrice: 0,
-      totalPrice: 0,
-      line: '',
-      category: ''
-    }]);
-  };
-
-  const calculateEditSubtotal = () => {
-    return editItems.reduce((sum, item) => sum + item.totalPrice, 0);
-  };
-
-  const calculateEditDiscount = () => {
-    const subtotal = calculateEditSubtotal();
-    if (editDiscountType === 'percentage') {
-      return (subtotal * editDiscountValue) / 100;
-    }
-    return editDiscountValue;
-  };
-
-  const calculateEditGrandTotal = () => {
-    return calculateEditSubtotal() - calculateEditDiscount();
-  };
-
-  const saveInvoiceEdit = async () => {
-    if (!editingInvoice) return;
-    
-    if (editItems.length === 0) {
-      showAlert(t('invoiceTracking.invoiceMustHaveItem'), 'Validation Error');
-      return;
-    }
-
-    // Check if invoice was delivered - if so, we need to handle inventory returns
-    const wasDelivered = editingInvoice.deliveryStatus === 'Delivered' || editingInvoice.deliveryStatus === 'Partially Delivered';
-    
-    // Calculate items that need to be returned to inventory
-    const itemsToReturn: Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}> = [];
-    
-    if (wasDelivered) {
-      // Create a map of new items by SKU
-      const newItemsMap = new Map<string, number>();
-      editItems.forEach(item => {
-        const existingQty = newItemsMap.get(item.sku) || 0;
-        newItemsMap.set(item.sku, existingQty + item.quantity);
-      });
-      
-      // Compare with original items
-      editingInvoice.items.forEach(originalItem => {
-        const newQuantity = newItemsMap.get(originalItem.sku) || 0;
-        const originalQuantity = originalItem.quantity;
-        
-        if (newQuantity < originalQuantity) {
-          // Item was removed or quantity reduced
-          const quantityToReturn = originalQuantity - newQuantity;
-          const inventoryItem = inventory.find(inv => inv.sku === originalItem.sku);
-          
-          if (inventoryItem) {
-            const currentStock = inventoryItem.ecuadorStock;
-            const newStock = currentStock + quantityToReturn;
-            
-            itemsToReturn.push({
-              description: originalItem.description,
-              sku: originalItem.sku,
-              quantity: quantityToReturn,
-              currentStock,
-              newStock
-            });
-          }
-        }
-        
-        // Remove from map so we can check for completely removed items
-        newItemsMap.delete(originalItem.sku);
-      });
-    }
-
-    // Show warning if items need to be returned
-    if (itemsToReturn.length > 0) {
-      setItemsReturningToStock(itemsToReturn);
-      setWarningMessage(t('invoiceTracking.itemsRemovedMessage'));
-      setWarningCallback(() => async () => {
-        setShowWarningModal(false);
-        await processInvoiceEditWithReturns(itemsToReturn);
-      });
-      setShowWarningModal(true);
-      return;
-    }
-
-    // No items to return, proceed with normal update
-    await processInvoiceEditWithReturns([]);
-  };
-
-  const processInvoiceEditWithReturns = async (itemsToReturn: Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}>) => {
-    if (!editingInvoice) return;
-
-    // Return items to inventory first
-    for (const itemReturn of itemsToReturn) {
-      const inventoryItem = inventory.find(inv => inv.sku === itemReturn.sku);
-      if (inventoryItem) {
-        await updateInventoryItem(inventoryItem.id, {
-          ecuadorStock: itemReturn.newStock
-        });
-      }
-    }
-
-    const newGrandTotal = calculateEditGrandTotal();
-    const currentAmountPaid = editingInvoice.amountPaid || 0;
-    const newRemainingBalance = Math.max(0, newGrandTotal - currentAmountPaid);
-
-    // Recalculate payment status based on new total and current payments
-    let newPaymentStatus: 'Unpaid' | 'Partially Paid' | 'Paid' = editingInvoice.paymentStatus;
-    
-    if (currentAmountPaid === 0) {
-      newPaymentStatus = 'Unpaid';
-    } else if (currentAmountPaid >= newGrandTotal || newRemainingBalance <= 0.01) {
-      newPaymentStatus = 'Paid';
-    } else {
-      newPaymentStatus = 'Partially Paid';
-    }
-
-    // Recalculate delivery status
-    // If new items are added to a fully delivered invoice, it should become Partially Delivered
-    let newDeliveryStatus = editingInvoice.deliveryStatus;
-    
-    if (editingInvoice.deliveryStatus === 'Delivered' && editItems.length > editingInvoice.items.length) {
-      newDeliveryStatus = 'Partially Delivered';
-    }
-
-    try {
-      const updatedInvoice: Partial<SalesInvoice> = {
-        items: editItems,
-        subtotal: calculateEditSubtotal(),
-        discountType: editDiscountType,
-        discountValue: editDiscountValue,
-        discountTotal: calculateEditDiscount(),
-        grandTotal: newGrandTotal,
-        remainingBalance: newRemainingBalance,
-        paymentStatus: newPaymentStatus,
-        deliveryStatus: newDeliveryStatus
-      };
-
-      if (editPaymentMethod) {
-        updatedInvoice.paymentMethod = editPaymentMethod;
-      }
-      if (editPaymentComment) {
-        updatedInvoice.paymentComment = editPaymentComment;
-      }
-
-      await updateInvoice(editingInvoice.id, updatedInvoice);
-      
-      // Notify user if statuses changed
-      let statusChangedMsg = 'Invoice updated successfully';
-      if (newPaymentStatus !== editingInvoice.paymentStatus) {
-        statusChangedMsg += `\nPayment status changed to: ${newPaymentStatus}`;
-      }
-      if (newDeliveryStatus !== editingInvoice.deliveryStatus) {
-        statusChangedMsg += `\nDelivery status changed to: ${newDeliveryStatus}`;
-      }
-      if (itemsToReturn.length > 0) {
-        statusChangedMsg += `\n${itemsToReturn.length} ${t('invoiceTracking.itemsReturned') || 'item(s) returned to inventory'}.`;
-      }
-      showAlert(statusChangedMsg, 'Success');
-      
-      closeEditModal();
-      loadInvoices();
-    } catch (error) {
-      console.error('Error updating invoice:', error);
-      showAlert(t('invoiceTracking.errorUpdating'), 'Error');
-    }
-  };
+    highlightFocusTimeoutRef.current = window.setTimeout(() => {
+      highlightFocusTimeoutRef.current = null;
+      setHighlightFocusRowId(null);
+    }, 4000);
+  }, [loading, invoices, searchQuery]);
 
   const openDeliveryModal = (invoice: SalesInvoice) => {
     setDeliveryInvoice(invoice);
@@ -908,56 +724,121 @@ export default function InvoiceTracking() {
     }
   };
 
-  const calculateMetrics = () => {
-    return {
-      totalInvoices: invoices.length,
-      unpaidInvoices: invoices.filter(inv => inv.paymentStatus === 'Unpaid').length,
-      partiallyPaidInvoices: invoices.filter(inv => inv.paymentStatus === 'Partially Paid').length,
-      totalCollected: invoices.reduce((sum, inv) => sum + inv.amountPaid, 0),
-      totalPending: invoices.reduce((sum, inv) => sum + inv.remainingBalance, 0)
+  const invoicesSearchFiltered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return invoices;
+    return invoices.filter(
+      (inv) =>
+        inv.invoiceNumber.toLowerCase().includes(q) ||
+        inv.clientName.toLowerCase().includes(q) ||
+        inv.items.some(
+          (i) => i.sku.toLowerCase().includes(q) || i.description.toLowerCase().includes(q)
+        )
+    );
+  }, [invoices, searchQuery]);
+
+  const metrics = useMemo(
+    () => ({
+      totalInvoices: invoicesSearchFiltered.length,
+      unpaidInvoices: invoicesSearchFiltered.filter((inv) => inv.paymentStatus === 'Unpaid').length,
+      partiallyPaidInvoices: invoicesSearchFiltered.filter((inv) => inv.paymentStatus === 'Partially Paid').length,
+      totalCollected: invoicesSearchFiltered.reduce((sum, inv) => sum + inv.amountPaid, 0),
+      totalPending: invoicesSearchFiltered.reduce((sum, inv) => sum + inv.remainingBalance, 0),
+    }),
+    [invoicesSearchFiltered]
+  );
+
+  const sortedInvoices = useMemo(() => {
+    return [...invoicesSearchFiltered].sort((a, b) => {
+      const aValue = a[sortConfig.key as keyof SalesInvoice];
+      const bValue = b[sortConfig.key as keyof SalesInvoice];
+      if (sortConfig.key === 'items' || sortConfig.key === 'paymentHistory') {
+        return 0;
+      }
+      let aVal: string | number | Date | undefined = aValue as string | number | Date | undefined;
+      let bVal: string | number | Date | undefined = bValue as string | number | Date | undefined;
+
+      if (typeof aVal === 'string') {
+        aVal = aVal.toLowerCase();
+        bVal = (bVal as string).toLowerCase();
+      }
+
+      if (aVal instanceof Date) {
+        aVal = aVal.getTime();
+        bVal = (bVal as Date).getTime();
+      }
+
+      if (aVal === undefined || aVal === null) {
+        return sortConfig.direction === 'asc' ? -1 : 1;
+      }
+      if (bVal === undefined || bVal === null) {
+        return sortConfig.direction === 'asc' ? 1 : -1;
+      }
+
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [invoicesSearchFiltered, sortConfig]);
+
+  const groupedInvoiceMap = useMemo(() => {
+    if (!groupByField) return null;
+    const groups: Record<string, SalesInvoice[]> = {};
+    for (const inv of sortedInvoices) {
+      let key = '';
+      if (groupByField === 'clientName') key = inv.clientName || '—';
+      else if (groupByField === 'paymentStatus') key = inv.paymentStatus;
+      else if (groupByField === 'deliveryStatus') key = inv.deliveryStatus;
+      else if (groupByField === 'month') {
+        const d = new Date(inv.date);
+        key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      }
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(inv);
+    }
+    return groups;
+  }, [sortedInvoices, groupByField]);
+
+  const sortedGroupEntries = useMemo(() => {
+    if (!groupedInvoiceMap) return [] as [string, SalesInvoice[]][];
+    const entries = Object.entries(groupedInvoiceMap);
+    const paymentOrder: Record<string, number> = {
+      Unpaid: 0,
+      'Partially Paid': 1,
+      Paid: 2,
     };
-  };
+    const deliveryOrder: Record<string, number> = {
+      Pending: 0,
+      'Partially Delivered': 1,
+      Delivered: 2,
+      Canceled: 3,
+    };
+    if (groupByField === 'month') entries.sort(([a], [b]) => a.localeCompare(b));
+    else if (groupByField === 'clientName')
+      entries.sort(([a], [b]) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    else if (groupByField === 'paymentStatus')
+      entries.sort(([a], [b]) => (paymentOrder[a] ?? 99) - (paymentOrder[b] ?? 99));
+    else if (groupByField === 'deliveryStatus')
+      entries.sort(([a], [b]) => (deliveryOrder[a] ?? 99) - (deliveryOrder[b] ?? 99));
+    return entries;
+  }, [groupedInvoiceMap, groupByField]);
+
+  useEffect(() => {
+    if (!groupByField || !groupedInvoiceMap) {
+      setExpandedGroups(new Set());
+      return;
+    }
+    setExpandedGroups(new Set(Object.keys(groupedInvoiceMap)));
+  }, [groupByField, groupedInvoiceMap]);
 
   const handleGeneratePDFClick = (invoice: SalesInvoice) => {
-    void generatePDF(invoice);
-  };
-
-  const generatePDF = async (invoice: SalesInvoice) => {
-    try {
-      const { convertImageForPDF } = await import('../utils/imageConverter');
-      const { normalizePdfLogoSrc } = await import('../utils/pdfRenderHelpers');
-      const logoUrl =
-        typeof window !== 'undefined' ? `${window.location.origin}/sasa.png` : '/sasa.png';
-      const logoBase64 = await convertImageForPDF(logoUrl);
-      const logoSrc = normalizePdfLogoSrc(logoBase64, logoUrl);
-
-      const React = await import('react');
-      const [{ pdf }, { default: InvoicePDF }] = await Promise.all([
-        import('@react-pdf/renderer'),
-        import('./InvoicePDF'),
-      ]);
-
-      const pdfDocument = React.createElement(InvoicePDF, {
-        invoice,
-        logoSrc,
-      });
-
-      const blob = await pdf(pdfDocument as any).toBlob();
-
-      // Create download link
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `nota-venta-${invoice.invoiceNumber}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      
-    } catch (error) {
+    void downloadSalesInvoicePdf(invoice).catch((error) => {
       console.error('Error generating PDF:', error);
-      showAlert(t('invoiceTracking.pdfGenerationFailed') || 'Failed to generate PDF. Please try again.', 'Error');
-    }
+      showAlert(
+        t('invoiceTracking.pdfGenerationFailed') || 'Failed to generate PDF. Please try again.',
+        'Error'
+      );
+    });
   };
 
   const handleSort = (key: string) => {
@@ -968,41 +849,6 @@ export default function InvoiceTracking() {
       return { key, direction: 'asc' };
     });
   };
-
-  const sortedInvoices = [...invoices].sort((a, b) => {
-    const aValue = a[sortConfig.key as keyof SalesInvoice];
-    const bValue = b[sortConfig.key as keyof SalesInvoice];
-    // Exclude array properties from direct comparison
-    if (sortConfig.key === 'items' || sortConfig.key === 'paymentHistory') {
-      return 0;
-    }
-    let aVal: string | number | Date | undefined = aValue as string | number | Date | undefined;
-    let bVal: string | number | Date | undefined = bValue as string | number | Date | undefined;
-
-    // Handle cell sorting
-    if (typeof aVal === 'string') {
-      aVal = aVal.toLowerCase();
-      bVal = (bVal as string).toLowerCase();
-    }
-
-    // Handle date sorting
-    if (aVal instanceof Date) {
-      aVal = aVal.getTime();
-      bVal = (bVal as Date).getTime();
-    }
-
-    // Handle undefined/null values
-    if (aVal === undefined || aVal === null) {
-      return sortConfig.direction === 'asc' ? -1 : 1;
-    }
-    if (bVal === undefined || bVal === null) {
-      return sortConfig.direction === 'asc' ? 1 : -1;
-    }
-
-    if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-    if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-    return 0;
-  });
 
   const SortIcon = ({ columnKey }: { columnKey: string }) => {
     if (sortConfig.key !== columnKey) return <span className="text-gray-400">↕</span>;
@@ -1060,9 +906,8 @@ export default function InvoiceTracking() {
     }
   };
 
-  const metrics = calculateMetrics();
   const invoiceForActionsMenu = invoiceActionsMenuId
-    ? invoices.find((inv) => inv.id === invoiceActionsMenuId)
+    ? invoicesSearchFiltered.find((inv) => inv.id === invoiceActionsMenuId)
     : undefined;
 
   return (
@@ -1101,7 +946,33 @@ export default function InvoiceTracking() {
       {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('invoiceTracking.filter')}</h3>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{t('salesNotes.filterByMonth')}</label>
+            <MonthYearSelectEs
+              value={filters.filterMonth}
+              onChange={(filterMonth) => setFilters({ ...filters, filterMonth })}
+              selectClassName="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-[#515151]"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.dateFrom')}</label>
+            <input
+              type="date"
+              value={filters.dateFrom}
+              onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.dateTo')}</label>
+            <input
+              type="date"
+              value={filters.dateTo}
+              onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.customer')}</label>
             <select
@@ -1144,24 +1015,6 @@ export default function InvoiceTracking() {
               <option value="Canceled">{t('invoiceTracking.canceled')}</option>
             </select>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.dateFrom')}</label>
-            <input
-              type="date"
-              value={filters.dateFrom}
-              onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.dateTo')}</label>
-            <input
-              type="date"
-              value={filters.dateTo}
-              onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-            />
-          </div>
         </div>
       </div>
 
@@ -1173,82 +1026,99 @@ export default function InvoiceTracking() {
           <p className="text-gray-500">{t('invoiceTracking.noInvoices')}</p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <div
+          id="invoice-tracking-table"
+          className="bg-white rounded-xl border border-gray-200 overflow-x-auto scroll-mt-24"
+        >
           <table className="w-full min-w-max">
-            <thead className="bg-gray-50 border-b-2 border-gray-200">
+            <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th 
-                  className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleSort('invoiceNumber')}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {t('invoiceTracking.facNumber')}
                     <SortIcon columnKey="invoiceNumber" />
                   </div>
                 </th>
                 <th 
-                  className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleSort('clientName')}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {t('invoiceTracking.customer')}
                     <SortIcon columnKey="clientName" />
                   </div>
                 </th>
                 <th 
-                  className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleSort('date')}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {t('invoiceTracking.invoiceDate')}
                     <SortIcon columnKey="date" />
                   </div>
                 </th>
                 <th 
-                  className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleSort('grandTotal')}
                 >
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="flex items-center justify-end gap-1">
                     {t('invoiceTracking.total')}
                     <SortIcon columnKey="grandTotal" />
                   </div>
                 </th>
                 <th 
-                  className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleSort('paymentStatus')}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {t('invoiceTracking.paymentStatus')}
                     <SortIcon columnKey="paymentStatus" />
                   </div>
                 </th>
                 <th 
-                  className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   onClick={() => handleSort('deliveryStatus')}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {t('invoiceTracking.deliveryStatus')}
                     <SortIcon columnKey="deliveryStatus" />
                   </div>
                 </th>
-                <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase">
-                  <div className="flex items-center justify-end gap-2">
+                <th
+                  className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => handleSort('amountPaid')}
+                >
+                  <div className="flex items-center justify-end gap-1">
                     {t('invoiceTracking.totalPaid')}
                     <SortIcon columnKey="amountPaid" />
                   </div>
                 </th>
-                <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase">
-                  <div className="flex items-center justify-end gap-2">
+                <th
+                  className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => handleSort('remainingBalance')}
+                >
+                  <div className="flex items-center justify-end gap-1">
                     {t('invoiceTracking.pending')}
                     <SortIcon columnKey="remainingBalance" />
                   </div>
                 </th>
-                <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase">{t('invoiceTracking.actions')}</th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.actions')}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-gray-100">
               {sortedInvoices.map((invoice) => (
-                <tr key={invoice.id} className="hover:bg-gray-50">
+                <tr
+                  key={invoice.id}
+                  id={`invoice-tracking-row-${invoice.id}`}
+                  className={`transition-[background-color,box-shadow] duration-500 ${
+                    highlightFocusRowId === invoice.id
+                      ? 'bg-gray-100 shadow-[inset_0_0_0_2px_rgba(107,114,128,0.55)] hover:bg-gray-100'
+                      : 'hover:bg-gray-50'
+                  }`}
+                >
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div 
                       className="text-xl font-bold text-[#515151] cursor-pointer hover:text-[#000000] transition-colors" 
@@ -1271,7 +1141,7 @@ export default function InvoiceTracking() {
                     <div className="text-sm font-medium text-gray-900">{invoice.clientName}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-700">{new Date(invoice.date).toLocaleDateString()}</div>
+                    <div className="text-sm text-gray-700">{formatDateDMY(invoice.date)}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <div className="text-lg font-bold text-[#515151]">${invoice.grandTotal.toFixed(2)}</div>
@@ -1408,211 +1278,11 @@ export default function InvoiceTracking() {
           document.body
         )}
 
-      {/* Edit Modal */}
-      {editingInvoice && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-semibold mb-4">{t('invoiceTracking.editInvoiceTitle')} - {editingInvoice.invoiceNumber}</h3>
-            
-            {/* Items Table */}
-            <div className="mb-6">
-              <div className="flex justify-between items-center mb-4">
-                <h4 className="font-semibold">{t('invoiceTracking.items')}</h4>
-              </div>
-              
-              {/* Inventory Search */}
-              <div className="mb-4 relative" ref={editDropdownRef}>
-                <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.addProductFromInventory')}</label>
-                <input
-                  type="text"
-                  placeholder={t('invoiceTracking.searchBySkuPlaceholder')}
-                  value={editSearchTerm}
-                  onChange={(e) => {
-                    setEditSearchTerm(e.target.value);
-                    setEditShowDropdown(true);
-                  }}
-                  onFocus={() => setEditShowDropdown(true)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
-                />
-                
-                {editShowDropdown && getFilteredEditInventory().length > 0 && (
-                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                    {getFilteredEditInventory().map((product) => (
-                      <div
-                        key={product.id}
-                        onClick={() => addProductToEditItems(product)}
-                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
-                      >
-                        <div className="font-mono text-sm font-semibold text-[#515151]">{product.sku}</div>
-                        <div className="text-sm text-gray-600">{product.name}</div>
-                        <div className="text-xs text-gray-500">{t('invoiceTracking.stock')}: {product.ecuadorStock} | {product.category} - {product.line}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-2 py-2 text-left">{t('invoiceTracking.sku')}</th>
-                      <th className="px-2 py-2 text-left">{t('invoiceTracking.description')}</th>
-                      <th className="px-2 py-2 text-center">{t('invoiceTracking.qty')}</th>
-                      <th className="px-2 py-2 text-right">{t('invoiceTracking.unitPrice')}</th>
-                      <th className="px-2 py-2 text-right">{t('invoiceTracking.total')}</th>
-                      <th className="px-2 py-2 text-center">{t('invoiceTracking.actions')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {editItems.map((item, index) => (
-                      <tr key={index} className="border-t">
-                        <td className="px-2 py-2">
-                          <input
-                            type="text"
-                            value={item.sku}
-                            onChange={(e) => handleEditItem(index, 'sku', e.target.value)}
-                            className="w-full px-2 py-1 border rounded"
-                          />
-                        </td>
-                        <td className="px-2 py-2">
-                          <input
-                            type="text"
-                            value={item.description}
-                            onChange={(e) => handleEditItem(index, 'description', e.target.value)}
-                            className="w-full px-2 py-1 border rounded"
-                          />
-                        </td>
-                        <td className="px-2 py-2">
-                          <div className="flex flex-col items-center gap-1">
-                            <input
-                              type="number"
-                              min="1"
-                              max={(item as SalesInvoiceLine & { maxQuantity?: number }).maxQuantity || undefined}
-                              value={item.quantity}
-                              onChange={(e) => handleEditItem(index, 'quantity', e.target.value)}
-                              className="w-20 px-2 py-1 border rounded text-center"
-                            />
-                            {(item as SalesInvoiceLine & { maxQuantity?: number }).maxQuantity && (
-                              <div className="text-xs text-gray-500">
-                                {t('invoiceTracking.max')}: {(item as SalesInvoiceLine & { maxQuantity?: number }).maxQuantity}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-2 py-2">
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={item.unitPrice}
-                            onChange={(e) => handleEditItem(index, 'unitPrice', e.target.value)}
-                            className="w-24 px-2 py-1 border rounded text-right"
-                          />
-                        </td>
-                        <td className="px-2 py-2 text-right font-semibold">
-                          ${item.totalPrice.toFixed(2)}
-                        </td>
-                        <td className="px-2 py-2 text-center">
-                          <button
-                            onClick={() => removeEditItem(index)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            {t('invoiceTracking.remove')}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Discount */}
-            <div className="mb-6 grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">{t('invoiceTracking.discountType')}</label>
-                <select
-                  value={editDiscountType}
-                  onChange={(e) => setEditDiscountType(e.target.value as 'percentage' | 'flat')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded"
-                >
-                  <option value="percentage">{t('invoiceTracking.percentage')} (%)</option>
-                  <option value="flat">{t('invoiceTracking.flatAmount')}</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">{t('invoiceTracking.discountValue')}</label>
-                <input
-                  type="number"
-                  value={editDiscountValue}
-                  onChange={(e) => setEditDiscountValue(parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded"
-                />
-              </div>
-            </div>
-
-            {/* Payment Method */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium mb-2">{t('invoiceTracking.paymentMethod')}</label>
-              <select
-                value={editPaymentMethod}
-                onChange={(e) => setEditPaymentMethod(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded"
-              >
-                <option value="">{t('invoiceTracking.selectPaymentMethod')}</option>
-                <option value="card">{t('invoiceTracking.card')}</option>
-                <option value="cash">{t('invoiceTracking.cash')}</option>
-                <option value="transfer">{t('invoiceTracking.transfer')}</option>
-              </select>
-            </div>
-
-            {/* Payment Comment */}
-            {editPaymentMethod && (
-              <div className="mb-6">
-                <label className="block text-sm font-medium mb-2">{t('invoiceTracking.paymentNotes')}</label>
-                <textarea
-                  value={editPaymentComment}
-                  onChange={(e) => setEditPaymentComment(e.target.value)}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded"
-                />
-              </div>
-            )}
-
-            {/* Totals */}
-            <div className="border-t pt-4 mb-6">
-              <div className="flex justify-between mb-2">
-                <span>{t('invoiceTracking.subtotal')}:</span>
-                <span className="font-semibold">${calculateEditSubtotal().toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between mb-2">
-                <span>{t('invoiceTracking.discount')}:</span>
-                <span className="font-semibold">${calculateEditDiscount().toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-xl font-bold text-[#515151] pt-2 border-t">
-                <span>{t('invoiceTracking.grandTotal')}:</span>
-                <span>${calculateEditGrandTotal().toFixed(2)}</span>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex gap-2">
-              <button
-                onClick={saveInvoiceEdit}
-                className="flex-1 px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000]"
-              >
-                {t('invoiceTracking.saveChanges')}
-              </button>
-              <button
-                onClick={closeEditModal}
-                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-              >
-                {t('invoiceTracking.cancel')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <InvoiceEditModal
+        invoice={editingInvoice}
+        onClose={closeEditModal}
+        onSaved={loadInvoices}
+      />
 
       {/* Payment Modal */}
       {showPaymentModal && paymentInvoice && (
@@ -1723,21 +1393,21 @@ export default function InvoiceTracking() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.itemsToDeliver')}</label>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
-                        <th className="px-3 py-2 text-left">{t('invoiceTracking.sku')}</th>
-                        <th className="px-3 py-2 text-left">{t('invoiceTracking.description')}</th>
-                        <th className="px-3 py-2 text-center">{t('invoiceTracking.ordered')}</th>
-                        <th className="px-3 py-2 text-center">{t('invoiceTracking.delivering')}</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.sku')}</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.description')}</th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.ordered')}</th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.delivering')}</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200">
+                    <tbody className="divide-y divide-gray-100">
                       {deliveryInvoice.items.map((item, index) => (
-                        <tr key={index}>
-                          <td className="px-3 py-2 font-mono text-xs">{item.sku}</td>
-                          <td className="px-3 py-2">{item.description}</td>
-                          <td className="px-3 py-2 text-center">{item.quantity}</td>
-                          <td className="px-3 py-2 text-center">
+                        <tr key={index} className="transition-colors hover:bg-gray-50">
+                          <td className="px-6 py-3 font-mono text-xs text-gray-900">{item.sku}</td>
+                          <td className="px-6 py-3 text-gray-700">{item.description}</td>
+                          <td className="px-6 py-3 text-center text-gray-700">{item.quantity}</td>
+                          <td className="px-6 py-3 text-center">
                             <input
                               type="number"
                               min="0"
@@ -1811,7 +1481,7 @@ export default function InvoiceTracking() {
                   </div>
                   <div>
                     <span className="text-gray-600">{t('invoiceTracking.date')}:</span>
-                    <span className="ml-2 font-medium">{new Date(detailsInvoice.date).toLocaleDateString()}</span>
+                    <span className="ml-2 font-medium">{formatDateDMY(detailsInvoice.date)}</span>
                   </div>
                   <div>
                     <span className="text-gray-600">{t('invoiceTracking.currency')}:</span>
@@ -1833,23 +1503,23 @@ export default function InvoiceTracking() {
                 <h4 className="font-semibold text-gray-900 mb-3">{t('invoiceTracking.items')}</h4>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
-                        <th className="px-3 py-2 text-left">{t('invoiceTracking.sku')}</th>
-                        <th className="px-3 py-2 text-left">{t('invoiceTracking.description')}</th>
-                        <th className="px-3 py-2 text-center">{t('invoiceTracking.qty')}</th>
-                        <th className="px-3 py-2 text-right">{t('invoiceTracking.unitPrice')}</th>
-                        <th className="px-3 py-2 text-right">{t('invoiceTracking.total')}</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.sku')}</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.description')}</th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.qty')}</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.unitPrice')}</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.total')}</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200">
+                    <tbody className="divide-y divide-gray-100">
                       {detailsInvoice.items.map((item, index) => (
-                        <tr key={index}>
-                          <td className="px-3 py-2 font-mono text-xs">{item.sku}</td>
-                          <td className="px-3 py-2">{item.description}</td>
-                          <td className="px-3 py-2 text-center">{item.quantity}</td>
-                          <td className="px-3 py-2 text-right">${item.unitPrice.toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right">${item.totalPrice.toFixed(2)}</td>
+                        <tr key={index} className="transition-colors hover:bg-gray-50">
+                          <td className="px-6 py-3 font-mono text-xs text-gray-900">{item.sku}</td>
+                          <td className="px-6 py-3 text-gray-700">{item.description}</td>
+                          <td className="px-6 py-3 text-center text-gray-700">{item.quantity}</td>
+                          <td className="px-6 py-3 text-right text-gray-700">${item.unitPrice.toFixed(2)}</td>
+                          <td className="px-6 py-3 text-right text-gray-900">${item.totalPrice.toFixed(2)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1899,12 +1569,12 @@ export default function InvoiceTracking() {
 
                 {detailsInvoice.paymentHistory && detailsInvoice.paymentHistory.length > 0 && (
                   <div className="mt-4">
-                    <div className="text-xs font-semibold text-gray-700 uppercase mb-2">{t('invoiceTracking.paymentHistory')}</div>
+                    <div className="mb-2 text-xs font-medium uppercase tracking-wider text-gray-500">{t('invoiceTracking.paymentHistory')}</div>
                     <div className="space-y-2">
                       {detailsInvoice.paymentHistory.map((payment, index) => (
                         <div key={index} className="flex justify-between text-sm bg-white p-2 rounded">
                           <span className="text-gray-600">
-                            {new Date(payment.date).toLocaleDateString()}
+                            {formatDateDMY(payment.date)}
                             {payment.method && ` (${payment.method})`}
                           </span>
                           <span className="font-semibold text-green-600">${payment.amount.toFixed(2)}</span>
@@ -1932,7 +1602,7 @@ export default function InvoiceTracking() {
                     <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.deliveryDate')}</div>
                     <div className="font-medium">
                       {detailsInvoice.deliveryDate 
-                        ? new Date(detailsInvoice.deliveryDate).toLocaleDateString()
+                        ? formatDateDMY(detailsInvoice.deliveryDate)
                         : t('invoiceTracking.na')}
                     </div>
                   </div>

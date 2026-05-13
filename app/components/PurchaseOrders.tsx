@@ -35,6 +35,7 @@ import {
   allKnownLineKeys,
 } from '../constants/merchandise';
 import { displayCategory, displayLine } from '../utils/merchandiseLabels';
+import { formatDateDMY, formatDateTimeShort } from '../utils/formatDate';
 
 /** Row used to validate supplier + internal SKU before verification (inventory sync requires both). */
 function purchaseOrderSnapshotForSkuGate(data: {
@@ -1309,7 +1310,7 @@ export default function PurchaseOrders() {
           groupKey = order.status;
           break;
         case 'createdAt':
-          groupKey = new Date(order.createdAt).toLocaleDateString();
+          groupKey = formatDateDMY(new Date(order.createdAt));
           break;
         default:
           groupKey = 'Unknown';
@@ -3235,10 +3236,7 @@ export default function PurchaseOrders() {
                       <div className="mt-0.5 text-xs text-gray-500">
                         {t('bulkImport.sessionPickerRows').replace('{count}', String(item.rowCount))}
                         {' · '}
-                        {new Date(item.savedAt).toLocaleString('es-EC', {
-                          dateStyle: 'short',
-                          timeStyle: 'short',
-                        })}
+                        {formatDateTimeShort(item.savedAt)}
                       </div>
                     </button>
                     <button

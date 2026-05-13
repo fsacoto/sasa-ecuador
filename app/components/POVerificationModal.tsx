@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { PurchaseOrder, Supplier } from '../types';
 import { useTranslation } from '../context/TranslationContext';
+import { formatDateDMY, formatDateMedium } from '../utils/formatDate';
 
 interface POVerificationModalProps {
   purchaseOrders: PurchaseOrder[];
@@ -78,7 +79,7 @@ export default function POVerificationModal({
       const supplier = suppliers.find(s => s.id === inv.supplierId);
       const supplierName = supplier?.name.toLowerCase() || '';
       const invoiceLower = inv.invoice.toLowerCase();
-      const purchaseDateStr = inv.purchaseDate.toLocaleDateString().toLowerCase();
+      const purchaseDateStr = formatDateDMY(inv.purchaseDate).toLowerCase();
       
       // Check if any order in this invoice matches
       const hasMatchingSku = inv.orders.some(order => 
@@ -169,11 +170,7 @@ export default function POVerificationModal({
               {filteredInvoices.map((inv) => {
                 const supplier = suppliers.find(s => s.id === inv.supplierId);
                 const poNumber = formatPONumber(inv.invoice);
-                const invoiceDate = inv.purchaseDate.toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric'
-                });
+                const invoiceDate = formatDateMedium(inv.purchaseDate);
 
                 return (
                   <button

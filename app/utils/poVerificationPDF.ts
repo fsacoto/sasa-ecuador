@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import { PurchaseOrder, Supplier } from '../types';
+import { formatDateLong } from './formatDate';
 
 interface GeneratePOVerificationPDFParams {
   orders: PurchaseOrder[];
@@ -35,15 +36,6 @@ function formatPONumber(invoice: string): string {
     return `PO-${String(numbers[0]).padStart(5, '0')}`;
   }
   return invoice || 'PO-00000';
-}
-
-function formatDate(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleDateString('es-EC', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
 }
 
 export async function generatePOVerificationPDF({
@@ -87,8 +79,8 @@ export async function generatePOVerificationPDF({
   };
 
   const poNumber = formatPONumber(invoiceNumber);
-  const invoiceDate = formatDate(orders[0].purchaseDate);
-  const currentDate = formatDate(new Date());
+  const invoiceDate = formatDateLong(orders[0].purchaseDate);
+  const currentDate = formatDateLong(new Date());
   // Load logo
   let logoData = '';
   try {

@@ -4,6 +4,7 @@ import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/render
 import { Consignment, ConsignmentStatus } from '../types';
 import esMessages from '../locales/es.json';
 import { toPdfDate } from '../utils/pdfRenderHelpers';
+import { formatDateLong } from '../utils/formatDate';
 
 const translate = (key: string): string => {
   const keys = key.split('.');
@@ -244,14 +245,7 @@ function statusLabelEs(status: ConsignmentStatus, tr: (k: string) => string): st
 
 export default function ConsignmentPDF({ consignment, logoSrc = '/sasa.png' }: ConsignmentPDFProps) {
   const t = (key: string) => translate(key);
-  const formatDate = (date: unknown) => {
-    const d = toPdfDate(date);
-    return d.toLocaleDateString('es-EC', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-  };
+  const formatDate = (date: unknown) => formatDateLong(toPdfDate(date));
 
   // Parse client address
   const parseAddress = (address: string): string[] => {

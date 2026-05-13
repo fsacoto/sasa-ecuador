@@ -3,6 +3,7 @@
 import React, { useState, useRef } from 'react';
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
+import { formatDateDMY } from '../utils/formatDate';
 
 interface CMSFilters {
   category: string;
@@ -113,7 +114,7 @@ export default function CMSModule() {
     const selectedInventory = inventory.filter(item => selectedItems.has(item.id));
     
     let content = `SASA Product Catalog\n`;
-    content += `Generated on: ${new Date().toLocaleDateString()}\n\n`;
+    content += `Generated on: ${formatDateDMY(new Date())}\n\n`;
     
     selectedInventory.forEach((item, index) => {
       const totalStock = item.ecuadorStock;

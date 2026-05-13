@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import {
   Consignment,
   ConsignmentItem,
@@ -19,7 +19,10 @@ import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../context/TranslationContext';
 import ConfirmDialog from './ui/ConfirmDialog';
 import AlertDialog from './ui/AlertDialog';
+import MonthYearSelectEs from './ui/MonthYearSelectEs';
 import ConsignmentReturnModal from './ConsignmentReturnModal';
+import { HUB_GROUP_STACK_ICON_PATH } from '../constants/businessHubUi';
+import { formatDateDMY } from '../utils/formatDate';
 
 type View = 'list' | 'create' | 'details';
 
@@ -61,6 +64,20 @@ export default function Consignments() {
   
   // Alert dialog state
   const [alertDialog, setAlertDialog] = useState<{open: boolean, title?: string, message: string}>({open: false, message: ''});
+
+  const [filterMonth, setFilterMonth] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [filterClientId, setFilterClientId] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [listSearch, setListSearch] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [showGroupByDropdown, setShowGroupByDropdown] = useState(false);
+  const [showSearchPanel, setShowSearchPanel] = useState(false);
+  const [groupByField, setGroupByField] = useState<string>('');
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const listToolbarRef = useRef<HTMLDivElement>(null);
+  const groupByDropdownRef = useRef<HTMLDivElement>(null);
   
   // Helper function for styled alerts
   const showAlert = (message: string, title?: string) => {
@@ -90,9 +107,26 @@ export default function Consignments() {
   }, [view, selectedConsignment?.id]);
 
   useEffect(() => {
+    if (view !== 'list') return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (!listToolbarRef.current?.contains(e.target as Node)) {
+        setShowFilters(false);
+        setShowGroupByDropdown(false);
+        setShowSearchPanel(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => document.removeEventListener('mousedown', onDocMouseDown);
+  }, [view]);
+
+  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node) &&
-          searchInputRef.current && !searchInputRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node) &&
+        searchInputRef.current &&
+        !searchInputRef.current.contains(event.target as Node)
+      ) {
         setShowDropdown(false);
       }
     };
@@ -602,58 +636,198 @@ export default function Consignments() {
     });
   };
 
-  const sortedConsignments = [...consignments].sort((a, b) => {
-    let aVal: string | number | Date | undefined;
-    let bVal: string | number | Date | undefined;
-
-    // Handle special calculated fields
-    if (sortConfig.key === 'totalItemsDelivered') {
-      aVal = calculateTotalItems(a.items);
-      bVal = calculateTotalItems(b.items);
-    } else if (sortConfig.key === 'totalSold') {
-      aVal = calculateTotalSold(a.items);
-      bVal = calculateTotalSold(b.items);
-    } else if (sortConfig.key === 'totalReturned') {
-      aVal = calculateTotalReturned(a.items);
-      bVal = calculateTotalReturned(b.items);
-    } else {
-      const aValue = a[sortConfig.key as keyof Consignment];
-      const bValue = b[sortConfig.key as keyof Consignment];
-      // Exclude items array from direct comparison
-      if (sortConfig.key === 'items') {
-        aVal = 0;
-        bVal = 0;
-      } else {
-        aVal = aValue as string | number | Date | undefined;
-        bVal = bValue as string | number | Date | undefined;
+  const consignmentsFiltered = useMemo(() => {
+    return consignments.filter((c) => {
+      const raw = c.dateCreated as Date | string;
+      const d = raw instanceof Date ? raw : new Date(raw);
+      if (filterMonth) {
+        const [ys, ms] = filterMonth.split('-');
+        const y = parseInt(ys, 10);
+        const m = parseInt(ms, 10) - 1;
+        if (!Number.isNaN(y) && !Number.isNaN(m) && (d.getFullYear() !== y || d.getMonth() !== m)) {
+          return false;
+        }
       }
-    }
+      if (dateFrom) {
+        const from = new Date(dateFrom);
+        from.setHours(0, 0, 0, 0);
+        if (d < from) return false;
+      }
+      if (dateTo) {
+        const to = new Date(dateTo);
+        to.setHours(23, 59, 59, 999);
+        if (d > to) return false;
+      }
+      if (filterClientId && c.clientId !== filterClientId) return false;
+      if (filterStatus && c.status !== filterStatus) return false;
+      const q = listSearch.trim().toLowerCase();
+      if (q && !c.consignmentId.toLowerCase().includes(q) && !c.clientName.toLowerCase().includes(q)) {
+        return false;
+      }
+      return true;
+    });
+  }, [consignments, filterMonth, dateFrom, dateTo, filterClientId, filterStatus, listSearch]);
 
-    // Handle string sorting
-    if (typeof aVal === 'string') {
-      aVal = aVal.toLowerCase();
-      bVal = (bVal as string).toLowerCase();
-    }
+  const sortedConsignments = useMemo(() => {
+    return [...consignmentsFiltered].sort((a, b) => {
+      let aVal: string | number | Date | undefined;
+      let bVal: string | number | Date | undefined;
 
-    // Handle date sorting
-    if (aVal instanceof Date) {
-      aVal = aVal.getTime();
-      bVal = (bVal as Date).getTime();
-    }
+      if (sortConfig.key === 'totalItemsDelivered') {
+        aVal = calculateTotalItems(a.items);
+        bVal = calculateTotalItems(b.items);
+      } else if (sortConfig.key === 'totalSold') {
+        aVal = calculateTotalSold(a.items);
+        bVal = calculateTotalSold(b.items);
+      } else if (sortConfig.key === 'totalReturned') {
+        aVal = calculateTotalReturned(a.items);
+        bVal = calculateTotalReturned(b.items);
+      } else {
+        const aValue = a[sortConfig.key as keyof Consignment];
+        const bValue = b[sortConfig.key as keyof Consignment];
+        if (sortConfig.key === 'items') {
+          aVal = 0;
+          bVal = 0;
+        } else {
+          aVal = aValue as string | number | Date | undefined;
+          bVal = bValue as string | number | Date | undefined;
+        }
+      }
 
-    // Handle undefined/null values
-    if (aVal === undefined || aVal === null) return 1;
-    if (bVal === undefined || bVal === null) return -1;
+      if (typeof aVal === 'string') {
+        aVal = aVal.toLowerCase();
+        bVal = (bVal as string).toLowerCase();
+      }
 
-    if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-    if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-    return 0;
-  });
+      if (aVal instanceof Date) {
+        aVal = aVal.getTime();
+        bVal = (bVal as Date).getTime();
+      }
+
+      if (aVal === undefined || aVal === null) return 1;
+      if (bVal === undefined || bVal === null) return -1;
+
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [consignmentsFiltered, sortConfig]);
+
+  const groupedConsignments = useMemo(() => {
+    if (!groupByField) return {} as Record<string, Consignment[]>;
+    const groups: Record<string, Consignment[]> = {};
+    const statusLabel = (s: Consignment['status']) =>
+      s === 'Open'
+        ? t('consignments.statusOpen')
+        : s === 'Partially Closed'
+          ? t('consignments.statusPartiallyClosed')
+          : t('consignments.statusClosed');
+    sortedConsignments.forEach((c) => {
+      let key: string;
+      if (groupByField === 'clientName') key = c.clientName || '—';
+      else if (groupByField === 'status') key = statusLabel(c.status);
+      else if (groupByField === 'month') {
+        const raw = c.dateCreated as Date | string;
+        const d = raw instanceof Date ? raw : new Date(raw);
+        key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      } else key = '—';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(c);
+    });
+    return groups;
+  }, [sortedConsignments, groupByField, t]);
+
+  useEffect(() => {
+    setExpandedGroups(new Set());
+  }, [groupByField]);
 
   const SortIcon = ({ columnKey }: { columnKey: string }) => {
     if (sortConfig.key !== columnKey) return <span className="text-gray-400">↕</span>;
     return sortConfig.direction === 'asc' ? <span>↑</span> : <span>↓</span>;
   };
+
+  const activeListFiltersCount = [
+    filterMonth,
+    dateFrom,
+    dateTo,
+    filterClientId,
+    filterStatus,
+    listSearch.trim(),
+  ].filter(Boolean).length;
+
+  const clearListFilters = () => {
+    setFilterMonth('');
+    setDateFrom('');
+    setDateTo('');
+    setFilterClientId('');
+    setFilterStatus('');
+    setListSearch('');
+  };
+
+  const renderConsignmentTableRow = (consignment: Consignment) => (
+    <tr key={consignment.id} className="transition-colors hover:bg-gray-50">
+      <td className="whitespace-nowrap px-6 py-4">
+        <div className="font-mono text-sm font-medium text-[#515151]">{consignment.consignmentId}</div>
+      </td>
+      <td className="px-6 py-4">
+        <div className="text-sm font-medium text-gray-900">{consignment.clientName}</div>
+      </td>
+      <td className="whitespace-nowrap px-6 py-4">
+        <div className="text-sm text-gray-700">{formatDateDMY(consignment.dateCreated)}</div>
+      </td>
+      <td className="whitespace-nowrap px-6 py-4">
+        <span
+          className={`rounded-full px-2 py-1 text-xs font-medium ${
+            consignment.status === 'Open'
+              ? 'bg-blue-100 text-blue-800'
+              : consignment.status === 'Partially Closed'
+                ? 'bg-yellow-100 text-yellow-800'
+                : 'bg-green-100 text-green-800'
+          }`}
+        >
+          {consignment.status === 'Open'
+            ? t('consignments.statusOpen')
+            : consignment.status === 'Partially Closed'
+              ? t('consignments.statusPartiallyClosed')
+              : t('consignments.statusClosed')}
+        </span>
+      </td>
+      <td className="whitespace-nowrap px-6 py-4 text-center">
+        <div className="text-sm text-gray-900">{calculateTotalItems(consignment.items)}</div>
+      </td>
+      <td className="whitespace-nowrap px-6 py-4 text-center">
+        <div className="text-sm text-gray-900">{calculateTotalSold(consignment.items)}</div>
+      </td>
+      <td className="whitespace-nowrap px-6 py-4 text-center">
+        <div className="text-sm text-gray-900">{calculateTotalReturned(consignment.items)}</div>
+      </td>
+      <td className="whitespace-nowrap px-6 py-4 text-center">
+        <div className="flex items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => handleViewDetails(consignment)}
+            className="flex items-center gap-1.5 rounded-lg bg-blue-100 px-3 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-200"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            {t('consignments.viewDetails')}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleDeleteClick(consignment)}
+            className="flex items-center gap-1.5 rounded-lg bg-red-100 px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-200"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            {t('consignments.delete') || t('common.delete')}
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
 
   // List View
   if (view === 'list') {
@@ -680,136 +854,382 @@ export default function Consignments() {
             <p className="text-gray-500">{t('consignments.noConsignments')}</p>
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-            <table className="w-full min-w-max">
-              <thead className="bg-gray-50 border-b-2 border-gray-200">
+          <>
+            <div ref={listToolbarRef} className="space-y-4">
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowFilters((v) => !v);
+                      setShowGroupByDropdown(false);
+                      setShowSearchPanel(false);
+                    }}
+                    className={`flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm transition-all duration-200 hover:bg-gray-50 hover:shadow-md ${
+                      showFilters ? 'border-[#515151] bg-[#515151] text-white' : ''
+                    }`}
+                  >
+                    <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                      />
+                    </svg>
+                    <span className="font-medium">{t('inventory.filters')}</span>
+                    {activeListFiltersCount > 0 && (
+                      <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800">
+                        {activeListFiltersCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
+
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowGroupByDropdown((v) => !v);
+                      setShowFilters(false);
+                      setShowSearchPanel(false);
+                    }}
+                    className={`flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm transition-all duration-200 hover:bg-gray-50 hover:shadow-md ${
+                      groupByField ? 'border-[#515151] bg-[#515151] text-white' : ''
+                    }`}
+                  >
+                    <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={HUB_GROUP_STACK_ICON_PATH} />
+                    </svg>
+                    <span className="font-medium">{t('purchaseOrders.groupBy')}</span>
+                    {groupByField ? (
+                      <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-800">1</span>
+                    ) : null}
+                  </button>
+                  {showGroupByDropdown && (
+                    <div
+                      ref={groupByDropdownRef}
+                      className="absolute right-0 top-full z-20 mt-2 w-64 rounded-xl border border-gray-200 bg-white shadow-lg"
+                    >
+                      <div className="p-4">
+                        <div className="mb-3 text-sm font-medium text-gray-700">{t('purchaseOrders.groupByField')}</div>
+                        {groupByField && Object.keys(groupedConsignments).length > 0 && (
+                          <div className="mb-3 flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setExpandedGroups(new Set(Object.keys(groupedConsignments)));
+                                setShowGroupByDropdown(false);
+                              }}
+                              className="flex-1 rounded-lg bg-green-50 px-3 py-1.5 text-xs text-green-700 transition-colors hover:bg-green-100"
+                            >
+                              {t('purchaseOrders.expandAll') || 'Expand All'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setExpandedGroups(new Set());
+                                setShowGroupByDropdown(false);
+                              }}
+                              className="flex-1 rounded-lg bg-gray-50 px-3 py-1.5 text-xs text-gray-700 transition-colors hover:bg-gray-100"
+                            >
+                              {t('purchaseOrders.collapseAll') || 'Collapse All'}
+                            </button>
+                          </div>
+                        )}
+                        <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setGroupByField('');
+                              setShowGroupByDropdown(false);
+                              setExpandedGroups(new Set());
+                            }}
+                            className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                              !groupByField ? 'bg-[#515151] text-white' : 'text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                            {t('purchaseOrders.noGrouping')}
+                          </button>
+                          {(
+                            [
+                              { key: 'clientName', label: t('consignments.clientName') },
+                              { key: 'status', label: t('consignments.status') },
+                              { key: 'month', label: t('salesNotes.groupMonth') },
+                            ] as const
+                          ).map((field) => (
+                            <button
+                              key={field.key}
+                              type="button"
+                              onClick={() => {
+                                setGroupByField(field.key);
+                                setShowGroupByDropdown(false);
+                                setExpandedGroups(new Set());
+                              }}
+                              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                                groupByField === field.key ? 'bg-[#515151] text-white' : 'text-gray-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={HUB_GROUP_STACK_ICON_PATH} />
+                              </svg>
+                              {field.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSearchPanel((v) => !v);
+                      setShowFilters(false);
+                      setShowGroupByDropdown(false);
+                    }}
+                    className={`flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm transition-all duration-200 hover:bg-gray-50 hover:shadow-md ${
+                      showSearchPanel ? 'border-[#515151] bg-[#515151] text-white' : ''
+                    }`}
+                    aria-label={t('inventory.search')}
+                  >
+                    <svg className="h-4 w-4 shrink-0 text-current" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </button>
+                  {showSearchPanel && (
+                    <div className="absolute right-0 top-full z-20 mt-2 w-80 rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
+                      <div className="mb-3 text-sm font-medium text-gray-700">{t('inventory.search')}</div>
+                      <div className="relative">
+                        <input
+                          type="search"
+                          value={listSearch}
+                          onChange={(e) => setListSearch(e.target.value)}
+                          placeholder={t('consignments.searchListPlaceholder')}
+                          className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 text-sm focus:border-transparent focus:ring-2 focus:ring-[#515151]"
+                        />
+                        <svg
+                          className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {showFilters && (
+                <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                  <div className="border-t border-gray-200 bg-gray-50 p-4">
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-700">{t('salesNotes.filterByMonth')}</label>
+                        <MonthYearSelectEs value={filterMonth} onChange={setFilterMonth} />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-700">{t('salesNotes.dateFrom')}</label>
+                        <input
+                          type="date"
+                          value={dateFrom}
+                          onChange={(e) => setDateFrom(e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-[#515151]"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-700">{t('salesNotes.dateTo')}</label>
+                        <input
+                          type="date"
+                          value={dateTo}
+                          onChange={(e) => setDateTo(e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-[#515151]"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-700">{t('consignments.client')}</label>
+                        <select
+                          value={filterClientId}
+                          onChange={(e) => setFilterClientId(e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-[#515151]"
+                        >
+                          <option value="">{t('salesNotes.allClients')}</option>
+                          {clients.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-700">{t('consignments.status')}</label>
+                        <select
+                          value={filterStatus}
+                          onChange={(e) => setFilterStatus(e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-[#515151]"
+                        >
+                          <option value="">{t('salesNotes.all')}</option>
+                          <option value="Open">{t('consignments.statusOpen')}</option>
+                          <option value="Partially Closed">{t('consignments.statusPartiallyClosed')}</option>
+                          <option value="Closed">{t('consignments.statusClosed')}</option>
+                        </select>
+                      </div>
+                    </div>
+                    {activeListFiltersCount > 0 && (
+                      <div className="mt-4 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={clearListFilters}
+                          className="text-sm font-medium text-[#515151] hover:text-black"
+                        >
+                          {t('invoiceTracking.clearFilters')}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+              <table className="w-full min-w-max">
+              <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th 
-                    className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     onClick={() => handleSort('consignmentId')}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                       {t('consignments.consignmentId')}
                       <SortIcon columnKey="consignmentId" />
                     </div>
                   </th>
                   <th 
-                    className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     onClick={() => handleSort('clientName')}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                       {t('consignments.clientName')}
                       <SortIcon columnKey="clientName" />
                     </div>
                   </th>
                   <th 
-                    className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     onClick={() => handleSort('dateCreated')}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                       {t('consignments.dateCreated')}
                       <SortIcon columnKey="dateCreated" />
                     </div>
                   </th>
                   <th 
-                    className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     onClick={() => handleSort('status')}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                       {t('consignments.status')}
                       <SortIcon columnKey="status" />
                     </div>
                   </th>
                   <th 
-                    className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     onClick={() => handleSort('totalItemsDelivered')}
                   >
-                    <div className="flex items-center justify-center gap-2">
+                    <div className="flex items-center justify-center gap-1">
                       {t('consignments.totalItemsDelivered')}
                       <SortIcon columnKey="totalItemsDelivered" />
                     </div>
                   </th>
                   <th 
-                    className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     onClick={() => handleSort('totalSold')}
                   >
-                    <div className="flex items-center justify-center gap-2">
+                    <div className="flex items-center justify-center gap-1">
                       {t('consignments.totalSold')}
                       <SortIcon columnKey="totalSold" />
                     </div>
                   </th>
                   <th 
-                    className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase cursor-pointer hover:bg-gray-100"
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     onClick={() => handleSort('totalReturned')}
                   >
-                    <div className="flex items-center justify-center gap-2">
+                    <div className="flex items-center justify-center gap-1">
                       {t('consignments.totalReturned')}
                       <SortIcon columnKey="totalReturned" />
                     </div>
                   </th>
-                  <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase">{t('consignments.actions')}</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.actions')}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
-                {sortedConsignments.map((consignment) => (
-                  <tr key={consignment.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="font-mono text-sm font-medium text-[#515151]">{consignment.consignmentId}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm font-medium text-gray-900">{consignment.clientName}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-700">{new Date(consignment.dateCreated).toLocaleDateString()}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                        consignment.status === 'Open' ? 'bg-blue-100 text-blue-800' :
-                        consignment.status === 'Partially Closed' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-green-100 text-green-800'
-                      }`}>
-                        {consignment.status === 'Open' ? t('consignments.statusOpen') :
-                         consignment.status === 'Partially Closed' ? t('consignments.statusPartiallyClosed') :
-                         t('consignments.statusClosed')}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-sm text-gray-900">{calculateTotalItems(consignment.items)}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-sm text-gray-900">{calculateTotalSold(consignment.items)}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-sm text-gray-900">{calculateTotalReturned(consignment.items)}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="flex items-center gap-2 justify-center">
-                        <button
-                          onClick={() => handleViewDetails(consignment)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-200 transition-colors"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                          {t('consignments.viewDetails')}
-                        </button>
-                        <button
-                          onClick={() => handleDeleteClick(consignment)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs font-medium hover:bg-red-200 transition-colors"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                          {t('consignments.delete') || t('common.delete')}
-                        </button>
-                      </div>
+              <tbody className="divide-y divide-gray-100">
+                {sortedConsignments.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-12 text-center text-sm text-gray-500">
+                      {activeListFiltersCount > 0 ? t('consignments.noMatchFilters') : t('consignments.noConsignments')}
                     </td>
                   </tr>
-                ))}
+                ) : !groupByField ? (
+                  sortedConsignments.map((c) => renderConsignmentTableRow(c))
+                ) : (
+                  Object.entries(groupedConsignments).map(([groupKey, items]) => {
+                    const isExpanded = expandedGroups.has(groupKey);
+                    const toggleGroup = () => {
+                      setExpandedGroups((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(groupKey)) next.delete(groupKey);
+                        else next.add(groupKey);
+                        return next;
+                      });
+                    };
+                    return (
+                      <Fragment key={groupKey}>
+                        <tr className="border-t border-gray-200 bg-gray-50">
+                          <td colSpan={8} className="px-6 py-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <button
+                                  type="button"
+                                  onClick={toggleGroup}
+                                  className="flex items-center gap-2 text-left transition-opacity hover:opacity-80"
+                                  title={
+                                    isExpanded
+                                      ? t('purchaseOrders.collapseGroup') || 'Collapse'
+                                      : t('purchaseOrders.expandGroup') || 'Expand'
+                                  }
+                                >
+                                  <svg
+                                    className={`h-5 w-5 text-gray-600 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                  >
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                  </svg>
+                                  <span className="text-lg font-semibold text-gray-900">{groupKey}</span>
+                                </button>
+                                <span className="rounded-full bg-[#515151] px-2 py-1 text-xs font-medium text-white">
+                                  {items.length}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                        {isExpanded && items.map((c) => renderConsignmentTableRow(c))}
+                      </Fragment>
+                    );
+                  })
+                )}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </div>
         {/* Delete Confirmation Dialog */}
@@ -951,27 +1371,27 @@ export default function Consignments() {
             {consignmentItems.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-gray-50 border-b-2 border-gray-200">
+                  <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('consignments.sku')}</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('consignments.description')}</th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">{t('consignments.quantity')}</th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">{t('consignments.actions')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.sku')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.description')}</th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.quantity')}</th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.actions')}</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="divide-y divide-gray-100 bg-white">
                     {consignmentItems.map((item, index) => {
                       const inventoryItem = inventory.find(inv => inv.sku === item.sku);
                       const maxQuantity = inventoryItem?.ecuadorStock || 0;
                       return (
-                        <tr key={index} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 whitespace-nowrap">
+                        <tr key={index} className="transition-colors hover:bg-gray-50">
+                          <td className="whitespace-nowrap px-6 py-4">
                             <div className="font-mono text-sm font-medium text-gray-900">{item.sku}</div>
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-6 py-4">
                             <div className="text-sm text-gray-900">{item.description}</div>
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-center">
+                          <td className="whitespace-nowrap px-6 py-4 text-center">
                             <div className="flex flex-col items-center gap-1">
                               <input
                                 type="number"
@@ -984,7 +1404,7 @@ export default function Consignments() {
                               <div className="text-xs text-gray-500">{t('consignments.max')}: {maxQuantity}</div>
                             </div>
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-center">
+                          <td className="whitespace-nowrap px-6 py-4 text-center">
                             <button
                               onClick={() => removeItem(index)}
                               className="text-red-600 hover:text-red-700 text-sm font-medium"
@@ -1062,37 +1482,37 @@ export default function Consignments() {
           <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('consignments.itemsDelivered')}</h3>
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b-2 border-gray-200">
+              <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('consignments.sku')}</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('consignments.description')}</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">{t('consignments.qtyDelivered')}</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">{t('consignments.qtySold')}</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">{t('consignments.qtyReturned')}</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">{t('consignments.remaining')}</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.sku')}</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.description')}</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.qtyDelivered')}</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.qtySold')}</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.qtyReturned')}</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.remaining')}</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="divide-y divide-gray-100 bg-white">
                 {selectedConsignment.items.map((item, index) => {
                   const remaining = item.quantityDelivered - item.quantitySold - item.quantityReturned;
                   return (
-                    <tr key={index} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 whitespace-nowrap">
+                    <tr key={index} className="transition-colors hover:bg-gray-50">
+                      <td className="whitespace-nowrap px-6 py-4">
                         <div className="font-mono text-sm font-medium text-gray-900">{item.sku}</div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-6 py-4">
                         <div className="text-sm text-gray-900">{item.description}</div>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-center">
+                      <td className="whitespace-nowrap px-6 py-4 text-center">
                         <div className="text-sm text-gray-900">{item.quantityDelivered}</div>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-center">
+                      <td className="whitespace-nowrap px-6 py-4 text-center">
                         <div className="text-sm text-gray-900">{item.quantitySold}</div>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-center">
+                      <td className="whitespace-nowrap px-6 py-4 text-center">
                         <div className="text-sm text-gray-900">{item.quantityReturned}</div>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-center">
+                      <td className="whitespace-nowrap px-6 py-4 text-center">
                         <div className="text-sm font-medium text-gray-900">{remaining}</div>
                       </td>
                     </tr>
@@ -1112,18 +1532,18 @@ export default function Consignments() {
           </p>
           <div className="space-y-6">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[640px]">
-                <thead className="bg-gray-50">
+              <table className="w-full min-w-[640px] text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-3 py-2 text-left">{t('consignments.sku')}</th>
-                    <th className="px-3 py-2 text-left">{t('consignments.description')}</th>
-                    <th className="px-3 py-2 text-center">{t('consignments.available')}</th>
-                    <th className="px-3 py-2 text-center">{t('consignments.qtySold')}</th>
-                    <th className="px-3 py-2 text-center">{t('consignments.saleUnitPriceUsd')}</th>
-                    <th className="px-3 py-2 text-right">{t('consignments.saleLineTotalUsd')}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.sku')}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.description')}</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.available')}</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.qtySold')}</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.saleUnitPriceUsd')}</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.saleLineTotalUsd')}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y divide-gray-100">
                   {selectedConsignment.items.map((item, index) => {
                     const available = item.quantityDelivered - item.quantitySold - item.quantityReturned;
                     const qty = salesQuantities[index] || 0;
@@ -1134,11 +1554,11 @@ export default function Consignments() {
                         ? roundMoney2(qty * unit)
                         : null;
                     return (
-                      <tr key={index}>
-                        <td className="px-3 py-2 font-mono text-xs">{item.sku}</td>
-                        <td className="px-3 py-2">{item.description}</td>
-                        <td className="px-3 py-2 text-center">{available}</td>
-                        <td className="px-3 py-2 text-center">
+                      <tr key={index} className="transition-colors hover:bg-gray-50">
+                        <td className="px-6 py-3 font-mono text-xs text-gray-900">{item.sku}</td>
+                        <td className="px-6 py-3 text-gray-700">{item.description}</td>
+                        <td className="px-6 py-3 text-center text-gray-700">{available}</td>
+                        <td className="px-6 py-3 text-center">
                           <input
                             type="number"
                             min="0"
@@ -1154,7 +1574,7 @@ export default function Consignments() {
                             disabled={available === 0}
                           />
                         </td>
-                        <td className="px-3 py-2 text-center">
+                        <td className="px-6 py-3 text-center">
                           <input
                             type="text"
                             inputMode="decimal"
@@ -1167,7 +1587,7 @@ export default function Consignments() {
                             disabled={available === 0}
                           />
                         </td>
-                        <td className="px-3 py-2 text-right text-gray-800 font-medium">
+                        <td className="px-6 py-3 text-right font-medium text-gray-800">
                           {lineTotal != null ? `$${lineTotal.toFixed(2)}` : '—'}
                         </td>
                       </tr>
