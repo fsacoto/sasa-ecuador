@@ -510,22 +510,35 @@ export async function uploadMultipleImages(
   if (sku) {
     const paths = await allocateInventoryImageStoragePaths(imageFiles, basePath, sku);
     const totalFiles = imageFiles.length;
-    const downloadURLs: string[] = [];
-    let uploadedFiles = 0;
-    for (let i = 0; i < imageFiles.length; i++) {
-      const url = await uploadImage(imageFiles[i], paths[i], (progress) => {
-        if (onProgress) {
-          const overallProgress =
-            (uploadedFiles / totalFiles) * 100 + progress / totalFiles;
-          onProgress(overallProgress);
-        }
-      });
-      downloadURLs.push(url);
-      uploadedFiles++;
-      if (onProgress) {
-        onProgress((uploadedFiles / totalFiles) * 100);
-      }
-    }
+    // Per-file progress, so we can aggregate when the caller wants overall progress.
+    const perFileProgress = onProgress ? new Array(totalFiles).fill(0) : null;
+    const emitOverall = () => {
+      if (!onProgress || !perFileProgress) return;
+      const sum = perFileProgress.reduce((a: number, b: number) => a + b, 0);
+      onProgress(sum / totalFiles);
+    };
+
+    // Parallel uploads — Firebase Storage handles concurrent requests fine and
+    // multi-image uploads were N× slower when awaited serially. Only attach an
+    // internal progress callback when the caller actually asked for progress;
+    // otherwise let small files use the faster non-resumable PUT path.
+    const downloadURLs = await Promise.all(
+      imageFiles.map((file, i) =>
+        uploadImage(
+          file,
+          paths[i],
+          onProgress
+            ? (progress) => {
+                if (perFileProgress) {
+                  perFileProgress[i] = progress;
+                  emitOverall();
+                }
+              }
+            : undefined
+        )
+      )
+    );
+    if (onProgress) onProgress(100);
     return downloadURLs;
   }
 

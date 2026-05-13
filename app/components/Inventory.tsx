@@ -55,6 +55,8 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
   const [lineMode, setLineMode] = useState<'select' | 'new'>('select');
   const [mediaDeleteConfirmOpen, setMediaDeleteConfirmOpen] = useState(false);
   const [mediaToDelete, setMediaToDelete] = useState<{ index: number; url: string } | null>(null);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [pendingImagePreviews, setPendingImagePreviews] = useState<{ file: File; previewUrl: string }[]>([]);
   
   // Sorting and filtering state
   const [sortField, setSortField] = useState<string>('name');
@@ -255,23 +257,64 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
     skuManuallyEdited,
   ]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingItem) {
-      const verificationIssues = reconcileVerificationIssuesForItem(
-        { linkedPurchaseOrders: formData.linkedPurchaseOrders },
-        purchaseOrders
-      );
-      const payload = { ...formData, verificationIssues };
-      const updatedItem = { ...editingItem, ...payload };
-      updateInventoryItem(editingItem.id, payload);
+  const clearPendingImagePreviews = () => {
+    setPendingImagePreviews((prev) => {
+      prev.forEach(({ previewUrl }) => URL.revokeObjectURL(previewUrl));
+      return [];
+    });
+  };
 
-      // Sync changes to linked purchase orders
-      syncInventoryToOrders(updatedItem, purchaseOrders, updatePurchaseOrder);
-    } else {
-      addInventoryItem({ ...formData });
+  const handleSubmit = async (e: React.FormEvent | React.MouseEvent) => {
+    e.preventDefault();
+    if (imageUploading) return;
+
+    let uploadedImages: string[] = [];
+    try {
+      if (pendingImagePreviews.length > 0) {
+        const skuTrim = formData.sku?.trim();
+        if (!skuTrim) {
+          alert(t('inventory.skuRequiredForImageUpload'));
+          return;
+        }
+
+        setImageUploading(true);
+        uploadedImages = await handleMultipleImageUpload(
+          pendingImagePreviews.map(({ file }) => file),
+          'images/inventory/',
+          undefined,
+          { sku: skuTrim }
+        );
+      }
+
+      const savedFormData = {
+        ...formData,
+        images: [...formData.images, ...uploadedImages],
+      };
+
+      if (editingItem) {
+        const verificationIssues = reconcileVerificationIssuesForItem(
+          { linkedPurchaseOrders: savedFormData.linkedPurchaseOrders },
+          purchaseOrders
+        );
+        const payload = { ...savedFormData, verificationIssues };
+        const updatedItem = { ...editingItem, ...payload };
+        await updateInventoryItem(editingItem.id, payload);
+
+        // Sync changes to linked purchase orders
+        syncInventoryToOrders(updatedItem, purchaseOrders, updatePurchaseOrder);
+      } else {
+        await addInventoryItem({ ...savedFormData });
+      }
+      resetForm();
+    } catch (error) {
+      console.error('Error uploading images:', error);
+      if (uploadedImages.length > 0) {
+        await Promise.allSettled(uploadedImages.map((url) => deleteMediaFile(url)));
+      }
+      alert(t('inventory.failedToUploadImages'));
+    } finally {
+      setImageUploading(false);
     }
-    resetForm();
   };
 
   const resetForm = () => {
@@ -288,6 +331,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
     });
     setEditingItem(null);
     setIsFormOpen(false);
+    clearPendingImagePreviews();
     setSkuManuallyEdited(false);
     setCategoryMode('select');
     setLineMode('select');
@@ -296,6 +340,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
   };
 
   const handleEdit = (item: InventoryItem) => {
+    clearPendingImagePreviews();
     // Set editing ref IMMEDIATELY to prevent auto-generation
     isEditingRef.current = true;
     
@@ -318,37 +363,28 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
     setIsFormOpen(true);
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-
-    const skuTrim = formData.sku?.trim();
-    if (!skuTrim) {
-      alert(t('inventory.skuRequiredForImageUpload'));
-      e.target.value = '';
-      return;
-    }
+    const fileArray = Array.from(files);
 
     // Validate all files first
-    for (let i = 0; i < files.length; i++) {
-      const validation = validateImageFile(files[i]);
+    for (const file of fileArray) {
+      const validation = validateImageFile(file);
       if (!validation.valid) {
-        alert(`${files[i].name}: ${validation.error}`);
+        alert(`${file.name}: ${validation.error}`);
+        e.target.value = '';
         return;
       }
     }
 
-    try {
-      const newImages = await handleMultipleImageUpload(files, 'images/inventory/', undefined, {
-        sku: skuTrim,
-      });
-      setFormData(prev => ({ ...prev, images: [...prev.images, ...newImages] }));
-    } catch (error) {
-      console.error('Error uploading images:', error);
-      alert(t('inventory.failedToUploadImages'));
-    }
-    
-    // Reset input
+    setPendingImagePreviews(prev => [
+      ...prev,
+      ...fileArray.map(file => ({
+        file,
+        previewUrl: URL.createObjectURL(file),
+      })),
+    ]);
     e.target.value = '';
   };
 
@@ -369,6 +405,14 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
         images: prev.images.filter((_, i) => i !== index)
       }));
     }
+  };
+
+  const handleRemovePendingImage = (index: number) => {
+    setPendingImagePreviews(prev => {
+      const target = prev[index];
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((_, i) => i !== index);
+    });
   };
 
   const handleConfirmMediaDelete = async () => {
@@ -1520,7 +1564,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                 )}
                 
                 {/* Image Grid */}
-                {formData.images.length > 0 && (
+                {(formData.images.length > 0 || pendingImagePreviews.length > 0) && (
                   <div className="grid grid-cols-4 gap-3 mb-3">
                     {formData.images.map((image, index) => {
                       const isAdmin = user?.role === 'admin' && hasPermission('media.delete');
@@ -1551,20 +1595,61 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                         </div>
                       );
                     })}
+                    {pendingImagePreviews.map((image, index) => (
+                      <div key={image.previewUrl} className="relative group">
+                        <img
+                          src={image.previewUrl}
+                          alt={`Product pending ${index + 1}`}
+                          className="w-full h-24 object-cover rounded-lg border-2 border-dashed border-gray-300"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemovePendingImage(index)}
+                          title="Remove pending image"
+                          disabled={imageUploading}
+                          className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 shadow-lg transition-opacity opacity-80 hover:opacity-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                        {formData.images.length === 0 && index === 0 && (
+                          <div className="absolute bottom-1 left-1 bg-[#515151] text-white text-xs px-2 py-0.5 rounded">
+                            {t('inventory.main')}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
                 
                 {/* Upload Button */}
-                <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-[#515151] hover:bg-gray-50 cursor-pointer transition-all">
-                  <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  <span className="text-sm text-gray-600">{t('inventory.uploadImages')}</span>
+                <label
+                  className={`flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed rounded-lg transition-all ${
+                    imageUploading
+                      ? 'border-gray-300 bg-gray-50 cursor-wait'
+                      : 'border-gray-300 hover:border-[#515151] hover:bg-gray-50 cursor-pointer'
+                  }`}
+                >
+                  {imageUploading ? (
+                    <svg className="w-5 h-5 text-[#515151] animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  )}
+                  {!imageUploading && (
+                    <span className="text-sm text-gray-600">{t('inventory.uploadImages')}</span>
+                  )}
                   <input
                     type="file"
                     accept="image/*"
                     multiple
                     onChange={handleImageUpload}
+                    disabled={imageUploading}
                     className="hidden"
                   />
                 </label>
@@ -1608,11 +1693,19 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                 {t('inventory.cancel')}
               </button>
               <button
-                type="submit"
+                type="button"
                 onClick={handleSubmit}
-                className="flex-1 bg-[#515151] hover:bg-[#000000] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
+                disabled={imageUploading}
+                className="flex-1 bg-[#515151] hover:bg-[#000000] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:bg-[#515151]"
               >
-                {editingItem ? t('inventory.update') : t('inventory.add')} {t('common.item')}
+                {imageUploading ? (
+                  <svg className="mx-auto h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24" aria-label="Loading">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
+                ) : (
+                  `${editingItem ? t('inventory.update') : t('inventory.add')} ${t('common.item')}`
+                )}
               </button>
             </div>
           </div>

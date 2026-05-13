@@ -44,7 +44,6 @@ export default function Sales() {
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const barcodeInputRef = useRef<HTMLInputElement>(null);
   const barcodeGlobalBufferRef = useRef('');
   const barcodeGlobalLastTsRef = useRef(0);
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash' | 'transfer' | ''>('');
@@ -207,7 +206,6 @@ export default function Sales() {
 
     const shouldIgnoreTarget = (target: EventTarget | null) => {
       if (!(target instanceof HTMLElement)) return false;
-      if (target === barcodeInputRef.current) return true;
       if (target.isContentEditable) return true;
       const tag = target.tagName.toLowerCase();
       return tag === 'textarea' || tag === 'select' || tag === 'input';
@@ -287,6 +285,10 @@ export default function Sales() {
   };
 
   const submitInvoice = async () => {
+    if (!selectedClient) {
+      showAlert(t('sales.pleaseSelectClient'), 'Validation Error');
+      return;
+    }
     if (invoiceItems.length === 0) {
       showAlert(t('sales.pleaseAddProducts'), 'Validation Error');
       return;
@@ -296,9 +298,9 @@ export default function Sales() {
       // Invoice number will be auto-generated in createInvoice
       const newInvoice: Omit<SalesInvoice, 'id' | 'createdAt'> = {
         invoiceNumber: 'TEMP', // Will be replaced with sequential number in createInvoice
-        clientId: selectedClient?.id || '',
-        clientName: selectedClient?.name || 'Walk-in Customer',
-        clientAddress: selectedClient ? `${selectedClient.address}, ${selectedClient.city}, ${selectedClient.country}` : '',
+        clientId: selectedClient.id,
+        clientName: selectedClient.name,
+        clientAddress: `${selectedClient.address}, ${selectedClient.city}, ${selectedClient.country}`,
         items: invoiceItems,
         subtotal: calculateSubtotal(),
         discountType: discountType,
@@ -504,7 +506,6 @@ export default function Sales() {
           </div>
         ) : (
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
-            <span className="text-gray-500 italic">{t('sales.walkInCustomer')}</span>
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -537,30 +538,6 @@ export default function Sales() {
       <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('sales.invoiceItems')}</h3>
 
-          <div className="mb-4 rounded-lg border border-dashed border-gray-300 bg-gray-50/80 p-4">
-            <label htmlFor="sales-barcode-scan" className="block text-sm font-medium text-gray-800 mb-1">
-              {t('sales.barcodeScanLabel')}
-            </label>
-            <p className="text-xs text-gray-600 mb-2">{t('sales.barcodeScanHint')}</p>
-            <input
-              id="sales-barcode-scan"
-              ref={barcodeInputRef}
-              type="text"
-              autoComplete="off"
-              placeholder={t('sales.barcodeScanPlaceholder')}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent bg-white font-mono text-sm"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  const el = e.currentTarget;
-                  const v = el.value.trim();
-                  el.value = '';
-                  if (v) processBarcodeScan(v);
-                }
-              }}
-            />
-          </div>
-          
           <div className="mb-4 relative" ref={dropdownRef}>
             <label className="block text-sm font-medium text-gray-700 mb-2">{t('sales.searchSku')}</label>
             <input
