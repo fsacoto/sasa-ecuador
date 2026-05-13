@@ -59,6 +59,14 @@ body {
   border-color: rgba(255, 255, 255, 0.14) !important;
 }
 
+/* Tailwind v4 `divide-gray-*` sets border-color on children via a different selector,
+   so it bypasses the .border-gray-* rule above. Dim those row dividers in dark mode too. */
+.app-dark-main .divide-gray-100 > :not(:last-child),
+.app-dark-main .divide-gray-200 > :not(:last-child),
+.app-dark-main .divide-gray-300 > :not(:last-child) {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
 .app-dark-main .text-black,
 .app-dark-main .text-gray-900,
 .app-dark-main .text-gray-800,

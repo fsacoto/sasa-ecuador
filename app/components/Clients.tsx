@@ -37,7 +37,6 @@ export default function Clients() {
   const searchDropdownRef = useRef<HTMLDivElement>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
-  const [filterCountry, setFilterCountry] = useState<'Ecuador' | 'USA' | 'All'>('All');
   const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc' | 'desc'}>({key: 'name', direction: 'asc'});
 
   const [clientActionsMenuId, setClientActionsMenuId] = useState<string | null>(null);
@@ -68,8 +67,7 @@ export default function Clients() {
   const loadClients = async () => {
     try {
       setLoading(true);
-      const country = filterCountry === 'All' ? undefined : filterCountry;
-      const data = await getAllClients(country);
+      const data = await getAllClients();
       setClients(data);
     } catch (error) {
       console.error('Error loading clients:', error);
@@ -78,10 +76,6 @@ export default function Clients() {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    loadClients();
-  }, [filterCountry]);
 
   useEffect(() => {
     const closeOnOutside = (e: MouseEvent) => {
@@ -292,22 +286,8 @@ export default function Clients() {
         )}
       </div>
 
-      {/* Country filter + column visibility + search */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">{t('clients.filterByCountry')}</label>
-            <select
-              value={filterCountry}
-              onChange={(e) => setFilterCountry(e.target.value as 'Ecuador' | 'USA' | 'All')}
-              className="min-w-[12rem] px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
-            >
-              <option value="All">{t('clients.allCountries')}</option>
-              <option value="Ecuador">Ecuador</option>
-              <option value="USA">USA</option>
-            </select>
-          </div>
-          <div className="flex items-center justify-end gap-3">
+      {/* Column visibility + search */}
+      <div className="flex items-center justify-end gap-3">
             <div className="relative">
               <button
                 type="button"
@@ -425,8 +405,6 @@ export default function Clients() {
                 </div>
               )}
             </div>
-          </div>
-        </div>
       </div>
 
       {/* Clients List */}
