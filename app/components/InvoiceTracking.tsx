@@ -43,7 +43,6 @@ export default function InvoiceTracking() {
   const { inventory, updateInventoryItem } = useInventory();
   const { t } = useTranslation();
   const [allInvoices, setAllInvoices] = useState<SalesInvoice[]>([]);
-  const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [uniqueClients, setUniqueClients] = useState<{id: string, name: string}[]>([]);
   const [filters, setFilters] = useState({
@@ -214,56 +213,8 @@ export default function InvoiceTracking() {
   const loadInvoices = async () => {
     try {
       setLoading(true);
-      
-      // Load ALL invoices first to populate customer dropdown
       const allInvoicesData = await getAllInvoices();
-      
-      // Apply filters if any are set
-      let filteredData = allInvoicesData;
-      
-      if (filters.clientId) {
-        if (filters.clientId === 'walk-in') {
-          filteredData = filteredData.filter(inv => !inv.clientId || inv.clientId === '');
-        } else {
-          filteredData = filteredData.filter(inv => inv.clientId === filters.clientId);
-        }
-      }
-      
-      if (filters.paymentStatus) {
-        filteredData = filteredData.filter(inv => inv.paymentStatus === filters.paymentStatus);
-      }
-      
-      if (filters.deliveryStatus) {
-        filteredData = filteredData.filter(inv => inv.deliveryStatus === filters.deliveryStatus);
-      }
-
-      if (filters.filterMonth) {
-        const parts = filters.filterMonth.split('-');
-        const y = parseInt(parts[0], 10);
-        const m = parseInt(parts[1], 10) - 1;
-        if (!Number.isNaN(y) && !Number.isNaN(m)) {
-          filteredData = filteredData.filter((inv) => {
-            const d = new Date(inv.date);
-            return d.getFullYear() === y && d.getMonth() === m;
-          });
-        }
-      }
-      
-      if (filters.dateFrom) {
-        const fromDate = new Date(filters.dateFrom);
-        filteredData = filteredData.filter(inv => inv.date >= fromDate);
-      }
-      
-      if (filters.dateTo) {
-        const toDate = new Date(filters.dateTo);
-        toDate.setHours(23, 59, 59, 999);
-        filteredData = filteredData.filter(inv => inv.date <= toDate);
-      }
-      
-      // Store all invoices for dropdown population
       setAllInvoices(allInvoicesData);
-      // Set invoices to filtered data for display
-      setInvoices(filteredData);
     } catch (error) {
       console.error('Error loading invoices:', error);
       showAlert(t('invoiceTracking.errorLoading'), 'Error');
@@ -272,9 +223,50 @@ export default function InvoiceTracking() {
     }
   };
 
-  useEffect(() => {
-    loadInvoices();
-  }, [filters]);
+  const filteredInvoices = useMemo(() => {
+    let list = [...allInvoices];
+
+    if (filters.clientId) {
+      if (filters.clientId === 'walk-in') {
+        list = list.filter((inv) => !inv.clientId || inv.clientId === '');
+      } else {
+        list = list.filter((inv) => inv.clientId === filters.clientId);
+      }
+    }
+
+    if (filters.paymentStatus) {
+      list = list.filter((inv) => inv.paymentStatus === filters.paymentStatus);
+    }
+
+    if (filters.deliveryStatus) {
+      list = list.filter((inv) => inv.deliveryStatus === filters.deliveryStatus);
+    }
+
+    if (filters.filterMonth) {
+      const parts = filters.filterMonth.split('-');
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      if (!Number.isNaN(y) && !Number.isNaN(m)) {
+        list = list.filter((inv) => {
+          const d = new Date(inv.date);
+          return d.getFullYear() === y && d.getMonth() === m;
+        });
+      }
+    }
+
+    if (filters.dateFrom) {
+      const fromDate = new Date(filters.dateFrom);
+      list = list.filter((inv) => inv.date >= fromDate);
+    }
+
+    if (filters.dateTo) {
+      const toDate = new Date(filters.dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      list = list.filter((inv) => inv.date <= toDate);
+    }
+
+    return list;
+  }, [allInvoices, filters]);
 
   useEffect(() => {
     return () => {
@@ -288,48 +280,6 @@ export default function InvoiceTracking() {
       }
     };
   }, []);
-
-  /** Abrir fila desde Notas de ventas (misma colección Firestore): scroll + resaltado temporal. */
-  useEffect(() => {
-    if (loading || invoices.length === 0) return;
-    const id = sessionStorage.getItem('sasa_focus_invoice_tracking_id');
-    if (!id) return;
-    const q = searchQuery.trim().toLowerCase();
-    const visible = !q
-      ? invoices
-      : invoices.filter(
-          (inv) =>
-            inv.invoiceNumber.toLowerCase().includes(q) ||
-            inv.clientName.toLowerCase().includes(q) ||
-            inv.items.some(
-              (i) => i.sku.toLowerCase().includes(q) || i.description.toLowerCase().includes(q)
-            )
-        );
-    if (!visible.some((inv) => inv.id === id)) return;
-    sessionStorage.removeItem('sasa_focus_invoice_tracking_id');
-
-    const scrollToRow = () => {
-      document.getElementById(`invoice-tracking-row-${id}`)?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center',
-        inline: 'nearest',
-      });
-    };
-    requestAnimationFrame(() => {
-      requestAnimationFrame(scrollToRow);
-    });
-    if (focusScrollTimeoutRef.current) window.clearTimeout(focusScrollTimeoutRef.current);
-    focusScrollTimeoutRef.current = window.setTimeout(scrollToRow, 200);
-
-    setHighlightFocusRowId(id);
-    if (highlightFocusTimeoutRef.current) {
-      window.clearTimeout(highlightFocusTimeoutRef.current);
-    }
-    highlightFocusTimeoutRef.current = window.setTimeout(() => {
-      highlightFocusTimeoutRef.current = null;
-      setHighlightFocusRowId(null);
-    }, 4000);
-  }, [loading, invoices, searchQuery]);
 
   const openDeliveryModal = (invoice: SalesInvoice) => {
     setDeliveryInvoice(invoice);
@@ -726,8 +676,8 @@ export default function InvoiceTracking() {
 
   const invoicesSearchFiltered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return invoices;
-    return invoices.filter(
+    if (!q) return filteredInvoices;
+    return filteredInvoices.filter(
       (inv) =>
         inv.invoiceNumber.toLowerCase().includes(q) ||
         inv.clientName.toLowerCase().includes(q) ||
@@ -735,7 +685,38 @@ export default function InvoiceTracking() {
           (i) => i.sku.toLowerCase().includes(q) || i.description.toLowerCase().includes(q)
         )
     );
-  }, [invoices, searchQuery]);
+  }, [filteredInvoices, searchQuery]);
+
+  /** Abrir fila desde Notas de ventas (misma colección Firestore): scroll + resaltado temporal. */
+  useEffect(() => {
+    if (loading || invoicesSearchFiltered.length === 0) return;
+    const id = sessionStorage.getItem('sasa_focus_invoice_tracking_id');
+    if (!id) return;
+    if (!invoicesSearchFiltered.some((inv) => inv.id === id)) return;
+    sessionStorage.removeItem('sasa_focus_invoice_tracking_id');
+
+    const scrollToRow = () => {
+      document.getElementById(`invoice-tracking-row-${id}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest',
+      });
+    };
+    requestAnimationFrame(() => {
+      requestAnimationFrame(scrollToRow);
+    });
+    if (focusScrollTimeoutRef.current) window.clearTimeout(focusScrollTimeoutRef.current);
+    focusScrollTimeoutRef.current = window.setTimeout(scrollToRow, 200);
+
+    setHighlightFocusRowId(id);
+    if (highlightFocusTimeoutRef.current) {
+      window.clearTimeout(highlightFocusTimeoutRef.current);
+    }
+    highlightFocusTimeoutRef.current = window.setTimeout(() => {
+      highlightFocusTimeoutRef.current = null;
+      setHighlightFocusRowId(null);
+    }, 4000);
+  }, [loading, invoicesSearchFiltered]);
 
   const metrics = useMemo(
     () => ({
