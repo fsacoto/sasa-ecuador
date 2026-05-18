@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { InventoryItem } from '../types';
 import { useTranslation } from '../context/TranslationContext';
+import { generateCatalogPDF } from '../utils/catalogPdfDownload';
 
 interface CatalogDownloadButtonProps {
   products: InventoryItem[];
@@ -33,8 +34,6 @@ export default function CatalogDownloadButton({
     try {
       setIsGenerating(true);
       setError(null);
-
-      const { generateCatalogPDF } = await import('../utils/pdfGenerator');
 
       await generateCatalogPDF({
         products,

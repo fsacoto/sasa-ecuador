@@ -25,6 +25,7 @@ import {
 } from '../constants/merchandise';
 import { displayCategory, displayLine } from '../utils/merchandiseLabels';
 import { HUB_GROUP_STACK_ICON_PATH } from '../constants/businessHubUi';
+import { formatSalePriceDisplay, itemHasSalePrice, parseSalePriceInput } from '../utils/salePrice';
 
 interface InventoryProps {
   darkMode?: boolean;
@@ -64,6 +65,8 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterLine, setFilterLine] = useState<string>('all');
+  const [filterSalePrice, setFilterSalePrice] = useState<'all' | 'with' | 'without'>('all');
+  const [filterStock, setFilterStock] = useState<'all' | 'inStock' | 'outOfStock'>('all');
   const [showProblemsOnly, setShowProblemsOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [groupByField, setGroupByField] = useState<string>('');
@@ -140,6 +143,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
       { key: 'barcode', label: t('inventory.barcode') },
       { key: 'category', label: t('inventory.category') },
       { key: 'line', label: t('inventory.line') },
+      { key: 'salePrice', label: t('inventory.salePrice') },
       { key: 'ecuadorStock', label: t('inventory.ecuadorStock') },
       { key: 'totalStock', label: t('inventory.totalStock') },
       { key: 'actions', label: t('inventory.actions') }
@@ -200,6 +204,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
     category: '',
     line: '',
     ecuadorStock: 0,
+    salePrice: '',
     images: [] as string[],
   });
 
@@ -286,9 +291,12 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
         );
       }
 
+      const { salePrice: salePriceInput, ...formRest } = formData;
+      const parsedSalePrice = parseSalePriceInput(salePriceInput);
       const savedFormData = {
-        ...formData,
+        ...formRest,
         images: [...formData.images, ...uploadedImages],
+        ...(parsedSalePrice !== undefined ? { salePrice: parsedSalePrice } : {}),
       };
 
       if (editingItem) {
@@ -296,7 +304,11 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
           { linkedPurchaseOrders: savedFormData.linkedPurchaseOrders },
           purchaseOrders
         );
-        const payload = { ...savedFormData, verificationIssues };
+        const payload = {
+          ...savedFormData,
+          verificationIssues,
+          salePrice: parsedSalePrice,
+        };
         const updatedItem = { ...editingItem, ...payload };
         await updateInventoryItem(editingItem.id, payload);
 
@@ -327,6 +339,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
       category: '',
       line: '',
       ecuadorStock: 0,
+      salePrice: '',
       images: [],
     });
     setEditingItem(null);
@@ -357,10 +370,26 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
       category: item.category,
       line: item.line,
       ecuadorStock: item.ecuadorStock,
+      salePrice: item.salePrice != null ? String(item.salePrice) : '',
       images: item.images || [],
     });
     
     setIsFormOpen(true);
+  };
+
+  const handleSalePriceBlur = async (item: InventoryItem, raw: string) => {
+    const parsed = parseSalePriceInput(raw);
+    const current = item.salePrice;
+    const unchanged =
+      (parsed === undefined && current == null) ||
+      (parsed !== undefined && current != null && parsed === current);
+    if (unchanged) return;
+    try {
+      await updateInventoryItem(item.id, { salePrice: parsed });
+    } catch (error) {
+      console.error('Error updating sale price:', error);
+      alert(t('inventory.salePriceUpdateFailed') || 'No se pudo guardar el precio de venta.');
+    }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -578,6 +607,20 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
       if (showProblemsOnly && getTotalProblemQty(item) === 0) {
         return false;
       }
+
+      if (filterSalePrice === 'with' && !itemHasSalePrice(item)) {
+        return false;
+      }
+      if (filterSalePrice === 'without' && itemHasSalePrice(item)) {
+        return false;
+      }
+
+      if (filterStock === 'inStock' && getTotalStock(item) <= 0) {
+        return false;
+      }
+      if (filterStock === 'outOfStock' && getTotalStock(item) > 0) {
+        return false;
+      }
       
       return true;
     })
@@ -601,6 +644,10 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
         case 'line':
           aValue = displayLine(a.line).toLowerCase();
           bValue = displayLine(b.line).toLowerCase();
+          break;
+        case 'salePrice':
+          aValue = a.salePrice ?? -1;
+          bValue = b.salePrice ?? -1;
           break;
         case 'ecuadorStock':
           aValue = a.ecuadorStock;
@@ -684,24 +731,24 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                   setSelectedItem(item);
                 }
               }}
-              className="flex cursor-pointer items-center gap-3 rounded-md text-left outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-[#515151] focus-visible:ring-offset-2"
+              className="flex cursor-pointer items-center gap-4 rounded-md text-left outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-[#515151] focus-visible:ring-offset-2"
             >
               {item.images && item.images.length > 0 ? (
-                <div className="relative">
+                <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
                   <img
                     src={item.images[0]}
                     alt={item.name}
-                    className="h-12 w-12 rounded-lg border border-gray-200 object-cover"
+                    className="h-full w-full object-cover object-center"
                   />
                   {item.images.length > 1 && (
-                    <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#515151] text-xs font-medium text-white">
+                    <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#515151] text-xs font-medium text-white shadow-sm">
                       {item.images.length}
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-gray-200 bg-gray-100">
-                  <svg className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-100">
+                  <svg className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -796,6 +843,30 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
         )}
         {!hiddenColumns.has('line') && (
           <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">{item.line ? displayLine(item.line) : '-'}</td>
+        )}
+        {!hiddenColumns.has('salePrice') && (
+          <td className="whitespace-nowrap px-6 py-4 text-sm text-right">
+            {isReadOnly ? (
+              <span className="tabular-nums text-gray-700">{formatSalePriceDisplay(item.salePrice)}</span>
+            ) : (
+              <div
+                className="ml-auto flex max-w-[7.5rem] items-center justify-end gap-0.5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <span className="text-gray-500">$</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  defaultValue={item.salePrice != null ? item.salePrice.toFixed(2) : ''}
+                  key={`sale-price-${item.id}-${item.salePrice ?? 'none'}`}
+                  onBlur={(e) => void handleSalePriceBlur(item, e.target.value)}
+                  placeholder="—"
+                  className="w-full min-w-[4.5rem] rounded border border-gray-200 px-2 py-1 text-right text-sm tabular-nums text-gray-900 focus:border-[#515151] focus:outline-none focus:ring-1 focus:ring-[#515151]"
+                  aria-label={t('inventory.salePrice')}
+                />
+              </div>
+            )}
+          </td>
         )}
         {!hiddenColumns.has('ecuadorStock') && (
           <td className="whitespace-nowrap px-6 py-4 text-center text-sm text-gray-700">{item.ecuadorStock}</td>
@@ -1046,9 +1117,19 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
             <span className="text-sm font-medium">{t('inventory.filters')}</span>
-            {(filterCategory !== 'all' || filterLine !== 'all') && (
+            {(filterCategory !== 'all' ||
+              filterLine !== 'all' ||
+              filterSalePrice !== 'all' ||
+              filterStock !== 'all') && (
               <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
-                {[filterCategory !== 'all', filterLine !== 'all'].filter(Boolean).length}
+                {
+                  [
+                    filterCategory !== 'all',
+                    filterLine !== 'all',
+                    filterSalePrice !== 'all',
+                    filterStock !== 'all',
+                  ].filter(Boolean).length
+                }
               </span>
             )}
           </button>
@@ -1255,7 +1336,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
       {showFilters && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mt-4">
           <div className="border-t border-gray-200 p-4 bg-gray-50">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {/* Category Filter */}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">{t('inventory.category')}</label>
@@ -1291,12 +1372,42 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                   ))}
                 </select>
               </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{t('inventory.salePrice')}</label>
+                <select
+                  value={filterSalePrice}
+                  onChange={(e) => setFilterSalePrice(e.target.value as 'all' | 'with' | 'without')}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#515151]"
+                >
+                  <option value="all">{t('inventory.filterSalePriceAll')}</option>
+                  <option value="with">{t('inventory.filterSalePriceWith')}</option>
+                  <option value="without">{t('inventory.filterSalePriceWithout')}</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{t('inventory.totalStock')}</label>
+                <select
+                  value={filterStock}
+                  onChange={(e) =>
+                    setFilterStock(e.target.value as 'all' | 'inStock' | 'outOfStock')
+                  }
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#515151]"
+                >
+                  <option value="all">{t('inventory.filterStockAll')}</option>
+                  <option value="inStock">{t('inventory.filterStockInStock')}</option>
+                  <option value="outOfStock">{t('inventory.filterStockOutOfStock')}</option>
+                </select>
+              </div>
             </div>
             
             {/* Clear filters button */}
             {(searchQuery ||
               filterCategory !== 'all' ||
               filterLine !== 'all' ||
+              filterSalePrice !== 'all' ||
+              filterStock !== 'all' ||
               showProblemsOnly) && (
               <div className="mt-3 flex justify-end">
                 <button
@@ -1304,6 +1415,8 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                     setSearchQuery('');
                     setFilterCategory('all');
                     setFilterLine('all');
+                    setFilterSalePrice('all');
+                    setFilterStock('all');
                     setShowProblemsOnly(false);
                   }}
                   className="text-[#515151] hover:text-[#000000] font-medium text-sm"
@@ -1543,6 +1656,24 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
               </div>
 
               <div>
+                <label className="block text-sm font-medium mb-1 text-gray-700">{t('inventory.salePrice')}</label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
+                    $
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={formData.salePrice}
+                    onChange={(e) => setFormData({ ...formData, salePrice: e.target.value })}
+                    placeholder={t('inventory.salePricePlaceholder')}
+                    className="w-full rounded-lg border border-gray-300 py-2 pl-7 pr-3 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#515151]"
+                  />
+                </div>
+                <p className="mt-1 text-xs text-gray-500">{t('inventory.salePriceUnset')}</p>
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium mb-1 text-gray-700">{t('inventory.ecuadorStockLabel')} *</label>
                 <input
                   type="number"
@@ -1768,6 +1899,17 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                     <div className="flex items-center gap-1">
                       {t('inventory.line')}
                       <SortIcon field="line" />
+                    </div>
+                  </th>
+                )}
+                {!hiddenColumns.has('salePrice') && (
+                  <th
+                    onClick={() => handleSort('salePrice')}
+                    className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      {t('inventory.salePrice')}
+                      <SortIcon field="salePrice" />
                     </div>
                   </th>
                 )}

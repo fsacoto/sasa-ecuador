@@ -9,6 +9,7 @@ import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../context/TranslationContext';
 import { findInventoryItemByBarcodeScan } from '../utils/barcodeGenerator';
+import { filterSellableInventory, hasSellableStock } from '../utils/inventoryStock';
 import AlertDialog from './ui/AlertDialog';
 
 interface InvoiceLineWithDetails extends SalesInvoiceLine {
@@ -84,13 +85,7 @@ export default function Sales() {
     }
   };
 
-  // Get Ecuador inventory only for sales role
-  const getAvailableInventory = () => {
-    if (user?.role === 'sales') {
-      return inventory.filter(item => item.ecuadorStock > 0);
-    }
-    return inventory;
-  };
+  const getAvailableInventory = () => filterSellableInventory(inventory);
 
   const buildLineFromProduct = (product: InventoryItem): InvoiceLineWithDetails => {
     let unitPrice = 25;
@@ -130,6 +125,10 @@ export default function Sales() {
   };
 
   const addProductToInvoice = (product: InventoryItem) => {
+    if (!hasSellableStock(product)) {
+      showAlert(t('inventory.noSellableStock'), t('sales.barcodeScanTitle'));
+      return;
+    }
     const newLine = buildLineFromProduct(product);
     setInvoiceItems(prev => {
       const idx = prev.findIndex(i => i.sku === product.sku);

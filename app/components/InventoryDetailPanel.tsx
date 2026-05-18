@@ -17,6 +17,7 @@ import {
 } from '../utils/inventoryMediaGallery';
 import SupplierDetailPanel from './SupplierDetailPanel';
 import { formatDateMedium } from '../utils/formatDate';
+import { formatSalePriceDisplay } from '../utils/salePrice';
 
 interface InventoryDetailPanelProps {
   item: InventoryItem;
@@ -316,6 +317,12 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
                 <div className="flex justify-between">
                   <span className="text-gray-600">Line:</span>
                   <span className="font-medium text-gray-900">{latestItem.line || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">{t('inventory.salePrice')}:</span>
+                  <span className="font-medium tabular-nums text-gray-900">
+                    {formatSalePriceDisplay(latestItem.salePrice)}
+                  </span>
                 </div>
                 {latestItem.supplierSKU && (
                   <div className="flex justify-between">

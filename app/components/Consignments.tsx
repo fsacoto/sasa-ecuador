@@ -23,6 +23,7 @@ import MonthYearSelectEs from './ui/MonthYearSelectEs';
 import ConsignmentReturnModal from './ConsignmentReturnModal';
 import { HUB_GROUP_STACK_ICON_PATH } from '../constants/businessHubUi';
 import { formatDateDMY } from '../utils/formatDate';
+import { filterSellableInventory, hasSellableStock } from '../utils/inventoryStock';
 
 type View = 'list' | 'create' | 'details';
 
@@ -161,13 +162,7 @@ export default function Consignments() {
     }
   };
 
-  // Get Ecuador inventory only for sales role
-  const getAvailableInventory = () => {
-    if (user?.role === 'sales') {
-      return inventory.filter(item => item.ecuadorStock > 0);
-    }
-    return inventory.filter(item => item.ecuadorStock > 0);
-  };
+  const getAvailableInventory = () => filterSellableInventory(inventory);
 
   // Filter inventory based on search term
   const getFilteredInventory = () => {
@@ -181,6 +176,10 @@ export default function Consignments() {
   };
 
   const addProductToConsignment = (product: InventoryItem) => {
+    if (!hasSellableStock(product)) {
+      showAlert(t('inventory.noSellableStock'), 'Stock');
+      return;
+    }
     const newItem = {
       sku: product.sku,
       description: product.description || product.name,

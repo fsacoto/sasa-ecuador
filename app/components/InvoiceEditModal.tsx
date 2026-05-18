@@ -6,6 +6,7 @@ import { updateInvoice } from '../services/invoicesService';
 import { useInventory } from '../context/InventoryContext';
 import { useTranslation } from '../context/TranslationContext';
 import AlertDialog from './ui/AlertDialog';
+import { filterSellableInventory, hasSellableStock } from '../utils/inventoryStock';
 
 export type InvoiceEditModalProps = {
   invoice: SalesInvoice | null;
@@ -73,17 +74,25 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
   const getFilteredEditInventory = () => {
     if (!editSearchTerm.trim()) return [];
     const searchLower = editSearchTerm.toLowerCase();
-    return inventory
-      .filter(
+    return filterSellableInventory(
+      inventory.filter(
         (item) =>
           item.sku.toLowerCase().includes(searchLower) ||
           item.name.toLowerCase().includes(searchLower) ||
           item.description?.toLowerCase().includes(searchLower)
       )
-      .slice(0, 10);
+    ).slice(0, 10);
   };
 
   const addProductToEditItems = (product: InventoryItem) => {
+    if (!hasSellableStock(product)) {
+      setAlertDialog({
+        open: true,
+        message: t('inventory.noSellableStock'),
+        title: 'Stock',
+      });
+      return;
+    }
     let unitPrice = 25;
     if (product.linkedPurchaseOrders.length > 0) {
       const linkedOrders = purchaseOrders.filter(

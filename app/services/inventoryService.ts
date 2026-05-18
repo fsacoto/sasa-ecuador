@@ -1,6 +1,7 @@
 import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy, limit, QueryDocumentSnapshot, DocumentSnapshot, Timestamp, deleteField } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { ConsignmentReturnIssueRef, InventoryItem } from '../types';
+import { normalizeSalePrice } from '../utils/salePrice';
 
 const COLLECTION_NAME = 'inventory';
 
@@ -58,15 +59,17 @@ const toInventoryItem = (docSnap: QueryDocumentSnapshot | DocumentSnapshot): Inv
   const legacyUsa = Number(raw.usaStock ?? 0);
   const { usaStock: _legacyUsa, consignmentReturnIssues: rawCr, ...rest } = raw as Record<string, unknown>;
   const normalizedCr = normalizeConsignmentReturnIssues(rawCr);
+  const salePrice = normalizeSalePrice(raw.salePrice);
   return {
     ...(rest as Omit<
       InventoryItem,
-      'id' | 'createdAt' | 'ecuadorStock' | 'consignmentReturnIssues'
+      'id' | 'createdAt' | 'ecuadorStock' | 'consignmentReturnIssues' | 'salePrice'
     >),
     id: docSnap.id,
     ecuadorStock: ec + legacyUsa,
     createdAt: (data.createdAt as Timestamp)?.toDate() || new Date(),
     ...(normalizedCr ? { consignmentReturnIssues: normalizedCr } : {}),
+    ...(salePrice !== undefined ? { salePrice } : {}),
   };
 };
 
@@ -147,7 +150,15 @@ export async function updateInventoryItem(id: string, updates: Partial<Inventory
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
     const { id: _, createdAt: _createdAt, ...updateData } = updates;
-    const payload = toFirestore(updateData as Partial<InventoryItem>);
+    const payload = toFirestore(updateData as Partial<InventoryItem>) as Record<string, unknown>;
+    if ('salePrice' in updateData) {
+      const normalized = normalizeSalePrice((updateData as { salePrice?: unknown }).salePrice);
+      if (normalized === undefined) {
+        payload.salePrice = deleteField();
+      } else {
+        payload.salePrice = normalized;
+      }
+    }
     await updateDoc(docRef, { ...payload, usaStock: deleteField() });
   } catch (error) {
     console.error('Error updating inventory item:', error);

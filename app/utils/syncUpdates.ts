@@ -233,7 +233,7 @@ export async function syncPurchaseOrderToInventory(
     );
   }
 
-  // ACTION: If order is NOT verified, remove it from inventory completely
+  // ACTION: If order is NOT verified, unlink and reduce stock (item stays in inventory, may be 0).
   if (!isVerifiedPurchaseOrder(updatedOrder)) {
     if (inventoryItem) {
       // Remove this purchase order from linked orders
@@ -253,24 +253,9 @@ export async function syncPurchaseOrderToInventory(
       };
       
       updates.ecuadorStock = Math.max(0, (inventoryItem.ecuadorStock || 0) - stockQuantity);
-      
-      // Check if item has other verified purchase orders
-      const hasOtherVerifiedOrders = updatedLinkedOrders.some(orderId => {
-        const otherOrder = purchaseOrders.find(o => o.id === orderId);
-        return otherOrder != null && isVerifiedPurchaseOrder(otherOrder);
-      });
-      
-      // If item was originally created from purchase orders (has linked orders)
-      // AND no other verified orders remain, delete it completely
-      if (linkedOrders.length > 0 && !hasOtherVerifiedOrders) {
-        // Item was only created from purchase orders and none are verified anymore - DELETE IT
-        await deleteInventoryItem(inventoryItem.id);
-      } else {
-        // Either:
-        // 1. Item is standalone (no linked orders originally) - just remove stock/link
-        // 2. Item has other verified orders - just remove this order's stock/link
-        await updateInventoryItem(inventoryItem.id, updates);
-      }
+
+      // Keep the row in inventory even at 0 units (never delete for running out of stock).
+      await updateInventoryItem(inventoryItem.id, updates);
     }
     // If order is not verified, don't create or update inventory - EXIT
     return [];
@@ -451,22 +436,37 @@ export function syncInventoryToOrders(
   });
 }
 
-export function cleanupInventoryAfterOrderDeletion(
+export async function cleanupInventoryAfterOrderDeletion(
   deletedOrderIds: string[],
   inventory: InventoryItem[],
-  deleteInventoryItem: (id: string) => void
-) {
-  // Find inventory items that are only linked to the deleted orders
-  inventory.forEach(item => {
+  updateInventoryItem: (id: string, item: Partial<InventoryItem>) => Promise<void>,
+  purchaseOrders: PurchaseOrder[]
+): Promise<void> {
+  const poSnapshot = purchaseOrders.filter((o) => !deletedOrderIds.includes(o.id));
+
+  for (const item of inventory) {
     const linkedOrders = getLinkedPurchaseOrderIds(item);
     const remainingLinkedOrders = linkedOrders.filter(
-      orderId => !deletedOrderIds.includes(orderId)
+      (orderId) => !deletedOrderIds.includes(orderId)
     );
-    
-    // If no remaining linked orders, delete the inventory item
-    if (remainingLinkedOrders.length === 0 && linkedOrders.length > 0) {
-      console.log('Deleting orphaned inventory item:', item.sku, item.name);
-      deleteInventoryItem(item.id);
+    if (remainingLinkedOrders.length === linkedOrders.length) continue;
+
+    let stockToRemove = 0;
+    for (const orderId of deletedOrderIds) {
+      if (!linkedOrders.includes(orderId)) continue;
+      const order = purchaseOrders.find((o) => o.id === orderId);
+      if (order && isVerifiedPurchaseOrder(order)) {
+        stockToRemove += verifiedPhysicalStock(order);
+      }
     }
-  });
+
+    await updateInventoryItem(item.id, {
+      linkedPurchaseOrders: remainingLinkedOrders,
+      ecuadorStock: Math.max(0, (item.ecuadorStock || 0) - stockToRemove),
+      verificationIssues: reconcileVerificationIssuesForItem(
+        { linkedPurchaseOrders: remainingLinkedOrders },
+        poSnapshot
+      ),
+    });
+  }
 }

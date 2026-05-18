@@ -1330,7 +1330,12 @@ export default function PurchaseOrders() {
   // Confirmation handlers
   const handleDeleteConfirm = () => {
     if (orderToDelete) {
-      cleanupInventoryAfterOrderDeletion([orderToDelete.id], inventory, deleteInventoryItem);
+      void cleanupInventoryAfterOrderDeletion(
+        [orderToDelete.id],
+        inventory,
+        updateInventoryItem,
+        purchaseOrders
+      );
       deletePurchaseOrder(orderToDelete.id);
       setOrderToDelete(null);
     }
@@ -3395,7 +3400,12 @@ export default function PurchaseOrders() {
             
             // Clean up orphaned inventory items
             console.log('Cleaning up inventory items for deleted orders:', deletedOrderIds);
-            cleanupInventoryAfterOrderDeletion(deletedOrderIds, inventory, deleteInventoryItem);
+            void cleanupInventoryAfterOrderDeletion(
+              deletedOrderIds,
+              inventory,
+              updateInventoryItem,
+              purchaseOrders
+            );
             
             console.log('Bulk delete completed');
           }}

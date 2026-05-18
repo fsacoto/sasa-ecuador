@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { InventoryItem } from '../types';
+import { formatSalePriceDisplay } from '../utils/salePrice';
 import CatalogDownloadButton from './CatalogDownloadButton';
 import { useTranslation } from '../context/TranslationContext';
 import { displayCategory, displayLine } from '../utils/merchandiseLabels';
@@ -21,7 +22,6 @@ export default function ProductCatalogModal({
   const { t } = useTranslation();
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [catalogTitle, setCatalogTitle] = useState(() => t('inventory.catalog.title'));
-  const [includeStock, setIncludeStock] = useState(false);
   const [itemsPerPage, setItemsPerPage] = useState(4);
   const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape');
 
@@ -148,7 +148,7 @@ export default function ProductCatalogModal({
               />
             </div>
 
-            {/* Diseño, orientación e incluir stock */}
+            {/* Diseño y orientación */}
             <div className="flex gap-3">
               <div className="flex-1">
                 <label className={`block text-xs font-medium mb-1 ${fieldLabel}`}>{t('inventory.catalog.layoutLabel')}</label>
@@ -177,21 +177,6 @@ export default function ProductCatalogModal({
                 </select>
               </div>
 
-              <div className="flex items-end">
-                <label
-                  className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg border transition-colors ${
-                    d ? 'border-gray-600 bg-[#1a1a1a] hover:border-[#515151]' : 'border-gray-300 bg-white hover:border-[#515151]'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={includeStock}
-                    onChange={(e) => setIncludeStock(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-300 text-[#515151] focus:ring-[#515151]"
-                  />
-                  <span className={`text-xs font-medium ${fieldLabel}`}>{t('inventory.catalog.includeStockShort')}</span>
-                </label>
-              </div>
             </div>
           </div>
         </div>
@@ -377,7 +362,10 @@ export default function ProductCatalogModal({
                             <div className="space-y-1">
                               <h5 className={`font-semibold text-xs line-clamp-2 leading-tight ${cardTitle}`}>{item.name}</h5>
                               <p className={`text-xs font-mono ${cardSku}`}>{item.sku}</p>
-                              <div className="flex items-center gap-1 text-xs">
+                              <div className="flex flex-wrap items-center gap-2 text-xs">
+                                <span className={`font-semibold tabular-nums ${cardTitle}`}>
+                                  {formatSalePriceDisplay(item.salePrice)}
+                                </span>
                                 <span className={cardStock}>{t('inventory.catalog.stockShort') || 'Stock'} {item.ecuadorStock}</span>
                               </div>
                             </div>
@@ -415,7 +403,7 @@ export default function ProductCatalogModal({
               <CatalogDownloadButton
                 products={selectedInventory}
                 catalogTitle={catalogTitle}
-                includeStock={includeStock}
+                includeStock={false}
                 itemsPerPage={itemsPerPage}
                 orientation={orientation}
                 fileName={`${catalogTitle.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`}

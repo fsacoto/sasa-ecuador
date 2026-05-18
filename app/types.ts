@@ -94,6 +94,8 @@ export interface InventoryItem {
   consignmentStock?: number; // Inventory on consignment
   images: string[]; // Array of image URLs or base64 data
   barcode?: string; // Base64 encoded barcode image
+  /** Manual USD sale price for catalog and reference (optional). */
+  salePrice?: number;
   /** Per linked PO: units flagged with problems at verification; click warning in Inventory to read comments. */
   verificationIssues?: VerificationIssueRef[];
   /** Returns from consignations with reported damage — shown alongside PO verification issues. */

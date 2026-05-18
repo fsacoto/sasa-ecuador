@@ -3,6 +3,7 @@
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { InventoryItem } from '../types';
 import esMessages from '../locales/es.json';
+import { formatCatalogSalePrice } from '../utils/salePrice';
 
 // Traducciones solo en español (PDF)
 const translate = (key: string): string => {
@@ -68,9 +69,12 @@ function formatSkuNonBreaking(sku: string): string {
 
 /** Fondo catálogo (página). */
 const CATALOG_PAGE_BG = '#FFFFFF';
-/** Pastilla “línea” (material): rosa marca más intenso que el fondo. */
-const CATALOG_LINE_PILL_BG = '#E8879A';
+/** Pastilla “línea” (material): color de marca principal. */
+const CATALOG_LINE_PILL_BG = '#FBE3E3';
 const CATALOG_LINE_PILL_TEXT = '#2D141C';
+/** Recuadro de precio (más visible que el gris claro anterior). */
+const CATALOG_PRICE_BG = '#D9D4CF';
+const CATALOG_PRICE_PLACEHOLDER_BG = '#E8E4E0';
 
 // A4 Landscape dimensions at 72 DPI: 842 × 595 px
 // Margin: 32px on all sides
@@ -117,10 +121,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   productImage: {
-    width: '100%',
-    height: '100%',
-    objectFit: 'cover',
-    objectPosition: 'center',
+    width: 264,
+    height: 249.5,
   },
   noImage: {
     width: '100%',
@@ -167,31 +169,31 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   materialBadgeText: {
-    fontSize: 10,
-    fontWeight: 'normal',
+    fontSize: 11,
+    fontWeight: 'bold',
     textTransform: 'uppercase',
     letterSpacing: 0.1,
-    fontFamily: 'Helvetica',
+    fontFamily: 'Helvetica-Bold',
     color: CATALOG_LINE_PILL_TEXT,
     flexShrink: 0,
     flexGrow: 0,
   },
   materialBadgeTextSmall: {
-    fontSize: 8,
-    fontWeight: 'normal',
+    fontSize: 9,
+    fontWeight: 'bold',
     textTransform: 'uppercase',
     letterSpacing: 0.06,
-    fontFamily: 'Helvetica',
+    fontFamily: 'Helvetica-Bold',
     color: CATALOG_LINE_PILL_TEXT,
     flexShrink: 0,
     flexGrow: 0,
   },
   materialBadgeTextTiny: {
-    fontSize: 7,
-    fontWeight: 'normal',
+    fontSize: 8,
+    fontWeight: 'bold',
     textTransform: 'uppercase',
     letterSpacing: 0.04,
-    fontFamily: 'Helvetica',
+    fontFamily: 'Helvetica-Bold',
     color: CATALOG_LINE_PILL_TEXT,
     flexShrink: 0,
     flexGrow: 0,
@@ -212,52 +214,81 @@ const styles = StyleSheet.create({
     textOverflow: 'ellipsis', // Truncate if too long (after font reduction)
   },
   descriptionWrap: {
-    maxHeight: 30,
+    maxHeight: 36,
     overflow: 'hidden',
     width: '100%',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   productDescription: {
-    fontSize: 7,
+    fontSize: 9,
     fontWeight: 'normal',
     color: '#444444',
-    lineHeight: 1.2,
+    lineHeight: 1.25,
     fontFamily: 'Helvetica',
     maxWidth: '100%',
   },
   sku: {
-    fontSize: 6,
-    fontWeight: 'normal',
+    fontSize: 7,
     color: '#333333',
-    marginBottom: 6,
-    fontFamily: 'Helvetica',
-    letterSpacing: 0.04,
+    marginBottom: 4,
+    fontFamily: 'Helvetica-Oblique',
+    letterSpacing: 0.03,
     lineHeight: 1,
     maxWidth: '100%',
     overflow: 'hidden',
     whiteSpace: 'nowrap',
     textOverflow: 'ellipsis',
+    alignSelf: 'flex-start',
   },
   categoryLine: {
-    fontSize: 10,
-    fontWeight: 'normal',
+    fontSize: 9,
+    fontWeight: 'bold',
     color: '#333333',
-    marginBottom: 8,
-    fontFamily: 'Helvetica',
-    letterSpacing: 0.12,
+    marginBottom: 6,
+    fontFamily: 'Helvetica-Bold',
+    letterSpacing: 0.1,
     lineHeight: 1.1,
     maxWidth: '100%',
     overflow: 'hidden',
     whiteSpace: 'nowrap',
     textOverflow: 'ellipsis',
   },
-  pricePlaceholder: {
-    backgroundColor: '#F7F7F7',
-    borderRadius: 16,
-    height: 26,
+  priceFooter: {
     width: '100%',
-    marginTop: 'auto', // Push to bottom
-    flexShrink: 0, // Don't shrink
+    marginTop: 'auto',
+    flexShrink: 0,
+    alignItems: 'flex-start',
+  },
+  pricePlaceholder: {
+    backgroundColor: CATALOG_PRICE_PLACEHOLDER_BG,
+    borderRadius: 16,
+    height: 30,
+    minWidth: 72,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  pricePlaceholderDash: {
+    fontSize: 13,
+    color: '#666666',
+    fontFamily: 'Helvetica',
+  },
+  priceBadge: {
+    backgroundColor: CATALOG_PRICE_BG,
+    borderRadius: 16,
+    height: 30,
+    minWidth: 72,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  priceText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#1a1a1a',
+    fontFamily: 'Helvetica-Bold',
   },
   footer: {
     position: 'absolute',
@@ -287,14 +318,14 @@ const getNarrowSingleLineStyles = (
   return [base, { fontSize: 7, letterSpacing: 0.02 }];
 };
 
-/** SKU muy pequeño; si sigue largo, baja aún más el cuerpo (siempre una línea). */
+/** SKU en cursiva; si es largo, reduce tamaño (siempre una línea). */
 const getSkuSingleLineStyles = (
   text: string
 ): (typeof styles.sku | { fontSize: number; letterSpacing: number })[] => {
   const len = text.length;
-  if (len <= 26) return [styles.sku];
-  if (len <= 40) return [styles.sku, { fontSize: 5, letterSpacing: 0.02 }];
-  return [styles.sku, { fontSize: 4, letterSpacing: 0.01 }];
+  if (len <= 22) return [styles.sku];
+  if (len <= 34) return [styles.sku, { fontSize: 6, letterSpacing: 0.02 }];
+  return [styles.sku, { fontSize: 5, letterSpacing: 0.01 }];
 };
 
 const getBadgeTextStyle = (text: string) => {
@@ -316,6 +347,8 @@ function CatalogProductTextColumn({ product }: { product: InventoryItem }) {
   const categoryTextStyles = categoryDisplay
     ? getNarrowSingleLineStyles(categoryDisplay, styles.categoryLine)
     : [];
+  const priceLabel = formatCatalogSalePrice(product.salePrice);
+  const hasPrice = priceLabel !== '—';
 
   return (
     <View style={styles.textPanel}>
@@ -343,11 +376,24 @@ function CatalogProductTextColumn({ product }: { product: InventoryItem }) {
         </View>
       ) : null}
 
-      <Text style={skuTextStyles} wrap={false}>
-        {skuPdf}
-      </Text>
-
-      <View style={styles.pricePlaceholder} />
+      <View style={styles.priceFooter}>
+        <Text style={skuTextStyles} wrap={false}>
+          {skuPdf}
+        </Text>
+        {hasPrice ? (
+          <View style={styles.priceBadge}>
+            <Text style={styles.priceText} wrap={false}>
+              {priceLabel}
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.pricePlaceholder}>
+            <Text style={styles.pricePlaceholderDash} wrap={false}>
+              —
+            </Text>
+          </View>
+        )}
+      </View>
     </View>
   );
 }
@@ -417,7 +463,9 @@ export default function ProductCatalogPDF({
                     <View key={product.id} style={styles.productBlock}>
                       {/* LEFT PANEL: Product Image (70% width) */}
                       <View style={styles.imagePanel}>
-                        {product.images && product.images.length > 0 && product.images[0] ? (
+                        {product.images?.[0]?.startsWith('data:image/jpeg') ||
+                        product.images?.[0]?.startsWith('data:image/jpg') ||
+                        product.images?.[0]?.startsWith('data:image/png') ? (
                           <Image
                             src={product.images[0]}
                             style={styles.productImage}
@@ -445,7 +493,9 @@ export default function ProductCatalogPDF({
                     <View key={product.id} style={styles.productBlock}>
                       {/* LEFT PANEL: Product Image (70% width) */}
                       <View style={styles.imagePanel}>
-                        {product.images && product.images.length > 0 && product.images[0] ? (
+                        {product.images?.[0]?.startsWith('data:image/jpeg') ||
+                        product.images?.[0]?.startsWith('data:image/jpg') ||
+                        product.images?.[0]?.startsWith('data:image/png') ? (
                           <Image
                             src={product.images[0]}
                             style={styles.productImage}

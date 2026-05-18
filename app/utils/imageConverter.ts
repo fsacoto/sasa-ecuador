@@ -1,6 +1,4 @@
-// Convert WebP base64 images to JPEG for PDF compatibility
-// @react-pdf/renderer has limited WebP support, so we convert to JPEG
-// SVG barcodes (Storage / data URLs) must be rasterized: react-pdf Image does not render SVG reliably.
+// Convert images to JPEG data URLs for @react-pdf/renderer (jpg/png only; WebP/SVG need rasterizing).
 
 export async function convertSvgDataUrlToPng(dataUrl: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -47,133 +45,208 @@ function looksLikeSvg(url: string, mimeHint?: string): boolean {
   );
 }
 
-export async function convertWebPToJPEG(base64Data: string): Promise<string> {
+/** Rasteriza cualquier imagen cargable en el navegador a JPEG (react-pdf solo acepta jpg/png en base64). */
+export async function rasterizeDataUrlToJpeg(base64Data: string, quality = 0.92): Promise<string> {
   return new Promise((resolve, reject) => {
-    // Create an image element
     const img = new window.Image();
-    
     img.onload = () => {
-      // Create canvas
+      const w = Math.min(Math.max(img.naturalWidth || img.width || 1, 1), 1600);
+      const h = Math.min(Math.max(img.naturalHeight || img.height || 1, 1), 1600);
       const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      
-      // Draw image on canvas
+      canvas.width = w;
+      canvas.height = h;
       const ctx = canvas.getContext('2d');
       if (!ctx) {
         reject(new Error('Could not get canvas context'));
         return;
       }
-      
-      ctx.drawImage(img, 0, 0);
-      
-      // Convert to JPEG base64
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
       try {
-        const jpegBase64 = canvas.toDataURL('image/jpeg', 0.9);
-        resolve(jpegBase64);
+        resolve(canvas.toDataURL('image/jpeg', quality));
       } catch (error) {
         reject(error);
       }
     };
-    
-    img.onerror = () => {
-      reject(new Error('Failed to load image'));
-    };
-    
-    // Set image source
+    img.onerror = () => reject(new Error('Failed to load image for rasterize'));
     img.src = base64Data;
   });
 }
 
-export async function convertImageForPDF(imageUrl: string | undefined): Promise<string | null> {
-  if (!imageUrl) return null;
-  
-  // If it's already a base64 data URL, handle it
-  if (imageUrl.startsWith('data:')) {
-    if (looksLikeSvg(imageUrl)) {
-      try {
-        return await convertSvgDataUrlToPng(imageUrl);
-      } catch (error) {
-        console.error('Failed to convert SVG to PNG for PDF:', error);
-        return null;
-      }
-    }
-    // If it's WebP, convert to JPEG
-    if (imageUrl.includes('image/webp')) {
-      try {
-        return await convertWebPToJPEG(imageUrl);
-      } catch (error) {
-        console.error('Failed to convert WebP to JPEG:', error);
-        return null;
-      }
-    }
-    // If it's already JPEG or PNG, return as is
-    return imageUrl;
-  }
-  
-  // If it's a URL (Firebase Storage, HTTP, etc.), use API route to bypass CORS
+/** Carga un Blob vía object URL (sin CORS en canvas) y devuelve JPEG para el PDF. */
+async function rasterizeBlobToJpeg(blob: Blob): Promise<string | null> {
+  if (!blob.size) return null;
+  const objectUrl = URL.createObjectURL(blob);
   try {
-    // Use the API route to fetch images server-side (bypasses CORS)
-    const apiUrl = `/api/download-image?url=${encodeURIComponent(imageUrl)}`;
-    const response = await fetch(apiUrl, {
-      method: 'GET',
-      cache: 'no-cache',
-    });
-    
-    if (!response.ok) {
-      console.warn(`Failed to fetch image via API (${response.status}):`, imageUrl);
-      return null;
-    }
-    
-    const blob = await response.blob();
-    
-    // Convert blob to base64
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = reader.result as string;
-        if (looksLikeSvg(imageUrl, blob.type) || looksLikeSvg(base64String, blob.type)) {
-          convertSvgDataUrlToPng(base64String)
-            .then(resolve)
-            .catch((err) => {
-              console.warn('Failed to convert fetched SVG to PNG for PDF:', err);
-              reject(err instanceof Error ? err : new Error(String(err)));
-            });
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const w = Math.min(Math.max(img.naturalWidth || img.width || 1, 1), 1600);
+        const h = Math.min(Math.max(img.naturalHeight || img.height || 1, 1), 1600);
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
           return;
         }
-        // If it's WebP, convert to JPEG
-        if (blob.type === 'image/webp' || base64String.includes('image/webp')) {
-          convertWebPToJPEG(base64String)
-            .then(resolve)
-            .catch((err) => {
-              console.warn('Failed to convert WebP, using original:', err);
-              resolve(base64String); // Fallback to original if conversion fails
-            });
-        } else {
-          resolve(base64String);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        try {
+          resolve(canvas.toDataURL('image/jpeg', 0.9));
+        } catch (e) {
+          reject(e);
         }
       };
-      reader.onerror = () => {
-        console.warn('FileReader error for image:', imageUrl);
-        reject(new Error('Failed to read image blob'));
-      };
-      reader.readAsDataURL(blob);
+      img.onerror = () => reject(new Error('Failed to decode image blob'));
+      img.src = objectUrl;
     });
+    return dataUrl;
   } catch (error) {
-    console.warn('Error converting image URL to base64:', imageUrl, error);
+    console.warn('rasterizeBlobToJpeg failed:', error);
+    return null;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function fetchImageBlobDirect(url: string): Promise<Blob | null> {
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      mode: 'cors',
+      credentials: 'omit',
+      cache: 'no-store',
+    });
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    return blob.size > 0 ? blob : null;
+  } catch {
     return null;
   }
 }
 
+async function fetchImageBlobViaProxy(url: string): Promise<Blob | null> {
+  if (typeof window === 'undefined') return null;
+  const origin = window.location.origin;
+
+  try {
+    const postRes = await fetch(`${origin}/api/download-image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      cache: 'no-store',
+    });
+    if (postRes.ok) {
+      const blob = await postRes.blob();
+      if (blob.size > 0) return blob;
+    }
+  } catch {
+    /* try GET fallback */
+  }
+
+  try {
+    const getRes = await fetch(
+      `${origin}/api/download-image?url=${encodeURIComponent(url)}`,
+      { method: 'GET', cache: 'no-store' }
+    );
+    if (!getRes.ok) return null;
+    const blob = await getRes.blob();
+    return blob.size > 0 ? blob : null;
+  } catch {
+    return null;
+  }
+}
+
+async function remoteUrlToJpegDataUrl(url: string): Promise<string | null> {
+  let blob = await fetchImageBlobDirect(url);
+  if (!blob) {
+    blob = await fetchImageBlobViaProxy(url);
+  }
+  if (!blob) return null;
+  return rasterizeBlobToJpeg(blob);
+}
+
+/** @deprecated Use rasterizeDataUrlToJpeg */
+export async function convertWebPToJPEG(base64Data: string): Promise<string> {
+  return rasterizeDataUrlToJpeg(base64Data, 0.9);
+}
+
+async function dataUrlForPdfRaster(base64String: string, sourceHint: string, mimeHint?: string): Promise<string | null> {
+  if (looksLikeSvg(sourceHint, mimeHint) || looksLikeSvg(base64String, mimeHint)) {
+    try {
+      const png = await convertSvgDataUrlToPng(base64String);
+      return rasterizeDataUrlToJpeg(png);
+    } catch (error) {
+      console.warn('Failed to convert SVG to PNG for PDF:', error);
+      return null;
+    }
+  }
+
+  const lower = `${sourceHint} ${base64String}`.toLowerCase();
+  const isJpeg =
+    mimeHint === 'image/jpeg' ||
+    lower.includes('image/jpeg') ||
+    base64String.startsWith('data:image/jpeg');
+
+  if (isJpeg) {
+    try {
+      return await rasterizeDataUrlToJpeg(base64String);
+    } catch (error) {
+      console.warn('Failed to re-encode JPEG for PDF:', error);
+      return base64String.startsWith('data:image/jpeg') ? base64String : null;
+    }
+  }
+
+  try {
+    return await rasterizeDataUrlToJpeg(base64String);
+  } catch (error) {
+    console.warn('Failed to rasterize image for PDF:', error);
+    return null;
+  }
+}
+
+export async function convertImageForPDF(imageUrl: string | undefined): Promise<string | null> {
+  if (!imageUrl?.trim()) return null;
+
+  const trimmed = imageUrl.trim();
+
+  if (trimmed.startsWith('data:')) {
+    return dataUrlForPdfRaster(trimmed, trimmed);
+  }
+
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    const fromRemote = await remoteUrlToJpegDataUrl(trimmed);
+    if (fromRemote) return fromRemote;
+  }
+
+  if (trimmed.startsWith('blob:')) {
+    try {
+      const res = await fetch(trimmed);
+      const blob = await res.blob();
+      return rasterizeBlobToJpeg(blob);
+    } catch (error) {
+      console.warn('Failed to convert blob: URL for PDF:', error);
+      return null;
+    }
+  }
+
+  console.warn('Unsupported image URL for PDF:', trimmed.slice(0, 80));
+  return null;
+}
+
 export async function convertProductImages(images: string[]): Promise<string[]> {
   const convertedImages: string[] = [];
-  
+
   for (const image of images) {
     const converted = await convertImageForPDF(image);
     if (converted) {
       convertedImages.push(converted);
     }
   }
-  
+
   return convertedImages;
 }
