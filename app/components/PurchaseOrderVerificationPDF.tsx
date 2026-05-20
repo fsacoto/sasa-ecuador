@@ -75,15 +75,34 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#333333',
   },
-  colSku: {
-    width: '10%',
-    textAlign: 'left',
-    fontSize: 10,
+  colSupplierSku: {
+    width: '9%',
+    textAlign: 'center',
+    fontSize: 7,
     color: '#333333',
-    paddingLeft: 5,
+    paddingHorizontal: 2,
+  },
+  colInternalSku: {
+    width: '9%',
+    textAlign: 'center',
+    fontSize: 7,
+    color: '#333333',
+    paddingHorizontal: 2,
+  },
+  skuHeaderCell: {
+    width: '9%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  skuHeaderLine: {
+    fontSize: 8,
+    fontWeight: 'bold',
+    color: '#000000',
+    textTransform: 'uppercase',
+    textAlign: 'center',
   },
   colDescription: {
-    width: '22%',
+    width: '18%',
     textAlign: 'left',
     fontSize: 10,
     color: '#333333',
@@ -122,7 +141,7 @@ const styles = StyleSheet.create({
     color: '#333333',
   },
   colNotes: {
-    width: '20%',
+    width: '18%',
     textAlign: 'left',
     fontSize: 10,
     color: '#999999',
@@ -260,7 +279,14 @@ export default function PurchaseOrderVerificationPDF({
           {/* Table Header */}
           <View style={styles.tableHeader}>
             <Text style={[styles.colNo, styles.headerText]}>NO</Text>
-            <Text style={[styles.colSku, styles.headerText]}>SKU</Text>
+            <View style={styles.skuHeaderCell}>
+              <Text style={styles.skuHeaderLine}>SKU</Text>
+              <Text style={styles.skuHeaderLine}>SUPPLIER</Text>
+            </View>
+            <View style={styles.skuHeaderCell}>
+              <Text style={styles.skuHeaderLine}>SKU</Text>
+              <Text style={styles.skuHeaderLine}>INTERNAL</Text>
+            </View>
             <Text style={[styles.colDescription, styles.headerText]}>DESCRIPTION</Text>
             <Text style={[styles.colCategory, styles.headerText]}>CATEGORY</Text>
             <Text style={[styles.colLine, styles.headerText]}>LINE</Text>
@@ -274,7 +300,8 @@ export default function PurchaseOrderVerificationPDF({
           {orders.map((order, index) => (
             <View key={order.id} style={styles.tableRow}>
               <Text style={styles.colNo}>{index + 1}</Text>
-              <Text style={styles.colSku}>{order.sku || '-'}</Text>
+              <Text style={styles.colSupplierSku} wrap={false}>{order.supplierSKU || '-'}</Text>
+              <Text style={styles.colInternalSku} wrap={false}>{order.sku || '-'}</Text>
               <Text style={styles.colDescription}>{order.description || '-'}</Text>
               <Text style={styles.colCategory}>{order.category || '-'}</Text>
               <Text style={styles.colLine}>{order.line || '-'}</Text>

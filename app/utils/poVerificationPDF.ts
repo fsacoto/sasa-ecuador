@@ -63,7 +63,10 @@ export async function generatePOVerificationPDF({
     destinationCountry: 'País de Destino:',
     currentDate: 'Fecha Actual:',
     no: 'NO',
-    sku: 'SKU',
+    supplierSkuLine1: 'SKU',
+    supplierSkuLine2: 'PROVEEDOR',
+    internalSkuLine1: 'SKU',
+    internalSkuLine2: 'INTERNO',
     description: 'DESCRIPCIÓN',
     category: 'CATEGORÍA',
     line: 'LÍNEA',
@@ -130,8 +133,9 @@ export async function generatePOVerificationPDF({
   // Fixed widths for short columns, NOTES gets remaining space
   const colWidths = {
     no: usableWidth * 0.04,
-    sku: usableWidth * 0.12,
-    description: usableWidth * 0.28,
+    supplierSku: usableWidth * 0.10,
+    internalSku: usableWidth * 0.10,
+    description: usableWidth * 0.24,
     category: 75, // Fixed width for short content
     line: 75, // Fixed width for short content
     qtyOrdered: 60, // Fixed width for numbers
@@ -141,7 +145,7 @@ export async function generatePOVerificationPDF({
   };
   
   // Calculate NOTES width as remaining space
-  const usedWidth = colWidths.no + colWidths.sku + colWidths.description + 
+  const usedWidth = colWidths.no + colWidths.supplierSku + colWidths.internalSku + colWidths.description + 
                     colWidths.category + colWidths.line + colWidths.qtyOrdered + 
                     colWidths.qtyReceived + colWidths.check;
   colWidths.notes = usableWidth - usedWidth;
@@ -194,6 +198,49 @@ export async function generatePOVerificationPDF({
     doc.text(`${t.currentDate} ${currentDate}`, headerX, currentY, { align: 'right' });
   };
 
+  const SKU_HEADER_FONT_SIZE = 8;
+  const SKU_CELL_FONT_SIZE = 7;
+  const SKU_CELL_MIN_FONT_SIZE = 5.5;
+
+  /** Two-line centered header (e.g. SKU / PROVEEDOR). */
+  const drawTwoLineColumnHeader = (
+    line1: string,
+    line2: string,
+    colX: number,
+    colWidth: number,
+    startY: number,
+    rowHeight: number
+  ) => {
+    const centerX = colX + colWidth / 2;
+    const baseY = startY + rowHeight / 2 - 3;
+    doc.setFontSize(SKU_HEADER_FONT_SIZE);
+    doc.setFont('helvetica', 'bold');
+    doc.text(line1, centerX, baseY, { align: 'center' });
+    doc.text(line2, centerX, baseY + 9, { align: 'center' });
+  };
+
+  /** Single-line SKU in data rows; shrinks font if needed to avoid wrapping. */
+  const drawSingleLineSkuCell = (
+    value: string,
+    colX: number,
+    colWidth: number,
+    rowCenterY: number
+  ) => {
+    const text = (value || '-').trim() || '-';
+    const maxW = colWidth - cellPadding * 2;
+    let fontSize = SKU_CELL_FONT_SIZE;
+    doc.setFontSize(fontSize);
+    doc.setFont('helvetica', 'normal');
+    let textWidth = doc.getTextWidth(text);
+    while (textWidth > maxW && fontSize > SKU_CELL_MIN_FONT_SIZE) {
+      fontSize -= 0.5;
+      doc.setFontSize(fontSize);
+      textWidth = doc.getTextWidth(text);
+    }
+    doc.text(text, colX + cellPadding, rowCenterY + 3);
+    doc.setFontSize(9);
+  };
+
   // Draw table header
   const drawTableHeader = (startY: number) => {
     // Use the headerRowHeight calculated above (includes padding)
@@ -211,9 +258,13 @@ export async function generatePOVerificationPDF({
     // NO column
     doc.text(t.no, x + colWidths.no / 2, startY + headerRowHeight / 2 + 3, { align: 'center' });
     x += colWidths.no;
-    // SKU column
-    doc.text(t.sku, x + colWidths.sku / 2, startY + headerRowHeight / 2 + 3, { align: 'center' });
-    x += colWidths.sku;
+    // Supplier SKU column (two lines)
+    drawTwoLineColumnHeader(t.supplierSkuLine1, t.supplierSkuLine2, x, colWidths.supplierSku, startY, headerRowHeight);
+    x += colWidths.supplierSku;
+    // Internal SKU column (two lines)
+    drawTwoLineColumnHeader(t.internalSkuLine1, t.internalSkuLine2, x, colWidths.internalSku, startY, headerRowHeight);
+    x += colWidths.internalSku;
+    doc.setFontSize(10);
     // DESCRIPTION column
     doc.text(t.description, x + colWidths.description / 2, startY + headerRowHeight / 2 + 3, { align: 'center' });
     x += colWidths.description;
@@ -263,7 +314,9 @@ export async function generatePOVerificationPDF({
     doc.line(x, startY, x, startY + headerRowHeight);
     x += colWidths.no;
     doc.line(x, startY, x, startY + headerRowHeight);
-    x += colWidths.sku;
+    x += colWidths.supplierSku;
+    doc.line(x, startY, x, startY + headerRowHeight);
+    x += colWidths.internalSku;
     doc.line(x, startY, x, startY + headerRowHeight);
     x += colWidths.description;
     doc.line(x, startY, x, startY + headerRowHeight);
@@ -318,11 +371,16 @@ export async function generatePOVerificationPDF({
     doc.text(String(globalRowIndex + 1), x + colWidths.no / 2, rowCenterY + 3, { align: 'center' });
     x += colWidths.no;
     
-    // SKU - with proper wrapping (noWrap: false), vertically centered
-    const skuText = doc.splitTextToSize(order.sku || '-', colWidths.sku - (cellPadding * 2));
-    const skuTextY = getCenteredTextY(skuText, rowCenterY);
-    doc.text(skuText, x + cellPadding, skuTextY);
-    x += colWidths.sku;
+    // Supplier SKU — single line, smaller font
+    drawSingleLineSkuCell(order.supplierSKU, x, colWidths.supplierSku, rowCenterY);
+    x += colWidths.supplierSku;
+    
+    // Internal SKU — single line, smaller font
+    drawSingleLineSkuCell(order.sku, x, colWidths.internalSku, rowCenterY);
+    x += colWidths.internalSku;
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
     
     // DESCRIPTION - with proper wrapping (noWrap: false), vertically centered
     const descText = doc.splitTextToSize(order.description || '-', colWidths.description - (cellPadding * 2));
@@ -373,7 +431,9 @@ export async function generatePOVerificationPDF({
     doc.line(x, rowY, x, rowY + rowHeight); // Left border
     x += colWidths.no;
     doc.line(x, rowY, x, rowY + rowHeight);
-    x += colWidths.sku;
+    x += colWidths.supplierSku;
+    doc.line(x, rowY, x, rowY + rowHeight);
+    x += colWidths.internalSku;
     doc.line(x, rowY, x, rowY + rowHeight);
     x += colWidths.description;
     doc.line(x, rowY, x, rowY + rowHeight);
