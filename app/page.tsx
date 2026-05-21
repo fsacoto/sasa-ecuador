@@ -1449,7 +1449,9 @@ function AppContent() {
               (hasPermission('inventory.view') || hasPermission('inventory.view.ecuador')) && (
                 <Inventory darkMode={darkModeOn} />
               )}
-            {activeTab === 'landed-costs' && hasPermission('costs.view') && <LandedCosts />}
+            {activeTab === 'landed-costs' && hasPermission('costs.view') && (
+              <LandedCosts darkMode={darkModeOn} />
+            )}
             {activeTab === 'cms' && SHOW_CMS_IN_NAVIGATION && hasPermission('cms.view') && <CMSModule />}
             {activeTab === 'clients' &&
               (hasPermission('clients.view') || hasPermission('clients.view.ecuador')) && <Clients />}

@@ -1,142 +1,233 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useInventory } from '../context/InventoryContext';
-import { AdditionalCost, AdditionalCostType, LandedCostCalculation } from '../types';
+import { AdditionalCost, AdditionalCostType } from '../types';
 import { useTranslation } from '../context/TranslationContext';
 import ConfirmDialog from './ui/ConfirmDialog';
 import AlertDialog from './ui/AlertDialog';
-import { formatDateMedium } from '../utils/formatDate';
+import { formatDateMedium, formatMonthYearLong, toValidDate } from '../utils/formatDate';
 
-export default function LandedCosts() {
-  const { 
-    purchaseOrders, 
-    additionalCosts, 
-    addAdditionalCost, 
-    updateAdditionalCost, 
+const FIXED_COST_TYPES: AdditionalCostType[] = [
+  'Shipping',
+  'Insurance',
+  'Duties',
+  'Import Fees',
+  'Other',
+];
+
+const COST_TYPE_KEYS: Record<AdditionalCostType, string> = {
+  Shipping: 'shipping',
+  Insurance: 'insurance',
+  Duties: 'duties',
+  'Import Fees': 'importFees',
+  Other: 'other',
+};
+
+interface InvoiceSummary {
+  invoiceNumber: string;
+  itemCount: number;
+  totalValue: number;
+  purchaseDate: Date;
+  additionalCostsCount: number;
+  additionalCostsTotal: number;
+}
+
+interface LandedCostsProps {
+  darkMode?: boolean;
+}
+
+function toMonthKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+function monthKeyToDate(monthKey: string): Date {
+  const [y, m] = monthKey.split('-').map(Number);
+  return new Date(y, m - 1, 1);
+}
+
+const emptyFormCosts = () =>
+  FIXED_COST_TYPES.map((type) => ({
+    type,
+    amount: 0,
+    description: '',
+  }));
+
+export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
+  const {
+    purchaseOrders,
+    addAdditionalCost,
+    updateAdditionalCost,
     deleteAdditionalCost,
     getAdditionalCostsByInvoice,
-    calculateLandedCosts 
+    calculateLandedCosts,
   } = useInventory();
   const { t } = useTranslation();
 
-  const [selectedInvoice, setSelectedInvoice] = useState<string>('');
+  const [selectedInvoice, setSelectedInvoice] = useState('');
+  const [invoiceSearch, setInvoiceSearch] = useState('');
+  const [monthFilter, setMonthFilter] = useState<'all' | string>('all');
+  const [withCostsOnly, setWithCostsOnly] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingCost, setEditingCost] = useState<AdditionalCost | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [costToDelete, setCostToDelete] = useState<string | null>(null);
-  
-  // Alert dialog state
-  const [alertDialog, setAlertDialog] = useState<{open: boolean, title?: string, message: string}>({open: false, message: ''});
-  
-  // Edit description modal state
-  const [editDescriptionModal, setEditDescriptionModal] = useState<{open: boolean, cost: AdditionalCost | null, newDescription: string}>({
+  const [alertDialog, setAlertDialog] = useState<{ open: boolean; title?: string; message: string }>({
     open: false,
-    cost: null,
-    newDescription: ''
+    message: '',
   });
-  
-  // Helper function for styled alerts
-  const showAlert = (message: string, title?: string) => {
-    setAlertDialog({ open: true, message, title });
-  };
+  const [editDescriptionModal, setEditDescriptionModal] = useState<{
+    open: boolean;
+    cost: AdditionalCost | null;
+    newDescription: string;
+  }>({ open: false, cost: null, newDescription: '' });
+
   const [formData, setFormData] = useState({
     invoiceNumber: '',
-    costs: [
-      { type: 'Shipping' as AdditionalCostType, amount: 0, description: '' },
-      { type: 'Insurance' as AdditionalCostType, amount: 0, description: '' },
-      { type: 'Duties' as AdditionalCostType, amount: 0, description: '' },
-      { type: 'Import Fees' as AdditionalCostType, amount: 0, description: '' },
-      { type: 'Other' as AdditionalCostType, amount: 0, description: '' },
-    ],
+    costs: emptyFormCosts(),
     date: new Date().toISOString().split('T')[0],
     comments: '',
   });
 
   const formRef = useRef<HTMLDivElement>(null);
 
-  // Get unique invoice numbers from purchase orders
-  const invoiceNumbers = Array.from(new Set(purchaseOrders.map(order => order.invoice))).sort();
+  const showAlert = (message: string, title?: string) => {
+    setAlertDialog({ open: true, message, title });
+  };
 
-  // Get additional costs for selected invoice
+  const translateCostType = (type: AdditionalCostType) => {
+    const key = COST_TYPE_KEYS[type];
+    return key ? t(`landedCosts.${key}`) : type;
+  };
+
+  const invoiceSummaries = useMemo((): InvoiceSummary[] => {
+    const numbers = Array.from(new Set(purchaseOrders.map((o) => o.invoice)));
+    return numbers.map((invoiceNumber) => {
+      const orders = purchaseOrders.filter((o) => o.invoice === invoiceNumber);
+      const costs = getAdditionalCostsByInvoice(invoiceNumber);
+      const purchaseDate = orders.reduce((latest, o) => {
+        const d = toValidDate(o.purchaseDate) ?? new Date(0);
+        return d > latest ? d : latest;
+      }, new Date(0));
+      return {
+        invoiceNumber,
+        itemCount: orders.length,
+        totalValue: orders.reduce((sum, o) => sum + o.costInUSD, 0),
+        purchaseDate,
+        additionalCostsCount: costs.length,
+        additionalCostsTotal: costs.reduce((sum, c) => sum + c.amount, 0),
+      };
+    });
+  }, [purchaseOrders, getAdditionalCostsByInvoice]);
+
+  const availableMonths = useMemo(() => {
+    const keys = new Set(invoiceSummaries.map((inv) => toMonthKey(inv.purchaseDate)));
+    return Array.from(keys).sort((a, b) => b.localeCompare(a));
+  }, [invoiceSummaries]);
+
+  const filteredInvoices = useMemo(() => {
+    let list = [...invoiceSummaries];
+
+    if (invoiceSearch.trim()) {
+      const q = invoiceSearch.trim().toLowerCase();
+      list = list.filter((inv) => inv.invoiceNumber.toLowerCase().includes(q));
+    }
+
+    if (monthFilter !== 'all') {
+      list = list.filter((inv) => toMonthKey(inv.purchaseDate) === monthFilter);
+    }
+
+    if (withCostsOnly) {
+      list = list.filter((inv) => inv.additionalCostsCount > 0);
+    }
+
+    list.sort((a, b) => b.purchaseDate.getTime() - a.purchaseDate.getTime());
+    return list;
+  }, [invoiceSummaries, invoiceSearch, monthFilter, withCostsOnly]);
+
+  const hasActiveFilters =
+    invoiceSearch.trim() !== '' || monthFilter !== 'all' || withCostsOnly;
+
+  const selectedSummary = invoiceSummaries.find((inv) => inv.invoiceNumber === selectedInvoice);
   const invoiceAdditionalCosts = selectedInvoice ? getAdditionalCostsByInvoice(selectedInvoice) : [];
-
-  // Calculate landed costs for selected invoice
   const landedCostCalculation = selectedInvoice ? calculateLandedCosts(selectedInvoice) : null;
 
-  // Handle form submission
+  useEffect(() => {
+    if (selectedInvoice && !filteredInvoices.some((inv) => inv.invoiceNumber === selectedInvoice)) {
+      setSelectedInvoice('');
+    }
+  }, [filteredInvoices, selectedInvoice]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (formRef.current && !formRef.current.contains(event.target as Node)) {
+        resetForm();
+      }
+    };
+    if (isFormOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isFormOpen]);
+
+  const resetForm = () => {
+    setFormData({
+      invoiceNumber: selectedInvoice || '',
+      costs: emptyFormCosts(),
+      date: new Date().toISOString().split('T')[0],
+      comments: '',
+    });
+    setIsFormOpen(false);
+  };
+
+  const openAddCosts = (invoice?: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      invoiceNumber: invoice ?? selectedInvoice ?? prev.invoiceNumber,
+    }));
+    setIsFormOpen(true);
+  };
+
+  const clearFilters = () => {
+    setInvoiceSearch('');
+    setMonthFilter('all');
+    setWithCostsOnly(false);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Filter out costs with zero amounts and add them
-    const validCosts = formData.costs.filter(cost => cost.amount > 0);
-    
+    const validCosts = formData.costs.filter((c) => c.amount > 0);
     if (validCosts.length === 0) {
-      showAlert(t('landedCosts.pleaseEnterCost'), 'Validation Error');
+      showAlert(t('landedCosts.pleaseEnterCost'));
       return;
     }
-    
-    validCosts.forEach(cost => {
-      const costData = {
+    validCosts.forEach((cost) => {
+      addAdditionalCost({
         invoiceNumber: formData.invoiceNumber,
         type: cost.type,
         amount: cost.amount,
         description: cost.description || `${cost.type} - ${formData.comments}`.trim(),
         date: new Date(formData.date),
-      };
-      
-      addAdditionalCost(costData);
+      });
     });
-    
     resetForm();
   };
 
-  // Reset form
-  const resetForm = () => {
-    setFormData({
-      invoiceNumber: selectedInvoice || '',
-      costs: [
-        { type: 'Shipping' as AdditionalCostType, amount: 0, description: '' },
-        { type: 'Insurance' as AdditionalCostType, amount: 0, description: '' },
-        { type: 'Duties' as AdditionalCostType, amount: 0, description: '' },
-        { type: 'Import Fees' as AdditionalCostType, amount: 0, description: '' },
-        { type: 'Other' as AdditionalCostType, amount: 0, description: '' },
-      ],
-      date: new Date().toISOString().split('T')[0],
-      comments: '',
-    });
-    setIsFormOpen(false);
-    setEditingCost(null);
+  const updateCostField = (index: number, field: 'amount' | 'description', value: string | number) => {
+    setFormData((prev) => ({
+      ...prev,
+      costs: prev.costs.map((c, i) => (i === index ? { ...c, [field]: value } : c)),
+    }));
   };
 
-  // Handle edit
-  const handleEdit = (cost: AdditionalCost) => {
-    setEditDescriptionModal({
-      open: true,
-      cost,
-      newDescription: cost.description
-    });
-  };
-
-  // Handle save edited description
   const handleSaveDescription = () => {
     if (editDescriptionModal.cost) {
-      updateAdditionalCost(editDescriptionModal.cost.id, { 
-        description: editDescriptionModal.newDescription 
+      updateAdditionalCost(editDescriptionModal.cost.id, {
+        description: editDescriptionModal.newDescription,
       });
       setEditDescriptionModal({ open: false, cost: null, newDescription: '' });
     }
-  };
-
-  // Handle cancel edit
-  const handleCancelEdit = () => {
-    setEditDescriptionModal({ open: false, cost: null, newDescription: '' });
-  };
-
-  // Handle delete
-  const handleDelete = (id: string) => {
-    setCostToDelete(id);
-    setDeleteConfirmOpen(true);
   };
 
   const confirmDelete = () => {
@@ -147,332 +238,530 @@ export default function LandedCosts() {
     setDeleteConfirmOpen(false);
   };
 
-  // Update individual cost field
-  const updateCostField = (index: number, field: 'amount' | 'description', value: string | number) => {
-    setFormData(prev => ({
-      ...prev,
-      costs: prev.costs.map((cost, i) => 
-        i === index ? { ...cost, [field]: value } : cost
-      )
-    }));
-  };
+  const card = darkMode ? 'border-gray-700 bg-[#101010]' : 'border-gray-200 bg-white';
+  const cardMuted = darkMode ? 'border-gray-700 bg-[#161616]' : 'border-gray-200 bg-gray-50';
+  const textPrimary = darkMode ? 'text-white' : 'text-gray-900';
+  const textSecondary = darkMode ? 'text-gray-400' : 'text-gray-500';
+  const inputCls = darkMode
+    ? 'border-gray-600 bg-[#1a1a1a] text-white placeholder:text-gray-500'
+    : 'border-gray-300 bg-white text-gray-900';
+  const selectedInvoiceCls = darkMode
+    ? 'border-[#515151] bg-[#515151]/15 ring-1 ring-[#515151]/40'
+    : 'border-[#515151] bg-[#515151]/10 ring-1 ring-[#515151]/25';
+  const metricHighlight = darkMode
+    ? 'border-[#515151] bg-[#515151]/20 ring-1 ring-[#515151]/50'
+    : 'border-[#515151] bg-[#515151]/10 ring-1 ring-[#515151]/30';
+  const tableHead = darkMode ? 'border-gray-700 bg-[#161616]' : 'border-gray-200 bg-gray-50';
+  const tableDivide = darkMode ? 'divide-gray-700' : 'divide-gray-100';
+  const brandText = darkMode ? 'text-white' : 'text-[#515151]';
 
-  // Close form when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (formRef.current && !formRef.current.contains(event.target as Node)) {
-        resetForm();
-      }
-    };
-
-    if (isFormOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isFormOpen]);
-
-  const costTypes: AdditionalCostType[] = ['Shipping', 'Insurance', 'Duties', 'Import Fees', 'Other'];
+  const formatCostBadge = (count: number) =>
+    count === 1
+      ? `1 ${t('landedCosts.costs')}`
+      : `${count} ${t('landedCosts.costsPlural')}`;
 
   return (
-    <div className="space-y-8">
-      <div className="flex justify-between items-center">
+    <div className="space-y-6">
+      {/* Encabezado */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold text-gray-900">{t('landedCosts.title')}</h2>
-          <p className="text-sm text-gray-500 mt-1">{t('landedCosts.subtitle')}</p>
+          <h2 className={`text-2xl font-semibold ${textPrimary}`}>{t('landedCosts.title')}</h2>
+          <p className={`mt-1 text-sm ${textSecondary}`}>{t('landedCosts.subtitle')}</p>
         </div>
         <button
-          onClick={() => setIsFormOpen(true)}
-          className="flex items-center gap-2 px-5 py-2.5 bg-[#515151] hover:bg-[#000000] text-white rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow-md active:scale-95"
+          type="button"
+          onClick={() => openAddCosts()}
+          className="flex shrink-0 items-center gap-2 rounded-lg bg-[#515151] px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-[#000000] active:scale-95"
         >
-          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
           </svg>
-          <span className="text-sm font-medium text-white">{t('landedCosts.addAdditionalCosts')}</span>
+          {t('landedCosts.addAdditionalCosts')}
         </button>
       </div>
 
-      {/* Invoice Selection */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-base font-semibold text-gray-900 mb-4">{t('landedCosts.selectInvoice')}</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {invoiceNumbers.map(invoiceNumber => {
-            const orders = purchaseOrders.filter(order => order.invoice === invoiceNumber);
-            const totalValue = orders.reduce((sum, order) => sum + order.costInUSD, 0);
-            const itemCount = orders.length;
-            
-            return (
-              <button
-                key={invoiceNumber}
-                onClick={() => setSelectedInvoice(invoiceNumber)}
-                className={`p-4 rounded-lg border-2 text-left transition-all ${
-                  selectedInvoice === invoiceNumber
-                    ? 'border-[#515151] bg-[#515151]/5'
-                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                <div className="font-medium text-gray-900">{invoiceNumber}</div>
-                <div className="text-sm text-gray-500 mt-1">
-                  {itemCount} {t('landedCosts.items')} • ${totalValue.toFixed(2)}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <div className="grid gap-6 xl:grid-cols-[minmax(280px,340px)_1fr]">
+        {/* Panel izquierdo: selector de facturas */}
+        <aside className={`flex max-h-[calc(100vh-12rem)] flex-col overflow-hidden rounded-xl border ${card}`}>
+          <div className={`shrink-0 space-y-3 border-b p-4 ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+            <h3 className={`text-sm font-semibold ${textPrimary}`}>{t('landedCosts.selectInvoice')}</h3>
 
-      {selectedInvoice && (
-        <>
-          {/* Additional Costs List */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-semibold text-gray-900">
-                {t('landedCosts.additionalCosts')} - {selectedInvoice}
-              </h3>
-              <span className="text-sm text-gray-500">
-                {invoiceAdditionalCosts.length} {invoiceAdditionalCosts.length !== 1 ? t('landedCosts.costsPlural') : t('landedCosts.costs')}
-              </span>
+            <div className="relative">
+              <svg
+                className={`absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 ${textSecondary}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+              <input
+                type="text"
+                value={invoiceSearch}
+                onChange={(e) => setInvoiceSearch(e.target.value)}
+                placeholder={t('landedCosts.searchInvoices')}
+                className={`w-full rounded-lg border py-2 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#515151] ${inputCls}`}
+              />
             </div>
 
-            {invoiceAdditionalCosts.length === 0 ? (
-              <div className="text-center py-8">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                  </svg>
-                </div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-2">{t('landedCosts.noAdditionalCosts')}</h3>
-                <p className="text-gray-600">{t('landedCosts.noAdditionalCostsMessage')}</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {invoiceAdditionalCosts.map(cost => (
-                  <div key={cost.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <span className="px-2 py-1 bg-[#515151] text-white text-xs font-medium rounded">
-                          {cost.type}
-                        </span>
-                        <span className="font-semibold text-gray-900">${cost.amount.toFixed(2)}</span>
-                      </div>
-                      <div className="text-sm text-gray-600 mt-1">{cost.description}</div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {formatDateMedium(new Date(cost.date))}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleEdit(cost)}
-                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => handleDelete(cost.id)}
-                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
+            <div>
+              <label className={`mb-1 block text-[11px] font-medium uppercase tracking-wide ${textSecondary}`}>
+                {t('landedCosts.filterByMonth')}
+              </label>
+              <select
+                value={monthFilter}
+                onChange={(e) => setMonthFilter(e.target.value)}
+                className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#515151] ${inputCls}`}
+              >
+                <option value="all">{t('landedCosts.allMonths')}</option>
+                {availableMonths.map((key) => (
+                  <option key={key} value={key}>
+                    {formatMonthYearLong(monthKeyToDate(key))}
+                  </option>
                 ))}
-              </div>
+              </select>
+            </div>
+
+            <label className={`flex cursor-pointer items-center gap-2 text-sm ${textPrimary}`}>
+              <input
+                type="checkbox"
+                checked={withCostsOnly}
+                onChange={(e) => setWithCostsOnly(e.target.checked)}
+                className="rounded border-gray-400 text-[#515151] focus:ring-[#515151]"
+              />
+              {t('landedCosts.withCostsOnly')}
+            </label>
+
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className={`text-sm font-medium ${darkMode ? 'text-gray-300 hover:text-white' : 'text-[#515151] hover:text-black'}`}
+              >
+                {t('landedCosts.clearFilters')}
+              </button>
             )}
           </div>
 
-          {/* Landed Cost Calculation */}
-          {landedCostCalculation && (
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h3 className="text-base font-semibold text-gray-900 mb-4">{t('landedCosts.landedCostCalculation')}</h3>
-              
-              {/* Summary */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="text-sm font-medium text-gray-500 mb-1">{t('landedCosts.baseItemTotal')}</div>
-                  <div className="text-xl font-semibold text-gray-900">
-                    ${landedCostCalculation.baseItemTotal.toFixed(2)}
+          <div className={`min-h-0 flex-1 overflow-y-auto divide-y ${tableDivide}`}>
+            {filteredInvoices.length === 0 ? (
+              <p className={`p-6 text-center text-sm ${textSecondary}`}>
+                {t('landedCosts.noInvoicesMatch')}
+              </p>
+            ) : (
+              filteredInvoices.map((inv) => {
+                const isSelected = selectedInvoice === inv.invoiceNumber;
+                return (
+                  <button
+                    key={inv.invoiceNumber}
+                    type="button"
+                    onClick={() => setSelectedInvoice(inv.invoiceNumber)}
+                    className={`w-full border-l-4 px-4 py-3 text-left transition-colors ${
+                      isSelected
+                        ? `border-l-[#515151] ${selectedInvoiceCls}`
+                        : `border-l-transparent ${darkMode ? 'hover:bg-white/5' : 'hover:bg-gray-50'}`
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <span className={`font-semibold ${textPrimary}`}>{inv.invoiceNumber}</span>
+                      {inv.additionalCostsCount > 0 && (
+                        <span className="shrink-0 rounded bg-[#515151] px-1.5 py-0.5 text-[10px] font-medium uppercase text-white">
+                          {formatCostBadge(inv.additionalCostsCount)}
+                        </span>
+                      )}
+                    </div>
+                    <p className={`mt-0.5 text-xs ${textSecondary}`}>
+                      {formatDateMedium(inv.purchaseDate)}
+                    </p>
+                    <p className={`mt-1 text-xs tabular-nums ${textSecondary}`}>
+                      {inv.itemCount} {t('landedCosts.items')} · ${inv.totalValue.toFixed(2)}
+                      {inv.additionalCostsTotal > 0 && (
+                        <span> · +${inv.additionalCostsTotal.toFixed(2)}</span>
+                      )}
+                    </p>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </aside>
+
+        {/* Panel derecho: espacio de trabajo */}
+        <div className="min-h-[480px]">
+          {!selectedInvoice || !selectedSummary || !landedCostCalculation ? (
+            <div
+              className={`flex h-full min-h-[480px] flex-col items-center justify-center rounded-xl border border-dashed p-8 text-center ${
+                darkMode ? 'border-gray-600 bg-[#101010]/50' : 'border-gray-300 bg-gray-50/50'
+              }`}
+            >
+              <div
+                className={`mb-4 flex h-14 w-14 items-center justify-center rounded-full ${
+                  darkMode ? 'bg-[#1a1a1a]' : 'bg-gray-100'
+                }`}
+              >
+                <svg className={`h-7 w-7 ${textSecondary}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
+              </div>
+              <p className={`font-medium ${textPrimary}`}>{t('landedCosts.selectInvoice')}</p>
+              <p className={`mt-1 max-w-sm text-sm ${textSecondary}`}>
+                {t('landedCosts.noInvoiceSelectedHint')}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Resumen */}
+              <div className={`rounded-xl border p-5 ${card}`}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className={`text-xl font-semibold ${textPrimary}`}>{selectedInvoice}</h3>
+                    <p className={`mt-1 text-sm ${textSecondary}`}>
+                      {selectedSummary.itemCount} {t('landedCosts.items')} ·{' '}
+                      {formatDateMedium(selectedSummary.purchaseDate)}
+                    </p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => openAddCosts(selectedInvoice)}
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                      darkMode
+                        ? 'border-gray-600 text-gray-200 hover:bg-white/10'
+                        : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    + {t('landedCosts.addCostsForInvoice')}
+                  </button>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="text-sm font-medium text-gray-500 mb-1">{t('landedCosts.totalAdditionalCosts')}</div>
-                  <div className="text-xl font-semibold text-gray-900">
-                    ${landedCostCalculation.totalAdditionalCosts.toFixed(2)}
+
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className={`rounded-lg border px-4 py-3 ${cardMuted}`}>
+                    <p className={`text-[10px] font-medium uppercase tracking-wide ${textSecondary}`}>
+                      {t('landedCosts.baseItemTotal')}
+                    </p>
+                    <p className={`mt-1 text-lg font-semibold tabular-nums ${textPrimary}`}>
+                      ${landedCostCalculation.baseItemTotal.toFixed(2)}
+                    </p>
                   </div>
-                </div>
-                <div className="bg-[#515151]/10 rounded-lg p-4">
-                  <div className="text-sm font-medium text-[#515151] mb-1">{t('landedCosts.totalLandedCost')}</div>
-                  <div className="text-xl font-semibold text-[#515151]">
-                    ${landedCostCalculation.totalLandedCost.toFixed(2)}
+                  <div className={`rounded-lg border px-4 py-3 ${cardMuted}`}>
+                    <p className={`text-[10px] font-medium uppercase tracking-wide ${textSecondary}`}>
+                      {t('landedCosts.totalAdditionalCosts')}
+                    </p>
+                    <p className={`mt-1 text-lg font-semibold tabular-nums ${textPrimary}`}>
+                      ${landedCostCalculation.totalAdditionalCosts.toFixed(2)}
+                    </p>
+                  </div>
+                  <div className={`rounded-lg border px-4 py-3 ${metricHighlight}`}>
+                    <p className={`text-[10px] font-medium uppercase tracking-wide ${textSecondary}`}>
+                      {t('landedCosts.totalLandedCost')}
+                    </p>
+                    <p className={`mt-1 text-lg font-semibold tabular-nums ${brandText}`}>
+                      ${landedCostCalculation.totalLandedCost.toFixed(2)}
+                    </p>
                   </div>
                 </div>
               </div>
 
-              {/* Item Breakdown */}
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.sku')}</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.description')}</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.quantity')}</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.baseCostPerUnit')}</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.baseTotal')}</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.allocationPercent')}</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.additionalCost')}</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.finalCostPerUnit')}</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('landedCosts.finalTotal')}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 text-sm">
-                    {landedCostCalculation.items.map((item) => (
-                      <tr key={item.purchaseOrderId} className="transition-colors hover:bg-gray-50">
-                        <td className="whitespace-nowrap px-6 py-4 font-mono text-gray-900">{item.sku}</td>
-                        <td className="px-6 py-4 text-gray-700">{item.description}</td>
-                        <td className="whitespace-nowrap px-6 py-4 text-right text-gray-700">{item.quantity}</td>
-                        <td className="whitespace-nowrap px-6 py-4 text-right text-gray-700">${item.baseCostPerUnit.toFixed(2)}</td>
-                        <td className="whitespace-nowrap px-6 py-4 text-right text-gray-700">${item.baseItemTotal.toFixed(2)}</td>
-                        <td className="whitespace-nowrap px-6 py-4 text-right text-gray-700">{item.proportionalShare.toFixed(1)}%</td>
-                        <td className="whitespace-nowrap px-6 py-4 text-right text-gray-700">${item.additionalCostAllocation.toFixed(2)}</td>
-                        <td className="whitespace-nowrap px-6 py-4 text-right font-medium text-[#515151]">${item.finalCostPerUnit.toFixed(2)}</td>
-                        <td className="whitespace-nowrap px-6 py-4 text-right font-semibold text-[#515151]">${item.finalItemTotal.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              {/* Dos columnas: costos adicionales + desglose */}
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,300px)_1fr]">
+                {/* Costos adicionales */}
+                <div className={`flex max-h-[520px] flex-col overflow-hidden rounded-xl border ${card}`}>
+                  <div className={`shrink-0 border-b px-4 py-3 ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                    <h4 className={`text-sm font-semibold ${textPrimary}`}>
+                      {t('landedCosts.additionalCosts')}
+                      <span className={`ml-1 font-normal ${textSecondary}`}>
+                        ({invoiceAdditionalCosts.length})
+                      </span>
+                    </h4>
+                  </div>
+
+                  <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                    {invoiceAdditionalCosts.length === 0 ? (
+                      <div className="py-6 text-center">
+                        <p className={`text-sm ${textSecondary}`}>{t('landedCosts.noAdditionalCostsMessage')}</p>
+                        <button
+                          type="button"
+                          onClick={() => openAddCosts(selectedInvoice)}
+                          className={`mt-3 text-sm font-medium ${brandText} hover:underline`}
+                        >
+                          {t('landedCosts.addAdditionalCosts')} →
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {invoiceAdditionalCosts.map((cost) => (
+                          <div
+                            key={cost.id}
+                            className={`rounded-lg border p-3 ${cardMuted}`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="rounded bg-[#515151] px-2 py-0.5 text-[10px] font-semibold uppercase text-white">
+                                {translateCostType(cost.type)}
+                              </span>
+                              <span className={`text-sm font-semibold tabular-nums ${textPrimary}`}>
+                                ${cost.amount.toFixed(2)}
+                              </span>
+                            </div>
+                            <p
+                              className={`mt-2 line-clamp-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}
+                              title={cost.description}
+                            >
+                              {cost.description}
+                            </p>
+                            <p className={`mt-1 text-xs ${textSecondary}`}>
+                              {formatDateMedium(new Date(cost.date))}
+                            </p>
+                            <div className="mt-2 flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditDescriptionModal({
+                                    open: true,
+                                    cost,
+                                    newDescription: cost.description,
+                                  })
+                                }
+                                className={`rounded px-2 py-1 text-xs font-medium ${textSecondary} hover:underline`}
+                              >
+                                {t('common.edit')}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCostToDelete(cost.id);
+                                  setDeleteConfirmOpen(true);
+                                }}
+                                className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:underline dark:text-red-400"
+                              >
+                                {t('common.delete')}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Desglose por artículo */}
+                <div className={`overflow-hidden rounded-xl border ${card}`}>
+                  <div className={`border-b px-4 py-3 ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                    <h4 className={`text-sm font-semibold ${textPrimary}`}>
+                      {t('landedCosts.itemBreakdown')}
+                    </h4>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[520px] text-sm">
+                      <thead className={`border-b ${tableHead}`}>
+                        <tr>
+                          <th className={`px-4 py-2.5 text-left text-[11px] font-semibold uppercase ${textSecondary}`}>
+                            {t('landedCosts.product')}
+                          </th>
+                          <th className={`px-4 py-2.5 text-right text-[11px] font-semibold uppercase ${textSecondary}`}>
+                            {t('landedCosts.quantity')}
+                          </th>
+                          <th className={`px-4 py-2.5 text-right text-[11px] font-semibold uppercase ${textSecondary}`}>
+                            {t('landedCosts.baseCosts')}
+                          </th>
+                          <th className={`px-4 py-2.5 text-right text-[11px] font-semibold uppercase ${textSecondary}`}>
+                            {t('landedCosts.allocation')}
+                          </th>
+                          <th className={`px-4 py-2.5 text-right text-[11px] font-semibold uppercase ${textSecondary}`}>
+                            {t('landedCosts.landedCostsColumn')}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className={`divide-y ${tableDivide}`}>
+                        {landedCostCalculation.items.map((item) => (
+                          <tr key={item.purchaseOrderId}>
+                            <td className="px-4 py-3">
+                              <div className={`font-mono text-xs font-medium ${textPrimary}`}>{item.sku}</div>
+                              <div
+                                className={`mt-0.5 line-clamp-2 text-xs ${textSecondary}`}
+                                title={item.description}
+                              >
+                                {item.description}
+                              </div>
+                            </td>
+                            <td className={`px-4 py-3 text-right tabular-nums ${textPrimary}`}>
+                              {item.quantity}
+                            </td>
+                            <td className={`px-4 py-3 text-right tabular-nums ${textPrimary}`}>
+                              <div>${item.baseCostPerUnit.toFixed(2)}</div>
+                              <div className={`text-xs ${textSecondary}`}>
+                                ${item.baseItemTotal.toFixed(2)}
+                              </div>
+                            </td>
+                            <td className={`px-4 py-3 text-right tabular-nums ${textPrimary}`}>
+                              <div>{item.proportionalShare.toFixed(1)}%</div>
+                              <div className={`text-xs ${textSecondary}`}>
+                                ${item.additionalCostAllocation.toFixed(2)}
+                              </div>
+                            </td>
+                            <td className={`px-4 py-3 text-right tabular-nums`}>
+                              <div className={`font-medium ${brandText}`}>
+                                ${item.finalCostPerUnit.toFixed(2)}
+                              </div>
+                              <div className={`text-xs font-semibold ${brandText}`}>
+                                ${item.finalItemTotal.toFixed(2)}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className={`border-t-2 ${tableHead}`}>
+                        <tr>
+                          <td
+                            colSpan={2}
+                            className={`px-4 py-3 text-right text-[11px] font-semibold uppercase ${textSecondary}`}
+                          >
+                            {t('landedCosts.totalLandedCost')}
+                          </td>
+                          <td className={`px-4 py-3 text-right font-semibold tabular-nums ${textPrimary}`}>
+                            ${landedCostCalculation.baseItemTotal.toFixed(2)}
+                          </td>
+                          <td className={`px-4 py-3 text-right font-semibold tabular-nums ${textPrimary}`}>
+                            ${landedCostCalculation.totalAdditionalCosts.toFixed(2)}
+                          </td>
+                          <td className={`px-4 py-3 text-right font-bold tabular-nums ${brandText}`}>
+                            ${landedCostCalculation.totalLandedCost.toFixed(2)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
               </div>
             </div>
           )}
-        </>
-      )}
+        </div>
+      </div>
 
-      {/* Add Multiple Costs Form */}
+      {/* Modal agregar costos */}
       {isFormOpen && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div ref={formRef} className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-semibold text-gray-900">Add Additional Costs</h3>
-              <button
-                onClick={resetForm}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div
+            ref={formRef}
+            role="dialog"
+            className="sasa-modal-light max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6"
+          >
+            <div className="mb-6 flex items-center justify-between">
+              <h3 className="text-xl font-semibold text-gray-900">
+                {t('landedCosts.addAdditionalCosts')}
+              </h3>
+              <button type="button" onClick={resetForm} className="text-gray-400 hover:text-gray-600">
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Invoice Selection */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Invoice Number</label>
+                <label className="mb-2 block text-sm font-medium text-gray-700">
+                  {t('landedCosts.selectInvoice')} *
+                </label>
                 <select
                   value={formData.invoiceNumber}
                   onChange={(e) => setFormData({ ...formData, invoiceNumber: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-[#515151]"
                   required
                 >
-                  <option value="">Select Invoice</option>
-                  {invoiceNumbers.map(invoiceNumber => (
-                    <option key={invoiceNumber} value={invoiceNumber}>{invoiceNumber}</option>
+                  <option value="">{t('landedCosts.selectInvoice')}</option>
+                  {invoiceSummaries.map((inv) => (
+                    <option key={inv.invoiceNumber} value={inv.invoiceNumber}>
+                      {inv.invoiceNumber}
+                    </option>
                   ))}
                 </select>
               </div>
 
-              {/* Cost Types */}
-              <div>
-                <h4 className="text-base font-semibold text-gray-900 mb-4">Additional Costs</h4>
-                <div className="space-y-4">
-                  {formData.costs.map((cost, index) => (
-                    <div key={index} className="bg-gray-50 rounded-lg p-4">
-                      <div className="flex items-center gap-3 mb-3">
-                        <span className="px-3 py-1 bg-[#515151] text-white text-sm font-medium rounded">
-                          {cost.type}
-                        </span>
-                        <div className="flex-1">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Amount (USD)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={cost.amount}
-                            onChange={(e) => updateCostField(index, 'amount', parseFloat(e.target.value) || 0)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
-                            placeholder="0.00"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Description (Optional)</label>
+              <div className="space-y-4">
+                {formData.costs.map((cost, index) => (
+                  <div key={cost.type} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <div className="mb-3 flex items-center gap-3">
+                      <span className="rounded bg-[#515151] px-3 py-1 text-sm font-medium text-white">
+                        {translateCostType(cost.type)}
+                      </span>
+                      <div className="flex-1">
+                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                          {t('landedCosts.amount')} (USD)
+                        </label>
                         <input
-                          type="text"
-                          value={cost.description}
-                          onChange={(e) => updateCostField(index, 'description', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
-                          placeholder={`Enter ${cost.type.toLowerCase()} details...`}
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={cost.amount || ''}
+                          onChange={(e) =>
+                            updateCostField(index, 'amount', parseFloat(e.target.value) || 0)
+                          }
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-[#515151]"
+                          placeholder="0.00"
                         />
                       </div>
                     </div>
-                  ))}
-                </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-gray-700">
+                        {t('landedCosts.description')}
+                      </label>
+                      <input
+                        type="text"
+                        value={cost.description}
+                        onChange={(e) => updateCostField(index, 'description', e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-[#515151]"
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
 
-              {/* Date */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
+                <label className="mb-2 block text-sm font-medium text-gray-700">
+                  {t('landedCosts.date')} *
+                </label>
                 <input
                   type="date"
                   value={formData.date}
                   onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-[#515151]"
                   required
                 />
               </div>
 
-              {/* Additional Comments */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Additional Comments</label>
+                <label className="mb-2 block text-sm font-medium text-gray-700">
+                  {t('landedCosts.comments')}
+                </label>
                 <textarea
                   value={formData.comments}
                   onChange={(e) => setFormData({ ...formData, comments: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-[#515151]"
                   rows={3}
-                  placeholder="Enter any additional comments or notes about these costs..."
                 />
               </div>
 
-              {/* Summary */}
-              <div className="bg-blue-50 rounded-lg p-4">
-                <h5 className="text-sm font-semibold text-blue-900 mb-2">Cost Summary</h5>
-                <div className="text-sm text-blue-800">
-                  Total Additional Costs: <span className="font-semibold">
-                    ${formData.costs.reduce((sum, cost) => sum + cost.amount, 0).toFixed(2)}
-                  </span>
-                </div>
-                <div className="text-xs text-blue-600 mt-1">
-                  Only costs with amounts greater than $0 will be added
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-3 pt-4">
+              <div className="flex gap-3 pt-2">
                 <button
                   type="button"
                   onClick={resetForm}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 font-medium hover:bg-gray-50"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2 bg-[#515151] hover:bg-[#000000] text-white rounded-lg transition-colors font-medium"
+                  className="flex-1 rounded-lg bg-[#515151] px-4 py-2 font-medium text-white hover:bg-black"
                 >
-                  Add Costs
+                  {t('landedCosts.addAdditionalCosts')}
                 </button>
               </div>
             </form>
@@ -482,7 +771,7 @@ export default function LandedCosts() {
 
       <ConfirmDialog
         open={deleteConfirmOpen}
-        title={t('common.deleteAdditionalCost')}
+        title={t('landedCosts.deleteCost')}
         description={t('landedCosts.deleteConfirm')}
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
@@ -494,7 +783,6 @@ export default function LandedCosts() {
         }}
       />
 
-      {/* Alert Dialog */}
       <AlertDialog
         open={alertDialog.open}
         title={alertDialog.title}
@@ -502,50 +790,49 @@ export default function LandedCosts() {
         onClose={() => setAlertDialog({ open: false, message: '' })}
       />
 
-      {/* Edit Description Modal */}
       {editDescriptionModal.open && editDescriptionModal.cost && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-md shadow-lg">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div role="dialog" className="sasa-modal-light w-full max-w-md rounded-xl bg-white shadow-lg">
             <div className="px-6 py-5">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              <h3 className="mb-4 text-lg font-semibold text-gray-900">
                 {t('landedCosts.editDescription')}
               </h3>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {editDescriptionModal.cost.type} - Description
-                </label>
-                <input
-                  type="text"
-                  value={editDescriptionModal.newDescription}
-                  onChange={(e) => setEditDescriptionModal({
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                {translateCostType(editDescriptionModal.cost.type)} — {t('landedCosts.description')}
+              </label>
+              <input
+                type="text"
+                value={editDescriptionModal.newDescription}
+                onChange={(e) =>
+                  setEditDescriptionModal({
                     ...editDescriptionModal,
-                    newDescription: e.target.value
-                  })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
-                  placeholder="Enter description..."
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleSaveDescription();
-                    } else if (e.key === 'Escape') {
-                      handleCancelEdit();
-                    }
-                  }}
-                />
-              </div>
+                    newDescription: e.target.value,
+                  })
+                }
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-[#515151]"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveDescription();
+                  else if (e.key === 'Escape') {
+                    setEditDescriptionModal({ open: false, cost: null, newDescription: '' });
+                  }
+                }}
+              />
             </div>
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
+            <div className="flex justify-end gap-3 border-t border-gray-100 px-6 py-4">
               <button
-                onClick={handleCancelEdit}
-                className="px-4 py-2 rounded-xl text-gray-700 bg-gray-100 hover:bg-gray-200 font-medium transition-colors"
+                type="button"
+                onClick={() => setEditDescriptionModal({ open: false, cost: null, newDescription: '' })}
+                className="rounded-xl bg-gray-100 px-4 py-2 font-medium text-gray-700 hover:bg-gray-200"
               >
                 {t('common.cancel')}
               </button>
               <button
+                type="button"
                 onClick={handleSaveDescription}
-                className="px-4 py-2 rounded-xl bg-[#515151] text-white hover:bg-[#000000] font-medium transition-colors"
+                className="rounded-xl bg-[#515151] px-4 py-2 font-medium text-white hover:bg-black"
               >
-                Save
+                {t('common.save')}
               </button>
             </div>
           </div>
