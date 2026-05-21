@@ -6,7 +6,13 @@ import { useAuth } from '../context/AuthContext';
 import { InventoryItem } from '../types';
 import InventoryDetailPanel from './InventoryDetailPanel';
 import ProductCatalogModal from './ProductCatalogModal';
-import { generateUniqueSKU, collectUsedSkus } from '../utils/skuGenerator';
+import {
+  resolveInternalSku,
+  validateAndNormalizeInternalSku,
+  findInternalSkuBySupplierSku,
+  collectUsedSkus,
+  generateUniqueSKU,
+} from '../utils/skuGenerator';
 import {
   syncInventoryToOrders,
   reconcileVerificationIssuesForItem,
@@ -221,37 +227,47 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
   }, [formData.supplierSKU]);
 
   const generateSkuIfNeeded = () => {
-    const sup = (formData.supplierSKU || '').trim();
     if (
       !editingItem &&
       !skuManuallyEdited &&
       formData.category &&
       formData.line &&
-      sup &&
       (!formData.sku || formData.sku.trim() === '')
     ) {
-      const pool = collectUsedSkus(inventory, purchaseOrders).filter((s) => s !== formData.sku);
-      const newSku = generateUniqueSKU(formData.category, formData.line, sup, pool);
+      const newSku = resolveInternalSku({
+        category: formData.category,
+        line: formData.line,
+        supplierSKU: formData.supplierSKU,
+        inventory,
+        purchaseOrders,
+      });
       setFormData((prev) => ({ ...prev, sku: newSku }));
     }
   };
 
   useEffect(() => {
-    if (editingItem || skuManuallyEdited || !formData.category || !formData.line) {
+    if (skuManuallyEdited || !formData.category || !formData.line) {
       return;
     }
-    if (!supplierSkuStable) {
-      setFormData((prev) => (prev.sku ? { ...prev, sku: '' } : prev));
-      return;
-    }
-    const pool = collectUsedSkus(inventory, purchaseOrders);
-    const newSku = generateUniqueSKU(
-      formData.category,
-      formData.line,
-      supplierSkuStable,
-      pool
-    );
-    setFormData((prev) => ({ ...prev, sku: newSku }));
+
+    const shouldApply =
+      !editingItem ||
+      (editingItem &&
+        (supplierSkuStable !== (editingItem.supplierSKU || '').trim() ||
+          formData.category !== editingItem.category ||
+          formData.line !== editingItem.line));
+
+    if (!shouldApply) return;
+
+    const resolved = resolveInternalSku({
+      category: formData.category,
+      line: formData.line,
+      supplierSKU: supplierSkuStable,
+      inventory,
+      purchaseOrders,
+      ignoreInventoryId: editingItem?.id,
+    });
+    setFormData((prev) => (prev.sku !== resolved ? { ...prev, sku: resolved } : prev));
   }, [
     supplierSkuStable,
     formData.category,
@@ -293,8 +309,33 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
 
       const { salePrice: salePriceInput, ...formRest } = formData;
       const parsedSalePrice = parseSalePriceInput(salePriceInput);
+
+      const skuValidation = validateAndNormalizeInternalSku(
+        formData.sku,
+        formData.supplierSKU,
+        inventory,
+        purchaseOrders,
+        { ignoreInventoryId: editingItem?.id }
+      );
+      if (!skuValidation.ok) {
+        if (skuValidation.reason === 'supplier_mismatch') {
+          alert(
+            (t('inventory.supplierSkuAlreadyLinked') ||
+              'Este SKU de proveedor ya está vinculado al SKU interno {sku}.'
+            ).replace('{sku}', skuValidation.sku)
+          );
+        } else {
+          alert(
+            t('inventory.internalSkuTakenByOtherSupplier') ||
+              'Este SKU interno ya pertenece a otro SKU de proveedor.'
+          );
+          return;
+        }
+      }
+
       const savedFormData = {
         ...formRest,
+        sku: skuValidation.sku,
         images: [...formData.images, ...uploadedImages],
         ...(parsedSalePrice !== undefined ? { salePrice: parsedSalePrice } : {}),
       };
@@ -481,16 +522,26 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
   };
 
   const handleRegenerateSku = () => {
-    const sup = (formData.supplierSKU || '').trim();
-    if (!formData.category || !formData.line || !sup) {
+    if (!formData.category || !formData.line) {
       alert(
         t('inventory.skuNeedsCategoryLineSupplier') ||
-          'Set category, material (line), and supplier SKU to generate an internal SKU.'
+          'Indique categoría y línea/material para generar el SKU interno.'
       );
       return;
     }
+    const sup = (formData.supplierSKU || '').trim();
+    if (sup) {
+      const linked = findInternalSkuBySupplierSku(sup, inventory, purchaseOrders, {
+        ignoreInventoryId: editingItem?.id,
+      });
+      if (linked) {
+        setFormData({ ...formData, sku: linked });
+        setSkuManuallyEdited(false);
+        return;
+      }
+    }
     const pool = collectUsedSkus(inventory, purchaseOrders).filter((s) => s !== formData.sku);
-    const newSku = generateUniqueSKU(formData.category, formData.line, sup, pool);
+    const newSku = generateUniqueSKU(formData.category, formData.line, pool);
     setFormData({ ...formData, sku: newSku });
     setSkuManuallyEdited(false);
   };

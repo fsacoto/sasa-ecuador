@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { parseCSV, detectColumnMapping, cleanNumericValue, ParsedRow } from '../utils/csvParser';
 import { useInventory } from '../context/InventoryContext';
 import { attachBarcodeToPurchaseOrderIfNeeded } from '../utils/syncUpdates';
-import { generateUniqueSKU, collectUsedSkus } from '../utils/skuGenerator';
+import { resolveInternalSku, collectUsedSkus, findInternalSkuBySupplierSku } from '../utils/skuGenerator';
 import { PurchaseOrder, InventoryItem } from '../types';
 import { getExchangeRates, getExchangeRate, type ExchangeRateResponse } from '../utils/currencyApi';
 import { PREDEFINED_CATEGORIES_ES, PREDEFINED_LINES_ES } from '../constants/merchandise';
@@ -407,20 +407,8 @@ export default function BulkImportModal({
 
     const baseExistingSkus = collectUsedSkus(inventory, purchaseOrders);
     const allocatedSkus: string[] = [];
-    /** Same supplier SKU → same internal SKU within this import and vs DB (by supplier SKU). */
-    const internalSkuBySupplierSkuKey = new Map<string, string>();
-
-    const findInternalSkuFromExistingPurchaseOrders = (supplierSkuRaw: string): string | undefined => {
-      const needle = supplierSkuRaw.trim().toLowerCase();
-      if (!needle) return undefined;
-      const hits = purchaseOrders.filter(
-        (o) =>
-          (o.supplierSKU || '').trim().toLowerCase() === needle && String(o.sku || '').trim() !== ''
-      );
-      if (hits.length === 0) return undefined;
-      hits.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      return String(hits[0].sku).trim();
-    };
+    /** Mismo SKU de proveedor → mismo SKU interno (lote + inventario + OC). */
+    const batchSkuBySupplier = new Map<string, string>();
 
     // Process rows and create suppliers as needed
     for (let index = 0; index < parsedData.length; index++) {
@@ -459,36 +447,41 @@ export default function BulkImportModal({
       }
 
       const supKey = supplierSKU.trim().toLowerCase();
-
-      // Internal SKU: inventory → reuse by supplier SKU (same batch / existing POs) → generate → placeholder
-      let internalSku = '';
       let autoLinked = false;
 
-      if (matchedInventoryItem) {
-        internalSku = matchedInventoryItem.sku;
-        autoLinked = true;
-        autoLinkedCount++;
-        if (supKey) internalSkuBySupplierSkuKey.set(supKey, internalSku);
-      } else if (supKey && internalSkuBySupplierSkuKey.has(supKey)) {
-        internalSku = internalSkuBySupplierSkuKey.get(supKey)!;
-      } else {
-        const poSku = findInternalSkuFromExistingPurchaseOrders(supplierSKU);
-        if (poSku) {
-          internalSku = poSku;
-          if (supKey) internalSkuBySupplierSkuKey.set(supKey, internalSku);
-        } else if (matchedCategory && matchedLine) {
-          const existingSkus = [...baseExistingSkus, ...allocatedSkus];
-          internalSku = generateUniqueSKU(
-            matchedCategory,
-            matchedLine,
-            supplierSKU.trim() || 'NOSKU',
-            existingSkus
-          );
-          if (supKey) internalSkuBySupplierSkuKey.set(supKey, internalSku);
+      const categoryForSku =
+        matchedInventoryItem?.category || matchedCategory || '';
+      const lineForSku = matchedInventoryItem?.line || matchedLine || '';
+
+      let internalSku = '';
+
+      if (categoryForSku && lineForSku) {
+        internalSku = resolveInternalSku({
+          category: categoryForSku,
+          line: lineForSku,
+          supplierSKU,
+          inventory,
+          purchaseOrders,
+          extraUsedSkus: allocatedSkus,
+          batchReservations: batchSkuBySupplier,
+        });
+        if (matchedInventoryItem) {
+          autoLinked = true;
+          autoLinkedCount++;
+        }
+      } else if (supplierSKU.trim()) {
+        const linked =
+          findInternalSkuBySupplierSku(supplierSKU, inventory, purchaseOrders) ||
+          (supKey ? batchSkuBySupplier.get(supKey) : undefined);
+        if (linked) {
+          internalSku = linked;
+          if (supKey) batchSkuBySupplier.set(supKey, linked);
         } else {
           internalSku = `IMP${timestamp.toString().slice(-5)}${String(index).padStart(3, '0')}`;
-          if (supKey) internalSkuBySupplierSkuKey.set(supKey, internalSku);
+          if (supKey) batchSkuBySupplier.set(supKey, internalSku);
         }
+      } else {
+        internalSku = `IMP${timestamp.toString().slice(-5)}${String(index).padStart(3, '0')}`;
       }
 
       allocatedSkus.push(internalSku);

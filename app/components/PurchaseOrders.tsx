@@ -7,7 +7,13 @@ import { PurchaseOrder, Supplier, InventoryItem, PurchaseOrderStatus } from '../
 import SupplierDetailPanel from './SupplierDetailPanel';
 import PurchaseOrderLineDetailPanel from './PurchaseOrderLineDetailPanel';
 import PurchaseOrderBarcodeCell from './PurchaseOrderBarcodeCell';
-import { generateUniqueSKU, collectUsedSkus } from '../utils/skuGenerator';
+import {
+  resolveInternalSku,
+  validateAndNormalizeInternalSku,
+  findInternalSkuBySupplierSku,
+  collectUsedSkus,
+  generateUniqueSKU,
+} from '../utils/skuGenerator';
 import { getExchangeRates, getExchangeRate, formatLastUpdate, type ExchangeRateResponse } from '../utils/currencyApi';
 import BulkImportModal, { type BulkImportModalMode } from './BulkImportModal';
 import BulkDeleteModal from './BulkDeleteModal';
@@ -298,45 +304,29 @@ export default function PurchaseOrders() {
     };
   }, [formData.supplierSKU]);
 
-  // Auto-generate SKU from category + line (material) + supplier SKU
+  // SKU interno secuencial; el SKU de proveedor enlaza siempre al mismo producto existente.
   useEffect(() => {
-    if (!supplierSkuStable) {
-      if (isCreatingNewItem && !editingOrder && !skuManuallyEdited) {
-        setFormData((prev) => (prev.sku ? { ...prev, sku: '' } : prev));
-      }
-      return;
-    }
+    if (!formData.category || !formData.line || skuManuallyEdited) return;
 
-    const existingSkus = collectUsedSkus(inventory, purchaseOrders, {
+    const shouldApply =
+      (!editingOrder && isCreatingNewItem) ||
+      (editingOrder &&
+        (supplierSkuStable !== (editingOrder.supplierSKU || '').trim() ||
+          formData.category !== editingOrder.category ||
+          formData.line !== editingOrder.line));
+
+    if (!shouldApply) return;
+
+    const resolved = resolveInternalSku({
+      category: formData.category,
+      line: formData.line,
+      supplierSKU: supplierSkuStable,
+      inventory,
+      purchaseOrders,
       ignorePurchaseOrderId: editingOrder?.id,
     });
 
-    if (isCreatingNewItem && formData.category && formData.line && !editingOrder && !skuManuallyEdited) {
-      const newSku = generateUniqueSKU(
-        formData.category,
-        formData.line,
-        supplierSkuStable,
-        existingSkus
-      );
-      setFormData((prev) => ({ ...prev, sku: newSku }));
-    }
-
-    if (editingOrder && formData.category && formData.line && !skuManuallyEdited) {
-      const categoryChanged = formData.category !== editingOrder.category;
-      const lineChanged = formData.line !== editingOrder.line;
-      const supplierChanged =
-        supplierSkuStable !== (editingOrder.supplierSKU || '').trim();
-
-      if (categoryChanged || lineChanged || supplierChanged) {
-        const newSku = generateUniqueSKU(
-          formData.category,
-          formData.line,
-          supplierSkuStable,
-          existingSkus
-        );
-        setFormData((prev) => (prev.sku !== newSku ? { ...prev, sku: newSku } : prev));
-      }
-    }
+    setFormData((prev) => (prev.sku !== resolved ? { ...prev, sku: resolved } : prev));
   }, [
     supplierSkuStable,
     formData.category,
@@ -539,6 +529,30 @@ export default function PurchaseOrders() {
     }
     
     const totals = calculateTotals();
+
+    const skuValidation = validateAndNormalizeInternalSku(
+      formData.sku,
+      formData.supplierSKU,
+      inventory,
+      purchaseOrders,
+      { ignorePurchaseOrderId: editingOrder?.id }
+    );
+    if (!skuValidation.ok) {
+      if (skuValidation.reason === 'supplier_mismatch') {
+        alert(
+          (t('purchaseOrders.supplierSkuAlreadyLinked') ||
+            'Este SKU de proveedor ya está vinculado al SKU interno {sku}. Se usará ese código.'
+          ).replace('{sku}', skuValidation.sku)
+        );
+      } else {
+        alert(
+          t('purchaseOrders.internalSkuTakenByOtherSupplier') ||
+            'Este SKU interno ya pertenece a otro SKU de proveedor.'
+        );
+        return;
+      }
+    }
+    const normalizedSku = skuValidation.sku;
     
     // Prepare dates based on status
     const statusDates: Partial<PurchaseOrder> = {};
@@ -551,6 +565,7 @@ export default function PurchaseOrders() {
     
     const orderData = {
       ...formData,
+      sku: normalizedSku,
       supplierId: finalSupplierId,
       ...totals,
       ...statusDates,
@@ -688,18 +703,28 @@ export default function PurchaseOrders() {
   };
 
   const handleRegenerateSku = () => {
-    const sup = (formData.supplierSKU || '').trim();
-    if (!formData.category || !formData.line || !sup) {
+    if (!formData.category || !formData.line) {
       alert(
         t('purchaseOrders.skuNeedsCategoryLineSupplier') ||
-          'Set category, material (line), and supplier SKU to generate an internal SKU.'
+          'Indique categoría y línea/material para generar el SKU interno.'
       );
       return;
+    }
+    const sup = (formData.supplierSKU || '').trim();
+    if (sup) {
+      const linked = findInternalSkuBySupplierSku(sup, inventory, purchaseOrders, {
+        ignorePurchaseOrderId: editingOrder?.id,
+      });
+      if (linked) {
+        setFormData({ ...formData, sku: linked });
+        setSkuManuallyEdited(false);
+        return;
+      }
     }
     const pool = collectUsedSkus(inventory, purchaseOrders, {
       ignorePurchaseOrderId: editingOrder?.id,
     }).filter((s) => s !== formData.sku);
-    const newSku = generateUniqueSKU(formData.category, formData.line, sup, pool);
+    const newSku = generateUniqueSKU(formData.category, formData.line, pool);
     setFormData({ ...formData, sku: newSku });
     setSkuManuallyEdited(false);
   };
