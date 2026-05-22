@@ -134,6 +134,73 @@ export async function attachBarcodeToPurchaseOrderIfNeeded(
   return { ...order, barcode: url };
 }
 
+const skuLookupKey = (sku: string) => sku.trim().toLowerCase();
+
+/**
+ * Attach barcodes after bulk import: one lookup/generation per unique SKU, updates in parallel.
+ */
+export async function attachBarcodesToPurchaseOrdersBulk(
+  orders: PurchaseOrder[],
+  updatePurchaseOrder: (id: string, item: Partial<PurchaseOrder>) => Promise<void>,
+  inventory: InventoryItem[],
+  existingPurchaseOrders: PurchaseOrder[]
+): Promise<void> {
+  if (orders.length === 0) return;
+
+  const barcodeBySku = new Map<string, string>();
+  const reuseContext = [...existingPurchaseOrders];
+
+  for (const item of inventory) {
+    const sku = (item.sku || '').trim();
+    const bc = (item.barcode || '').trim();
+    if (sku && bc) barcodeBySku.set(skuLookupKey(sku), bc);
+  }
+  for (const o of [...reuseContext, ...orders]) {
+    const sku = (o.sku || '').trim();
+    const bc = (o.barcode || '').trim();
+    if (sku && bc) barcodeBySku.set(skuLookupKey(sku), bc);
+  }
+
+  const ordersNeeding = orders.filter((o) => {
+    const sku = (o.sku || '').trim();
+    return sku && !(o.barcode || '').trim();
+  });
+  if (ordersNeeding.length === 0) return;
+
+  const uniqueSkus = new Map<string, string>();
+  for (const o of ordersNeeding) {
+    const sku = o.sku!.trim();
+    uniqueSkus.set(skuLookupKey(sku), sku);
+  }
+
+  await Promise.all(
+    [...uniqueSkus.values()].map(async (sku) => {
+      const key = skuLookupKey(sku);
+      if (barcodeBySku.has(key)) return;
+
+      const sample = ordersNeeding.find((o) => skuLookupKey(o.sku!) === key);
+      if (!sample) return;
+
+      const sibling = findReuseBarcodeFromPurchaseOrders(sample, reuseContext);
+      if (sibling) {
+        barcodeBySku.set(key, sibling);
+        return;
+      }
+
+      const url = await ensurePurchaseOrderBarcodeValue(sku);
+      if (url) barcodeBySku.set(key, url);
+    })
+  );
+
+  await Promise.all(
+    ordersNeeding.map(async (o) => {
+      const barcode = barcodeBySku.get(skuLookupKey(o.sku!));
+      if (!barcode) return;
+      await updatePurchaseOrder(o.id, { barcode });
+    })
+  );
+}
+
 /**
  * Barcode value for a PO line: prefer a short Storage URL for Firestore; if upload fails,
  * fall back to an inline PNG data URL (same as inventario) so la etiqueta funcione sin Storage.

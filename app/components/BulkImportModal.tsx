@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { parseCSV, detectColumnMapping, cleanNumericValue, ParsedRow } from '../utils/csvParser';
 import { useInventory } from '../context/InventoryContext';
-import { attachBarcodeToPurchaseOrderIfNeeded } from '../utils/syncUpdates';
+import { attachBarcodesToPurchaseOrdersBulk } from '../utils/syncUpdates';
 import { resolveInternalSku, collectUsedSkus, findInternalSkuBySupplierSku } from '../utils/skuGenerator';
 import { PurchaseOrder, InventoryItem } from '../types';
 import { getExchangeRates, getExchangeRate, type ExchangeRateResponse } from '../utils/currencyApi';
@@ -52,8 +52,15 @@ export default function BulkImportModal({
 
   // Cache to track suppliers being created during import to prevent duplicates
   const supplierCacheRef = useRef<Map<string, Promise<string>>>(new Map());
+  const suppliersSnapshotRef = useRef(suppliers);
+  const importInFlightRef = useRef(false);
+  const [importTrigger, setImportTrigger] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  useEffect(() => {
+    suppliersSnapshotRef.current = suppliers;
+  }, [suppliers]);
 
   const mapFieldLabel = (dbField: string) => {
     const key = `bulkImport.mapField_${dbField}`;
@@ -192,14 +199,14 @@ export default function BulkImportModal({
 
     const supplierPromise = (async () => {
       try {
-        const { getSuppliers } = await import('../services/suppliersService');
-        let allSuppliers = await getSuppliers();
-        const exactDb = allSuppliers.find((s) => s.name.trim().toLowerCase() === key);
+        const exactDb = suppliersSnapshotRef.current.find(
+          (s) => s.name.trim().toLowerCase() === key
+        );
         if (exactDb) {
           return exactDb.id;
         }
 
-        return await addSupplier({
+        const newId = await addSupplier({
           name: displayName,
           email: '',
           phone: '',
@@ -207,18 +214,22 @@ export default function BulkImportModal({
           currency: currency || 'USD',
           notes: 'Auto-created from bulk import',
         });
+        suppliersSnapshotRef.current = [
+          ...suppliersSnapshotRef.current,
+          {
+            id: newId,
+            name: displayName,
+            email: '',
+            phone: '',
+            country: '',
+            currency: currency || 'USD',
+            notes: 'Auto-created from bulk import',
+            createdAt: new Date(),
+          },
+        ];
+        return newId;
       } catch (error) {
         console.error('Error resolving supplier:', error);
-        try {
-          const { getSuppliers } = await import('../services/suppliersService');
-          const allSuppliers = await getSuppliers();
-          const match = allSuppliers.find((s) => s.name.trim().toLowerCase() === key);
-          if (match) {
-            return match.id;
-          }
-        } catch (retryError) {
-          console.error('Error retrying supplier lookup:', retryError);
-        }
         return defaultSupplier;
       }
     })();
@@ -228,7 +239,10 @@ export default function BulkImportModal({
     return await supplierPromise;
   };
 
-  const findMatchingCategory = (categoryName: string): string => {
+  const findMatchingCategory = (
+    categoryName: string,
+    existingCategories: string[] = [...new Set(inventory.map((item) => item.category))]
+  ): string => {
     if (!categoryName) return '';
     const canon = canonicalCategory(categoryName.trim());
     const predefined: string[] = [...PREDEFINED_CATEGORIES_ES];
@@ -240,7 +254,6 @@ export default function BulkImportModal({
     );
     if (partialMatch) return partialMatch;
 
-    const existingCategories = [...new Set(inventory.map((item) => item.category))];
     const existingMatch = existingCategories.find(
       (cat) => cat && cat.toLowerCase() === categoryName.toLowerCase()
     );
@@ -249,7 +262,10 @@ export default function BulkImportModal({
     return categoryName;
   };
 
-  const findMatchingLine = (lineName: string): string => {
+  const findMatchingLine = (
+    lineName: string,
+    existingLines: string[] = [...new Set(inventory.map((item) => item.line))]
+  ): string => {
     if (!lineName) return '';
     const canon = canonicalLine(lineName.trim());
     const predefinedLines: string[] = [...PREDEFINED_LINES_ES];
@@ -261,7 +277,6 @@ export default function BulkImportModal({
     );
     if (partialMatch) return partialMatch;
 
-    const existingLines = [...new Set(inventory.map((item) => item.line))];
     const existingMatch = existingLines.find(
       (line) => line && line.toLowerCase() === lineName.toLowerCase()
     );
@@ -361,59 +376,75 @@ export default function BulkImportModal({
     processSelectedFile(file);
   };
 
-  const handleImport = async () => {
-    setStep('preview');
-    
-    // Clear supplier cache at the start of each import
+  const executeBulkImport = async () => {
     supplierCacheRef.current.clear();
-    
+
+    try {
+      const { getSuppliers } = await import('../services/suppliersService');
+      suppliersSnapshotRef.current = await getSuppliers();
+    } catch {
+      suppliersSnapshotRef.current = suppliers;
+    }
+
     let warningCount = 0;
     let autoLinkedCount = 0;
     const timestamp = Date.now();
-    
-    // Collect all orders to add in bulk
     const ordersToAdd: Omit<PurchaseOrder, 'id' | 'createdAt'>[] = [];
 
-    // First, determine the invoice number for the entire batch
-    let batchInvoiceNumber = '';
     const invoicesFromCSV: string[] = [];
-    
-    // Check if invoice numbers are provided in CSV
     parsedData.forEach((row) => {
       const mappedData: Record<string, string | number> = {};
       Object.entries(columnMapping).forEach(([csvColumn, dbField]) => {
         mappedData[dbField] = row[csvColumn];
       });
-      
       if (mappedData.invoice) {
         invoicesFromCSV.push(String(mappedData.invoice));
       }
     });
 
+    let batchInvoiceNumber = '';
     if (invoicesFromCSV.length > 0) {
-      // Validate that all invoice numbers are the same
       const uniqueInvoices = [...new Set(invoicesFromCSV)];
       if (uniqueInvoices.length > 1) {
         alert(t('bulkImport.invoiceMismatchError').replace('{invoices}', uniqueInvoices.join(', ')));
+        setStep('mapping');
         return;
       }
       batchInvoiceNumber = uniqueInvoices[0];
     } else {
-      // Generate one invoice number for the entire batch
-      batchInvoiceNumber = invoicePrefix 
+      batchInvoiceNumber = invoicePrefix
         ? `${invoicePrefix}-${timestamp}`
         : `IMPORT-${timestamp}`;
     }
 
-    const baseExistingSkus = collectUsedSkus(inventory, purchaseOrders);
+    const inventoryBySupplierSku = new Map<string, InventoryItem>();
+    for (const item of inventory) {
+      const key = (item.supplierSKU || '').trim().toLowerCase();
+      if (key) inventoryBySupplierSku.set(key, item);
+    }
+
+    const existingCategories = [...new Set(inventory.map((item) => item.category))];
+    const existingLines = [...new Set(inventory.map((item) => item.line))];
     const allocatedSkus: string[] = [];
-    /** Mismo SKU de proveedor → mismo SKU interno (lote + inventario + OC). */
     const batchSkuBySupplier = new Map<string, string>();
 
-    // Process rows and create suppliers as needed
+    const supplierNamesToResolve = new Set<string>();
+    for (const row of parsedData) {
+      const mapped: Record<string, string | number> = {};
+      Object.entries(columnMapping).forEach(([csvColumn, dbField]) => {
+        mapped[dbField] = row[csvColumn];
+      });
+      const name = String(mapped.supplier || '').trim();
+      if (name) supplierNamesToResolve.add(name);
+    }
+    await Promise.all(
+      [...supplierNamesToResolve].map((name) =>
+        findMatchingSupplier(name, defaultCurrency || 'USD')
+      )
+    );
+
     for (let index = 0; index < parsedData.length; index++) {
       const row = parsedData[index];
-      // Extract mapped fields
       const mappedData: Record<string, string | number> = {};
       Object.entries(columnMapping).forEach(([csvColumn, dbField]) => {
         mappedData[dbField] = row[csvColumn];
@@ -430,25 +461,17 @@ export default function BulkImportModal({
       const rawCategory = (mappedData.category as string) || '';
       const rawLine = (mappedData.line as string) || '';
       const rawSupplier = (mappedData.supplier as string) || '';
-      // Use the selected currency from the form, not from CSV
       const currency = defaultCurrency || 'USD';
-      
-      // Match values with database (await supplier creation if needed)
-      const matchedSupplier = await findMatchingSupplier(rawSupplier, currency);
-      const matchedCategory = findMatchingCategory(rawCategory);
-      const matchedLine = findMatchingLine(rawLine);
 
-      // SMART LINKING: Try to find existing inventory item by supplier SKU
-      let matchedInventoryItem: InventoryItem | undefined;
-      if (supplierSKU) {
-        matchedInventoryItem = inventory.find(item => 
-          item.supplierSKU && item.supplierSKU.toLowerCase() === supplierSKU.toLowerCase()
-        );
-      }
+      const matchedCategory = findMatchingCategory(rawCategory, existingCategories);
+      const matchedLine = findMatchingLine(rawLine, existingLines);
 
       const supKey = supplierSKU.trim().toLowerCase();
-      let autoLinked = false;
+      const matchedInventoryItem = supKey
+        ? inventoryBySupplierSku.get(supKey)
+        : undefined;
 
+      let autoLinked = false;
       const categoryForSku =
         matchedInventoryItem?.category || matchedCategory || '';
       const lineForSku = matchedInventoryItem?.line || matchedLine || '';
@@ -489,6 +512,9 @@ export default function BulkImportModal({
       const categoryNeedsReview = !autoLinked && !matchedCategory && rawCategory;
       const lineNeedsReview = !autoLinked && !matchedLine && rawLine;
 
+      const matchedSupplier = rawSupplier.trim()
+        ? await findMatchingSupplier(rawSupplier, currency)
+        : defaultSupplier;
       const supplierIdResolved = (matchedSupplier || defaultSupplier || '').trim();
       const finalCategoryForOrder =
         autoLinked && matchedInventoryItem
@@ -497,103 +523,98 @@ export default function BulkImportModal({
             ? '⚠️ NEEDS REVIEW'
             : matchedCategory;
 
-      // Same rule as PurchaseOrders table: category ⚠️ or missing supplier
       const orderShowsNeedsReviewInTab =
         (finalCategoryForOrder || '').includes('NEEDS REVIEW') || !supplierIdResolved;
 
-      // Debug logging
-      if (rawCategory || rawLine) {
-        console.log(`Row ${index + 1}:`, {
-          rawCategory,
-          matchedCategory,
-          rawLine,
-          matchedLine,
-          columnMapping,
-          orderShowsNeedsReviewInTab,
-          categoryNeedsReview,
-          lineNeedsReview,
-          autoLinked,
-          supplierSKU,
-          generatedSku: internalSku,
-          finalCategory: autoLinked && matchedInventoryItem ? matchedInventoryItem.category : (categoryNeedsReview ? '⚠️ NEEDS REVIEW' : matchedCategory),
-          finalLine: autoLinked && matchedInventoryItem ? matchedInventoryItem.line : (lineNeedsReview ? '⚠️ NEEDS REVIEW' : matchedLine)
-        });
-      }
-
-      // Each row is a SEPARATE purchase order
-      // Use the batch invoice number for all items
-      const invoiceNumber = batchInvoiceNumber;
-
-      // All cost values are in the selected currency
-      // Convert to USD using the selected exchange rate
       const costPerUnitInUSD = costPerUnit * exchangeRate;
       const totalCostInUSD = quantity * costPerUnitInUSD;
 
-      // Create individual purchase order
-      // Use existing item's info if auto-linked
-      const orderData = {
-        invoice: invoiceNumber,
-        invoiceLink: invoiceLink || '', // Use the invoice link from the form
+      ordersToAdd.push({
+        invoice: batchInvoiceNumber,
+        invoiceLink: invoiceLink || '',
         supplierId: matchedSupplier || defaultSupplier || '',
         supplierSKU: supplierSKU,
         description: autoLinked && matchedInventoryItem ? matchedInventoryItem.name : description,
         sku: internalSku,
-        category: autoLinked && matchedInventoryItem ? matchedInventoryItem.category : (categoryNeedsReview ? '⚠️ NEEDS REVIEW' : matchedCategory),
-        line: autoLinked && matchedInventoryItem ? matchedInventoryItem.line : (lineNeedsReview ? '⚠️ NEEDS REVIEW' : matchedLine),
+        category:
+          autoLinked && matchedInventoryItem
+            ? matchedInventoryItem.category
+            : categoryNeedsReview
+              ? '⚠️ NEEDS REVIEW'
+              : matchedCategory,
+        line:
+          autoLinked && matchedInventoryItem
+            ? matchedInventoryItem.line
+            : lineNeedsReview
+              ? '⚠️ NEEDS REVIEW'
+              : matchedLine,
         images: autoLinked && matchedInventoryItem ? matchedInventoryItem.images : [],
         quantity: quantity,
-        currency: defaultCurrency, // Store the original currency
-        costPerUnit: costPerUnit, // Store cost in original currency
-        totalCost: quantity * costPerUnit, // Store total in original currency
+        currency: defaultCurrency,
+        costPerUnit: costPerUnit,
+        totalCost: quantity * costPerUnit,
         discountPerUnit: 0,
         totalDiscount: 0,
         costPerUnitWithDiscount: costPerUnit,
         totalCostWithDiscount: quantity * costPerUnit,
-        exchangeRate: exchangeRate, // Store the exchange rate used
-        costInUSD: totalCostInUSD, // Store cost converted to USD
+        exchangeRate: exchangeRate,
+        costInUSD: totalCostInUSD,
         shippingCost: 0,
         tariffCost: 0,
         otherFees: 0,
-        totalLandedCost: totalCostInUSD, // Store landed cost in USD
-        landedCostPerUnit: costPerUnitInUSD, // Store landed cost per unit in USD
+        totalLandedCost: totalCostInUSD,
+        landedCostPerUnit: costPerUnitInUSD,
         purchaseDate: new Date(purchaseDate),
         status: 'Ordered' as const,
-      };
-
-      ordersToAdd.push(orderData);
-
-      // DO NOT create inventory items during bulk import
-      // Inventory items will ONLY be created when purchase orders are marked as 'Verified'
-      // This ensures inventory only contains items from verified orders
+      });
 
       if (orderShowsNeedsReviewInTab) {
         warningCount++;
       }
-    }
 
-    // Add all orders in bulk, then attach barcodes (reuse inventory URL or generate)
-    try {
-      const newOrders = await addPurchaseOrdersBulk(ordersToAdd);
-      const barcodeContext: PurchaseOrder[] = [...purchaseOrders];
-      for (const o of newOrders) {
-        if (!o.sku) continue;
-        const withBarcode = await attachBarcodeToPurchaseOrderIfNeeded(
-          o,
-          updatePurchaseOrder,
-          inventory,
-          undefined,
-          barcodeContext
-        );
-        barcodeContext.push(withBarcode);
+      if (index > 0 && index % 15 === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
       }
-    } catch (error) {
-      console.error('Error during bulk import or barcode setup:', error);
-      alert(t('bulkImport.importError'));
-      return;
     }
 
-    setImportResults({ success: ordersToAdd.length, warnings: warningCount, autoLinked: autoLinkedCount });
+    const newOrders = await addPurchaseOrdersBulk(ordersToAdd);
+    await attachBarcodesToPurchaseOrdersBulk(
+      newOrders,
+      updatePurchaseOrder,
+      inventory,
+      purchaseOrders
+    );
+
+    setImportResults({
+      success: ordersToAdd.length,
+      warnings: warningCount,
+      autoLinked: autoLinkedCount,
+    });
     setStep('complete');
+  };
+
+  useEffect(() => {
+    if (step !== 'preview' || importTrigger === 0) return;
+    if (importInFlightRef.current) return;
+    importInFlightRef.current = true;
+
+    void (async () => {
+      try {
+        await executeBulkImport();
+      } catch (error) {
+        console.error('Error during bulk import:', error);
+        alert(t('bulkImport.importError'));
+        setStep('mapping');
+      } finally {
+        importInFlightRef.current = false;
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importTrigger, step]);
+
+  const handleImport = () => {
+    setStep('preview');
+    setImportTrigger((n) => n + 1);
   };
 
 
@@ -909,7 +930,10 @@ export default function BulkImportModal({
           {step === 'preview' && (
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
-                <div className="text-4xl mb-4">⏳</div>
+                <div
+                  className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-[#515151] border-t-transparent"
+                  aria-hidden
+                />
                 <div className="text-lg font-medium text-gray-900">
                   {t('bulkImport.importing').replace('{count}', String(parsedData.length))}
                 </div>
@@ -921,7 +945,20 @@ export default function BulkImportModal({
           {/* Step 4: Complete */}
           {step === 'complete' && (
             <div className="text-center py-8">
-              <div className="text-5xl mb-4">✅</div>
+              <div
+                className="sasa-import-success-icon mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50"
+                aria-hidden
+              >
+                <svg
+                  className="sasa-import-success-icon-check h-6 w-6 text-emerald-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
               <h4 className="text-xl font-semibold text-gray-900 mb-2">{t('bulkImport.completeTitle')}</h4>
               <div className="space-y-2 text-sm">
                 <p className="text-gray-700">
@@ -929,7 +966,6 @@ export default function BulkImportModal({
                 </p>
                 {(importResults.autoLinked ?? 0) > 0 && (
                   <p className="text-green-600 font-medium">
-                    🔗{' '}
                     {importResults.autoLinked === 1
                       ? t('bulkImport.autoLinkedOne')
                       : t('bulkImport.autoLinkedMany').replace('{count}', String(importResults.autoLinked))}
@@ -937,7 +973,7 @@ export default function BulkImportModal({
                 )}
                 {importResults.warnings > 0 && (
                   <p className="text-amber-600">
-                    ⚠️ {t('bulkImport.warnings').replace('{count}', String(importResults.warnings))}
+                    {t('bulkImport.warnings').replace('{count}', String(importResults.warnings))}
                   </p>
                 )}
               </div>

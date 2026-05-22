@@ -94,40 +94,33 @@ export async function generatePOVerificationPDF({
 
   let currentY = margin;
   const lineHeight = 14;
-  const headerHeight = 80;
-  const footerHeight = 120; // Increased for signature spacing
-  const tableStartY = 160; // Reduced spacing to move table closer to header
-  const signatureBlockHeight = 80; // Space reserved for signature on last page
-  const cellPadding = 10; // Horizontal padding for cells
-  const paddingTop = 8; // Top padding for table cells
-  const paddingBottom = 8; // Bottom padding for table cells
-  const ROWS_PER_PAGE = 15; // Exactly 15 data rows per page (constant)
-  const footerBottomMargin = 42; // Bottom margin for footer
-  const gapBetweenTableAndFooter = 25; // Small gap (20-30pt) between last row and footer
-  
-  // Calculate available height for the table
-  // availableHeight = pageHeight - topMargin - headerBlockHeight - spaceBetweenHeaderAndTable - footerHeight - bottomMargin - gap
-  const topMargin = margin;
-  const headerBlockHeight = headerHeight;
-  const spaceBetweenHeaderAndTable = tableStartY - (margin + headerBlockHeight);
-  const bottomMargin = footerBottomMargin;
-  
-  // Calculate available vertical space for table rows
-  const availableHeight = pageHeight - topMargin - headerBlockHeight - spaceBetweenHeaderAndTable - footerHeight - bottomMargin - gapBetweenTableAndFooter;
-  
-  // Calculate header row height (includes padding)
-  const headerRowHeight = 24 + paddingTop + paddingBottom; // Base header height + padding
-  
-  // Calculate available space for body rows (excluding header row)
-  const availableRowSpace = availableHeight - headerRowHeight;
-  
-  // Calculate fixed row height to fit exactly 15 rows per page
-  // Add 8 points to make each row bigger
-  const rowHeightIncrease = 8;
-  const fixedRowHeight = (availableRowSpace / ROWS_PER_PAGE) + rowHeightIncrease;
-  
-  // Table end Y for pagination checks
-  const tableEndY = tableStartY + headerRowHeight + (ROWS_PER_PAGE * fixedRowHeight) + gapBetweenTableAndFooter;
+  const signatureBlockHeight = 72;
+  const firstPageTableStartY = 118;
+  const continuationPageTableStartY = margin;
+  const cellPadding = 10;
+  const paddingTop = 10;
+  const paddingBottom = 10;
+  const footerBottomMargin = 52;
+  const footerLineGap = 12;
+  const gapBetweenTableAndFooter = 40;
+
+  const headerRowHeight = 24 + paddingTop + paddingBottom;
+  const fixedRowHeight = 22;
+
+  const footerReservedHeight = footerBottomMargin + footerLineGap;
+  const signatureReservedHeight =
+    signatureBlockHeight + gapBetweenTableAndFooter + footerReservedHeight;
+
+  const maxTableBodyBottomContinuation =
+    pageHeight - margin - footerReservedHeight;
+  const maxTableBodyBottomLastPage =
+    pageHeight - margin - signatureReservedHeight;
+
+  const tableStartYForPage = (pageIndex: number) =>
+    pageIndex === 1 ? firstPageTableStartY : continuationPageTableStartY;
+
+  const maxTableBodyBottomForPage = (pageIndex: number, total: number) =>
+    pageIndex === total ? maxTableBodyBottomLastPage : maxTableBodyBottomContinuation;
 
   // Column widths (sums to usableWidth) - CHECK moved to after QTY RECEIVED
   // Fixed widths for short columns, NOTES gets remaining space
@@ -135,13 +128,13 @@ export async function generatePOVerificationPDF({
     no: usableWidth * 0.04,
     supplierSku: usableWidth * 0.10,
     internalSku: usableWidth * 0.10,
-    description: usableWidth * 0.24,
-    category: 75, // Fixed width for short content
-    line: 75, // Fixed width for short content
-    qtyOrdered: 60, // Fixed width for numbers
-    qtyReceived: 60, // Fixed width for numbers
+    description: usableWidth * 0.23,
+    category: 68,
+    line: 95,
+    qtyOrdered: 60,
+    qtyReceived: 60,
     check: usableWidth * 0.05,
-    notes: 0 // Will be calculated as remaining space
+    notes: 0
   };
   
   // Calculate NOTES width as remaining space
@@ -151,15 +144,20 @@ export async function generatePOVerificationPDF({
   colWidths.notes = usableWidth - usedWidth;
 
   let currentPage = 1;
-  let totalPages = 1; // Will be calculated based on ROWS_PER_PAGE
+  let totalPages = 1;
+  let lastTableBottomY = firstPageTableStartY;
 
-  // Helper function to add a new page
   const addNewPage = () => {
     doc.addPage();
-    currentY = margin;
-    // Redraw header on new page
-    drawHeader();
-    // Table header will be drawn in main loop when currentY === tableStartY
+    currentPage++;
+    currentY = continuationPageTableStartY;
+  };
+
+  const needsNewPageForRow = (rowHeight: number, pageIndex: number, pages: number) => {
+    const startY = tableStartYForPage(pageIndex);
+    const maxBottom = maxTableBodyBottomForPage(pageIndex, pages);
+    const headerNeeded = currentY === startY ? headerRowHeight : 0;
+    return currentY + headerNeeded + rowHeight > maxBottom;
   };
 
   // Draw header
@@ -219,20 +217,22 @@ export async function generatePOVerificationPDF({
     doc.text(line2, centerX, baseY + 9, { align: 'center' });
   };
 
-  /** Single-line SKU in data rows; shrinks font if needed to avoid wrapping. */
-  const drawSingleLineSkuCell = (
+  /** Single-line cell; shrinks font if needed to avoid wrapping. */
+  const drawSingleLineCell = (
     value: string,
     colX: number,
     colWidth: number,
-    rowCenterY: number
+    rowCenterY: number,
+    baseFontSize = SKU_CELL_FONT_SIZE,
+    minFontSize = SKU_CELL_MIN_FONT_SIZE
   ) => {
     const text = (value || '-').trim() || '-';
     const maxW = colWidth - cellPadding * 2;
-    let fontSize = SKU_CELL_FONT_SIZE;
+    let fontSize = baseFontSize;
     doc.setFontSize(fontSize);
     doc.setFont('helvetica', 'normal');
     let textWidth = doc.getTextWidth(text);
-    while (textWidth > maxW && fontSize > SKU_CELL_MIN_FONT_SIZE) {
+    while (textWidth > maxW && fontSize > minFontSize) {
       fontSize -= 0.5;
       doc.setFontSize(fontSize);
       textWidth = doc.getTextWidth(text);
@@ -240,6 +240,13 @@ export async function generatePOVerificationPDF({
     doc.text(text, colX + cellPadding, rowCenterY + 3);
     doc.setFontSize(9);
   };
+
+  const drawSingleLineSkuCell = (
+    value: string,
+    colX: number,
+    colWidth: number,
+    rowCenterY: number
+  ) => drawSingleLineCell(value, colX, colWidth, rowCenterY);
 
   // Draw table header
   const drawTableHeader = (startY: number) => {
@@ -394,10 +401,8 @@ export async function generatePOVerificationPDF({
     doc.text(catText, x + cellPadding, catTextY);
     x += colWidths.category;
     
-    // LINE - with proper wrapping (noWrap: false), vertically centered
-    const lineText = doc.splitTextToSize(order.line || '-', colWidths.line - (cellPadding * 2));
-    const lineTextY = getCenteredTextY(lineText, rowCenterY);
-    doc.text(lineText, x + cellPadding, lineTextY);
+    // LINE — single line, wider column; shrink font if needed
+    drawSingleLineCell(order.line || '-', x, colWidths.line, rowCenterY, 9, 7);
     x += colWidths.line;
     
     // QTY ORDERED - vertically centered
@@ -452,91 +457,129 @@ export async function generatePOVerificationPDF({
     return rowHeight;
   };
 
-  // Draw footer
-  const drawFooter = () => {
-    const footerY = pageHeight - margin - footerHeight;
-    
-    // Only show verification fields on last page
-    if (currentPage === totalPages) {
-      // Ensure proper spacing - check if we have enough room
-      const signatureStartY = footerY + 10;
-      
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(51, 51, 51);
-
-      const footerX = margin + 100;
-      let footerCurrentY = signatureStartY;
-
-      // Verified By
-      doc.setFont('helvetica', 'bold');
-      doc.text(t.verifiedBy, footerX, footerCurrentY);
-      doc.setFont('helvetica', 'normal');
-      doc.line(footerX + 80, footerCurrentY - 5, footerX + 250, footerCurrentY - 5);
-      footerCurrentY += 20;
-
-      // Date
-      doc.setFont('helvetica', 'bold');
-      doc.text(t.date, footerX, footerCurrentY);
-      doc.setFont('helvetica', 'normal');
-      doc.line(footerX + 80, footerCurrentY - 5, footerX + 250, footerCurrentY - 5);
-      footerCurrentY += 20;
-
-      // Signature
-      doc.setFont('helvetica', 'bold');
-      doc.text(t.signature, footerX, footerCurrentY);
-      doc.setFont('helvetica', 'normal');
-      doc.line(footerX + 80, footerCurrentY - 5, footerX + 250, footerCurrentY - 5);
-    }
-
-    // Page number (centered at bottom, positioned lower with reduced bottom margin)
+  const drawPageNumber = () => {
     doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
     doc.setTextColor(153, 153, 153);
     const pageText = `${t.page} ${currentPage} ${t.of} ${totalPages}`;
-    // Position footer lower: reduced bottom margin (42pt) + small top margin (10pt) for spacing
-    const footerTopMargin = 10;
-    doc.text(pageText, pageWidth / 2, pageHeight - footerBottomMargin + footerTopMargin, { align: 'center' });
+    const footerBaseY = pageHeight - footerBottomMargin + 10;
+    doc.text(pageText, pageWidth / 2, footerBaseY, { align: 'center' });
+    doc.text(poNumber, pageWidth / 2, footerBaseY + footerLineGap, { align: 'center' });
   };
 
-  // Calculate total pages based on exactly 15 rows per page
-  // Each page has: 1 header row + up to 15 data rows
-  totalPages = Math.ceil(orders.length / ROWS_PER_PAGE);
+  /** Firma debajo de la tabla; esquina inferior izquierda si hay espacio libre. */
+  const drawSignatureBlock = (tableBottomY: number) => {
+    const lineSpacing = 20;
+    const signatureLineCount = 3;
+    const footerX = margin;
+    const labelOffset = 72;
+    const lineEndX = margin + 220;
+    const cornerY =
+      pageHeight -
+      footerBottomMargin -
+      footerLineGap -
+      18 -
+      (signatureLineCount - 1) * lineSpacing;
 
-  // Generate PDF with exactly 15 rows per page
+    let footerCurrentY = Math.max(
+      tableBottomY + gapBetweenTableAndFooter,
+      cornerY
+    );
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(51, 51, 51);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(t.verifiedBy, footerX, footerCurrentY);
+    doc.setFont('helvetica', 'normal');
+    doc.line(footerX + labelOffset, footerCurrentY - 5, lineEndX, footerCurrentY - 5);
+    footerCurrentY += lineSpacing;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(t.date, footerX, footerCurrentY);
+    doc.setFont('helvetica', 'normal');
+    doc.line(footerX + labelOffset, footerCurrentY - 5, lineEndX, footerCurrentY - 5);
+    footerCurrentY += lineSpacing;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(t.signature, footerX, footerCurrentY);
+    doc.setFont('helvetica', 'normal');
+    doc.line(footerX + labelOffset, footerCurrentY - 5, lineEndX, footerCurrentY - 5);
+  };
+
+  const simulatePageCount = (assumedTotal: number | null): number => {
+    let pages = 1;
+    let y = firstPageTableStartY;
+    for (let i = 0; i < orders.length; i++) {
+      const startY = tableStartYForPage(pages);
+      const isLastPage =
+        assumedTotal !== null && pages >= assumedTotal;
+      const maxBottom = isLastPage
+        ? maxTableBodyBottomLastPage
+        : maxTableBodyBottomContinuation;
+      const headerNeeded = y === startY ? headerRowHeight : 0;
+      if (y + headerNeeded + fixedRowHeight > maxBottom) {
+        pages++;
+        y = continuationPageTableStartY;
+      }
+      if (y === tableStartYForPage(pages)) {
+        y += headerRowHeight;
+      }
+      y += fixedRowHeight;
+    }
+    return pages;
+  };
+
+  const countTotalPages = (): number => {
+    let pages = simulatePageCount(null);
+    const MAX_PAGE_COUNT_ITERATIONS = 50;
+    for (let i = 0; i < MAX_PAGE_COUNT_ITERATIONS; i++) {
+      const withLastPageReserve = simulatePageCount(pages);
+      if (withLastPageReserve <= pages) {
+        return pages;
+      }
+      pages = withLastPageReserve;
+    }
+    return pages;
+  };
+
+  totalPages = countTotalPages();
+
   drawHeader();
-  
-  currentY = tableStartY;
+  currentY = firstPageTableStartY;
   currentPage = 1;
-  let rowsOnCurrentPage = 0;
-  
+
+  const MAX_RENDER_PAGES = 500;
   for (let i = 0; i < orders.length; i++) {
     const order = orders[i];
-    const rowHeight = fixedRowHeight; // Fixed row height for all rows
+    const rowHeight = fixedRowHeight;
     const isEven = i % 2 === 0;
 
-    // Check if we need a new page (exactly 15 data rows per page)
-    if (rowsOnCurrentPage >= ROWS_PER_PAGE) {
-      drawFooter();
+    let pageBreakGuard = 0;
+    while (
+      needsNewPageForRow(rowHeight, currentPage, totalPages) &&
+      pageBreakGuard < MAX_RENDER_PAGES
+    ) {
+      drawPageNumber();
       addNewPage();
-      currentPage++;
-      currentY = tableStartY;
-      rowsOnCurrentPage = 0;
+      lastTableBottomY = continuationPageTableStartY;
+      pageBreakGuard++;
     }
 
-    // Draw table header if this is the first row on the page
-    if (currentY === tableStartY) {
+    const pageTableStartY = tableStartYForPage(currentPage);
+    if (currentY === pageTableStartY) {
       drawTableHeader(currentY);
       currentY += headerRowHeight;
     }
 
-    // Draw the data row with fixed height
     drawTableRow(order, currentY, i, rowHeight, isEven);
     currentY += rowHeight;
-    rowsOnCurrentPage++;
+    lastTableBottomY = currentY;
   }
 
-  // Draw final footer
-  drawFooter();
+  drawSignatureBlock(lastTableBottomY);
+  drawPageNumber();
 
   // Save PDF
   const fileName = `PO-Verification-${poNumber}.pdf`;

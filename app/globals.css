@@ -185,6 +185,18 @@ body {
   stroke: currentColor;
 }
 
+/* Bulk import success check — avoid white-on-pale in dark mode */
+.app-dark-main .sasa-import-success-icon {
+  background-color: rgba(16, 185, 129, 0.2) !important;
+  border: 1px solid rgba(52, 211, 153, 0.45);
+}
+
+.app-dark-main .sasa-import-success-icon .sasa-import-success-icon-check,
+.app-dark-main .sasa-import-success-icon .sasa-import-success-icon-check * {
+  color: #34d399 !important;
+  stroke: #34d399 !important;
+}
+
 .app-dark-main button:hover,
 .app-dark-main [role='button']:hover,
 .app-dark-main a:hover {
