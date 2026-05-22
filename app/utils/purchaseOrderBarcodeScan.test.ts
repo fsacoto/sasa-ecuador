@@ -6,6 +6,8 @@ import {
   findPurchaseOrderLinesByBarcodeScan,
   getScanProgress,
   getQuantityScanned,
+  shouldShowScanStatus,
+  scanProgressClearUpdate,
   isLinePendingScanner,
   listInvoicesEligibleForScanner,
 } from './purchaseOrderBarcodeScan';
@@ -91,6 +93,10 @@ assert(getQuantityScanned({} as PurchaseOrder) === 0, 'missing scanned is 0');
 
 // Verified not eligible
 assert(!isLinePendingScanner(baseOrder({ status: 'Verified' })), 'verified not pending');
+assert(!shouldShowScanStatus(baseOrder({ status: 'Verified', quantityScanned: 6 })), 'verified hides scan');
+assert(!shouldShowScanStatus(baseOrder({ status: 'Received', quantityScanned: 0 })), 'no scan until started');
+assert(shouldShowScanStatus(baseOrder({ status: 'Received', quantityScanned: 2 })), 'received with scans');
+assert(scanProgressClearUpdate().quantityScanned === 0, 'clear update zeros scan');
 
 // Invoice list
 const invs = listInvoicesEligibleForScanner([lineA, baseOrder({ status: 'Verified', invoice: 'X' })]);

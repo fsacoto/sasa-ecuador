@@ -54,6 +54,17 @@ export function hasActiveScanProgress(order: PurchaseOrder): boolean {
   return p.scanned > 0 && !p.isComplete;
 }
 
+/** Progreso de escaneo visible en tabla (solo Recibido con escaneos registrados). */
+export function shouldShowScanStatus(order: PurchaseOrder): boolean {
+  if (!isLineEligibleForScanner(order)) return false;
+  return getQuantityScanned(order) > 0;
+}
+
+/** Limpiar contador de escaneo al verificar o cerrar el flujo de escáner. */
+export function scanProgressClearUpdate(): Partial<PurchaseOrder> {
+  return { quantityScanned: 0 };
+}
+
 export function purchaseOrderLineMatchesScan(order: PurchaseOrder, scannedRaw: string): boolean {
   return scannedCodeMatchesSku(scannedRaw, order.sku, order.supplierSKU);
 }

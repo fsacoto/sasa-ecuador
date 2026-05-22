@@ -20,6 +20,7 @@ import BulkDeleteModal from './BulkDeleteModal';
 import BulkStatusChangeModal from './BulkStatusChangeModal';
 import BarcodePrintModal from './BarcodePrintModal';
 import PurchaseOrderStatusCell from './PurchaseOrderStatusCell';
+import PurchaseOrderQuantityCell from './PurchaseOrderQuantityCell';
 import InvoiceStatusActionsBar from './InvoiceStatusActionsBar';
 import InvoiceBatchVerificationModal, { type InvoiceVerifyLineInput } from './InvoiceBatchVerificationModal';
 import POScannerVerificationSession, {
@@ -30,6 +31,7 @@ import {
   getScanProgress,
   hasActiveScanProgress,
   isLineReadyToConfirm,
+  scanProgressClearUpdate,
 } from '../utils/purchaseOrderBarcodeScan';
 import { getNextStatus } from '../utils/purchaseOrderStatusFlow';
 import {
@@ -894,6 +896,7 @@ export default function PurchaseOrders() {
         payload.quantityNotReceived,
         order.supplierClaimStatus
       ),
+      ...scanProgressClearUpdate(),
     };
     if (!order.receivedDate) {
       statusUpdate.receivedDate = new Date();
@@ -3217,48 +3220,7 @@ export default function PurchaseOrders() {
                       )}
                       {!hiddenColumns.has('quantity') && (
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
-                        <div className="flex flex-col items-end gap-1">
-                          <span className="text-gray-700">{order.quantity}</span>
-                          {effectivePurchaseOrderStatus(order.status) === 'Received' &&
-                            getScanProgress(order).scanned > 0 && (
-                              <span
-                                className={`text-xs font-semibold ${
-                                  isLineReadyToConfirm(order) ? 'text-amber-700' : 'text-indigo-700'
-                                }`}
-                              >
-                                {(isLineReadyToConfirm(order)
-                                  ? t('purchaseOrders.scanProgressReady')
-                                  : t('purchaseOrders.scanProgressPartial')
-                                )
-                                  .replace('{scanned}', String(getScanProgress(order).scanned))
-                                  .replace('{expected}', String(getScanProgress(order).expected))}
-                              </span>
-                            )}
-                          {order.status === 'Verified' && (
-                            <div className="flex flex-col items-end gap-0.5 text-xs">
-                              {order.quantityGood !== undefined && order.quantityGood > 0 && (
-                                <span className="text-green-600 font-medium" title={t('purchaseOrders.quantityGood') || 'Good'}>
-                                  ✓ {order.quantityGood}
-                                </span>
-                              )}
-                              {order.quantityProblem !== undefined && order.quantityProblem > 0 && (
-                                <span className="text-amber-600 font-medium" title={t('purchaseOrders.quantityProblem') || 'Problems'}>
-                                  ⚠️ {order.quantityProblem}
-                                </span>
-                              )}
-                              {order.quantityNotReceived !== undefined && order.quantityNotReceived > 0 && (
-                                <span className="text-red-600 font-medium" title={t('purchaseOrders.quantityNotReceived') || 'Not Received'}>
-                                  ✗ {order.quantityNotReceived}
-                                </span>
-                              )}
-                              {order.verificationComment && (
-                                <span className="text-gray-500 italic" title={order.verificationComment}>
-                                  💬
-                            </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                        <PurchaseOrderQuantityCell order={order} />
                       </td>
                       )}
                       {!hiddenColumns.has('status') && (
@@ -3470,48 +3432,7 @@ export default function PurchaseOrders() {
                             {/* Quantity */}
                             {!hiddenColumns.has('quantity') && (
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                                <div className="flex flex-col items-end gap-0.5">
-                                  <span>{order.quantity}</span>
-                                  {effectivePurchaseOrderStatus(order.status) === 'Received' &&
-                                    getScanProgress(order).scanned > 0 && (
-                                      <span
-                                        className={`text-xs font-semibold ${
-                                          isLineReadyToConfirm(order) ? 'text-amber-700' : 'text-indigo-700'
-                                        }`}
-                                      >
-                                        {(isLineReadyToConfirm(order)
-                                          ? t('purchaseOrders.scanProgressReady')
-                                          : t('purchaseOrders.scanProgressPartial')
-                                        )
-                                          .replace('{scanned}', String(getScanProgress(order).scanned))
-                                          .replace('{expected}', String(getScanProgress(order).expected))}
-                                      </span>
-                                    )}
-                                  {order.status === 'Verified' && (
-                                    <div className="flex flex-col items-end gap-0.5 text-xs">
-                                      {order.quantityGood !== undefined && order.quantityGood > 0 && (
-                                        <span className="text-green-600 font-medium" title={t('purchaseOrders.quantityGood') || 'Good'}>
-                                          ✓ {order.quantityGood}
-                                  </span>
-                                )}
-                                      {order.quantityProblem !== undefined && order.quantityProblem > 0 && (
-                                        <span className="text-amber-600 font-medium" title={t('purchaseOrders.quantityProblem') || 'Problems'}>
-                                          ⚠️ {order.quantityProblem}
-                                        </span>
-                                      )}
-                                      {order.quantityNotReceived !== undefined && order.quantityNotReceived > 0 && (
-                                        <span className="text-red-600 font-medium" title={t('purchaseOrders.quantityNotReceived') || 'Not Received'}>
-                                          ✗ {order.quantityNotReceived}
-                                        </span>
-                                      )}
-                                      {order.verificationComment && (
-                                        <span className="text-gray-500 italic" title={order.verificationComment}>
-                                          💬
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
+                                <PurchaseOrderQuantityCell order={order} />
                               </td>
                             )}
                             

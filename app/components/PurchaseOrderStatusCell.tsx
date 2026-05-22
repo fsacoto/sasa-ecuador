@@ -4,14 +4,14 @@ import { useState, useRef, useEffect } from 'react';
 import { PurchaseOrder, PurchaseOrderStatus } from '../types';
 import { useTranslation } from '../context/TranslationContext';
 import { getNextStatus, statusLabelKey } from '../utils/purchaseOrderStatusFlow';
-import { getScanProgress, isLineReadyToConfirm } from '../utils/purchaseOrderBarcodeScan';
+import { isLineReadyToConfirm, shouldShowScanStatus } from '../utils/purchaseOrderBarcodeScan';
 import {
   PO_ACTIVE_STATUSES,
   PO_STATUS_BADGE_CLASS,
   effectivePurchaseOrderStatus,
 } from '../utils/purchaseOrderStatusTheme';
 import PoStatusIcon from './icons/PoStatusIcon';
-import { IconPoChevronRight, IconPoDots, IconPoLock } from './icons/PoLineIcons';
+import { IconPoChevronRight, IconPoDots } from './icons/PoLineIcons';
 
 interface PurchaseOrderStatusCellProps {
   order: PurchaseOrder;
@@ -33,6 +33,7 @@ export default function PurchaseOrderStatusCell({
   const menuRef = useRef<HTMLDivElement>(null);
   const status = effectivePurchaseOrderStatus(order.status);
   const nextStatus = getNextStatus(status);
+  const scanReady = shouldShowScanStatus(order) && isLineReadyToConfirm(order);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -43,18 +44,9 @@ export default function PurchaseOrderStatusCell({
     return () => document.removeEventListener('mousedown', close);
   }, [menuOpen]);
 
-  const label = t(`purchaseOrders.${statusLabelKey(status)}`);
-  const scanProg = status === 'Received' ? getScanProgress(order) : null;
-  const scanBadge =
-    scanProg && scanProg.scanned > 0
-      ? isLineReadyToConfirm(order)
-        ? t('purchaseOrders.scanBadgeReady')
-            .replace('{scanned}', String(scanProg.scanned))
-            .replace('{expected}', String(scanProg.expected))
-        : t('purchaseOrders.scanBadgePartial')
-            .replace('{scanned}', String(scanProg.scanned))
-            .replace('{expected}', String(scanProg.expected))
-      : null;
+  const statusBadgeLabel = scanReady
+    ? t('purchaseOrders.readyToConfirm')
+    : t(`purchaseOrders.${statusLabelKey(status)}`);
 
   const advanceLabel =
     nextStatus === 'Received'
@@ -63,26 +55,20 @@ export default function PurchaseOrderStatusCell({
         ? t('purchaseOrders.advanceVerify')
         : null;
 
+  const advanceButtonClass = scanReady
+    ? 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100'
+    : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50';
+
   return (
-    <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-      <div className="flex min-w-0 flex-col items-start gap-0.5">
+    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+      <div className="flex min-w-0 flex-col items-start gap-1">
         <span
-          className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium ${PO_STATUS_BADGE_CLASS[status]}`}
+          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${PO_STATUS_BADGE_CLASS[status]}`}
           title={status === 'Verified' ? t('purchaseOrders.inventoryUpdated') : undefined}
         >
           <PoStatusIcon status={status} className="h-3.5 w-3.5 shrink-0" />
-          {label}
-          {status === 'Verified' && <IconPoLock className="h-3 w-3 text-green-700/60" />}
+          {statusBadgeLabel}
         </span>
-        {scanBadge && (
-          <span
-            className={`text-[10px] font-semibold leading-tight ${
-              isLineReadyToConfirm(order) ? 'text-amber-700' : 'text-indigo-600'
-            }`}
-          >
-            {scanBadge}
-          </span>
-        )}
         {status === 'Verified' && order.supplierClaimStatus === 'pending' && (
           <span className="text-[10px] font-semibold text-red-600">{t('purchaseOrders.claimPendingBadge')}</span>
         )}
@@ -92,11 +78,11 @@ export default function PurchaseOrderStatusCell({
         <button
           type="button"
           onClick={() => onAdvance(order)}
-          className="inline-flex items-center gap-0.5 rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+          className={`inline-flex shrink-0 items-center gap-0.5 rounded-full border px-2.5 py-1 text-xs font-semibold shadow-sm transition-colors ${advanceButtonClass}`}
           title={advanceLabel ?? ''}
         >
-          {!compact && <span className="max-w-[5rem] truncate sm:max-w-none">{advanceLabel}</span>}
-          <IconPoChevronRight className="h-3 w-3 shrink-0 text-gray-500" />
+          {!compact && <span className="max-w-[8rem] truncate sm:max-w-none">{advanceLabel}</span>}
+          <IconPoChevronRight className="h-3 w-3 shrink-0 opacity-70" />
         </button>
       )}
 
@@ -104,17 +90,17 @@ export default function PurchaseOrderStatusCell({
         <button
           type="button"
           onClick={() => onEditVerification(order)}
-          className="rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-50"
+          className="shrink-0 rounded-full border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50"
         >
           {t('purchaseOrders.editVerificationShort')}
         </button>
       )}
 
-      <div className="relative" ref={menuRef}>
+      <div className="relative shrink-0" ref={menuRef}>
         <button
           type="button"
           onClick={() => setMenuOpen((o) => !o)}
-          className="rounded-md p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
           aria-label={t('purchaseOrders.changeStatus')}
         >
           <IconPoDots className="h-4 w-4" />
