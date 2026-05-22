@@ -7,12 +7,12 @@ const COLLECTION_NAME = 'purchaseOrders';
 /** Firestore / imports may use different casing; keep a single canonical status in the app. */
 export function normalizePurchaseOrderStatus(raw: unknown): PurchaseOrder['status'] {
   const s = String(raw ?? 'Ordered').trim().toLowerCase();
-  if (s === 'shipped') return 'Shipped';
-  if (s === 'received') return 'Received';
+  if (s === 'shipped' || s === 'received') return 'Received';
   if (s === 'verified') return 'Verified';
   if (s === 'ordered') return 'Ordered';
   const t = String(raw ?? 'Ordered').trim();
-  if (t === 'Ordered' || t === 'Shipped' || t === 'Received' || t === 'Verified') return t;
+  if (t === 'Shipped') return 'Received';
+  if (t === 'Ordered' || t === 'Received' || t === 'Verified') return t;
   return 'Ordered';
 }
 
@@ -27,6 +27,15 @@ const toPurchaseOrder = (docSnap: QueryDocumentSnapshot): PurchaseOrder => {
     purchaseDate: (data.purchaseDate as Timestamp)?.toDate() || new Date(),
     receivedDate: (data.receivedDate as Timestamp)?.toDate(),
     verifiedDate: (data.verifiedDate as Timestamp)?.toDate(),
+    lastScannedAt: (data.lastScannedAt as Timestamp)?.toDate(),
+    quantityScanned:
+      typeof data.quantityScanned === 'number' && !Number.isNaN(data.quantityScanned)
+        ? data.quantityScanned
+        : undefined,
+    supplierClaimStatus:
+      data.supplierClaimStatus === 'pending' || data.supplierClaimStatus === 'resolved'
+        ? data.supplierClaimStatus
+        : 'none',
     createdAt: (data.createdAt as Timestamp)?.toDate() || new Date()
   };
 };

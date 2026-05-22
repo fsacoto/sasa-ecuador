@@ -362,6 +362,7 @@ function AppContent() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem('sasaDarkMode', darkModeOn ? 'on' : 'off');
+    window.dispatchEvent(new CustomEvent('sasa-dark-mode-change'));
   }, [darkModeOn]);
 
   if (isLoading) {

@@ -293,6 +293,35 @@ export function getUPCAFromSKU(sku: string): string {
   return generateFallbackDigitPayload(sku);
 }
 
+/** True when a scanner read matches an internal SKU and/or supplier SKU (label generation rules). */
+export function scannedCodeMatchesSku(
+  scannedRaw: string,
+  internalSku: string,
+  supplierSku?: string
+): boolean {
+  const scanned = scannedRaw.trim();
+  if (!scanned) return false;
+  const lower = scanned.toLowerCase();
+  const sku = String(internalSku ?? '').trim();
+  if (sku) {
+    const normalized = normalizeSkuForBarcode(sku);
+    if (normalized && (normalized === scanned || normalized.toLowerCase() === lower)) {
+      return true;
+    }
+    if (sku === scanned || sku.toLowerCase() === lower) {
+      return true;
+    }
+    if (generateFallbackDigitPayload(sku) === scanned) {
+      return true;
+    }
+  }
+  const sup = String(supplierSku ?? '').trim();
+  if (sup && (sup === scanned || sup.toLowerCase() === lower)) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Resolves a scanner read to an inventory row using the same rules as label generation
  * (CODE128 primary = normalized SKU, fallback = 12-digit UPC payload). Also matches internal

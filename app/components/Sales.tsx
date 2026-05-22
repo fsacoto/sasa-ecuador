@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { SalesInvoiceLine, Client, InventoryItem, SalesInvoice } from '../types';
 import { getAllClients, createClient } from '../services/clientsService';
 import { createInvoice } from '../services/invoicesService';
@@ -45,8 +46,6 @@ export default function Sales() {
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const barcodeGlobalBufferRef = useRef('');
-  const barcodeGlobalLastTsRef = useRef(0);
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash' | 'transfer' | ''>('');
   const [paymentComment, setPaymentComment] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
@@ -199,45 +198,11 @@ export default function Sales() {
     [inventory, purchaseOrders, user?.role, t]
   );
 
-  /** Pistola lectora: captura fuera de campos de texto; término con Enter (típico del lector). */
-  useEffect(() => {
-    const MAX_CHAR_GAP_MS = 85;
-
-    const shouldIgnoreTarget = (target: EventTarget | null) => {
-      if (!(target instanceof HTMLElement)) return false;
-      if (target.isContentEditable) return true;
-      const tag = target.tagName.toLowerCase();
-      return tag === 'textarea' || tag === 'select' || tag === 'input';
-    };
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (showClientModal || alertDialog.open) return;
-      if (shouldIgnoreTarget(e.target)) return;
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-
-      const now = Date.now();
-      if (now - barcodeGlobalLastTsRef.current > MAX_CHAR_GAP_MS) {
-        barcodeGlobalBufferRef.current = '';
-      }
-      barcodeGlobalLastTsRef.current = now;
-
-      if (e.key === 'Enter') {
-        const buf = barcodeGlobalBufferRef.current.trim();
-        barcodeGlobalBufferRef.current = '';
-        if (buf) {
-          e.preventDefault();
-          processBarcodeScan(buf);
-        }
-        return;
-      }
-      if (e.key.length === 1) {
-        barcodeGlobalBufferRef.current += e.key;
-      }
-    };
-
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [showClientModal, alertDialog.open, processBarcodeScan]);
+  useBarcodeScanner({
+    enabled: !showClientModal && !alertDialog.open,
+    onScan: processBarcodeScan,
+    shouldIgnore: () => showClientModal || alertDialog.open,
+  });
 
   const handleQuantityChange = (index: number, quantity: number) => {
     const updatedItems = [...invoiceItems];

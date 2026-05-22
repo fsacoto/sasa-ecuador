@@ -7,6 +7,8 @@ type Messages = typeof esMessages;
 
 interface TranslationContextType {
   t: (key: string) => string;
+  /** Traducción con texto por defecto si la clave no existe. */
+  tf: (key: string, fallback: string) => string;
   messages: Messages;
 }
 
@@ -29,13 +31,17 @@ function resolveMessage(key: string, messages: Messages): string {
 
 export function TranslationProvider({ children }: { children: ReactNode }) {
   const t = (key: string): string => resolveMessage(key, esMessages);
+  const tf = (key: string, fallback: string): string => {
+    const v = resolveMessage(key, esMessages);
+    return v === key ? fallback : v;
+  };
 
   useEffect(() => {
     document.documentElement.lang = 'es';
   }, []);
 
   return (
-    <TranslationContext.Provider value={{ t, messages: esMessages }}>
+    <TranslationContext.Provider value={{ t, tf, messages: esMessages }}>
       {children}
     </TranslationContext.Provider>
   );
@@ -44,8 +50,13 @@ export function TranslationProvider({ children }: { children: ReactNode }) {
 export function useTranslation() {
   const context = useContext(TranslationContext);
   if (context === undefined) {
+    const t = (key: string) => resolveMessage(key, esMessages);
     return {
-      t: (key: string) => resolveMessage(key, esMessages),
+      t,
+      tf: (key: string, fallback: string) => {
+        const v = resolveMessage(key, esMessages);
+        return v === key ? fallback : v;
+      },
       messages: esMessages,
     };
   }

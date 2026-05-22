@@ -11,7 +11,7 @@ export interface Supplier {
   createdAt: Date;
 }
 
-export type PurchaseOrderStatus = 'Ordered' | 'Shipped' | 'Received' | 'Verified';
+export type PurchaseOrderStatus = 'Ordered' | 'Received' | 'Verified';
 
 export interface PurchaseOrder {
   id: string;
@@ -29,8 +29,13 @@ export interface PurchaseOrder {
   quantityGood?: number; // Quantity in good condition (goes to inventory)
   quantityProblem?: number; // Quantity with problems (damaged, needs repair, etc. - doesn't go to inventory)
   quantityNotReceived?: number; // Quantity never received
+  /** Units registered via barcode scanner while Received (before full verification). */
+  quantityScanned?: number;
+  lastScannedAt?: Date;
   verificationComment?: string; // Comment about verification (problems, issues, etc.)
   verificationMedia?: string[]; // Array of media URLs (images, videos) attached to verification
+  /** Pending supplier follow-up when units were not received (claim). */
+  supplierClaimStatus?: 'none' | 'pending' | 'resolved';
   currency: string;
   costPerUnit: number;
   totalCost: number;

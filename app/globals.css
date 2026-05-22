@@ -38,10 +38,94 @@ body {
   background-color: rgba(255, 255, 255, 0.04) !important;
 }
 
+/* Modales en portal (body): tema claro por defecto; `.sasa-modal-dark` cuando dark mode está activo. */
+.sasa-modal-overlay {
+  background-color: rgba(0, 0, 0, 0.55) !important;
+}
+
+.sasa-modal-panel {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+}
+
+.sasa-modal-panel input,
+.sasa-modal-panel select,
+.sasa-modal-panel textarea {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+  border-color: #d1d5db !important;
+}
+
+.sasa-modal-panel .sasa-modal-row:hover,
+.sasa-modal-panel .sasa-modal-row:focus {
+  background-color: #f9fafb !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel {
+  background-color: #0b0b0b !important;
+  color: #ffffff !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .border-gray-100,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .border-gray-200,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .border-gray-300 {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .divide-gray-100 > :not(:last-child) {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .text-gray-900,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .text-gray-800,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .text-gray-700 {
+  color: #ffffff !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .text-gray-600,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .text-gray-500,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .text-gray-400 {
+  color: #d1d5db !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .text-\[\#515151\] {
+  color: #d1d5db !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel input,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel select,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel textarea {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .sasa-modal-row:hover,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .sasa-modal-row:focus {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .bg-white,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel [class*='bg-white'] {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .bg-gray-50,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .bg-gray-100,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel [class*='bg-gray-50'] {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel [class*='hover:bg-gray-50']:hover,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel [class*='hover:bg-gray-100']:hover,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel [class*='hover:bg-gray-200']:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
 /* Popups/menus/dropdowns in dark mode must be opaque black (no bleed-through). */
 .app-dark-main [role='menu'],
 .app-dark-main [role='listbox'],
-.app-dark-main [role='dialog'],
+.app-dark-main [role='dialog']:not(.sasa-modal-root),
 .app-dark-main [class*='absolute'][class*='bg-white'],
 .app-dark-main [class*='absolute'][class*='bg-gray-50'] {
   background-color: #0b0b0b !important;

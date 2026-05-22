@@ -19,6 +19,25 @@ import BulkImportModal, { type BulkImportModalMode } from './BulkImportModal';
 import BulkDeleteModal from './BulkDeleteModal';
 import BulkStatusChangeModal from './BulkStatusChangeModal';
 import BarcodePrintModal from './BarcodePrintModal';
+import PurchaseOrderStatusCell from './PurchaseOrderStatusCell';
+import InvoiceStatusActionsBar from './InvoiceStatusActionsBar';
+import InvoiceBatchVerificationModal, { type InvoiceVerifyLineInput } from './InvoiceBatchVerificationModal';
+import POScannerVerificationSession, {
+  type ScannerScanResult,
+} from './POScannerVerificationSession';
+import {
+  findPurchaseOrderLinesByBarcodeScan,
+  getScanProgress,
+  hasActiveScanProgress,
+  isLineReadyToConfirm,
+} from '../utils/purchaseOrderBarcodeScan';
+import { getNextStatus } from '../utils/purchaseOrderStatusFlow';
+import {
+  orderMatchesStatusFilter,
+  PO_ACTIVE_STATUSES,
+  effectivePurchaseOrderStatus,
+} from '../utils/purchaseOrderStatusTheme';
+import PoStatusIcon from './icons/PoStatusIcon';
 import {
   syncPurchaseOrderToInventory,
   cleanupInventoryAfterOrderDeletion,
@@ -92,7 +111,18 @@ export default function PurchaseOrders() {
   const [quantityMismatchConfirmOpen, setQuantityMismatchConfirmOpen] = useState(false);
   const [quantityMismatchData, setQuantityMismatchData] = useState<{expected: number, received: number, difference: string, order: PurchaseOrder, orderData?: any, previousSku?: string, statusUpdate?: Partial<PurchaseOrder>} | null>(null);
   const [verificationModalOpen, setVerificationModalOpen] = useState(false);
-  const [verificationData, setVerificationData] = useState<{order: PurchaseOrder, orderData?: any, previousSku?: string, isEditing?: boolean, updatedOrder?: PurchaseOrder} | null>(null);
+  const [verificationData, setVerificationData] = useState<{
+    order: PurchaseOrder;
+    orderData?: Partial<PurchaseOrder>;
+    previousSku?: string;
+    isEditing?: boolean;
+    updatedOrder?: PurchaseOrder;
+    fromScanner?: boolean;
+  } | null>(null);
+  const [invoiceBatchVerify, setInvoiceBatchVerify] = useState<{ invoice: string; orders: PurchaseOrder[] } | null>(null);
+  const [invoiceWorkflowBusy, setInvoiceWorkflowBusy] = useState(false);
+  const [batchVerifySubmitting, setBatchVerifySubmitting] = useState(false);
+  const [scannerSession, setScannerSession] = useState<{ initialInvoice?: string } | null>(null);
   const [verificationQuantity, setVerificationQuantity] = useState<string>('');
   const [verificationQuantityGood, setVerificationQuantityGood] = useState<string>('');
   const [verificationQuantityProblem, setVerificationQuantityProblem] = useState<string>('');
@@ -131,7 +161,8 @@ export default function PurchaseOrders() {
       try {
         const filters = JSON.parse(storedFilters);
         if (filters.filterStatus) {
-          setFilterStatus(filters.filterStatus);
+          const st = filters.filterStatus === 'Shipped' ? 'Received' : filters.filterStatus;
+          setFilterStatus(st);
         }
         // Clear the stored filters after applying
         sessionStorage.removeItem('dashboardFilters_purchase-orders');
@@ -280,7 +311,7 @@ export default function PurchaseOrders() {
     discountPerUnit: 0,
     exchangeRate: 1,
     purchaseDate: new Date().toISOString().split('T')[0],
-    status: 'Ordered' as 'Ordered' | 'Shipped' | 'Received' | 'Verified',
+    status: 'Ordered' as PurchaseOrderStatus,
   });
 
   /** Orden en contexto + SKU del formulario (para generar código antes de guardar otros campos). */
@@ -767,6 +798,379 @@ export default function PurchaseOrders() {
     }
   };
 
+  const resolveSupplierClaimStatus = (
+    quantityNotReceived: number,
+    previous?: PurchaseOrder['supplierClaimStatus']
+  ): PurchaseOrder['supplierClaimStatus'] => {
+    if (quantityNotReceived > 0) return 'pending';
+    if (previous === 'resolved') return 'resolved';
+    return 'none';
+  };
+
+  const openVerificationModalForOrder = useCallback(
+    (
+      order: PurchaseOrder,
+      opts?: {
+        fromScanner?: boolean;
+        orderData?: Partial<PurchaseOrder>;
+        isEditing?: boolean;
+        updatedOrder?: PurchaseOrder;
+        previousSku?: string;
+      }
+    ) => {
+      const prog = getScanProgress(order);
+      setVerificationData({
+        order,
+        orderData: opts?.orderData,
+        isEditing: opts?.isEditing,
+        updatedOrder: opts?.updatedOrder,
+        previousSku: opts?.previousSku,
+        fromScanner: opts?.fromScanner,
+      });
+      if (opts?.fromScanner) {
+        setVerificationQuantity(order.quantity.toString());
+        setVerificationQuantityGood(prog.scanned.toString());
+        setVerificationQuantityProblem('0');
+        setVerificationQuantityNotReceived('0');
+      } else if (opts?.isEditing) {
+        setVerificationQuantity(order.quantityReceived?.toString() || order.quantity.toString());
+        setVerificationQuantityGood(
+          order.quantityGood?.toString() || order.quantityReceived?.toString() || order.quantity.toString()
+        );
+        setVerificationQuantityProblem(order.quantityProblem?.toString() || '0');
+        setVerificationQuantityNotReceived(order.quantityNotReceived?.toString() || '0');
+      } else {
+        setVerificationQuantity(order.quantity.toString());
+        setVerificationQuantityGood(order.quantityGood?.toString() || order.quantity.toString());
+        setVerificationQuantityProblem(order.quantityProblem?.toString() || '0');
+        setVerificationQuantityNotReceived(order.quantityNotReceived?.toString() || '0');
+      }
+      setVerificationComment(order.verificationComment || '');
+      setVerificationMediaUrls(order.verificationMedia || []);
+      setVerificationMedia([]);
+      setVerificationModalOpen(true);
+    },
+    []
+  );
+
+  const applyVerificationAllNotReceived = () => {
+    if (!verificationData) return;
+    const q = verificationData.order.quantity;
+    setVerificationQuantity('0');
+    setVerificationQuantityGood('0');
+    setVerificationQuantityProblem('0');
+    setVerificationQuantityNotReceived(String(q));
+    if (!verificationComment.trim()) {
+      setVerificationComment(
+        t('purchaseOrders.notReceivedClaimDefault') ||
+          'Mercancía no recibida — reclamación pendiente al proveedor.'
+      );
+    }
+  };
+
+  /** Verificación → Verified + sync inventario (misma lógica que el modal por línea). */
+  const completeOrderVerification = async (
+    order: PurchaseOrder,
+    payload: {
+      actualQuantity: number;
+      quantityGood: number;
+      quantityProblem: number;
+      quantityNotReceived: number;
+      comment?: string;
+      mediaUrls?: string[];
+    },
+    stockBaselineOrder: PurchaseOrder
+  ): Promise<'ok' | 'quantity_mismatch'> => {
+    const expectedQuantity = order.quantity;
+    const statusUpdate: Partial<PurchaseOrder> = {
+      status: 'Verified',
+      quantityReceived: payload.actualQuantity,
+      quantityGood: payload.quantityGood,
+      quantityProblem: payload.quantityProblem,
+      quantityNotReceived: payload.quantityNotReceived,
+      verificationComment: payload.comment || undefined,
+      verificationMedia: payload.mediaUrls && payload.mediaUrls.length > 0 ? payload.mediaUrls : undefined,
+      supplierClaimStatus: resolveSupplierClaimStatus(
+        payload.quantityNotReceived,
+        order.supplierClaimStatus
+      ),
+    };
+    if (!order.receivedDate) {
+      statusUpdate.receivedDate = new Date();
+    }
+    if (!order.verifiedDate) {
+      statusUpdate.verifiedDate = new Date();
+    }
+
+    if (payload.actualQuantity !== expectedQuantity) {
+      const difference = payload.actualQuantity - expectedQuantity;
+      const diffText =
+        difference > 0
+          ? `+${difference} ${t('purchaseOrders.more')}`
+          : `${Math.abs(difference)} ${t('purchaseOrders.less')}`;
+      setQuantityMismatchData({
+        expected: expectedQuantity,
+        received: payload.actualQuantity,
+        difference: diffText,
+        order,
+        statusUpdate,
+      });
+      setQuantityMismatchConfirmOpen(true);
+      return 'quantity_mismatch';
+    }
+
+    await updatePurchaseOrder(order.id, statusUpdate);
+
+    let orderWithGoodQuantity: PurchaseOrder = {
+      ...order,
+      ...statusUpdate,
+      quantity: payload.quantityGood,
+      quantityReceived: payload.quantityGood,
+    } as PurchaseOrder;
+    orderWithGoodQuantity = await attachBarcodeToPurchaseOrderIfNeeded(
+      orderWithGoodQuantity,
+      updatePurchaseOrder,
+      inventory,
+      undefined,
+      purchaseOrders
+    );
+    await syncPurchaseOrderToInventory(
+      orderWithGoodQuantity,
+      inventory,
+      updateInventoryItem,
+      addInventoryItem,
+      deleteInventoryItem,
+      purchaseOrders,
+      undefined,
+      true,
+      stockBaselineOrder,
+      updatePurchaseOrder
+    );
+    return 'ok';
+  };
+
+  const handleAdvanceStatus = (order: PurchaseOrder) => {
+    const next = getNextStatus(order.status);
+    if (!next) return;
+    void handleStatusChange(order, next);
+  };
+
+  const registerScanUnit = useCallback(
+    async (orderId: string): Promise<ScannerScanResult> => {
+      const order = purchaseOrders.find((o) => o.id === orderId);
+      if (!order) {
+        return { ok: false, message: t('purchaseOrders.scanner.notFound') };
+      }
+      if (effectivePurchaseOrderStatus(order.status) !== 'Received') {
+        return { ok: false, message: t('purchaseOrders.scanner.alreadyComplete') };
+      }
+      if (!purchaseOrderHasSkusForVerification(order)) {
+        return { ok: false, message: t('purchaseOrders.scanner.missingSkus') };
+      }
+
+      const prog = getScanProgress(order);
+      if (prog.isComplete) {
+        return {
+          ok: true,
+          readyToConfirm: true,
+          message: t('purchaseOrders.scanner.confirmLinePrompt'),
+          order,
+        };
+      }
+
+      const nextScanned = Math.min(prog.scanned + 1, prog.expected);
+      await updatePurchaseOrder(order.id, {
+        quantityScanned: nextScanned,
+        lastScannedAt: new Date(),
+      });
+
+      const updatedPartial: PurchaseOrder = {
+        ...order,
+        quantityScanned: nextScanned,
+        lastScannedAt: new Date(),
+      };
+
+      if (nextScanned >= prog.expected) {
+        return {
+          ok: true,
+          readyToConfirm: true,
+          message: t('purchaseOrders.scanner.scanCompleteConfirm'),
+          order: updatedPartial,
+        };
+      }
+
+      return {
+        ok: true,
+        message: t('purchaseOrders.scanner.unitAdded'),
+        order: updatedPartial,
+      };
+    },
+    [purchaseOrders, t, updatePurchaseOrder]
+  );
+
+  const undoScanUnit = useCallback(
+    async (orderId: string): Promise<ScannerScanResult> => {
+      const order = purchaseOrders.find((o) => o.id === orderId);
+      if (!order) {
+        return { ok: false, message: t('purchaseOrders.scanner.notFound') };
+      }
+      if (effectivePurchaseOrderStatus(order.status) !== 'Received') {
+        return { ok: false, message: t('purchaseOrders.scanner.alreadyComplete') };
+      }
+
+      const prog = getScanProgress(order);
+      if (prog.scanned <= 0) {
+        return { ok: false, message: t('purchaseOrders.scanner.nothingToUndo') };
+      }
+
+      const nextScanned = prog.scanned - 1;
+      await updatePurchaseOrder(order.id, {
+        quantityScanned: nextScanned,
+        ...(nextScanned > 0 ? { lastScannedAt: new Date() } : {}),
+      });
+
+      const updatedPartial: PurchaseOrder = {
+        ...order,
+        quantityScanned: nextScanned,
+      };
+
+      return {
+        ok: true,
+        message: (t('purchaseOrders.scanner.unitUndone') || '')
+          .replace('{scanned}', String(nextScanned))
+          .replace('{expected}', String(prog.expected)),
+        order: updatedPartial,
+      };
+    },
+    [purchaseOrders, t, updatePurchaseOrder]
+  );
+
+  const confirmScannedLine = useCallback(
+    async (orderId: string): Promise<ScannerScanResult> => {
+      const order = purchaseOrders.find((o) => o.id === orderId);
+      if (!order) {
+        return { ok: false, message: t('purchaseOrders.scanner.notFound') };
+      }
+      if (effectivePurchaseOrderStatus(order.status) !== 'Received') {
+        return { ok: false, message: t('purchaseOrders.scanner.alreadyComplete') };
+      }
+      if (!purchaseOrderHasSkusForVerification(order)) {
+        return { ok: false, message: t('purchaseOrders.scanner.missingSkus') };
+      }
+      const prog = getScanProgress(order);
+      if (!prog.isComplete) {
+        return { ok: false, message: t('purchaseOrders.scanner.scanMoreBeforeConfirm') };
+      }
+
+      setScannerSession(null);
+      openVerificationModalForOrder(order, { fromScanner: true });
+      return {
+        ok: true,
+        readyToConfirm: true,
+        message: t('purchaseOrders.scanner.openingVerificationModal'),
+        order,
+      };
+    },
+    [purchaseOrders, t, openVerificationModalForOrder]
+  );
+
+  const processScannerCode = useCallback(
+    async (
+      invoice: string,
+      code: string,
+      preferredOrderId?: string
+    ): Promise<ScannerScanResult> => {
+      if (preferredOrderId) {
+        return registerScanUnit(preferredOrderId);
+      }
+
+      const matches = findPurchaseOrderLinesByBarcodeScan(purchaseOrders, code, { invoice });
+      if (matches.length === 0) {
+        return { ok: false, message: t('purchaseOrders.scanner.notFound') };
+      }
+      if (matches.length === 1) {
+        return registerScanUnit(matches[0].id);
+      }
+      return {
+        ok: false,
+        message: t('purchaseOrders.scanner.pickLineTitle'),
+        pickCandidates: matches,
+      };
+    },
+    [purchaseOrders, registerScanUnit, t]
+  );
+
+  const runInvoiceMarkReceived = async (orders: PurchaseOrder[]) => {
+    setInvoiceWorkflowBusy(true);
+    try {
+      for (const order of orders) {
+        if (effectivePurchaseOrderStatus(order.status) === 'Ordered') {
+          await handleStatusChange(order, 'Received');
+        }
+      }
+    } finally {
+      setInvoiceWorkflowBusy(false);
+    }
+  };
+
+  const openInvoiceBatchVerify = (invoice: string, orders: PurchaseOrder[]) => {
+    const eligible = orders.filter((o) => o.status === 'Received');
+    const withSkus = eligible.filter(purchaseOrderHasSkusForVerification);
+    if (withSkus.length === 0) {
+      alert(
+        t('purchaseOrders.cannotVerifyInvoiceMissingSkus') ||
+          'No hay líneas recibidas con SKU de proveedor e interno completos.'
+      );
+      return;
+    }
+    if (withSkus.length < eligible.length) {
+      alert(
+        t('purchaseOrders.someLinesMissingSkuForVerify') ||
+          'Algunas líneas recibidas no tienen SKU completo y se omitirán.'
+      );
+    }
+    setInvoiceBatchVerify({ invoice, orders: withSkus });
+  };
+
+  const handleInvoiceBatchVerifyConfirm = async (lines: InvoiceVerifyLineInput[]) => {
+    setBatchVerifySubmitting(true);
+    let verified = 0;
+    try {
+      for (const line of lines) {
+        const order = purchaseOrders.find((o) => o.id === line.orderId);
+        if (!order || order.status !== 'Received') continue;
+        if (!purchaseOrderHasSkusForVerification(order)) continue;
+
+        const result = await completeOrderVerification(
+          order,
+          {
+            actualQuantity: line.actualQuantity,
+            quantityGood: line.quantityGood,
+            quantityProblem: line.quantityProblem,
+            quantityNotReceived: line.quantityNotReceived,
+            comment: line.comment,
+          },
+          order
+        );
+        if (result === 'quantity_mismatch') {
+          setInvoiceBatchVerify(null);
+          return;
+        }
+        verified++;
+      }
+      setInvoiceBatchVerify(null);
+      setToastMessage(
+        (t('purchaseOrders.invoiceVerifiedSuccess') || '{count} líneas verificadas').replace(
+          '{count}',
+          String(verified)
+        )
+      );
+      setTimeout(() => setToastMessage(null), 4000);
+    } finally {
+      setBatchVerifySubmitting(false);
+    }
+  };
+
   const handleVerificationConfirm = async () => {
     if (!verificationData) return;
 
@@ -846,7 +1250,11 @@ export default function PurchaseOrders() {
         quantityProblem: quantityProblem,
         quantityNotReceived: quantityNotReceived,
         verificationComment: comment || undefined,
-        verificationMedia: mediaUrls.length > 0 ? mediaUrls : undefined
+        verificationMedia: mediaUrls.length > 0 ? mediaUrls : undefined,
+        supplierClaimStatus: resolveSupplierClaimStatus(
+          quantityNotReceived,
+          data.updatedOrder.supplierClaimStatus
+        ),
       };
       
       await updatePurchaseOrder(data.updatedOrder.id, updateData);
@@ -888,6 +1296,10 @@ export default function PurchaseOrders() {
       orderData.quantityNotReceived = quantityNotReceived;
       orderData.verificationComment = comment || undefined;
       orderData.verificationMedia = mediaUrls.length > 0 ? mediaUrls : undefined;
+      orderData.supplierClaimStatus = resolveSupplierClaimStatus(
+        quantityNotReceived,
+        updatedOrder.supplierClaimStatus
+      );
       
       // Warn if total quantity doesn't match expected
       if (actualQuantity !== expectedQuantity) {
@@ -935,72 +1347,23 @@ export default function PurchaseOrders() {
       );
       resetForm();
     } else {
-      // Handle status change flow
-      const statusUpdate: Partial<PurchaseOrder> = { 
-        status: 'Verified',
-        quantityReceived: actualQuantity,
-        quantityGood: quantityGood,
-        quantityProblem: quantityProblem,
-        quantityNotReceived: quantityNotReceived,
-        verificationComment: comment || undefined,
-        verificationMedia: mediaUrls.length > 0 ? mediaUrls : undefined
-      };
-      
-      if (!order.receivedDate) {
-        statusUpdate.receivedDate = new Date();
-      }
-      if (!order.verifiedDate) {
-        statusUpdate.verifiedDate = new Date();
-      }
-
-      // Warn if total quantity doesn't match expected
-      if (actualQuantity !== expectedQuantity) {
-        const difference = actualQuantity - expectedQuantity;
-        const diffText = difference > 0 ? `+${difference} ${t('purchaseOrders.more')}` : `${Math.abs(difference)} ${t('purchaseOrders.less')}`;
-        
-        setQuantityMismatchData({
-          expected: expectedQuantity,
-          received: actualQuantity,
-          difference: diffText,
-          order,
-          statusUpdate
-        });
-        setQuantityMismatchConfirmOpen(true);
-        return;
-      }
-
-      await updatePurchaseOrder(order.id, statusUpdate);
-
-      let orderWithGoodQuantity: PurchaseOrder = {
-        ...order,
-        ...statusUpdate,
-        quantity: quantityGood,
-        quantityReceived: quantityGood,
-      } as PurchaseOrder;
-      orderWithGoodQuantity = await attachBarcodeToPurchaseOrderIfNeeded(
-        orderWithGoodQuantity,
-        updatePurchaseOrder,
-        inventory,
-        undefined,
-        purchaseOrders
-      );
-      await syncPurchaseOrderToInventory(
-        orderWithGoodQuantity,
-        inventory,
-        updateInventoryItem,
-        addInventoryItem,
-        deleteInventoryItem,
-        purchaseOrders,
-        undefined,
-        true,
-        stockBaselineOrder,
-        updatePurchaseOrder
+      await completeOrderVerification(
+        order,
+        {
+          actualQuantity,
+          quantityGood,
+          quantityProblem,
+          quantityNotReceived,
+          comment: comment || undefined,
+          mediaUrls,
+        },
+        stockBaselineOrder
       );
     }
   };
 
-  const handleStatusChange = async (order: PurchaseOrder, newStatus: 'Ordered' | 'Shipped' | 'Received' | 'Verified') => {
-    const oldStatus = order.status;
+  const handleStatusChange = async (order: PurchaseOrder, newStatus: PurchaseOrderStatus) => {
+    const oldStatus = effectivePurchaseOrderStatus(order.status);
     
     // SAFEGUARD: Prevent moving backwards from Verified without confirmation
     if (oldStatus === 'Verified' && newStatus !== 'Verified') {
@@ -1035,19 +1398,7 @@ export default function PurchaseOrders() {
         );
         return;
       }
-      setVerificationData({
-        order,
-        orderData: statusUpdate,
-        isEditing: false
-      });
-      setVerificationQuantity(order.quantity.toString());
-      setVerificationQuantityGood(order.quantityGood?.toString() || order.quantity.toString());
-      setVerificationQuantityProblem(order.quantityProblem?.toString() || '0');
-      setVerificationQuantityNotReceived(order.quantityNotReceived?.toString() || '0');
-      setVerificationComment(order.verificationComment || '');
-      setVerificationMediaUrls(order.verificationMedia || []);
-      setVerificationMedia([]);
-      setVerificationModalOpen(true);
+      openVerificationModalForOrder(order, { orderData: statusUpdate });
       return; // Wait for modal confirmation
     }
     
@@ -1114,20 +1465,7 @@ export default function PurchaseOrders() {
   };
 
   const handleEditVerification = (order: PurchaseOrder) => {
-    // Open verification modal in edit mode for verified orders
-    setVerificationData({
-      order,
-      isEditing: true,
-      updatedOrder: order,
-    });
-    setVerificationQuantity(order.quantityReceived?.toString() || order.quantity.toString());
-    setVerificationQuantityGood(order.quantityGood?.toString() || order.quantityReceived?.toString() || order.quantity.toString());
-    setVerificationQuantityProblem(order.quantityProblem?.toString() || '0');
-    setVerificationQuantityNotReceived(order.quantityNotReceived?.toString() || '0');
-    setVerificationComment(order.verificationComment || '');
-    setVerificationMediaUrls(order.verificationMedia || []);
-    setVerificationMedia([]);
-    setVerificationModalOpen(true);
+    openVerificationModalForOrder(order, { isEditing: true, updatedOrder: order });
   };
 
   // Get unique invoices that have at least one unverified order
@@ -1210,7 +1548,7 @@ export default function PurchaseOrders() {
       }
       
       // Status filter
-      if (filterStatus !== 'all' && order.status !== filterStatus) {
+      if (!orderMatchesStatusFilter(order, filterStatus)) {
         return false;
       }
       
@@ -1251,6 +1589,14 @@ export default function PurchaseOrders() {
         if (filterQuantityIssues === 'both' && !hasProblems && !hasMissing) {
           return false;
         }
+        if (filterQuantityIssues === 'claim') {
+          const claimPending =
+            order.supplierClaimStatus === 'pending' || (order.status === 'Verified' && hasMissing);
+          if (!claimPending) return false;
+        }
+        if (filterQuantityIssues === 'scanning' && !hasActiveScanProgress(order)) {
+          return false;
+        }
       }
       
       return true;
@@ -1283,9 +1629,11 @@ export default function PurchaseOrders() {
           bValue = b.quantity;
           break;
         case 'status':
-          const statusOrder = { 'Ordered': 1, 'Shipped': 2, 'Received': 3, 'Verified': 4 };
-          aValue = statusOrder[a.status] || 0;
-          bValue = statusOrder[b.status] || 0;
+          const statusOrder = { Ordered: 1, Received: 2, Verified: 3 };
+          const aStatus = effectivePurchaseOrderStatus(a.status);
+          const bStatus = effectivePurchaseOrderStatus(b.status);
+          aValue = statusOrder[aStatus] || 0;
+          bValue = statusOrder[bStatus] || 0;
           break;
         case 'landedCost':
           aValue = a.landedCostPerUnit;
@@ -1568,6 +1916,17 @@ export default function PurchaseOrders() {
             </button>
           </div>
           
+          <button
+            type="button"
+            onClick={() => setScannerSession({})}
+            className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 transition-all hover:bg-indigo-100 hover:shadow-md"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 16h4.01M8 16H4.01M8 12H4.01M8 8H4.01M12 8h4.01" />
+            </svg>
+            <span>{t('purchaseOrders.scanner.openButton')}</span>
+          </button>
+
           {/* Print Barcodes Button */}
           <div className="relative">
             <button
@@ -1670,8 +2029,43 @@ export default function PurchaseOrders() {
         </div>
           </div>
           
+      {/* Filtro rápido por estado */}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-gray-500">{t('purchaseOrders.status')}:</span>
+        <button
+          type="button"
+          onClick={() => setFilterStatus('all')}
+          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+            filterStatus === 'all'
+              ? 'border-[#515151] bg-[#515151] text-white'
+              : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          {t('purchaseOrders.allStatus')}
+        </button>
+        {PO_ACTIVE_STATUSES.map((st) => (
+          <button
+            key={st}
+            type="button"
+            onClick={() => setFilterStatus(st)}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+              filterStatus === st
+                ? 'border-[#515151] bg-[#515151] text-white'
+                : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            {filterStatus === st ? (
+              <span className="h-2 w-2 shrink-0 rounded-full bg-white" aria-hidden />
+            ) : (
+              <PoStatusIcon status={st} className="h-3.5 w-3.5 shrink-0" />
+            )}
+            {t(`purchaseOrders.${st === 'Ordered' ? 'statusOrdered' : st === 'Received' ? 'statusReceived' : 'statusVerified'}`)}
+          </button>
+        ))}
+      </div>
+
       {/* Column Visibility Control */}
-      <div className="mt-4 flex items-center justify-end gap-3">
+      <div className="mt-3 flex items-center justify-end gap-3">
         {/* Filter Button */}
         <div className="relative">
           <button
@@ -1883,10 +2277,9 @@ export default function PurchaseOrders() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-sm bg-white"
                 >
                   <option value="all">{t('purchaseOrders.allStatus')}</option>
-                  <option value="Ordered">📦 {t('purchaseOrders.ordered')}</option>
-                  <option value="Shipped">🚚 {t('purchaseOrders.shipped')}</option>
-                  <option value="Received">📥 {t('purchaseOrders.received')}</option>
-                  <option value="Verified">✅ {t('purchaseOrders.verified')}</option>
+                  <option value="Ordered">{t('purchaseOrders.statusOrdered')}</option>
+                  <option value="Received">{t('purchaseOrders.statusReceived')}</option>
+                  <option value="Verified">{t('purchaseOrders.statusVerified')}</option>
                 </select>
               </div>
               
@@ -1977,6 +2370,8 @@ export default function PurchaseOrders() {
                 <option value="problems">⚠️ {t('purchaseOrders.withProblems') || 'With Problems'}</option>
                 <option value="missing">✗ {t('purchaseOrders.missingItems') || 'Missing Items'}</option>
                 <option value="both">⚠️✗ {t('purchaseOrders.problemsOrMissing') || 'Problems or Missing'}</option>
+                <option value="claim">📋 {t('purchaseOrders.claimPendingFilter') || 'Reclamación pendiente'}</option>
+                <option value="scanning">📷 {t('purchaseOrders.scanInProgressFilter') || 'Escaneo en progreso'}</option>
               </select>
             </div>
             
@@ -2824,6 +3219,21 @@ export default function PurchaseOrders() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
                         <div className="flex flex-col items-end gap-1">
                           <span className="text-gray-700">{order.quantity}</span>
+                          {effectivePurchaseOrderStatus(order.status) === 'Received' &&
+                            getScanProgress(order).scanned > 0 && (
+                              <span
+                                className={`text-xs font-semibold ${
+                                  isLineReadyToConfirm(order) ? 'text-amber-700' : 'text-indigo-700'
+                                }`}
+                              >
+                                {(isLineReadyToConfirm(order)
+                                  ? t('purchaseOrders.scanProgressReady')
+                                  : t('purchaseOrders.scanProgressPartial')
+                                )
+                                  .replace('{scanned}', String(getScanProgress(order).scanned))
+                                  .replace('{expected}', String(getScanProgress(order).expected))}
+                              </span>
+                            )}
                           {order.status === 'Verified' && (
                             <div className="flex flex-col items-end gap-0.5 text-xs">
                               {order.quantityGood !== undefined && order.quantityGood > 0 && (
@@ -2853,28 +3263,12 @@ export default function PurchaseOrders() {
                       )}
                       {!hiddenColumns.has('status') && (
                       <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <select
-                            value={order.status || 'Ordered'}
-                            onChange={(e) => handleStatusChange(order, e.target.value as PurchaseOrderStatus)}
-                            className={`text-xs font-medium px-2 py-1 rounded-full border-0 focus:ring-2 focus:ring-[#515151] ${
-                              order.status === 'Verified' ? 'bg-green-100 text-green-800 font-bold' :
-                              order.status === 'Received' ? 'bg-blue-100 text-blue-800' :
-                              order.status === 'Shipped' ? 'bg-purple-100 text-purple-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}
-                          >
-                            <option value="Ordered">📦 {t('purchaseOrders.statusOrdered')}</option>
-                            <option value="Shipped">🚚 {t('purchaseOrders.statusShipped')}</option>
-                            <option value="Received">📥 {t('purchaseOrders.statusReceived')}</option>
-                            <option value="Verified">✅ {t('purchaseOrders.statusVerified')}</option>
-                          </select>
-                          {order.status === 'Verified' && (
-                            <span className="text-green-600 text-xs" title={t('purchaseOrders.inventoryUpdated')}>
-                              🔒
-                            </span>
-                          )}
-                        </div>
+                        <PurchaseOrderStatusCell
+                          order={order}
+                          onStatusChange={handleStatusChange}
+                          onAdvance={handleAdvanceStatus}
+                          onEditVerification={handleEditVerification}
+                        />
                       </td>
                       )}
                       {!hiddenColumns.has('landedCost') && (
@@ -2986,14 +3380,20 @@ export default function PurchaseOrders() {
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-4">
-                            <div className="text-right">
-                              <div className="text-sm font-medium text-gray-900">
-                                ${totalValue.toFixed(2)}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                {t('purchaseOrders.totalValue')}
-                                </div>
+                            <div className="flex flex-wrap items-center gap-4">
+                              {groupByField === 'invoice' && (
+                                <InvoiceStatusActionsBar
+                                  invoice={groupKey}
+                                  orders={orders}
+                                  busy={invoiceWorkflowBusy}
+                                  onMarkReceived={() => void runInvoiceMarkReceived(orders)}
+                                  onVerifyInvoice={() => openInvoiceBatchVerify(groupKey, orders)}
+                                  onOpenScanner={() => setScannerSession({ initialInvoice: groupKey })}
+                                />
+                              )}
+                              <div className="text-right">
+                                <div className="text-sm font-medium text-gray-900">${totalValue.toFixed(2)}</div>
+                                <div className="text-xs text-gray-500">{t('purchaseOrders.totalValue')}</div>
                               </div>
                             </div>
                           </div>
@@ -3072,6 +3472,21 @@ export default function PurchaseOrders() {
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
                                 <div className="flex flex-col items-end gap-0.5">
                                   <span>{order.quantity}</span>
+                                  {effectivePurchaseOrderStatus(order.status) === 'Received' &&
+                                    getScanProgress(order).scanned > 0 && (
+                                      <span
+                                        className={`text-xs font-semibold ${
+                                          isLineReadyToConfirm(order) ? 'text-amber-700' : 'text-indigo-700'
+                                        }`}
+                                      >
+                                        {(isLineReadyToConfirm(order)
+                                          ? t('purchaseOrders.scanProgressReady')
+                                          : t('purchaseOrders.scanProgressPartial')
+                                        )
+                                          .replace('{scanned}', String(getScanProgress(order).scanned))
+                                          .replace('{expected}', String(getScanProgress(order).expected))}
+                                      </span>
+                                    )}
                                   {order.status === 'Verified' && (
                                     <div className="flex flex-col items-end gap-0.5 text-xs">
                                       {order.quantityGood !== undefined && order.quantityGood > 0 && (
@@ -3103,16 +3518,13 @@ export default function PurchaseOrders() {
                             {/* Status */}
                             {!hiddenColumns.has('status') && (
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                <div className="flex items-center gap-2">
-                                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                    order.status === 'Verified' ? 'bg-green-100 text-green-800' :
-                                    order.status === 'Received' ? 'bg-blue-100 text-blue-800' :
-                                    order.status === 'Shipped' ? 'bg-yellow-100 text-yellow-800' :
-                                    'bg-gray-100 text-gray-800'
-                                  }`}>
-                                    {order.status === 'Verified' ? '✅' : order.status === 'Received' ? '📥' : order.status === 'Shipped' ? '🚚' : '📦'} {order.status === 'Verified' ? t('purchaseOrders.statusVerified') : order.status === 'Received' ? t('purchaseOrders.statusReceived') : order.status === 'Shipped' ? t('purchaseOrders.statusShipped') : t('purchaseOrders.statusOrdered')}
-                                  </span>
-                                </div>
+                                <PurchaseOrderStatusCell
+                                  order={order}
+                                  compact
+                                  onStatusChange={handleStatusChange}
+                                  onAdvance={handleAdvanceStatus}
+                                  onEditVerification={handleEditVerification}
+                                />
                               </td>
                             )}
                             
@@ -3335,56 +3747,49 @@ export default function PurchaseOrders() {
       {isBulkStatusChangeOpen && (
         <BulkStatusChangeModal
           purchaseOrders={purchaseOrders}
+          suppliers={suppliers}
           onClose={() => setIsBulkStatusChangeOpen(false)}
-          onBulkStatusChange={async (orderIds, newStatus) => {
+          onBulkAdvance={async (orderIds) => {
+            let advanced = 0;
             for (const orderId of orderIds) {
               const order = purchaseOrders.find((o) => o.id === orderId);
               if (!order) continue;
-
-              const statusUpdate: Partial<PurchaseOrder> = { status: newStatus };
-
-              if (newStatus === 'Received' && !order.receivedDate) {
-                statusUpdate.receivedDate = new Date();
-              }
-
-              await updatePurchaseOrder(orderId, statusUpdate);
-
-              let updatedOrder: PurchaseOrder = { ...order, ...statusUpdate } as PurchaseOrder;
-              if (updatedOrder.sku) {
-                updatedOrder = await attachBarcodeToPurchaseOrderIfNeeded(
-                  updatedOrder,
-                  updatePurchaseOrder,
-                  inventory,
-                  undefined,
-                  purchaseOrders
-                );
-              }
-
-              if (order.status !== 'Verified') {
-                try {
-                  await syncPurchaseOrderToInventory(
-                    updatedOrder,
-                    inventory,
-                    updateInventoryItem,
-                    addInventoryItem,
-                    deleteInventoryItem,
-                    purchaseOrders,
-                    undefined,
-                    updatedOrder.status === 'Verified',
-                    undefined,
-                    updatePurchaseOrder
-                  );
-                } catch (err) {
-                  console.error('Error syncing to inventory:', err);
-                }
-              }
+              const next = getNextStatus(order.status);
+              if (!next || next === 'Verified') continue;
+              await handleStatusChange(order, next);
+              advanced++;
             }
             setToastMessage(
-              t('purchaseOrders.statusChangedSuccessfully')?.replace('{count}', orderIds.length.toString()) ||
-                `Status changed successfully for ${orderIds.length} order(s)`
+              (t('purchaseOrders.bulkAdvanceSuccess') || 'Avanzadas {count} órdenes').replace(
+                '{count}',
+                String(advanced)
+              )
             );
-            setTimeout(() => setToastMessage(null), 3000);
+            setTimeout(() => setToastMessage(null), 4000);
           }}
+        />
+      )}
+
+      {scannerSession && (
+        <POScannerVerificationSession
+          purchaseOrders={purchaseOrders}
+          suppliers={suppliers}
+          initialInvoice={scannerSession.initialInvoice ?? null}
+          onClose={() => setScannerSession(null)}
+          onProcessScan={processScannerCode}
+          onRegisterUnit={registerScanUnit}
+          onUndoScanUnit={undoScanUnit}
+          onConfirmLine={confirmScannedLine}
+        />
+      )}
+
+      {invoiceBatchVerify && (
+        <InvoiceBatchVerificationModal
+          invoice={invoiceBatchVerify.invoice}
+          orders={invoiceBatchVerify.orders}
+          submitting={batchVerifySubmitting}
+          onClose={() => setInvoiceBatchVerify(null)}
+          onConfirm={handleInvoiceBatchVerifyConfirm}
         />
       )}
 
@@ -3531,11 +3936,32 @@ export default function PurchaseOrders() {
                 </h3>
               </div>
               <p className="text-sm text-gray-600 mt-2">
-                {t('purchaseOrders.inventoryVerificationSubtitle') || 'Enter the actual quantity received and counted'}
+                {verificationData.fromScanner
+                  ? t('purchaseOrders.inventoryVerificationSubtitleScanner')
+                  : t('purchaseOrders.inventoryVerificationSubtitle') ||
+                    'Enter the actual quantity received and counted'}
               </p>
             </div>
             
             <div className="px-6 py-5 space-y-4 overflow-y-auto flex-1 min-h-0 overscroll-contain">
+              {verificationData.fromScanner && (
+                <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
+                  {(t('purchaseOrders.scannerConfirmHint') || '')
+                    .replace('{scanned}', String(getScanProgress(verificationData.order).scanned))
+                    .replace('{expected}', String(verificationData.order.quantity))}
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={applyVerificationAllNotReceived}
+                  className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-100"
+                >
+                  {t('purchaseOrders.markAllNotReceived')}
+                </button>
+              </div>
+
               <div className="bg-gray-50 rounded-lg p-4 space-y-3">
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
@@ -3648,11 +4074,19 @@ export default function PurchaseOrders() {
                         .replace('{notReceived}', notReceived.toString())
                         .replace('{total}', sum.toString())
                         .replace('{received}', total.toString());
+                      const claimPending = notReceived > 0;
                       return (
-                        <span className={isValid ? 'text-blue-900' : 'text-red-600 font-medium'}>
-                          {breakdownText}
-                          {!isValid && ' ⚠️'}
-                        </span>
+                        <>
+                          <span className={isValid ? 'text-blue-900' : 'text-red-600 font-medium'}>
+                            {breakdownText}
+                            {!isValid && ' ⚠️'}
+                          </span>
+                          {claimPending && isValid && (
+                            <p className="mt-2 text-xs font-medium text-red-700">
+                              {t('purchaseOrders.claimWillBePending')}
+                            </p>
+                          )}
+                        </>
                       );
                     })()}
                   </p>
