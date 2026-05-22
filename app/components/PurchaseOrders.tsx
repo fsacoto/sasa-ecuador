@@ -3749,20 +3749,18 @@ export default function PurchaseOrders() {
           purchaseOrders={purchaseOrders}
           suppliers={suppliers}
           onClose={() => setIsBulkStatusChangeOpen(false)}
-          onBulkAdvance={async (orderIds) => {
-            let advanced = 0;
+          onBulkStatusChange={async (orderIds, newStatus) => {
+            let changed = 0;
             for (const orderId of orderIds) {
               const order = purchaseOrders.find((o) => o.id === orderId);
               if (!order) continue;
-              const next = getNextStatus(order.status);
-              if (!next || next === 'Verified') continue;
-              await handleStatusChange(order, next);
-              advanced++;
+              await handleStatusChange(order, newStatus);
+              changed++;
             }
             setToastMessage(
-              (t('purchaseOrders.bulkAdvanceSuccess') || 'Avanzadas {count} órdenes').replace(
+              (t('purchaseOrders.statusChangedSuccessfully') || 'Estado cambiado para {count} órdenes').replace(
                 '{count}',
-                String(advanced)
+                String(changed)
               )
             );
             setTimeout(() => setToastMessage(null), 4000);
