@@ -18,6 +18,15 @@ import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../context/TranslationContext';
 import ConfirmDialog from './ui/ConfirmDialog';
+import TableSortIcon from './ui/TableSortIcon';
+import {
+  tableTheadClass,
+  tableThAlignClass,
+  tableThBaseClass,
+  tableThLabelFlexClass,
+  tableThSortableClass,
+} from './ui/tableHeaderClass';
+import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 import AlertDialog from './ui/AlertDialog';
 import MonthYearSelectEs from './ui/MonthYearSelectEs';
 import ConsignmentReturnModal from './ConsignmentReturnModal';
@@ -740,11 +749,6 @@ export default function Consignments() {
     setExpandedGroups(new Set());
   }, [groupByField]);
 
-  const SortIcon = ({ columnKey }: { columnKey: string }) => {
-    if (sortConfig.key !== columnKey) return <span className="text-gray-400">↕</span>;
-    return sortConfig.direction === 'asc' ? <span>↑</span> : <span>↓</span>;
-  };
-
   const activeListFiltersCount = [
     filterMonth,
     dateFrom,
@@ -805,9 +809,9 @@ export default function Consignments() {
           <button
             type="button"
             onClick={() => handleViewDetails(consignment)}
-            className="flex items-center gap-1.5 rounded-lg bg-blue-100 px-3 py-1.5 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-200"
+            className={tableRowActionButtonClass}
           >
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
             </svg>
@@ -816,9 +820,9 @@ export default function Consignments() {
           <button
             type="button"
             onClick={() => handleDeleteClick(consignment)}
-            className="flex items-center gap-1.5 rounded-lg bg-red-100 px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-200"
+            className={tableRowActionButtonClass}
           >
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
             </svg>
             {t('consignments.delete') || t('common.delete')}
@@ -1099,72 +1103,84 @@ export default function Consignments() {
 
             <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
               <table className="w-full min-w-max">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className={tableTheadClass}>
                 <tr>
-                  <th 
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  <th
+                    className={`${tableThSortableClass} ${tableThAlignClass('left')}`}
                     onClick={() => handleSort('consignmentId')}
                   >
-                    <div className="flex items-center gap-1">
+                    <div className={tableThLabelFlexClass('left')}>
                       {t('consignments.consignmentId')}
-                      <SortIcon columnKey="consignmentId" />
+                      <TableSortIcon
+                        columnKey="consignmentId"
+                        activeKey={sortConfig.key}
+                        direction={sortConfig.direction}
+                      />
                     </div>
                   </th>
-                  <th 
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  <th
+                    className={`${tableThSortableClass} ${tableThAlignClass('left')}`}
                     onClick={() => handleSort('clientName')}
                   >
-                    <div className="flex items-center gap-1">
+                    <div className={tableThLabelFlexClass('left')}>
                       {t('consignments.clientName')}
-                      <SortIcon columnKey="clientName" />
+                      <TableSortIcon columnKey="clientName" activeKey={sortConfig.key} direction={sortConfig.direction} />
                     </div>
                   </th>
-                  <th 
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  <th
+                    className={`${tableThSortableClass} ${tableThAlignClass('left')}`}
                     onClick={() => handleSort('dateCreated')}
                   >
-                    <div className="flex items-center gap-1">
+                    <div className={tableThLabelFlexClass('left')}>
                       {t('consignments.dateCreated')}
-                      <SortIcon columnKey="dateCreated" />
+                      <TableSortIcon columnKey="dateCreated" activeKey={sortConfig.key} direction={sortConfig.direction} />
                     </div>
                   </th>
-                  <th 
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  <th
+                    className={`${tableThSortableClass} ${tableThAlignClass('left')}`}
                     onClick={() => handleSort('status')}
                   >
-                    <div className="flex items-center gap-1">
+                    <div className={tableThLabelFlexClass('left')}>
                       {t('consignments.status')}
-                      <SortIcon columnKey="status" />
+                      <TableSortIcon columnKey="status" activeKey={sortConfig.key} direction={sortConfig.direction} />
                     </div>
                   </th>
-                  <th 
-                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  <th
+                    className={`${tableThSortableClass} ${tableThAlignClass('center')}`}
                     onClick={() => handleSort('totalItemsDelivered')}
                   >
-                    <div className="flex items-center justify-center gap-1">
+                    <div className={tableThLabelFlexClass('center')}>
                       {t('consignments.totalItemsDelivered')}
-                      <SortIcon columnKey="totalItemsDelivered" />
+                      <TableSortIcon
+                        columnKey="totalItemsDelivered"
+                        activeKey={sortConfig.key}
+                        direction={sortConfig.direction}
+                      />
                     </div>
                   </th>
-                  <th 
-                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  <th
+                    className={`${tableThSortableClass} ${tableThAlignClass('center')}`}
                     onClick={() => handleSort('totalSold')}
                   >
-                    <div className="flex items-center justify-center gap-1">
+                    <div className={tableThLabelFlexClass('center')}>
                       {t('consignments.totalSold')}
-                      <SortIcon columnKey="totalSold" />
+                      <TableSortIcon columnKey="totalSold" activeKey={sortConfig.key} direction={sortConfig.direction} />
                     </div>
                   </th>
-                  <th 
-                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  <th
+                    className={`${tableThSortableClass} ${tableThAlignClass('center')}`}
                     onClick={() => handleSort('totalReturned')}
                   >
-                    <div className="flex items-center justify-center gap-1">
+                    <div className={tableThLabelFlexClass('center')}>
                       {t('consignments.totalReturned')}
-                      <SortIcon columnKey="totalReturned" />
+                      <TableSortIcon
+                        columnKey="totalReturned"
+                        activeKey={sortConfig.key}
+                        direction={sortConfig.direction}
+                      />
                     </div>
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.actions')}</th>
+                  <th className={`${tableThBaseClass} ${tableThAlignClass('center')}`}>{t('consignments.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">

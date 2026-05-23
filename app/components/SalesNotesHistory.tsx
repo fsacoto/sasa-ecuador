@@ -11,6 +11,16 @@ import { downloadSalesInvoicePdf } from '../utils/salesInvoicePdf';
 import AlertDialog from './ui/AlertDialog';
 import MonthYearSelectEs from './ui/MonthYearSelectEs';
 import InvoiceEditModal from './InvoiceEditModal';
+import TableSortIcon from './ui/TableSortIcon';
+import {
+  tableTheadClass,
+  tableThAlignClass,
+  tableThBaseClass,
+  tableThLabelFlexClass,
+  tableThSortableClass,
+  type TableThAlign,
+} from './ui/tableHeaderClass';
+import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 import { formatDateDMY, formatMonthYearLong } from '../utils/formatDate';
 
 const SESSION_TRACKING_FOCUS = 'sasa_focus_invoice_tracking_id';
@@ -321,14 +331,14 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
     setFilterMonth('');
   };
 
-  const thSortable = (field: typeof sortKey, label: string) => (
+  const thSortable = (field: typeof sortKey, label: string, align: TableThAlign = 'left') => (
     <th
-      className="cursor-pointer px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 transition-colors hover:bg-gray-100"
+      className={`${tableThSortableClass} ${tableThAlignClass(align)}`}
       onClick={() => toggleSort(field)}
     >
-      <div className="flex items-center gap-1">
+      <div className={tableThLabelFlexClass(align)}>
         {label}
-        {sortKey === field && <span className="text-[#515151]">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+        <TableSortIcon columnKey={field} activeKey={sortKey} direction={sortDir} />
       </div>
     </th>
   );
@@ -344,41 +354,29 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className={tableTheadClass}>
               <tr>
                 {!hiddenColumns.has('comprobante') &&
                   thSortable('invoiceNumber', t('salesNotes.comprobante'))}
                 {!hiddenColumns.has('client') && (
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                  <th className={`${tableThBaseClass} ${tableThAlignClass('left')}`}>
                     {t('invoiceTracking.client')}
                   </th>
                 )}
                 {!hiddenColumns.has('date') && thSortable('date', t('invoiceTracking.invoiceDate'))}
-                {!hiddenColumns.has('total') && (
-                  <th
-                    className="cursor-pointer px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 transition-colors hover:bg-gray-100"
-                    onClick={() => toggleSort('grandTotal')}
-                  >
-                    <div className="flex items-center justify-end gap-1">
-                      {t('invoiceTracking.total')}
-                      {sortKey === 'grandTotal' && (
-                        <span className="text-[#515151]">{sortDir === 'asc' ? '↑' : '↓'}</span>
-                      )}
-                    </div>
-                  </th>
-                )}
+                {!hiddenColumns.has('total') && thSortable('grandTotal', t('invoiceTracking.total'), 'right')}
                 {!hiddenColumns.has('payment') && (
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                  <th className={`${tableThBaseClass} ${tableThAlignClass('left')}`}>
                     {t('invoiceTracking.paymentStatus')}
                   </th>
                 )}
                 {!hiddenColumns.has('delivery') && (
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                  <th className={`${tableThBaseClass} ${tableThAlignClass('left')}`}>
                     {t('invoiceTracking.deliveryStatus')}
                   </th>
                 )}
                 {!hiddenColumns.has('actions') && (
-                  <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">
+                  <th className={`${tableThBaseClass} ${tableThAlignClass('center')}`}>
                     {t('inventory.actions')}
                   </th>
                 )}
@@ -433,13 +431,13 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
                               closeSalesNotesActionsMenu();
                             }
                           }}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+                          className={tableRowActionButtonClass}
                           aria-expanded={salesNotesActionsMenuId === inv.id}
                           aria-haspopup="menu"
                         >
                           {t('invoiceTracking.actions')}
                           <svg
-                            className="h-3.5 w-3.5 text-gray-500"
+                            className="h-3.5 w-3.5 shrink-0 text-gray-500"
                             fill="none"
                             viewBox="0 0 24 24"
                             stroke="currentColor"

@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import { useState, useEffect, useRef } from 'react';
 import { Client } from '../types';
 import { 
   getAllClients, 
@@ -12,6 +11,15 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../context/TranslationContext';
 import ConfirmDialog from './ui/ConfirmDialog';
+import TableSortIcon from './ui/TableSortIcon';
+import {
+  tableTheadClass,
+  tableThAlignClass,
+  tableThBaseClass,
+  tableThLabelFlexClass,
+  tableThSortableClass,
+} from './ui/tableHeaderClass';
+import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 
 export default function Clients() {
   const { user, hasPermission } = useAuth();
@@ -39,27 +47,6 @@ export default function Clients() {
   const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
   const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc' | 'desc'}>({key: 'name', direction: 'asc'});
 
-  const [clientActionsMenuId, setClientActionsMenuId] = useState<string | null>(null);
-  const [clientActionsMenuPos, setClientActionsMenuPos] = useState<{ top: number; left: number } | null>(null);
-  const clientActionsButtonRef = useRef<HTMLButtonElement | null>(null);
-  const CLIENT_MENU_MIN_WIDTH = 192;
-
-  const syncClientActionsMenuPosition = useCallback(() => {
-    const btn = clientActionsButtonRef.current;
-    if (!btn) return;
-    const r = btn.getBoundingClientRect();
-    const pad = 8;
-    let left = r.right - CLIENT_MENU_MIN_WIDTH;
-    left = Math.max(pad, Math.min(left, window.innerWidth - CLIENT_MENU_MIN_WIDTH - pad));
-    setClientActionsMenuPos({ top: r.bottom + 4, left });
-  }, []);
-
-  const closeClientActionsMenu = useCallback(() => {
-    setClientActionsMenuId(null);
-    setClientActionsMenuPos(null);
-    clientActionsButtonRef.current = null;
-  }, []);
-
   useEffect(() => {
     loadClients();
   }, []);
@@ -76,15 +63,6 @@ export default function Clients() {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    const closeOnOutside = (e: MouseEvent) => {
-      const el = (e.target as HTMLElement).closest('[data-client-actions-root]');
-      if (!el) closeClientActionsMenu();
-    };
-    document.addEventListener('mousedown', closeOnOutside);
-    return () => document.removeEventListener('mousedown', closeOnOutside);
-  }, [closeClientActionsMenu]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -106,25 +84,6 @@ export default function Clients() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showColumnDropdown, showSearchDropdown]);
-
-  useLayoutEffect(() => {
-    if (!clientActionsMenuId) {
-      setClientActionsMenuPos(null);
-      return;
-    }
-    syncClientActionsMenuPosition();
-  }, [clientActionsMenuId, syncClientActionsMenuPosition]);
-
-  useEffect(() => {
-    if (!clientActionsMenuId) return;
-    const onScrollOrResize = () => syncClientActionsMenuPosition();
-    window.addEventListener('resize', onScrollOrResize);
-    window.addEventListener('scroll', onScrollOrResize, true);
-    return () => {
-      window.removeEventListener('resize', onScrollOrResize);
-      window.removeEventListener('scroll', onScrollOrResize, true);
-    };
-  }, [clientActionsMenuId, syncClientActionsMenuPosition]);
 
   const openModal = (client?: Client) => {
     if (client) {
@@ -228,11 +187,6 @@ export default function Clients() {
     });
   };
 
-  const SortIcon = ({ columnKey }: { columnKey: string }) => {
-    if (sortConfig.key !== columnKey) return <span className="text-gray-400">↕</span>;
-    return sortConfig.direction === 'asc' ? <span>↑</span> : <span>↓</span>;
-  };
-
   const sortedClients = [...filteredClients].sort((a, b) => {
     let aVal: string | number | Date | undefined = a[sortConfig.key as keyof Client];
     let bVal: string | number | Date | undefined = b[sortConfig.key as keyof Client];
@@ -251,10 +205,6 @@ export default function Clients() {
     if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
     return 0;
   });
-
-  const clientForActionsMenu = clientActionsMenuId
-    ? sortedClients.find((c) => c.id === clientActionsMenuId)
-    : undefined;
 
   const getVisibleColumns = () => [
     { key: 'name', label: t('clients.name') },
@@ -417,76 +367,76 @@ export default function Clients() {
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className={tableTheadClass}>
               <tr>
                 {!hiddenColumns.has('name') && (
                   <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    className={`${tableThSortableClass} ${tableThAlignClass('left')}`}
                     onClick={() => handleSort('name')}
                   >
-                    <div className="flex items-center gap-1">
+                    <div className={tableThLabelFlexClass('left')}>
                       {t('clients.name')}
-                      <SortIcon columnKey="name" />
+                      <TableSortIcon columnKey="name" activeKey={sortConfig.key} direction={sortConfig.direction} />
                     </div>
                   </th>
                 )}
                 {!hiddenColumns.has('email') && (
                   <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    className={`${tableThSortableClass} ${tableThAlignClass('left')}`}
                     onClick={() => handleSort('email')}
                   >
-                    <div className="flex items-center gap-1">
+                    <div className={tableThLabelFlexClass('left')}>
                       {t('clients.email')}
-                      <SortIcon columnKey="email" />
+                      <TableSortIcon columnKey="email" activeKey={sortConfig.key} direction={sortConfig.direction} />
                     </div>
                   </th>
                 )}
                 {!hiddenColumns.has('phone') && (
                   <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    className={`${tableThSortableClass} ${tableThAlignClass('left')}`}
                     onClick={() => handleSort('phone')}
                   >
-                    <div className="flex items-center gap-1">
+                    <div className={tableThLabelFlexClass('left')}>
                       {t('clients.phone')}
-                      <SortIcon columnKey="phone" />
+                      <TableSortIcon columnKey="phone" activeKey={sortConfig.key} direction={sortConfig.direction} />
                     </div>
                   </th>
                 )}
                 {!hiddenColumns.has('address') && (
                   <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    className={`${tableThSortableClass} ${tableThAlignClass('left')}`}
                     onClick={() => handleSort('address')}
                   >
-                    <div className="flex items-center gap-1">
+                    <div className={tableThLabelFlexClass('left')}>
                       {t('clients.address')}
-                      <SortIcon columnKey="address" />
+                      <TableSortIcon columnKey="address" activeKey={sortConfig.key} direction={sortConfig.direction} />
                     </div>
                   </th>
                 )}
                 {!hiddenColumns.has('city') && (
                   <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    className={`${tableThSortableClass} ${tableThAlignClass('left')}`}
                     onClick={() => handleSort('city')}
                   >
-                    <div className="flex items-center gap-1">
+                    <div className={tableThLabelFlexClass('left')}>
                       {t('clients.city')}
-                      <SortIcon columnKey="city" />
+                      <TableSortIcon columnKey="city" activeKey={sortConfig.key} direction={sortConfig.direction} />
                     </div>
                   </th>
                 )}
                 {!hiddenColumns.has('country') && (
                   <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    className={`${tableThSortableClass} ${tableThAlignClass('left')}`}
                     onClick={() => handleSort('country')}
                   >
-                    <div className="flex items-center gap-1">
+                    <div className={tableThLabelFlexClass('left')}>
                       {t('clients.country')}
-                      <SortIcon columnKey="country" />
+                      <TableSortIcon columnKey="country" activeKey={sortConfig.key} direction={sortConfig.direction} />
                     </div>
                   </th>
                 )}
                 {!hiddenColumns.has('actions') && (
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className={`${tableThBaseClass} ${tableThAlignClass('center')}`}>
                     {t('clients.actions')}
                   </th>
                 )}
@@ -528,27 +478,31 @@ export default function Clients() {
                   {!hiddenColumns.has('actions') && (
                     <td className="px-6 py-4 whitespace-nowrap text-center">
                       {canEdit(client) || canDelete(client) ? (
-                        <div className="inline-flex justify-center" data-client-actions-root>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              const opening = clientActionsMenuId !== client.id;
-                              if (opening) {
-                                clientActionsButtonRef.current = e.currentTarget;
-                                setClientActionsMenuId(client.id);
-                              } else {
-                                closeClientActionsMenu();
-                              }
-                            }}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
-                            aria-expanded={clientActionsMenuId === client.id}
-                            aria-haspopup="menu"
-                          >
-                            {t('clients.actions')}
-                            <svg className="h-3.5 w-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </button>
+                        <div className="flex items-center justify-center gap-2">
+                          {canEdit(client) && (
+                            <button
+                              type="button"
+                              onClick={() => openModal(client)}
+                              className={tableRowActionButtonClass}
+                            >
+                              <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                              {t('clients.edit')}
+                            </button>
+                          )}
+                          {canDelete(client) && (
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(client)}
+                              className={tableRowActionButtonClass}
+                            >
+                              <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                              {t('clients.delete')}
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <span className="text-sm text-gray-400">—</span>
@@ -561,53 +515,6 @@ export default function Clients() {
           </table>
         </div>
       )}
-
-      {clientActionsMenuId &&
-        clientActionsMenuPos &&
-        clientForActionsMenu &&
-        typeof document !== 'undefined' &&
-        createPortal(
-          <div
-            data-client-actions-root
-            role="menu"
-            className="fixed z-[100] min-w-[12rem] rounded-lg border border-gray-200 bg-white py-1 text-left shadow-lg"
-            style={{ top: clientActionsMenuPos.top, left: clientActionsMenuPos.left }}
-          >
-            {canEdit(clientForActionsMenu) && (
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                onClick={() => {
-                  openModal(clientForActionsMenu);
-                  closeClientActionsMenu();
-                }}
-              >
-                <svg className="h-4 w-4 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-                {t('clients.edit')}
-              </button>
-            )}
-            {canDelete(clientForActionsMenu) && (
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
-                onClick={() => {
-                  handleDelete(clientForActionsMenu);
-                  closeClientActionsMenu();
-                }}
-              >
-                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-                {t('clients.delete')}
-              </button>
-            )}
-          </div>,
-          document.body
-        )}
 
       {/* Modal */}
       {showModal && (

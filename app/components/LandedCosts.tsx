@@ -6,6 +6,8 @@ import { AdditionalCost, AdditionalCostType } from '../types';
 import { useTranslation } from '../context/TranslationContext';
 import ConfirmDialog from './ui/ConfirmDialog';
 import AlertDialog from './ui/AlertDialog';
+import TableSortIcon from './ui/TableSortIcon';
+import { tableThAlignClass, tableThLabelFlexClass } from './ui/tableHeaderClass';
 import { formatDateMedium, formatMonthYearLong, toValidDate } from '../utils/formatDate';
 
 const FIXED_COST_TYPES: AdditionalCostType[] = [
@@ -55,6 +57,8 @@ const emptyFormCosts = () =>
     description: '',
   }));
 
+type BreakdownSortKey = 'product' | 'quantity' | 'base' | 'allocation' | 'landed';
+
 export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
   const {
     purchaseOrders,
@@ -88,6 +92,10 @@ export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
     costs: emptyFormCosts(),
     date: new Date().toISOString().split('T')[0],
     comments: '',
+  });
+  const [breakdownSort, setBreakdownSort] = useState<{ key: BreakdownSortKey; direction: 'asc' | 'desc' }>({
+    key: 'product',
+    direction: 'asc',
   });
 
   const formRef = useRef<HTMLDivElement>(null);
@@ -153,11 +161,53 @@ export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
   const invoiceAdditionalCosts = selectedInvoice ? getAdditionalCostsByInvoice(selectedInvoice) : [];
   const landedCostCalculation = selectedInvoice ? calculateLandedCosts(selectedInvoice) : null;
 
+  const handleBreakdownSort = (key: BreakdownSortKey) => {
+    setBreakdownSort((current) => ({
+      key,
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+    }));
+  };
+
+  const sortedBreakdownItems = useMemo(() => {
+    if (!landedCostCalculation) return [];
+    const items = [...landedCostCalculation.items];
+    const dir = breakdownSort.direction === 'asc' ? 1 : -1;
+    items.sort((a, b) => {
+      let cmp = 0;
+      switch (breakdownSort.key) {
+        case 'product':
+          cmp = a.sku.localeCompare(b.sku, undefined, { sensitivity: 'base' });
+          if (cmp === 0) {
+            cmp = a.description.localeCompare(b.description, undefined, { sensitivity: 'base' });
+          }
+          break;
+        case 'quantity':
+          cmp = a.quantity - b.quantity;
+          break;
+        case 'base':
+          cmp = a.baseItemTotal - b.baseItemTotal;
+          break;
+        case 'allocation':
+          cmp = a.additionalCostAllocation - b.additionalCostAllocation;
+          break;
+        case 'landed':
+          cmp = a.finalItemTotal - b.finalItemTotal;
+          break;
+      }
+      return cmp * dir;
+    });
+    return items;
+  }, [landedCostCalculation, breakdownSort]);
+
   useEffect(() => {
     if (selectedInvoice && !filteredInvoices.some((inv) => inv.invoiceNumber === selectedInvoice)) {
       setSelectedInvoice('');
     }
   }, [filteredInvoices, selectedInvoice]);
+
+  useEffect(() => {
+    setBreakdownSort({ key: 'product', direction: 'asc' });
+  }, [selectedInvoice]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -254,6 +304,10 @@ export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
   const tableHead = darkMode ? 'border-gray-700 bg-[#161616]' : 'border-gray-200 bg-gray-50';
   const tableDivide = darkMode ? 'divide-gray-700' : 'divide-gray-100';
   const brandText = darkMode ? 'text-white' : 'text-[#515151]';
+  const breakdownThSortable = `px-4 py-2.5 text-xs font-medium uppercase tracking-wider cursor-pointer transition-colors ${tableThAlignClass('center')} ${
+    darkMode ? `${textSecondary} hover:bg-white/5` : 'text-gray-500 hover:bg-gray-100'
+  }`;
+  const breakdownThStatic = `px-4 py-2.5 text-xs font-medium uppercase tracking-wider ${tableThAlignClass('center')} ${textSecondary}`;
 
   const formatCostBadge = (count: number) =>
     count === 1
@@ -563,27 +617,62 @@ export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
                     <table className="w-full min-w-[520px] text-sm">
                       <thead className={`border-b ${tableHead}`}>
                         <tr>
-                          <th className={`px-4 py-2.5 text-left text-[11px] font-semibold uppercase ${textSecondary}`}>
-                            {t('landedCosts.product')}
+                          <th className={breakdownThSortable} onClick={() => handleBreakdownSort('product')}>
+                            <div className={tableThLabelFlexClass('center')}>
+                              {t('landedCosts.product')}
+                              <TableSortIcon
+                                columnKey="product"
+                                activeKey={breakdownSort.key}
+                                direction={breakdownSort.direction}
+                              />
+                            </div>
                           </th>
-                          <th className={`px-4 py-2.5 text-right text-[11px] font-semibold uppercase ${textSecondary}`}>
-                            {t('landedCosts.quantity')}
+                          <th className={breakdownThSortable} onClick={() => handleBreakdownSort('quantity')}>
+                            <div className={tableThLabelFlexClass('center')}>
+                              {t('landedCosts.quantity')}
+                              <TableSortIcon
+                                columnKey="quantity"
+                                activeKey={breakdownSort.key}
+                                direction={breakdownSort.direction}
+                              />
+                            </div>
                           </th>
-                          <th className={`px-4 py-2.5 text-right text-[11px] font-semibold uppercase ${textSecondary}`}>
-                            {t('landedCosts.baseCosts')}
+                          <th className={breakdownThSortable} onClick={() => handleBreakdownSort('base')}>
+                            <div className={tableThLabelFlexClass('center')}>
+                              {t('landedCosts.baseCosts')}
+                              <TableSortIcon
+                                columnKey="base"
+                                activeKey={breakdownSort.key}
+                                direction={breakdownSort.direction}
+                              />
+                            </div>
                           </th>
-                          <th className={`px-4 py-2.5 text-right text-[11px] font-semibold uppercase ${textSecondary}`}>
-                            {t('landedCosts.allocation')}
+                          <th className={breakdownThSortable} onClick={() => handleBreakdownSort('allocation')}>
+                            <div className={tableThLabelFlexClass('center')}>
+                              {t('landedCosts.allocation')}
+                              <TableSortIcon
+                                columnKey="allocation"
+                                activeKey={breakdownSort.key}
+                                direction={breakdownSort.direction}
+                              />
+                            </div>
                           </th>
-                          <th className={`px-4 py-2.5 text-right text-[11px] font-semibold uppercase ${textSecondary}`}>
-                            {t('landedCosts.landedCostsColumn')}
+                          <th className={breakdownThSortable} onClick={() => handleBreakdownSort('landed')}>
+                            <div className={tableThLabelFlexClass('center')}>
+                              {t('landedCosts.landedCostsColumn')}
+                              <TableSortIcon
+                                columnKey="landed"
+                                activeKey={breakdownSort.key}
+                                direction={breakdownSort.direction}
+                              />
+                            </div>
                           </th>
                         </tr>
                       </thead>
                       <tbody className={`divide-y ${tableDivide}`}>
-                        {landedCostCalculation.items.map((item) => (
+                        {sortedBreakdownItems.map((item) => (
                           <tr key={item.purchaseOrderId}>
-                            <td className="px-4 py-3">
+                            <td className="px-4 py-3 text-center">
                               <div className={`font-mono text-xs font-medium ${textPrimary}`}>{item.sku}</div>
                               <div
                                 className={`mt-0.5 line-clamp-2 text-xs ${textSecondary}`}
@@ -592,22 +681,22 @@ export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
                                 {item.description}
                               </div>
                             </td>
-                            <td className={`px-4 py-3 text-right tabular-nums ${textPrimary}`}>
+                            <td className={`px-4 py-3 text-center tabular-nums ${textPrimary}`}>
                               {item.quantity}
                             </td>
-                            <td className={`px-4 py-3 text-right tabular-nums ${textPrimary}`}>
+                            <td className={`px-4 py-3 text-center tabular-nums ${textPrimary}`}>
                               <div>${item.baseCostPerUnit.toFixed(2)}</div>
                               <div className={`text-xs ${textSecondary}`}>
                                 ${item.baseItemTotal.toFixed(2)}
                               </div>
                             </td>
-                            <td className={`px-4 py-3 text-right tabular-nums ${textPrimary}`}>
+                            <td className={`px-4 py-3 text-center tabular-nums ${textPrimary}`}>
                               <div>{item.proportionalShare.toFixed(1)}%</div>
                               <div className={`text-xs ${textSecondary}`}>
                                 ${item.additionalCostAllocation.toFixed(2)}
                               </div>
                             </td>
-                            <td className={`px-4 py-3 text-right tabular-nums`}>
+                            <td className={`px-4 py-3 text-center tabular-nums`}>
                               <div className={`font-medium ${brandText}`}>
                                 ${item.finalCostPerUnit.toFixed(2)}
                               </div>
@@ -620,19 +709,16 @@ export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
                       </tbody>
                       <tfoot className={`border-t-2 ${tableHead}`}>
                         <tr>
-                          <td
-                            colSpan={2}
-                            className={`px-4 py-3 text-right text-[11px] font-semibold uppercase ${textSecondary}`}
-                          >
+                          <td colSpan={2} className={breakdownThStatic}>
                             {t('landedCosts.totalLandedCost')}
                           </td>
-                          <td className={`px-4 py-3 text-right font-semibold tabular-nums ${textPrimary}`}>
+                          <td className={`px-4 py-3 text-center font-semibold tabular-nums ${textPrimary}`}>
                             ${landedCostCalculation.baseItemTotal.toFixed(2)}
                           </td>
-                          <td className={`px-4 py-3 text-right font-semibold tabular-nums ${textPrimary}`}>
+                          <td className={`px-4 py-3 text-center font-semibold tabular-nums ${textPrimary}`}>
                             ${landedCostCalculation.totalAdditionalCosts.toFixed(2)}
                           </td>
-                          <td className={`px-4 py-3 text-right font-bold tabular-nums ${brandText}`}>
+                          <td className={`px-4 py-3 text-center font-bold tabular-nums ${brandText}`}>
                             ${landedCostCalculation.totalLandedCost.toFixed(2)}
                           </td>
                         </tr>

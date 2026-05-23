@@ -21,6 +21,7 @@ import BulkDeleteModal from './BulkDeleteModal';
 import BulkStatusChangeModal from './BulkStatusChangeModal';
 import BarcodePrintModal from './BarcodePrintModal';
 import PurchaseOrderStatusCell from './PurchaseOrderStatusCell';
+import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 import PurchaseOrderQuantityCell from './PurchaseOrderQuantityCell';
 import InvoiceStatusActionsBar from './InvoiceStatusActionsBar';
 import InvoiceBatchVerificationModal, { type InvoiceVerifyLineInput } from './InvoiceBatchVerificationModal';
@@ -2989,15 +2990,15 @@ export default function PurchaseOrders() {
               // List view headers
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
                     #
                   </th>
                   {!hiddenColumns.has('invoice') && (
                 <th 
                   onClick={() => handleSort('invoice')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center justify-center gap-1">
                     {t('purchaseOrders.invoice')}
                     <SortIcon field="invoice" />
                   </div>
@@ -3006,9 +3007,9 @@ export default function PurchaseOrders() {
                   {!hiddenColumns.has('supplier') && (
                 <th 
                   onClick={() => handleSort('supplier')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center justify-center gap-1">
                     {t('purchaseOrders.supplier')}
                     <SortIcon field="supplier" />
                   </div>
@@ -3017,9 +3018,9 @@ export default function PurchaseOrders() {
                   {!hiddenColumns.has('description') && (
                 <th 
                   onClick={() => handleSort('description')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center justify-center gap-1">
                     {t('purchaseOrders.description')}
                     <SortIcon field="description" />
                   </div>
@@ -3028,9 +3029,9 @@ export default function PurchaseOrders() {
                   {!hiddenColumns.has('sku') && (
                 <th 
                   onClick={() => handleSort('sku')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center justify-center gap-1">
                     {t('purchaseOrders.sku')}
                     <SortIcon field="sku" />
                   </div>
@@ -3044,9 +3045,9 @@ export default function PurchaseOrders() {
                   {!hiddenColumns.has('quantity') && (
                 <th 
                   onClick={() => handleSort('quantity')}
-                  className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
-                  <div className="flex items-center gap-1 justify-end">
+                  <div className="flex items-center justify-center gap-1">
                     {t('purchaseOrders.quantity')}
                     <SortIcon field="quantity" />
                   </div>
@@ -3055,9 +3056,9 @@ export default function PurchaseOrders() {
                   {!hiddenColumns.has('status') && (
                 <th 
                   onClick={() => handleSort('status')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center justify-center gap-1">
                     {t('purchaseOrders.status')}
                     <SortIcon field="status" />
                   </div>
@@ -3066,9 +3067,9 @@ export default function PurchaseOrders() {
                   {!hiddenColumns.has('landedCost') && (
                 <th 
                   onClick={() => handleSort('landedCost')}
-                  className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
-                  <div className="flex items-center gap-1 justify-end">
+                  <div className="flex items-center justify-center gap-1">
                     {t('purchaseOrders.costPerUnit')}
                     <SortIcon field="landedCost" />
                   </div>
@@ -3083,15 +3084,15 @@ export default function PurchaseOrders() {
               // Grouped view headers (no Invoice column)
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
                     #
                   </th>
                   {!hiddenColumns.has('supplier') && (
                     <th 
                       onClick={() => handleSort('supplier')}
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center justify-center gap-1">
                         {t('purchaseOrders.supplier')}
                         <SortIcon field="supplier" />
                       </div>
@@ -3100,9 +3101,9 @@ export default function PurchaseOrders() {
                   {!hiddenColumns.has('description') && (
                     <th 
                       onClick={() => handleSort('description')}
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center justify-center gap-1">
                         {t('purchaseOrders.description')}
                         <SortIcon field="description" />
                       </div>
@@ -3111,9 +3112,9 @@ export default function PurchaseOrders() {
                   {!hiddenColumns.has('sku') && (
                     <th 
                       onClick={() => handleSort('sku')}
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center justify-center gap-1">
                         {t('purchaseOrders.sku')}
                         <SortIcon field="sku" />
                       </div>
@@ -3127,9 +3128,9 @@ export default function PurchaseOrders() {
                   {!hiddenColumns.has('quantity') && (
                     <th 
                       onClick={() => handleSort('quantity')}
-                      className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                      className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                     >
-                      <div className="flex items-center gap-1 justify-end">
+                      <div className="flex items-center justify-center gap-1">
                     {t('purchaseOrders.quantity')}
                     <SortIcon field="quantity" />
                   </div>
@@ -3138,9 +3139,9 @@ export default function PurchaseOrders() {
                   {!hiddenColumns.has('status') && (
                 <th 
                   onClick={() => handleSort('status')}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center justify-center gap-1">
                     {t('purchaseOrders.status')}
                     <SortIcon field="status" />
                   </div>
@@ -3149,9 +3150,9 @@ export default function PurchaseOrders() {
                   {!hiddenColumns.has('landedCost') && (
                 <th 
                   onClick={() => handleSort('landedCost')}
-                  className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                 >
-                  <div className="flex items-center gap-1 justify-end">
+                  <div className="flex items-center justify-center gap-1">
                         {t('purchaseOrders.costPerUnit')}
                     <SortIcon field="landedCost" />
                   </div>
@@ -3182,12 +3183,12 @@ export default function PurchaseOrders() {
                       className={`cursor-pointer hover:bg-gray-50 transition-colors ${needsReview ? 'bg-amber-50/30' : ''}`}
                       onClick={(e) => handlePoRowActivate(order, e)}
                     >
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500 font-mono">
                         {index + 1}
                       </td>
                       {!hiddenColumns.has('invoice') && (
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="flex items-center justify-center gap-2">
                           <span className="font-medium text-gray-900">{order.invoice}</span>
                           {needsReview && (
                             <span className="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-medium">
@@ -3198,7 +3199,7 @@ export default function PurchaseOrders() {
                       </td>
                       )}
                       {!hiddenColumns.has('supplier') && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
                         {supplier ? (
                           <button
                             onClick={() => setSelectedSupplier(supplier)}
@@ -3212,10 +3213,10 @@ export default function PurchaseOrders() {
                       </td>
                       )}
                       {!hiddenColumns.has('description') && (
-                      <td className="px-6 py-4 text-sm text-gray-700">{order.description}</td>
+                      <td className="px-6 py-4 text-center text-sm text-gray-700">{order.description}</td>
                       )}
                       {!hiddenColumns.has('sku') && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.sku}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-700">{order.sku}</td>
                       )}
                       {!hiddenColumns.has('barcode') && (
                         <PurchaseOrderBarcodeCell
@@ -3233,31 +3234,33 @@ export default function PurchaseOrders() {
                         />
                       )}
                       {!hiddenColumns.has('quantity') && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
                         <PurchaseOrderQuantityCell order={order} />
                       </td>
                       )}
                       {!hiddenColumns.has('status') && (
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <PurchaseOrderStatusCell
-                          order={order}
-                          onStatusChange={handleStatusChange}
-                          onAdvance={handleAdvanceStatus}
-                          onEditVerification={handleEditVerification}
-                        />
+                      <td className="px-4 py-4 whitespace-nowrap text-center">
+                        <div className="flex justify-center">
+                          <PurchaseOrderStatusCell
+                            order={order}
+                            onStatusChange={handleStatusChange}
+                            onAdvance={handleAdvanceStatus}
+                            onEditVerification={handleEditVerification}
+                          />
+                        </div>
                       </td>
                       )}
                       {!hiddenColumns.has('landedCost') && (
-                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="font-medium text-gray-900">${order.landedCostPerUnit.toFixed(2)}</div>
                         <div className="text-xs text-gray-500">{t('purchaseOrders.total')}: ${order.totalLandedCost.toFixed(2)}</div>
                       </td>
                       )}
                       <td className="px-4 py-4 whitespace-nowrap text-center text-sm">
-                        <div className="flex items-center gap-2 justify-center">
+                        <div className="flex items-center justify-center gap-2">
                         <button
                           onClick={() => handleEdit(order)}
-                          className="sasa-po-row-action flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border shadow-sm transition-colors"
+                          className={tableRowActionButtonClass}
                           >
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -3267,7 +3270,7 @@ export default function PurchaseOrders() {
                         {order.status === 'Verified' && (
                           <button
                             onClick={() => handleEditVerification(order)}
-                            className="sasa-po-row-action flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border shadow-sm transition-colors"
+                            className={tableRowActionButtonClass}
                             title={t('purchaseOrders.editVerification') || 'Edit Verification'}
                           >
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3279,7 +3282,7 @@ export default function PurchaseOrders() {
                         {order.status !== 'Verified' && (
                           <button
                             onClick={() => handleDownloadVerificationSheet(order.invoice)}
-                            className="sasa-po-row-action flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border shadow-sm transition-colors"
+                            className={tableRowActionButtonClass}
                             title={t('purchaseOrders.downloadVerificationSheet') || 'Download Verification Sheet'}
                           >
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3293,7 +3296,7 @@ export default function PurchaseOrders() {
                             setOrderToDelete(order);
                             setDeleteConfirmOpen(true);
                           }}
-                          className="sasa-po-row-action flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border shadow-sm transition-colors"
+                          className={tableRowActionButtonClass}
                         >
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -3387,14 +3390,14 @@ export default function PurchaseOrders() {
                             onClick={(e) => handlePoRowActivate(order, e)}
                           >
                             {/* Row Number */}
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500 font-mono">
                               {orderIndex + 1}
                             </td>
                             
                             {/* Supplier */}
                             {!hiddenColumns.has('supplier') && (
-                              <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                <div className="flex items-center gap-2">
+                              <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
+                                <div className="flex items-center justify-center gap-2">
                                   {supplier ? (
                                     <button
                                       onClick={() => setSelectedSupplier(supplier)}
@@ -3416,14 +3419,14 @@ export default function PurchaseOrders() {
                             
                             {/* Description */}
                             {!hiddenColumns.has('description') && (
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
                                 {order.description}
                               </td>
                             )}
                             
                             {/* SKU */}
                             {!hiddenColumns.has('sku') && (
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
                                 {order.sku}
                               </td>
                             )}
@@ -3445,27 +3448,29 @@ export default function PurchaseOrders() {
                             
                             {/* Quantity */}
                             {!hiddenColumns.has('quantity') && (
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                              <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
                                 <PurchaseOrderQuantityCell order={order} />
                               </td>
                             )}
                             
                             {/* Status */}
                             {!hiddenColumns.has('status') && (
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                <PurchaseOrderStatusCell
-                                  order={order}
-                                  compact
-                                  onStatusChange={handleStatusChange}
-                                  onAdvance={handleAdvanceStatus}
-                                  onEditVerification={handleEditVerification}
-                                />
+                              <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
+                                <div className="flex justify-center">
+                                  <PurchaseOrderStatusCell
+                                    order={order}
+                                    compact
+                                    onStatusChange={handleStatusChange}
+                                    onAdvance={handleAdvanceStatus}
+                                    onEditVerification={handleEditVerification}
+                                  />
+                                </div>
                               </td>
                             )}
                             
                             {/* Landed Cost */}
                             {!hiddenColumns.has('landedCost') && (
-                              <td className="px-6 py-4 whitespace-nowrap text-right">
+                              <td className="px-6 py-4 whitespace-nowrap text-center">
                                 <div className="font-medium text-gray-900">${order.landedCostPerUnit.toFixed(2)}</div>
                                 <div className="text-xs text-gray-500">{t('purchaseOrders.total')}: ${order.totalLandedCost.toFixed(2)}</div>
                               </td>
@@ -3476,7 +3481,7 @@ export default function PurchaseOrders() {
                               <div className="flex items-center gap-2 justify-center">
                                 <button
                                   onClick={() => handleEdit(order)}
-                                  className="sasa-po-row-action flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border shadow-sm transition-colors"
+                                  className={tableRowActionButtonClass}
                                 >
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -3486,7 +3491,7 @@ export default function PurchaseOrders() {
                                 {order.status === 'Verified' && (
                                   <button
                                     onClick={() => handleEditVerification(order)}
-                                    className="sasa-po-row-action flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border shadow-sm transition-colors"
+                                    className={tableRowActionButtonClass}
                                     title={t('purchaseOrders.editVerification') || 'Edit Verification'}
                                   >
                                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3498,7 +3503,7 @@ export default function PurchaseOrders() {
                                 {order.status !== 'Verified' && (
                                   <button
                                     onClick={() => handleDownloadVerificationSheet(order.invoice)}
-                                    className="sasa-po-row-action flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border shadow-sm transition-colors"
+                                    className={tableRowActionButtonClass}
                                     title={t('purchaseOrders.downloadVerificationSheet') || 'Download Verification Sheet'}
                                   >
                                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3512,7 +3517,7 @@ export default function PurchaseOrders() {
                                     setOrderToDelete(order);
                                     setDeleteConfirmOpen(true);
                                   }}
-                                  className="sasa-po-row-action flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border shadow-sm transition-colors"
+                                  className={tableRowActionButtonClass}
                                 >
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />

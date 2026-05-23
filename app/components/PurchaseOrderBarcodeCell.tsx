@@ -116,7 +116,7 @@ export default function PurchaseOrderBarcodeCell({
   }
 
   return (
-    <td className="px-3 py-3 align-middle" onClick={(e) => e.stopPropagation()}>
+    <td className="px-3 py-3 text-center align-middle" onClick={(e) => e.stopPropagation()}>
       {inner}
     </td>
   );

@@ -13,6 +13,14 @@ import AlertDialog from './ui/AlertDialog';
 import ConfirmDialog from './ui/ConfirmDialog';
 import InvoiceEditModal from './InvoiceEditModal';
 import MonthYearSelectEs from './ui/MonthYearSelectEs';
+import TableSortIcon from './ui/TableSortIcon';
+import {
+  tableTheadClass,
+  tableThAlignClass,
+  tableThBaseClass,
+  tableThLabelFlexClass,
+  tableThSortableClass,
+} from './ui/tableHeaderClass';
 import { formatDateDMY, formatMonthYearLong } from '../utils/formatDate';
 
 function GroupByLayersIcon({ className = 'h-4 w-4 shrink-0' }: { className?: string }) {
@@ -831,11 +839,6 @@ export default function InvoiceTracking() {
     });
   };
 
-  const SortIcon = ({ columnKey }: { columnKey: string }) => {
-    if (sortConfig.key !== columnKey) return <span className="text-gray-400">↕</span>;
-    return sortConfig.direction === 'asc' ? <span>↑</span> : <span>↓</span>;
-  };
-
   const handleDeleteInvoice = (invoice: SalesInvoice) => {
     // Always calculate items that could be returned (if invoice was delivered)
     const wasDelivered = invoice.deliveryStatus === 'Delivered' || invoice.deliveryStatus === 'Partially Delivered';
@@ -1299,81 +1302,89 @@ export default function InvoiceTracking() {
           className="bg-white rounded-xl border border-gray-200 overflow-x-auto scroll-mt-24"
         >
           <table className="w-full min-w-max">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className={tableTheadClass}>
               <tr>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                <th
+                  className={`${tableThSortableClass} ${tableThAlignClass('left')}`}
                   onClick={() => handleSort('invoiceNumber')}
                 >
-                  <div className="flex items-center gap-1">
+                  <div className={tableThLabelFlexClass('left')}>
                     {t('invoiceTracking.facNumber')}
-                    <SortIcon columnKey="invoiceNumber" />
+                    <TableSortIcon
+                      columnKey="invoiceNumber"
+                      activeKey={sortConfig.key}
+                      direction={sortConfig.direction}
+                    />
                   </div>
                 </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                <th
+                  className={`${tableThSortableClass} ${tableThAlignClass('left')}`}
                   onClick={() => handleSort('clientName')}
                 >
-                  <div className="flex items-center gap-1">
+                  <div className={tableThLabelFlexClass('left')}>
                     {t('invoiceTracking.customer')}
-                    <SortIcon columnKey="clientName" />
+                    <TableSortIcon columnKey="clientName" activeKey={sortConfig.key} direction={sortConfig.direction} />
                   </div>
                 </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                <th
+                  className={`${tableThSortableClass} ${tableThAlignClass('left')}`}
                   onClick={() => handleSort('date')}
                 >
-                  <div className="flex items-center gap-1">
+                  <div className={tableThLabelFlexClass('left')}>
                     {t('invoiceTracking.invoiceDate')}
-                    <SortIcon columnKey="date" />
+                    <TableSortIcon columnKey="date" activeKey={sortConfig.key} direction={sortConfig.direction} />
                   </div>
                 </th>
-                <th 
-                  className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                <th
+                  className={`${tableThSortableClass} ${tableThAlignClass('right')}`}
                   onClick={() => handleSort('grandTotal')}
                 >
-                  <div className="flex items-center justify-end gap-1">
+                  <div className={tableThLabelFlexClass('right')}>
                     {t('invoiceTracking.total')}
-                    <SortIcon columnKey="grandTotal" />
+                    <TableSortIcon columnKey="grandTotal" activeKey={sortConfig.key} direction={sortConfig.direction} />
                   </div>
                 </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                <th
+                  className={`${tableThSortableClass} ${tableThAlignClass('left')}`}
                   onClick={() => handleSort('paymentStatus')}
                 >
-                  <div className="flex items-center gap-1">
+                  <div className={tableThLabelFlexClass('left')}>
                     {t('invoiceTracking.paymentStatus')}
-                    <SortIcon columnKey="paymentStatus" />
+                    <TableSortIcon columnKey="paymentStatus" activeKey={sortConfig.key} direction={sortConfig.direction} />
                   </div>
                 </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                <th
+                  className={`${tableThSortableClass} ${tableThAlignClass('left')}`}
                   onClick={() => handleSort('deliveryStatus')}
                 >
-                  <div className="flex items-center gap-1">
+                  <div className={tableThLabelFlexClass('left')}>
                     {t('invoiceTracking.deliveryStatus')}
-                    <SortIcon columnKey="deliveryStatus" />
+                    <TableSortIcon columnKey="deliveryStatus" activeKey={sortConfig.key} direction={sortConfig.direction} />
                   </div>
                 </th>
                 <th
-                  className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  className={`${tableThSortableClass} ${tableThAlignClass('right')}`}
                   onClick={() => handleSort('amountPaid')}
                 >
-                  <div className="flex items-center justify-end gap-1">
+                  <div className={tableThLabelFlexClass('right')}>
                     {t('invoiceTracking.totalPaid')}
-                    <SortIcon columnKey="amountPaid" />
+                    <TableSortIcon columnKey="amountPaid" activeKey={sortConfig.key} direction={sortConfig.direction} />
                   </div>
                 </th>
                 <th
-                  className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  className={`${tableThSortableClass} ${tableThAlignClass('right')}`}
                   onClick={() => handleSort('remainingBalance')}
                 >
-                  <div className="flex items-center justify-end gap-1">
+                  <div className={tableThLabelFlexClass('right')}>
                     {t('invoiceTracking.pending')}
-                    <SortIcon columnKey="remainingBalance" />
+                    <TableSortIcon
+                      columnKey="remainingBalance"
+                      activeKey={sortConfig.key}
+                      direction={sortConfig.direction}
+                    />
                   </div>
                 </th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.actions')}</th>
+                <th className={`${tableThBaseClass} ${tableThAlignClass('center')}`}>{t('invoiceTracking.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">

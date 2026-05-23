@@ -30,6 +30,7 @@ import {
   allKnownLineKeys,
 } from '../constants/merchandise';
 import { displayCategory, displayLine } from '../utils/merchandiseLabels';
+import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 import { HUB_GROUP_STACK_ICON_PATH } from '../constants/businessHubUi';
 import { formatSalePriceDisplay, itemHasSalePrice, parseSalePriceInput } from '../utils/salePrice';
 
@@ -769,7 +770,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
     const needsReview = item.category.includes('NEEDS REVIEW');
     return (
       <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${needsReview ? 'bg-amber-50/30' : ''}`}>
-        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">{index + 1}</td>
+        <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500 font-mono">{index + 1}</td>
         {!hiddenColumns.has('name') && (
           <td className="px-6 py-4">
             <div
@@ -782,7 +783,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                   setSelectedItem(item);
                 }
               }}
-              className="flex cursor-pointer items-center gap-4 rounded-md text-left outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-[#515151] focus-visible:ring-offset-2"
+              className="grid cursor-pointer grid-cols-[5rem_minmax(7rem,11rem)_1fr] items-center gap-4 rounded-md text-left outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-[#515151] focus-visible:ring-offset-2"
             >
               {item.images && item.images.length > 0 ? (
                 <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
@@ -809,46 +810,51 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                   </svg>
                 </div>
               )}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium text-[#515151] hover:underline">{item.name}</span>
-                {needsReview && (
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                    {t('inventory.needsReview')}
-                  </span>
-                )}
-                {getTotalProblemQty(item) > 0 && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setVerificationIssuesModalItem(item);
-                    }}
-                    className="inline-flex max-w-[10rem] items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-900 transition-colors hover:bg-amber-100"
-                    title={t('inventory.verificationProblemHint')}
-                  >
-                    <svg className="h-3.5 w-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
-                      <path
-                        fillRule="evenodd"
-                        d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                    <span className="text-left leading-tight">
-                      {t('inventory.includesProblemUnits').replace('{{count}}', String(getTotalProblemQty(item)))}
+              <div className="flex min-w-0 flex-col justify-center gap-1.5">
+                <span className="font-medium leading-snug text-[#515151] hover:underline">{item.name}</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  {needsReview && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                      {t('inventory.needsReview')}
                     </span>
-                  </button>
-                )}
+                  )}
+                  {getTotalProblemQty(item) > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setVerificationIssuesModalItem(item);
+                      }}
+                      className="inline-flex max-w-[10rem] items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-900 transition-colors hover:bg-amber-100"
+                      title={t('inventory.verificationProblemHint')}
+                    >
+                      <svg className="h-3.5 w-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
+                        <path
+                          fillRule="evenodd"
+                          d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                      <span className="text-left leading-tight">
+                        {t('inventory.includesProblemUnits').replace('{{count}}', String(getTotalProblemQty(item)))}
+                      </span>
+                    </button>
+                  )}
+                </div>
               </div>
+              <p className="min-w-0 text-sm leading-snug text-gray-600 line-clamp-3">
+                {item.description?.trim() ? item.description : '—'}
+              </p>
             </div>
           </td>
         )}
         {!hiddenColumns.has('sku') && (
-          <td className="whitespace-nowrap px-6 py-4 font-mono text-sm text-gray-700">{item.sku}</td>
+          <td className="whitespace-nowrap px-6 py-4 text-center font-mono text-sm text-gray-700">{item.sku}</td>
         )}
         {!hiddenColumns.has('barcode') && (
-          <td className="whitespace-nowrap px-6 py-4 text-sm">
+          <td className="whitespace-nowrap px-6 py-4 text-center text-sm">
             {item.barcode ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center justify-center gap-2">
                 <img
                   src={item.barcode}
                   alt={`Barcode for ${item.sku}`}
@@ -877,7 +883,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                 type="button"
                 disabled={isReadOnly}
                 onClick={() => handleGenerateBarcode(item)}
-                className="flex items-center gap-1 text-sm font-medium text-[#515151] transition-colors hover:text-[#000000] disabled:pointer-events-none disabled:opacity-50"
+                className="mx-auto flex items-center justify-center gap-1 text-sm font-medium text-[#515151] transition-colors hover:text-[#000000] disabled:pointer-events-none disabled:opacity-50"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -888,20 +894,20 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
           </td>
         )}
         {!hiddenColumns.has('category') && (
-          <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">
+          <td className="whitespace-nowrap px-6 py-4 text-center text-sm text-gray-700">
             {needsReview ? '-' : displayCategory(item.category)}
           </td>
         )}
         {!hiddenColumns.has('line') && (
-          <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-700">{item.line ? displayLine(item.line) : '-'}</td>
+          <td className="whitespace-nowrap px-6 py-4 text-center text-sm text-gray-700">{item.line ? displayLine(item.line) : '-'}</td>
         )}
         {!hiddenColumns.has('salePrice') && (
-          <td className="whitespace-nowrap px-6 py-4 text-sm text-right">
+          <td className="whitespace-nowrap px-6 py-4 text-center text-sm">
             {isReadOnly ? (
               <span className="tabular-nums text-gray-700">{formatSalePriceDisplay(item.salePrice)}</span>
             ) : (
               <div
-                className="ml-auto flex max-w-[7.5rem] items-center justify-end gap-0.5"
+                className="mx-auto flex max-w-[7.5rem] items-center justify-center gap-0.5"
                 onClick={(e) => e.stopPropagation()}
               >
                 <span className="text-gray-500">$</span>
@@ -912,7 +918,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                   key={`sale-price-${item.id}-${item.salePrice ?? 'none'}`}
                   onBlur={(e) => void handleSalePriceBlur(item, e.target.value)}
                   placeholder="—"
-                  className="w-full min-w-[4.5rem] rounded border border-gray-200 px-2 py-1 text-right text-sm tabular-nums text-gray-900 focus:border-[#515151] focus:outline-none focus:ring-1 focus:ring-[#515151]"
+                  className="w-full min-w-[4.5rem] rounded border border-gray-200 px-2 py-1 text-center text-sm tabular-nums text-gray-900 focus:border-[#515151] focus:outline-none focus:ring-1 focus:ring-[#515151]"
                   aria-label={t('inventory.salePrice')}
                 />
               </div>
@@ -950,25 +956,43 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
           </td>
         )}
         {!hiddenColumns.has('actions') && (
-          <td className="whitespace-nowrap px-6 py-4 text-right text-sm">
+          <td className="whitespace-nowrap px-6 py-4 text-center text-sm">
             {!isReadOnly && (
-              <>
+              <div className="flex items-center justify-center gap-2">
                 <button
+                  type="button"
                   onClick={() => handleEdit(item)}
-                  className="mr-4 font-medium text-[#515151] transition-colors hover:text-[#000000]"
+                  className={tableRowActionButtonClass}
                 >
-                  {needsReview ? 'Complete Info' : 'Edit'}
+                  <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                    />
+                  </svg>
+                  {needsReview ? t('purchaseOrders.completeInfo') : t('common.edit')}
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
                     setItemToDelete(item);
                     setDeleteConfirmOpen(true);
                   }}
-                  className="font-medium text-red-600 transition-colors hover:text-red-700"
+                  className={tableRowActionButtonClass}
                 >
-                  Delete
+                  <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
+                  </svg>
+                  {t('common.delete')}
                 </button>
-              </>
+              </div>
             )}
           </td>
         )}
@@ -1901,7 +1925,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
             <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
                   #
                 </th>
                 {!hiddenColumns.has('name') && (
@@ -1918,25 +1942,25 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                 {!hiddenColumns.has('sku') && (
                   <th 
                     onClick={() => handleSort('sku')}
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   >
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center justify-center gap-1">
                       {t('inventory.sku')}
                       <SortIcon field="sku" />
                     </div>
                   </th>
                 )}
                 {!hiddenColumns.has('barcode') && (
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('inventory.barcode')}
                   </th>
                 )}
                 {!hiddenColumns.has('category') && (
                   <th 
                     onClick={() => handleSort('category')}
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   >
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center justify-center gap-1">
                       {t('inventory.category')}
                       <SortIcon field="category" />
                     </div>
@@ -1945,9 +1969,9 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                 {!hiddenColumns.has('line') && (
                   <th 
                     onClick={() => handleSort('line')}
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   >
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center justify-center gap-1">
                       {t('inventory.line')}
                       <SortIcon field="line" />
                     </div>
@@ -1956,9 +1980,9 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                 {!hiddenColumns.has('salePrice') && (
                   <th
                     onClick={() => handleSort('salePrice')}
-                    className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                    className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                   >
-                    <div className="flex items-center justify-end gap-1">
+                    <div className="flex items-center justify-center gap-1">
                       {t('inventory.salePrice')}
                       <SortIcon field="salePrice" />
                     </div>
@@ -1987,7 +2011,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                   </th>
                 )}
                 {!hiddenColumns.has('actions') && (
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('inventory.actions')}
                   </th>
                 )}

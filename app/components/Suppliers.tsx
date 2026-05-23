@@ -6,6 +6,7 @@ import { Supplier } from '../types';
 import SupplierDetailPanel from './SupplierDetailPanel';
 import { useTranslation } from '../context/TranslationContext';
 import ConfirmDialog from './ui/ConfirmDialog';
+import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 
 export default function Suppliers() {
   const { suppliers, addSupplier, updateSupplier, deleteSupplier } = useInventory();
@@ -335,31 +336,31 @@ export default function Suppliers() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
                   #
                 </th>
                 {!hiddenColumns.has('name') && (
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('suppliers.name')}
                   </th>
                 )}
                 {!hiddenColumns.has('email') && (
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('suppliers.email')}
                   </th>
                 )}
                 {!hiddenColumns.has('phone') && (
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('suppliers.phone')}
                   </th>
                 )}
                 {!hiddenColumns.has('country') && (
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('suppliers.country')}
                   </th>
                 )}
                 {!hiddenColumns.has('actions') && (
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('suppliers.actions')}
                   </th>
                 )}
@@ -375,45 +376,65 @@ export default function Suppliers() {
               ) : (
                 filteredSuppliers.map((supplier, index) => (
                   <tr key={supplier.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                    <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500 font-mono">
                       {index + 1}
                     </td>
                     {!hiddenColumns.has('name') && (
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
                         <button
                           onClick={() => setSelectedSupplier(supplier)}
-                          className="font-medium text-[#515151] hover:text-[#000000] hover:underline transition-colors text-left"
+                          className="font-medium text-[#515151] hover:text-[#000000] hover:underline transition-colors"
                         >
                           {supplier.name}
                         </button>
                       </td>
                     )}
                     {!hiddenColumns.has('email') && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{supplier.email || '-'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-700">{supplier.email || '-'}</td>
                     )}
                     {!hiddenColumns.has('phone') && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{supplier.phone || '-'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-700">{supplier.phone || '-'}</td>
                     )}
                     {!hiddenColumns.has('country') && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{supplier.country}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-700">{supplier.country}</td>
                     )}
                     {!hiddenColumns.has('actions') && (
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                        <button
-                          onClick={() => handleEdit(supplier)}
-                          className="text-[#515151] hover:text-[#000000] font-medium mr-4 transition-colors"
-                        >
-                          {t('suppliers.edit')}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSupplierToDelete(supplier);
-                            setDeleteConfirmOpen(true);
-                          }}
-                          className="text-red-600 hover:text-red-700 font-medium transition-colors"
-                        >
-                          {t('suppliers.delete')}
-                        </button>
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleEdit(supplier)}
+                            className={tableRowActionButtonClass}
+                          >
+                            <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                              />
+                            </svg>
+                            {t('suppliers.edit')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSupplierToDelete(supplier);
+                              setDeleteConfirmOpen(true);
+                            }}
+                            className={tableRowActionButtonClass}
+                          >
+                            <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                            {t('suppliers.delete')}
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>

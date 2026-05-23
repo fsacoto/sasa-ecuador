@@ -61,7 +61,7 @@ export default function PurchaseOrderQuantityCell({ order }: PurchaseOrderQuanti
 
   if (showScan && scanProg) {
     return (
-      <div className="flex flex-col items-end gap-1">
+      <div className="flex flex-col items-center gap-1">
         <span className="text-lg font-bold tabular-nums leading-none text-gray-900">{order.quantity}</span>
         <span className="text-xs font-medium tabular-nums text-sky-600">
           {t('purchaseOrders.scanTableQuantity')
@@ -77,10 +77,10 @@ export default function PurchaseOrderQuantityCell({ order }: PurchaseOrderQuanti
     const showBreakdown = hasIssues;
 
     return (
-      <div className="flex flex-col items-end gap-1">
+      <div className="flex flex-col items-center gap-1">
         <span className="text-lg font-bold tabular-nums leading-none text-gray-900">{order.quantity}</span>
         {showBreakdown ? (
-          <div className="flex max-w-[11rem] flex-wrap justify-end gap-1">
+          <div className="flex max-w-[11rem] flex-wrap justify-center gap-1">
             {good > 0 && (
               <QuantityPill
                 count={good}
