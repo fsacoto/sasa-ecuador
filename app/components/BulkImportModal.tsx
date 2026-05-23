@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { parseCSV, detectColumnMapping, cleanNumericValue, ParsedRow } from '../utils/csvParser';
 import { useInventory } from '../context/InventoryContext';
 import { attachBarcodesToPurchaseOrdersBulk } from '../utils/syncUpdates';
@@ -10,28 +10,67 @@ import { getExchangeRates, getExchangeRate, type ExchangeRateResponse } from '..
 import { PREDEFINED_CATEGORIES_ES, PREDEFINED_LINES_ES } from '../constants/merchandise';
 import { canonicalCategory, canonicalLine } from '../utils/merchandiseLabels';
 import { useTranslation } from '../context/TranslationContext';
-import { upsertBulkImportSession, loadBulkImportSession } from '../utils/bulkImportDraftStorage';
+import { upsertBulkImportSession, loadBulkImportSession, deleteBulkImportSession, findBulkImportSessionByLabel } from '../utils/bulkImportDraftStorage';
+import {
+  BULK_IMPORT_EDIT_COLUMNS,
+  getPurchaseOrdersForBulkImportGroup,
+  isLegacyBulkImportGroupId,
+} from '../utils/bulkImportSystem';
+import { cleanupInventoryAfterOrderDeletion } from '../utils/syncUpdates';
+import POModalShell from './ui/POModalShell';
 
-export type BulkImportModalMode = 'new' | 'resume';
+type BulkImportDbField =
+  | 'invoice'
+  | 'supplierSKU'
+  | 'supplier'
+  | 'description'
+  | 'quantity'
+  | 'costPerUnit'
+  | 'totalCost'
+  | 'category'
+  | 'line';
+
+const BULK_IMPORT_TABLE_FIELD_ORDER: BulkImportDbField[] = [
+  'invoice',
+  'supplierSKU',
+  'supplier',
+  'description',
+  'quantity',
+  'costPerUnit',
+  'totalCost',
+  'category',
+  'line',
+];
+
+const NUMERIC_IMPORT_FIELDS = new Set<BulkImportDbField>(['quantity', 'costPerUnit', 'totalCost']);
 
 interface BulkImportModalProps {
   onClose: () => void;
-  /** `resume` loads a saved CSV session (mapping, invoice link, etc.) from this browser. */
-  mode?: BulkImportModalMode;
-  /** Required when `mode` is `resume`: session id from the picker. */
-  resumeSessionId?: string | null;
+  /** Resume a local draft (new import only, not shown in «Editar importación masiva»). */
+  pendingId?: string | null;
+  /** Edit a bulk import already saved in the system (group id from listBulkImportGroups). */
+  editBulkImportId?: string | null;
 }
 
 type ImportStep = 'upload' | 'mapping' | 'preview' | 'complete';
 
 export default function BulkImportModal({
   onClose,
-  mode = 'new',
-  resumeSessionId = null,
+  pendingId = null,
+  editBulkImportId = null,
 }: BulkImportModalProps) {
   const { t } = useTranslation();
-  const { addPurchaseOrdersBulk, inventory, purchaseOrders, suppliers, addSupplier, updatePurchaseOrder } =
-    useInventory();
+  const {
+    addPurchaseOrdersBulk,
+    deletePurchaseOrdersBulk,
+    inventory,
+    purchaseOrders,
+    suppliers,
+    addSupplier,
+    updatePurchaseOrder,
+    updateInventoryItem,
+  } = useInventory();
+  const isSystemEdit = Boolean(editBulkImportId);
   const [step, setStep] = useState<ImportStep>('upload');
   const [parsedData, setParsedData] = useState<ParsedRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -44,8 +83,9 @@ export default function BulkImportModal({
   const [invoiceLink, setInvoiceLink] = useState<string>('');
   const [purchaseDate, setPurchaseDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [importResults, setImportResults] = useState<{ success: number; warnings: number; autoLinked?: number }>({ success: 0, warnings: 0, autoLinked: 0 });
-  const [resumeLoading, setResumeLoading] = useState(() => mode === 'resume');
-  const resumeHydrateConsumedRef = useRef(false);
+  const [initialLoading, setInitialLoading] = useState(() => Boolean(pendingId || editBulkImportId));
+  const [orderIdsByRow, setOrderIdsByRow] = useState<(string | null)[]>([]);
+  const hydrateConsumedRef = useRef(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessionLabel, setSessionLabel] = useState('');
   const activeSessionIdRef = useRef<string | null>(null);
@@ -67,6 +107,44 @@ export default function BulkImportModal({
     const label = t(key);
     return label === key ? dbField : label;
   };
+
+  const mapFieldTableLabel = (dbField: BulkImportDbField) => {
+    const shortKey = `bulkImport.mapFieldShort_${dbField}`;
+    const short = t(shortKey);
+    if (short !== shortKey) return short;
+    return mapFieldLabel(dbField);
+  };
+
+  const mappedTableColumns = useMemo(() => {
+    if (isSystemEdit) {
+      return BULK_IMPORT_EDIT_COLUMNS.map((field) => ({
+        dbField: field as BulkImportDbField,
+        csvColumn: field,
+        label: mapFieldTableLabel(field as BulkImportDbField),
+      }));
+    }
+    const csvByField = new Map<BulkImportDbField, string>();
+    for (const [csvColumn, dbField] of Object.entries(columnMapping)) {
+      if (!dbField || dbField === 'sku') continue;
+      const field = dbField as BulkImportDbField;
+      if (!BULK_IMPORT_TABLE_FIELD_ORDER.includes(field)) continue;
+      if (!csvByField.has(field)) csvByField.set(field, csvColumn);
+    }
+    return BULK_IMPORT_TABLE_FIELD_ORDER.filter((field) => csvByField.has(field)).map((field) => ({
+      dbField: field,
+      csvColumn: csvByField.get(field)!,
+      label: mapFieldTableLabel(field),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columnMapping, t, isSystemEdit]);
+
+  const updateImportCell = useCallback((rowIndex: number, csvColumn: string, value: string) => {
+    setParsedData((prev) => {
+      const next = [...prev];
+      next[rowIndex] = { ...next[rowIndex], [csvColumn]: value };
+      return next;
+    });
+  }, []);
 
   // Exchange rates state
   const [exchangeRates, setExchangeRates] = useState<ExchangeRateResponse | null>(null);
@@ -95,29 +173,78 @@ export default function BulkImportModal({
   }, [defaultCurrency, exchangeRates, exchangeRateManuallySet]);
 
   useEffect(() => {
-    if (mode !== 'resume') {
-      setResumeLoading(false);
-      return;
-    }
-    if (resumeHydrateConsumedRef.current) {
-      return;
-    }
-    resumeHydrateConsumedRef.current = true;
+    if (!editBulkImportId) return;
+    if (hydrateConsumedRef.current) return;
+    hydrateConsumedRef.current = true;
 
-    if (!resumeSessionId) {
+    const orders = getPurchaseOrdersForBulkImportGroup(purchaseOrders, editBulkImportId);
+    if (orders.length === 0) {
+      alert(t('bulkImport.groupNotFound'));
+      onClose();
+      setInitialLoading(false);
+      return;
+    }
+
+    supplierCacheRef.current.clear();
+    const identityMapping: Record<string, string> = {};
+    for (const col of BULK_IMPORT_EDIT_COLUMNS) {
+      identityMapping[col] = col;
+    }
+
+    const rows = orders.map((po) => {
+      const supplierName = suppliers.find((s) => s.id === po.supplierId)?.name ?? '';
+      return {
+        invoice: po.invoice,
+        supplierSKU: po.supplierSKU,
+        supplier: supplierName,
+        description: po.description,
+        quantity: po.quantity,
+        costPerUnit: po.costPerUnit,
+        totalCost: po.totalCost,
+        category: po.category,
+        line: po.line,
+      };
+    });
+
+    const first = orders[0];
+    setHeaders([...BULK_IMPORT_EDIT_COLUMNS]);
+    setParsedData(rows);
+    setColumnMapping(identityMapping);
+    setOrderIdsByRow(orders.map((o) => o.id));
+    setSessionLabel(first.bulkImportLabel?.trim() || first.invoice);
+    setInvoiceLink(first.invoiceLink ?? '');
+    setInvoicePrefix('');
+    setPurchaseDate(
+      first.purchaseDate
+        ? first.purchaseDate.toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0]
+    );
+    setDefaultSupplier(first.supplierId ?? '');
+    setDefaultCurrency(first.currency || 'USD');
+    setExchangeRate(typeof first.exchangeRate === 'number' && !Number.isNaN(first.exchangeRate) ? first.exchangeRate : 1);
+    setExchangeRateManuallySet(true);
+    setImportResults({ success: 0, warnings: 0, autoLinked: 0 });
+    setStep('mapping');
+    setInitialLoading(false);
+  }, [editBulkImportId, purchaseOrders, suppliers, onClose, t]);
+
+  useEffect(() => {
+    if (editBulkImportId) return;
+    if (!pendingId) {
+      setInitialLoading(false);
+      return;
+    }
+    if (hydrateConsumedRef.current) return;
+    hydrateConsumedRef.current = true;
+
+    const draft = loadBulkImportSession(pendingId);
+    if (!draft) {
       alert(t('bulkImport.sessionNotFound'));
       onClose();
-      setResumeLoading(false);
+      setInitialLoading(false);
       return;
     }
 
-    const draft = loadBulkImportSession(resumeSessionId);
-    if (!draft) {
-      alert(t('bulkImport.noDraftSaved'));
-      onClose();
-      setResumeLoading(false);
-      return;
-    }
     supplierCacheRef.current.clear();
     setActiveSessionId(draft.id);
     activeSessionIdRef.current = draft.id;
@@ -134,17 +261,51 @@ export default function BulkImportModal({
     setExchangeRateManuallySet(Boolean(draft.exchangeRateManuallySet));
     setImportResults({ success: 0, warnings: 0, autoLinked: 0 });
     setStep('mapping');
-    setResumeLoading(false);
-  }, [mode, resumeSessionId, onClose, t]);
+    setInitialLoading(false);
+  }, [pendingId, editBulkImportId, onClose, t]);
+
+  const savePending = useCallback(() => {
+    if (isSystemEdit) return null;
+    if (step !== 'mapping' || parsedData.length === 0) return null;
+    const label = sessionLabel.trim() || t('bulkImport.defaultSessionLabel');
+    return upsertBulkImportSession({
+      id: activeSessionIdRef.current ?? undefined,
+      label,
+      headers,
+      parsedData,
+      columnMapping,
+      invoicePrefix,
+      invoiceLink,
+      purchaseDate,
+      defaultSupplier,
+      defaultCurrency,
+      exchangeRate,
+      exchangeRateManuallySet,
+    });
+  }, [
+    step,
+    sessionLabel,
+    t,
+    headers,
+    parsedData,
+    columnMapping,
+    invoicePrefix,
+    invoiceLink,
+    purchaseDate,
+    defaultSupplier,
+    defaultCurrency,
+    exchangeRate,
+    exchangeRateManuallySet,
+    isSystemEdit,
+  ]);
 
   useEffect(() => {
-    if (resumeLoading) return;
-    if ((step !== 'mapping' && step !== 'complete') || parsedData.length === 0) return;
-    const label = sessionLabel.trim() || t('bulkImport.defaultSessionLabel');
-    const idArg = activeSessionIdRef.current;
+    if (isSystemEdit) return;
+    if (initialLoading) return;
+    if (step !== 'mapping' || parsedData.length === 0) return;
     const nextId = upsertBulkImportSession({
-      id: idArg ?? undefined,
-      label,
+      id: activeSessionIdRef.current ?? undefined,
+      label: sessionLabel.trim() || t('bulkImport.defaultSessionLabel'),
       headers,
       parsedData,
       columnMapping,
@@ -158,12 +319,10 @@ export default function BulkImportModal({
     });
     if (nextId) {
       activeSessionIdRef.current = nextId;
-    }
-    if (nextId && nextId !== activeSessionId) {
-      setActiveSessionId(nextId);
+      if (nextId !== activeSessionId) setActiveSessionId(nextId);
     }
   }, [
-    resumeLoading,
+    initialLoading,
     step,
     activeSessionId,
     sessionLabel,
@@ -178,7 +337,27 @@ export default function BulkImportModal({
     defaultCurrency,
     exchangeRate,
     exchangeRateManuallySet,
+    isSystemEdit,
   ]);
+
+  const addEditRow = useCallback(() => {
+    const empty: ParsedRow = {};
+    for (const col of BULK_IMPORT_EDIT_COLUMNS) {
+      empty[col] = col === 'invoice' ? parsedData[0]?.invoice ?? '' : '';
+    }
+    setParsedData((prev) => [...prev, empty]);
+    setOrderIdsByRow((prev) => [...prev, null]);
+  }, [parsedData]);
+
+  const removeEditRow = useCallback((rowIndex: number) => {
+    setParsedData((prev) => prev.filter((_, i) => i !== rowIndex));
+    setOrderIdsByRow((prev) => prev.filter((_, i) => i !== rowIndex));
+  }, []);
+
+  const handleRequestClose = useCallback(() => {
+    savePending();
+    onClose();
+  }, [savePending, onClose]);
 
   // Helper functions to match values with database
   const findMatchingSupplier = async (supplierName: string, currency: string = 'USD'): Promise<string> => {
@@ -324,10 +503,30 @@ export default function BulkImportModal({
         console.log('Auto-detected mapping:', sanitizedMapping);
 
         setColumnMapping(sanitizedMapping);
-
         setSessionLabel(file.name);
-        setActiveSessionId(null);
-        activeSessionIdRef.current = null;
+
+        const existingDraft = findBulkImportSessionByLabel(file.name);
+        const savedId = upsertBulkImportSession({
+          id: existingDraft?.id ?? activeSessionIdRef.current ?? undefined,
+          label: file.name,
+          headers: fileHeaders,
+          parsedData: rows,
+          columnMapping: sanitizedMapping,
+          invoicePrefix: '',
+          invoiceLink: '',
+          purchaseDate: new Date().toISOString().split('T')[0],
+          defaultSupplier: '',
+          defaultCurrency: 'USD',
+          exchangeRate: 1,
+          exchangeRateManuallySet: false,
+        });
+        if (savedId) {
+          activeSessionIdRef.current = savedId;
+          setActiveSessionId(savedId);
+        } else {
+          activeSessionIdRef.current = null;
+          setActiveSessionId(null);
+        }
 
         setStep('mapping');
       } else {
@@ -389,6 +588,8 @@ export default function BulkImportModal({
     let warningCount = 0;
     let autoLinkedCount = 0;
     const timestamp = Date.now();
+    const bulkImportId = crypto.randomUUID();
+    const bulkImportLabel = sessionLabel.trim() || t('bulkImport.defaultSessionLabel');
     const ordersToAdd: Omit<PurchaseOrder, 'id' | 'createdAt'>[] = [];
 
     const invoicesFromCSV: string[] = [];
@@ -566,6 +767,8 @@ export default function BulkImportModal({
         landedCostPerUnit: costPerUnitInUSD,
         purchaseDate: new Date(purchaseDate),
         status: 'Ordered' as const,
+        bulkImportId,
+        bulkImportLabel,
       });
 
       if (orderShowsNeedsReviewInTab) {
@@ -590,6 +793,268 @@ export default function BulkImportModal({
       warnings: warningCount,
       autoLinked: autoLinkedCount,
     });
+
+    const sessionId = activeSessionIdRef.current;
+    if (sessionId) {
+      deleteBulkImportSession(sessionId);
+      activeSessionIdRef.current = null;
+      setActiveSessionId(null);
+    }
+
+    setStep('complete');
+  };
+
+  const executeBulkImportUpdate = async () => {
+    if (!editBulkImportId) return;
+
+    supplierCacheRef.current.clear();
+
+    try {
+      const { getSuppliers } = await import('../services/suppliersService');
+      suppliersSnapshotRef.current = await getSuppliers();
+    } catch {
+      suppliersSnapshotRef.current = suppliers;
+    }
+
+    let warningCount = 0;
+    let autoLinkedCount = 0;
+    const timestamp = Date.now();
+    const bulkImportId = isLegacyBulkImportGroupId(editBulkImportId)
+      ? crypto.randomUUID()
+      : editBulkImportId;
+    const bulkImportLabel = sessionLabel.trim() || parsedData[0]?.invoice?.toString() || 'Importación masiva';
+    const ordersToAdd: Omit<PurchaseOrder, 'id' | 'createdAt'>[] = [];
+    const keptOrderIds = new Set<string>();
+    const initialOrderIds = orderIdsByRow.filter((id): id is string => Boolean(id));
+
+    const invoicesFromCSV: string[] = [];
+    parsedData.forEach((row) => {
+      const mappedData: Record<string, string | number> = {};
+      Object.entries(columnMapping).forEach(([csvColumn, dbField]) => {
+        mappedData[dbField] = row[csvColumn];
+      });
+      if (mappedData.invoice) {
+        invoicesFromCSV.push(String(mappedData.invoice));
+      }
+    });
+
+    let batchInvoiceNumber = '';
+    if (invoicesFromCSV.length > 0) {
+      const uniqueInvoices = [...new Set(invoicesFromCSV)];
+      if (uniqueInvoices.length > 1) {
+        alert(t('bulkImport.invoiceMismatchError').replace('{invoices}', uniqueInvoices.join(', ')));
+        setStep('mapping');
+        return;
+      }
+      batchInvoiceNumber = uniqueInvoices[0];
+    } else {
+      batchInvoiceNumber = invoicePrefix
+        ? `${invoicePrefix}-${timestamp}`
+        : `IMPORT-${timestamp}`;
+    }
+
+    const inventoryBySupplierSku = new Map<string, InventoryItem>();
+    for (const item of inventory) {
+      const key = (item.supplierSKU || '').trim().toLowerCase();
+      if (key) inventoryBySupplierSku.set(key, item);
+    }
+
+    const existingCategories = [...new Set(inventory.map((item) => item.category))];
+    const existingLines = [...new Set(inventory.map((item) => item.line))];
+    const allocatedSkus: string[] = collectUsedSkus(inventory, purchaseOrders);
+    const batchSkuBySupplier = new Map<string, string>();
+
+    const supplierNamesToResolve = new Set<string>();
+    for (const row of parsedData) {
+      const mapped: Record<string, string | number> = {};
+      Object.entries(columnMapping).forEach(([csvColumn, dbField]) => {
+        mapped[dbField] = row[csvColumn];
+      });
+      const name = String(mapped.supplier || '').trim();
+      if (name) supplierNamesToResolve.add(name);
+    }
+    await Promise.all(
+      [...supplierNamesToResolve].map((name) =>
+        findMatchingSupplier(name, defaultCurrency || 'USD')
+      )
+    );
+
+    for (let index = 0; index < parsedData.length; index++) {
+      const row = parsedData[index];
+      const mappedData: Record<string, string | number> = {};
+      Object.entries(columnMapping).forEach(([csvColumn, dbField]) => {
+        mappedData[dbField] = row[csvColumn];
+      });
+
+      const description = String(mappedData.description || 'Imported Item');
+      const quantity = cleanNumericValue(String(mappedData.quantity || 1));
+      let costPerUnit = cleanNumericValue(String(mappedData.costPerUnit || 0));
+      const totalCostRow = cleanNumericValue(String(mappedData.totalCost || 0));
+      if (costPerUnit <= 0 && totalCostRow > 0 && quantity > 0) {
+        costPerUnit = totalCostRow / quantity;
+      }
+      const supplierSKU = (mappedData.supplierSKU as string) || '';
+      const rawCategory = (mappedData.category as string) || '';
+      const rawLine = (mappedData.line as string) || '';
+      const rawSupplier = (mappedData.supplier as string) || '';
+      const currency = defaultCurrency || 'USD';
+
+      const matchedCategory = findMatchingCategory(rawCategory, existingCategories);
+      const matchedLine = findMatchingLine(rawLine, existingLines);
+
+      const supKey = supplierSKU.trim().toLowerCase();
+      const matchedInventoryItem = supKey
+        ? inventoryBySupplierSku.get(supKey)
+        : undefined;
+
+      let autoLinked = false;
+      const categoryForSku =
+        matchedInventoryItem?.category || matchedCategory || '';
+      const lineForSku = matchedInventoryItem?.line || matchedLine || '';
+
+      let internalSku = '';
+      const existingOrder = orderIdsByRow[index]
+        ? purchaseOrders.find((o) => o.id === orderIdsByRow[index])
+        : undefined;
+
+      if (existingOrder?.sku) {
+        internalSku = existingOrder.sku;
+      } else if (categoryForSku && lineForSku) {
+        internalSku = resolveInternalSku({
+          category: categoryForSku,
+          line: lineForSku,
+          supplierSKU,
+          inventory,
+          purchaseOrders,
+          extraUsedSkus: allocatedSkus,
+          batchReservations: batchSkuBySupplier,
+        });
+        if (matchedInventoryItem) {
+          autoLinked = true;
+          autoLinkedCount++;
+        }
+      } else if (supplierSKU.trim()) {
+        const linked =
+          findInternalSkuBySupplierSku(supplierSKU, inventory, purchaseOrders) ||
+          (supKey ? batchSkuBySupplier.get(supKey) : undefined);
+        if (linked) {
+          internalSku = linked;
+          if (supKey) batchSkuBySupplier.set(supKey, linked);
+        } else {
+          internalSku = `IMP${timestamp.toString().slice(-5)}${String(index).padStart(3, '0')}`;
+          if (supKey) batchSkuBySupplier.set(supKey, internalSku);
+        }
+      } else {
+        internalSku = `IMP${timestamp.toString().slice(-5)}${String(index).padStart(3, '0')}`;
+      }
+
+      allocatedSkus.push(internalSku);
+
+      const categoryNeedsReview = !autoLinked && !matchedCategory && rawCategory;
+      const lineNeedsReview = !autoLinked && !matchedLine && rawLine;
+
+      const matchedSupplier = rawSupplier.trim()
+        ? await findMatchingSupplier(rawSupplier, currency)
+        : defaultSupplier;
+      const supplierIdResolved = (matchedSupplier || defaultSupplier || '').trim();
+      const finalCategoryForOrder =
+        autoLinked && matchedInventoryItem
+          ? matchedInventoryItem.category
+          : categoryNeedsReview
+            ? '⚠️ NEEDS REVIEW'
+            : matchedCategory;
+
+      const orderShowsNeedsReviewInTab =
+        (finalCategoryForOrder || '').includes('NEEDS REVIEW') || !supplierIdResolved;
+
+      const costPerUnitInUSD = costPerUnit * exchangeRate;
+      const totalCostInUSD = quantity * costPerUnitInUSD;
+
+      const orderPayload: Omit<PurchaseOrder, 'id' | 'createdAt'> = {
+        invoice: batchInvoiceNumber,
+        invoiceLink: invoiceLink || '',
+        supplierId: matchedSupplier || defaultSupplier || '',
+        supplierSKU: supplierSKU,
+        description: autoLinked && matchedInventoryItem ? matchedInventoryItem.name : description,
+        sku: internalSku,
+        category:
+          autoLinked && matchedInventoryItem
+            ? matchedInventoryItem.category
+            : categoryNeedsReview
+              ? '⚠️ NEEDS REVIEW'
+              : matchedCategory,
+        line:
+          autoLinked && matchedInventoryItem
+            ? matchedInventoryItem.line
+            : lineNeedsReview
+              ? '⚠️ NEEDS REVIEW'
+              : matchedLine,
+        images: autoLinked && matchedInventoryItem ? matchedInventoryItem.images : existingOrder?.images ?? [],
+        quantity: quantity,
+        currency: defaultCurrency,
+        costPerUnit: costPerUnit,
+        totalCost: quantity * costPerUnit,
+        discountPerUnit: existingOrder?.discountPerUnit ?? 0,
+        totalDiscount: existingOrder?.totalDiscount ?? 0,
+        costPerUnitWithDiscount: costPerUnit,
+        totalCostWithDiscount: quantity * costPerUnit,
+        exchangeRate: exchangeRate,
+        costInUSD: totalCostInUSD,
+        shippingCost: existingOrder?.shippingCost ?? 0,
+        tariffCost: existingOrder?.tariffCost ?? 0,
+        otherFees: existingOrder?.otherFees ?? 0,
+        totalLandedCost: totalCostInUSD,
+        landedCostPerUnit: costPerUnitInUSD,
+        purchaseDate: new Date(purchaseDate),
+        status: existingOrder?.status ?? ('Ordered' as const),
+        bulkImportId,
+        bulkImportLabel,
+      };
+
+      if (orderShowsNeedsReviewInTab) {
+        warningCount++;
+      }
+
+      const existingId = orderIdsByRow[index];
+      if (existingId) {
+        await updatePurchaseOrder(existingId, orderPayload);
+        keptOrderIds.add(existingId);
+      } else {
+        ordersToAdd.push(orderPayload);
+      }
+
+      if (index > 0 && index % 15 === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+
+    const removedIds = initialOrderIds.filter((id) => !keptOrderIds.has(id));
+    if (removedIds.length > 0) {
+      await cleanupInventoryAfterOrderDeletion(
+        removedIds,
+        inventory,
+        updateInventoryItem,
+        purchaseOrders
+      );
+      await deletePurchaseOrdersBulk(removedIds);
+    }
+
+    if (ordersToAdd.length > 0) {
+      const newOrders = await addPurchaseOrdersBulk(ordersToAdd);
+      await attachBarcodesToPurchaseOrdersBulk(
+        newOrders,
+        updatePurchaseOrder,
+        inventory,
+        purchaseOrders
+      );
+    }
+
+    setImportResults({
+      success: keptOrderIds.size + ordersToAdd.length,
+      warnings: warningCount,
+      autoLinked: autoLinkedCount,
+    });
+
     setStep('complete');
   };
 
@@ -600,7 +1065,11 @@ export default function BulkImportModal({
 
     void (async () => {
       try {
-        await executeBulkImport();
+        if (isSystemEdit) {
+          await executeBulkImportUpdate();
+        } else {
+          await executeBulkImport();
+        }
       } catch (error) {
         console.error('Error during bulk import:', error);
         alert(t('bulkImport.importError'));
@@ -610,7 +1079,7 @@ export default function BulkImportModal({
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [importTrigger, step]);
+  }, [importTrigger, step, isSystemEdit]);
 
   const handleImport = () => {
     setStep('preview');
@@ -618,109 +1087,91 @@ export default function BulkImportModal({
   };
 
 
+  const stepSubtitle =
+    step === 'mapping'
+      ? t('bulkImport.stepMapping')
+      : step === 'preview'
+        ? t('bulkImport.stepPreview')
+        : step === 'complete'
+          ? t('bulkImport.stepComplete')
+          : null;
+
   return (
-    <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 animate-in fade-in duration-200">
-      <div className="relative bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-5xl max-h-[90vh] overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-300">
-        {resumeLoading && (
-          <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center gap-2 bg-white/90">
+    <POModalShell
+      title={isSystemEdit ? t('bulkImport.editTitle') : t('bulkImport.title')}
+      titleId="bulk-import-title"
+      maxWidthClass={step === 'upload' ? 'max-w-md' : 'max-w-5xl'}
+      zIndexClass="z-50"
+      onClose={handleRequestClose}
+      headerExtra={
+        stepSubtitle ? (
+          <p className="mt-1 text-sm text-gray-500">{stepSubtitle}</p>
+        ) : undefined
+      }
+    >
+      <div className="relative">
+        {initialLoading && (
+          <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center gap-2 bg-black/40 backdrop-blur-[2px]">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#515151] border-t-transparent" aria-hidden />
             <p className="text-sm text-gray-600">{t('bulkImport.loadingDraft')}</p>
           </div>
         )}
-        {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">{t('bulkImport.title')}</h3>
-            <p className="text-sm text-gray-500 mt-0.5">
-              {mode === 'resume' && !resumeLoading && (
-                <span className="mr-2 inline-block rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-800">
-                  {t('bulkImport.resumeBadge')}
-                </span>
-              )}
-              {step === 'upload' && t('bulkImport.stepUpload')}
-              {step === 'mapping' && t('bulkImport.stepMapping')}
-              {step === 'preview' && t('bulkImport.stepPreview')}
-              {step === 'complete' && t('bulkImport.stepComplete')}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
 
-        {/* Content */}
         <div className="overflow-y-auto max-h-[calc(90vh-8rem)] p-6">
-          {/* Step 1: Upload */}
           {step === 'upload' && (
-            <div className="space-y-6">
-              <div
-                role="button"
-                tabIndex={0}
-                aria-label={t('bulkImport.uploadAria')}
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    fileInputRef.current?.click();
-                  }
-                }}
-                className={`border-2 border-dashed rounded-xl p-12 text-center transition-colors ${
-                  isDragging
-                    ? 'border-[#515151] bg-[#515151]/10'
-                    : 'border-gray-300 hover:border-[#515151]'
-                }`}
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label={t('bulkImport.uploadAria')}
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  fileInputRef.current?.click();
+                }
+              }}
+              className={`rounded-xl border-2 border-dashed px-8 py-14 text-center transition-colors ${
+                isDragging
+                  ? 'border-[#515151] bg-[#515151]/10'
+                  : 'border-gray-300 hover:border-[#515151]'
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv,text/plain"
+                onChange={handleFileUpload}
+                className="hidden"
+                id="file-upload"
+              />
+              <label
+                htmlFor="file-upload"
+                className="block cursor-pointer"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => e.preventDefault()}
               >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".csv,text/csv,text/plain"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                  id="file-upload"
-                />
-                <label
-                  htmlFor="file-upload"
-                  className="cursor-pointer block"
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => e.preventDefault()}
+                <svg
+                  className="mx-auto mb-4 h-10 w-10 text-gray-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                  aria-hidden
                 >
-                  <div className="text-6xl mb-4">📄</div>
-                  <div className="text-base font-medium text-gray-900 mb-2">
-                    {isDragging ? t('bulkImport.uploadDrop') : t('bulkImport.uploadClick')}
-                  </div>
-                  <div className="text-sm text-gray-500">{t('bulkImport.csvOnly')}</div>
-                </label>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h4 className="text-sm font-semibold text-blue-900 mb-2">{t('bulkImport.howToExportTitle')}</h4>
-                  <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-                    <li>{t('bulkImport.howToExport1')}</li>
-                    <li>{t('bulkImport.howToExport2')}</li>
-                    <li>{t('bulkImport.howToExport3')}</li>
-                    <li>{t('bulkImport.howToExport4')}</li>
-                  </ol>
-                </div>
-
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <h4 className="text-sm font-semibold text-gray-900 mb-2">{t('bulkImport.whatHappensTitle')}</h4>
-                  <ul className="text-sm text-gray-700 space-y-1">
-                    <li>• {t('bulkImport.whatHappens1')}</li>
-                    <li>• {t('bulkImport.whatHappens2')}</li>
-                    <li>• {t('bulkImport.whatHappens3')}</li>
-                    <li>• {t('bulkImport.whatHappens4')}</li>
-                  </ul>
-                </div>
-              </div>
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+                  />
+                </svg>
+                <p className="text-base font-medium text-gray-900">
+                  {isDragging ? t('bulkImport.uploadDrop') : t('bulkImport.uploadClick')}
+                </p>
+                <p className="mt-1.5 text-sm text-gray-500">{t('bulkImport.csvOnly')}</p>
+              </label>
             </div>
           )}
 
@@ -728,7 +1179,7 @@ export default function BulkImportModal({
           {step === 'mapping' && (
             <div className="space-y-6">
               {/* Default Values */}
-              <div className="bg-gray-50 rounded-lg p-4 space-y-4">
+              <div className="sasa-modal-section space-y-4 p-4">
                 <h4 className="text-sm font-semibold text-gray-900">
                   {t('bulkImport.orderInfoTitle').replace('{count}', String(parsedData.length))}
                 </h4>
@@ -792,8 +1243,8 @@ export default function BulkImportModal({
                     </select>
                   </div>
                 </div>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
-                  <h5 className="text-sm font-semibold text-blue-900 mb-2">{t('bulkImport.currencyExchangeTitle')}</h5>
+                <div className="border-t border-gray-200 pt-4 space-y-3">
+                  <h5 className="text-sm font-semibold text-gray-900">{t('bulkImport.currencyExchangeTitle')}</h5>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium mb-1 text-gray-700">
@@ -842,7 +1293,7 @@ export default function BulkImportModal({
                               setExchangeRate(rate);
                               setExchangeRateManuallySet(true);
                             }}
-                            className="px-3 py-2 text-xs bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+                            className="rounded-lg border border-gray-300 px-3 py-2 text-xs text-gray-700 transition-colors hover:bg-gray-50"
                             title={t('bulkImport.exchangeRateMarketTitle')}
                           >
                             {t('bulkImport.exchangeRateMarket')}
@@ -859,21 +1310,19 @@ export default function BulkImportModal({
                     </div>
                   </div>
                   {defaultCurrency !== 'USD' && (
-                    <div className="bg-white border border-blue-200 rounded p-2 text-xs text-blue-800">
-                      {t('bulkImport.fxNote')}
-                    </div>
+                    <p className="text-xs text-gray-500">{t('bulkImport.fxNote')}</p>
                   )}
                 </div>
               </div>
 
-              {/* Column Mapping */}
+              {!isSystemEdit && (
               <div>
                 <h4 className="text-sm font-semibold text-gray-900 mb-3">{t('bulkImport.mapColumnsTitle')}</h4>
                 <p className="text-xs text-gray-500 mb-4">{t('bulkImport.mapColumnsHint')}</p>
                 <div className="space-y-3">
                   {headers.map((header) => (
                     <div key={header} className="flex items-center gap-4">
-                      <div className="flex-1 px-3 py-2 bg-gray-100 rounded-lg text-sm font-mono">
+                      <div className="sasa-modal-chip flex-1 rounded-lg px-3 py-2 text-sm font-mono">
                         {header}
                       </div>
                       <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -903,24 +1352,89 @@ export default function BulkImportModal({
                   ))}
                 </div>
               </div>
+              )}
 
-              {/* Preview first row */}
               {parsedData.length > 0 && (
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="text-sm font-semibold text-gray-900 mb-2">{t('bulkImport.previewFirstRow')}</h4>
-                  <div className="text-xs text-gray-700 space-y-1 font-mono">
-                    {Object.entries(columnMapping).map(([csvCol, dbField]) => {
-                      if (dbField) {
-                        return (
-                          <div key={csvCol}>
-                            <span className="text-[#515151] font-semibold">{mapFieldLabel(dbField)}:</span>{' '}
-                            {parsedData[0][csvCol]}
-                          </div>
-                        );
-                      }
-                      return null;
-                    })}
+                <div>
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-sm font-semibold text-gray-900">
+                      {t('bulkImport.itemsTableTitle').replace('{count}', String(parsedData.length))}
+                    </h4>
+                    {isSystemEdit && (
+                      <button
+                        type="button"
+                        onClick={addEditRow}
+                        className="text-sm font-medium text-[#515151] hover:text-black"
+                      >
+                        + {t('bulkImport.addRow')}
+                      </button>
+                    )}
                   </div>
+                  <p className="mb-3 text-xs text-gray-500">{t('bulkImport.itemsTableHint')}</p>
+                  {mappedTableColumns.length === 0 ? (
+                    <p className="text-sm text-gray-500">{t('bulkImport.itemsTableEmpty')}</p>
+                  ) : (
+                    <div className="sasa-modal-section overflow-hidden">
+                      <div className="max-h-80 overflow-auto">
+                        <table className="w-full min-w-max text-sm">
+                          <thead>
+                            <tr className="border-b border-gray-200">
+                              <th className="sasa-modal-chip sticky left-0 z-[2] min-w-[2.5rem] px-3 py-2 text-left text-xs font-medium text-gray-500">
+                                {t('bulkImport.itemsTableRow')}
+                              </th>
+                              {mappedTableColumns.map((col) => (
+                                <th
+                                  key={col.dbField}
+                                  className="sasa-modal-chip whitespace-nowrap px-3 py-2 text-left text-xs font-medium text-gray-500"
+                                >
+                                  {col.label}
+                                </th>
+                              ))}
+                              {isSystemEdit && (
+                                <th className="sasa-modal-chip min-w-[4rem] px-2 py-2 text-xs font-medium text-gray-500" />
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {parsedData.map((row, rowIndex) => (
+                              <tr key={rowIndex} className="border-b border-gray-200 last:border-0">
+                                <td className="sasa-modal-chip sticky left-0 z-[1] px-3 py-1.5 text-xs text-gray-500">
+                                  {rowIndex + 1}
+                                </td>
+                                {mappedTableColumns.map((col) => (
+                                  <td key={col.dbField} className="px-2 py-1">
+                                    <input
+                                      type={NUMERIC_IMPORT_FIELDS.has(col.dbField) ? 'number' : 'text'}
+                                      step={col.dbField === 'quantity' ? '1' : 'any'}
+                                      value={String(row[col.csvColumn] ?? '')}
+                                      onChange={(e) =>
+                                        updateImportCell(rowIndex, col.csvColumn, e.target.value)
+                                      }
+                                      className={`w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#515151] ${
+                                        col.dbField === 'description' ? 'min-w-[220px]' : 'min-w-[7rem]'
+                                      }`}
+                                    />
+                                  </td>
+                                ))}
+                                {isSystemEdit && (
+                                  <td className="px-2 py-1 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => removeEditRow(rowIndex)}
+                                      className="text-xs text-red-600 hover:text-red-800"
+                                      title={t('bulkImport.removeRow')}
+                                    >
+                                      {t('bulkImport.removeRow')}
+                                    </button>
+                                  </td>
+                                )}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -935,7 +1449,9 @@ export default function BulkImportModal({
                   aria-hidden
                 />
                 <div className="text-lg font-medium text-gray-900">
-                  {t('bulkImport.importing').replace('{count}', String(parsedData.length))}
+                  {isSystemEdit
+                    ? t('bulkImport.savingChanges').replace('{count}', String(parsedData.length))
+                    : t('bulkImport.importing').replace('{count}', String(parsedData.length))}
                 </div>
                 <div className="text-sm text-gray-500 mt-1">{t('bulkImport.importingWait')}</div>
               </div>
@@ -959,10 +1475,14 @@ export default function BulkImportModal({
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <h4 className="text-xl font-semibold text-gray-900 mb-2">{t('bulkImport.completeTitle')}</h4>
+              <h4 className="text-xl font-semibold text-gray-900 mb-2">
+                {isSystemEdit ? t('bulkImport.saveCompleteTitle') : t('bulkImport.completeTitle')}
+              </h4>
               <div className="space-y-2 text-sm">
                 <p className="text-gray-700">
-                  {t('bulkImport.successCount').replace('{count}', String(importResults.success))}
+                  {isSystemEdit
+                    ? t('bulkImport.saveSuccessCount').replace('{count}', String(importResults.success))
+                    : t('bulkImport.successCount').replace('{count}', String(importResults.success))}
                 </p>
                 {(importResults.autoLinked ?? 0) > 0 && (
                   <p className="text-green-600 font-medium">
@@ -987,26 +1507,29 @@ export default function BulkImportModal({
           )}
         </div>
 
-        {/* Footer Actions */}
-        {(step === 'mapping') && (
-          <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex gap-3">
-            <button
-              type="button"
-              onClick={() => setStep('upload')}
-              className="flex-1 px-6 py-2.5 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all font-medium text-gray-700"
-            >
-              {t('common.back')}
-            </button>
+        {step === 'mapping' && (
+          <div className="sasa-modal-footer sticky bottom-0 flex gap-3 border-t border-gray-200 px-6 py-4">
+            {!isSystemEdit && (
+              <button
+                type="button"
+                onClick={() => setStep('upload')}
+                className="flex-1 rounded-xl border border-gray-300 px-6 py-2.5 font-medium text-gray-700 transition-all hover:bg-gray-50"
+              >
+                {t('common.back')}
+              </button>
+            )}
             <button
               type="button"
               onClick={handleImport}
-              className="flex-1 bg-[#515151] hover:bg-[#000000] text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
+              className={`${isSystemEdit ? 'w-full' : 'flex-1'} rounded-xl bg-[#515151] px-6 py-2.5 font-medium text-white shadow-sm transition-all hover:bg-[#000000] hover:shadow active:scale-95`}
             >
-              {t('bulkImport.importNItems').replace('{count}', String(parsedData.length))}
+              {isSystemEdit
+                ? t('bulkImport.saveChanges')
+                : t('bulkImport.importNItems').replace('{count}', String(parsedData.length))}
             </button>
           </div>
         )}
       </div>
-    </div>
+    </POModalShell>
   );
 }

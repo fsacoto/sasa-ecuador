@@ -22,6 +22,7 @@ interface InventoryContextType {
   addPurchaseOrdersBulk: (orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]) => Promise<PurchaseOrder[]>;
   updatePurchaseOrder: (id: string, order: Partial<PurchaseOrder>) => Promise<void>;
   deletePurchaseOrder: (id: string) => Promise<void>;
+  deletePurchaseOrdersBulk: (ids: string[]) => Promise<void>;
   
   // Inventory
   inventory: InventoryItem[];
@@ -174,6 +175,19 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const deletePurchaseOrdersBulk = async (ids: string[]) => {
+    const uniqueIds = [...new Set(ids.filter(Boolean))];
+    if (uniqueIds.length === 0) return;
+    try {
+      await purchaseOrdersService.deletePurchaseOrdersBulk(uniqueIds);
+      const idSet = new Set(uniqueIds);
+      setPurchaseOrders((prev) => prev.filter((o) => !idSet.has(o.id)));
+    } catch (error) {
+      console.error('Error deleting purchase orders in bulk:', error);
+      throw error;
+    }
+  };
+
   // Inventory operations
   const addInventoryItem = async (item: Omit<InventoryItem, 'id' | 'createdAt'>): Promise<string> => {
     try {
@@ -322,6 +336,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         addPurchaseOrdersBulk,
         updatePurchaseOrder,
         deletePurchaseOrder,
+        deletePurchaseOrdersBulk,
         inventory,
         addInventoryItem,
         addInventoryItemsBulk,

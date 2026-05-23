@@ -23,37 +23,35 @@ export default function ConfirmDialog({
 }: ConfirmDialogProps) {
   if (!open) return null;
 
-  const confirmButtonClass = confirmVariant === 'danger'
-    ? 'px-4 py-2 rounded-xl bg-red-600 text-white hover:bg-red-700 font-medium transition-colors'
-    : 'px-4 py-2 rounded-xl bg-[#515151] text-white hover:bg-[#000000] font-medium transition-colors';
-
   return (
     <div
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
       onClick={onCancel}
     >
       <div
-        className="bg-white rounded-2xl w-full max-w-md shadow-lg"
+        className="sasa-modal-panel w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
+        role="alertdialog"
+        aria-modal="true"
       >
         <div className="px-6 py-5">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">
-            {title}
-          </h3>
-          <p className="text-gray-600 text-sm whitespace-pre-line">
+          <h3 className="mb-3 text-lg font-semibold text-gray-900">{title}</h3>
+          <p className="whitespace-pre-line text-sm leading-relaxed text-gray-600">
             {description}
           </p>
         </div>
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
+        <div className="flex justify-end gap-3 border-t border-gray-100 px-6 py-4">
           <button
+            type="button"
             onClick={onCancel}
-            className="px-4 py-2 rounded-xl text-gray-700 bg-gray-100 hover:bg-gray-200 font-medium transition-colors"
+            className="rounded-xl border border-gray-300 bg-transparent px-4 py-2 font-medium text-gray-700 transition-colors hover:bg-gray-50"
           >
             {cancelText}
           </button>
           <button
+            type="button"
             onClick={onConfirm}
-            className={confirmButtonClass}
+            className="rounded-xl bg-[#515151] px-4 py-2 font-medium text-white transition-colors hover:bg-[#000000]"
           >
             {confirmText}
           </button>

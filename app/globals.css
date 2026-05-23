@@ -122,6 +122,67 @@ body {
   background-color: rgba(255, 255, 255, 0.1) !important;
 }
 
+.sasa-modal-panel .sasa-modal-chip {
+  background-color: #f3f4f6 !important;
+  color: #374151 !important;
+}
+
+.sasa-modal-panel .sasa-modal-section {
+  background-color: #f9fafb !important;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .sasa-modal-section {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.sasa-modal-panel .sasa-modal-callout {
+  background-color: #eff6ff !important;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.5rem;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .sasa-modal-callout {
+  background-color: rgba(59, 130, 246, 0.14) !important;
+  border-color: rgba(96, 165, 250, 0.42) !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .sasa-modal-callout .text-blue-900,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .sasa-modal-callout .text-blue-800 {
+  color: #93c5fd !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .sasa-modal-callout [class*='bg-blue-100'] {
+  background-color: rgba(59, 130, 246, 0.25) !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .sasa-modal-callout [class*='text-blue-700'] {
+  color: #bfdbfe !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .sasa-modal-chip {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: #e5e7eb !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .sasa-modal-footer {
+  background-color: transparent !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-import-success-icon {
+  background-color: rgba(16, 185, 129, 0.2) !important;
+  border: 1px solid rgba(52, 211, 153, 0.45);
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-import-success-icon .sasa-import-success-icon-check,
+.sasa-modal-root.sasa-modal-dark .sasa-import-success-icon .sasa-import-success-icon-check * {
+  color: #34d399 !important;
+  stroke: #34d399 !important;
+}
+
 /* Popups/menus/dropdowns in dark mode must be opaque black (no bleed-through). */
 .app-dark-main [role='menu'],
 .app-dark-main [role='listbox'],
@@ -260,7 +321,7 @@ body {
  * Exclude Tailwind opacity utilities (e.g. bg-white/10).
  * Wrap intentional light dialogs in dark mode with .sasa-modal-light on the root panel.
  */
-[class*='fixed'][class*='inset-0'] [class*='bg-white']:not([class*='bg-white/']) {
+[class*='fixed'][class*='inset-0']:not(.sasa-modal-dark) [class*='bg-white']:not([class*='bg-white/']) {
   background-color: #ffffff !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -268,7 +329,7 @@ body {
   isolation: isolate;
 }
 
-[class*='fixed'][class*='inset-0'] [class*='bg-gray-50']:not([class*='bg-gray-50/']) {
+[class*='fixed'][class*='inset-0']:not(.sasa-modal-dark) [class*='bg-gray-50']:not([class*='bg-gray-50/']) {
   background-color: #f9fafb !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -276,7 +337,7 @@ body {
   isolation: isolate;
 }
 
-[class*='fixed'][class*='inset-0'] [class*='bg-gray-100']:not([class*='bg-gray-100/']) {
+[class*='fixed'][class*='inset-0']:not(.sasa-modal-dark) [class*='bg-gray-100']:not([class*='bg-gray-100/']) {
   background-color: #f3f4f6 !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -387,4 +448,27 @@ body {
 
 .app-dark-main [class*='overflow-y-auto']::-webkit-scrollbar-thumb {
   background: rgba(205, 205, 205, 0.85);
+}
+
+/* Purchase orders table: row action buttons readable in dark mode */
+.sasa-po-row-action {
+  border-color: rgba(209, 213, 219, 0.9);
+  background-color: #ffffff;
+  color: #374151;
+}
+
+.sasa-po-row-action:hover {
+  background-color: #f9fafb;
+  border-color: #d1d5db;
+}
+
+.app-dark-main .sasa-po-row-action {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+  color: #ffffff !important;
+}
+
+.app-dark-main .sasa-po-row-action:hover {
+  background-color: rgba(255, 255, 255, 0.14) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
 }

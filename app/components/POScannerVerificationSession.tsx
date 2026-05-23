@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState, startTransition } from 'react';
 import POModalShell from './ui/POModalShell';
 import { PurchaseOrder, Supplier } from '../types';
 import { useTranslation } from '../context/TranslationContext';
@@ -14,7 +14,8 @@ import {
   isLinePartiallyScanned,
   isLinePendingScanner,
   isLineReadyToConfirm,
-  summarizeInvoiceForScanner,
+  summarizeInvoiceLinesForScanner,
+  type ScanProgress,
 } from '../utils/purchaseOrderBarcodeScan';
 import { effectivePurchaseOrderStatus } from '../utils/purchaseOrderStatusTheme';
 import POScanLinePickerModal from './POScanLinePickerModal';
@@ -53,6 +54,70 @@ type InvoiceRow = {
   purchaseDate: Date;
 };
 
+type LineWithProgress = {
+  order: PurchaseOrder;
+  progress: ScanProgress;
+};
+
+type ScannerLineRowUi = {
+  border: string;
+  row: string;
+  rowActive: string;
+  track: string;
+  badgeReady: string;
+  badgeScan: string;
+};
+
+const ScannerPendingRow = memo(function ScannerPendingRow({
+  order,
+  progress,
+  isActive,
+  busy,
+  ui,
+  darkMode,
+  onUndo,
+  undoLabel,
+}: {
+  order: PurchaseOrder;
+  progress: ScanProgress;
+  isActive: boolean;
+  busy: boolean;
+  ui: ScannerLineRowUi;
+  darkMode: boolean;
+  onUndo: (id: string) => void;
+  undoLabel: string;
+}) {
+  const pct = progress.expected > 0 ? Math.min(100, (progress.scanned / progress.expected) * 100) : 0;
+  return (
+    <li>
+      <div className={`rounded-lg border px-3 py-2.5 ${isActive ? ui.rowActive : ui.row}`}>
+        <p className="line-clamp-2 text-sm font-medium text-gray-900">{order.description}</p>
+        <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
+          <span className="font-mono">{order.sku}</span>
+          <span className="font-semibold tabular-nums text-gray-700">
+            {progress.scanned}/{progress.expected}
+          </span>
+        </div>
+        <div className={`mt-1.5 h-1.5 overflow-hidden rounded-full ${ui.track}`}>
+          <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${pct}%` }} />
+        </div>
+        {progress.scanned > 0 && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onUndo(order.id)}
+            className={`mt-2 text-xs font-medium disabled:opacity-50 ${
+              darkMode ? 'text-red-300 hover:underline' : 'text-red-700 hover:underline'
+            }`}
+          >
+            {undoLabel}
+          </button>
+        )}
+      </div>
+    </li>
+  );
+});
+
 export default function POScannerVerificationSession({
   purchaseOrders,
   suppliers,
@@ -74,22 +139,34 @@ export default function POScannerVerificationSession({
   const [sidebarTab, setSidebarTab] = useState<'pending' | 'scanned' | 'ready'>('pending');
   const disambiguationRef = useRef<Map<string, string>>(new Map());
 
-  const scannerInvoices = useMemo(() => {
-    const invoiceMap = new Map<string, InvoiceRow>();
-    purchaseOrders.forEach((order) => {
-      if (!isLineEligibleForScanner(order)) return;
-      if (!invoiceMap.has(order.invoice)) {
-        invoiceMap.set(order.invoice, {
-          invoice: order.invoice,
-          orders: [],
-          supplierId: order.supplierId,
-          purchaseDate: order.purchaseDate,
-        });
-      }
-      invoiceMap.get(order.invoice)!.orders.push(order);
-    });
-    return [...invoiceMap.values()].sort((a, b) => a.invoice.localeCompare(b.invoice));
+  const ordersByInvoice = useMemo(() => {
+    const map = new Map<string, PurchaseOrder[]>();
+    for (const order of purchaseOrders) {
+      const key = order.invoice;
+      if (!key) continue;
+      const bucket = map.get(key);
+      if (bucket) bucket.push(order);
+      else map.set(key, [order]);
+    }
+    return map;
   }, [purchaseOrders]);
+
+  const scannerInvoices = useMemo(() => {
+    if (invoice) return [];
+    const rows: InvoiceRow[] = [];
+    for (const [inv, orders] of ordersByInvoice) {
+      const eligible = orders.filter(isLineEligibleForScanner);
+      if (eligible.length === 0) continue;
+      const first = orders[0];
+      rows.push({
+        invoice: inv,
+        orders: eligible,
+        supplierId: first?.supplierId ?? '',
+        purchaseDate: first?.purchaseDate ?? new Date(),
+      });
+    }
+    return rows.sort((a, b) => a.invoice.localeCompare(b.invoice));
+  }, [ordersByInvoice, invoice]);
 
   const filteredInvoices = useMemo(() => {
     if (!search.trim()) return scannerInvoices;
@@ -112,17 +189,20 @@ export default function POScannerVerificationSession({
   }, [scannerInvoices, search, suppliers]);
 
   const invoiceLines = useMemo(
-    () => (invoice ? purchaseOrders.filter((o) => o.invoice === invoice) : []),
-    [purchaseOrders, invoice]
+    () => (invoice ? ordersByInvoice.get(invoice) ?? [] : []),
+    [invoice, ordersByInvoice]
   );
 
   const summary = useMemo(
-    () => (invoice ? summarizeInvoiceForScanner(invoice, purchaseOrders) : null),
-    [invoice, purchaseOrders]
+    () => (invoice ? summarizeInvoiceLinesForScanner(invoice, invoiceLines) : null),
+    [invoice, invoiceLines]
   );
 
   const pendingLines = useMemo(
-    () => invoiceLines.filter((o) => isLinePendingScanner(o) && !isLineReadyToConfirm(o)),
+    () =>
+      invoiceLines
+        .filter((o) => isLinePendingScanner(o) && !isLineReadyToConfirm(o))
+        .map((order) => ({ order, progress: getScanProgress(order) })),
     [invoiceLines]
   );
 
@@ -132,7 +212,10 @@ export default function POScannerVerificationSession({
   );
 
   const scannedLines = useMemo(
-    () => invoiceLines.filter(isLinePartiallyScanned),
+    () =>
+      invoiceLines
+        .filter(isLinePartiallyScanned)
+        .map((order) => ({ order, progress: getScanProgress(order) })),
     [invoiceLines]
   );
 
@@ -316,13 +399,13 @@ export default function POScannerVerificationSession({
                 const supplier = suppliers.find((s) => s.id === inv.supplierId);
                 const poNumber = formatPONumber(inv.invoice);
                 const invoiceDate = formatDateMedium(inv.purchaseDate);
-                const scanSummary = summarizeInvoiceForScanner(inv.invoice, purchaseOrders);
+                const scanSummary = summarizeInvoiceLinesForScanner(inv.invoice, inv.orders);
 
                 return (
                   <button
                     key={inv.invoice}
                     type="button"
-                    onClick={() => setInvoice(inv.invoice)}
+                    onClick={() => startTransition(() => setInvoice(inv.invoice))}
                     className="sasa-modal-row w-full px-6 py-4 text-left transition-colors focus:outline-none"
                   >
                     <div className="flex items-start justify-between">
@@ -746,8 +829,7 @@ export default function POScannerVerificationSession({
                     {t('purchaseOrders.scanner.noScannedLines')}
                   </li>
                 ) : (
-                  scannedLines.map((o) => {
-                    const p = getScanProgress(o);
+                  scannedLines.map(({ order: o, progress: p }) => {
                     const pct = p.expected > 0 ? Math.min(100, (p.scanned / p.expected) * 100) : 0;
                     const ready = isLineReadyToConfirm(o);
                     return (
@@ -815,43 +897,19 @@ export default function POScannerVerificationSession({
                     {t('purchaseOrders.scanner.noPendingLines')}
                   </li>
                 ) : (
-                  pendingLines.map((o) => {
-                    const p = getScanProgress(o);
-                    const pct = p.expected > 0 ? Math.min(100, (p.scanned / p.expected) * 100) : 0;
-                    return (
-                      <li key={o.id}>
-                        <div
-                          className={`rounded-lg border px-3 py-2.5 ${lastOrder?.id === o.id ? ui.rowActive : ui.row}`}
-                        >
-                          <p className="line-clamp-2 text-sm font-medium text-gray-900">{o.description}</p>
-                          <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
-                            <span className="font-mono">{o.sku}</span>
-                            <span className="font-semibold tabular-nums text-gray-700">
-                              {p.scanned}/{p.expected}
-                            </span>
-                          </div>
-                          <div className={`mt-1.5 h-1.5 overflow-hidden rounded-full ${ui.track}`}>
-                            <div
-                              className="h-full rounded-full bg-indigo-500 transition-all"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                          {p.scanned > 0 && (
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => void handleUndoScan(o.id)}
-                              className={`mt-2 text-xs font-medium disabled:opacity-50 ${
-                                darkMode ? 'text-red-300 hover:underline' : 'text-red-700 hover:underline'
-                              }`}
-                            >
-                              {t('purchaseOrders.scanner.undoScan')}
-                            </button>
-                          )}
-                        </div>
-                      </li>
-                    );
-                  })
+                  pendingLines.map(({ order, progress }) => (
+                    <ScannerPendingRow
+                      key={order.id}
+                      order={order}
+                      progress={progress}
+                      isActive={lastOrder?.id === order.id}
+                      busy={busy}
+                      ui={ui}
+                      darkMode={darkMode}
+                      onUndo={(id) => void handleUndoScan(id)}
+                      undoLabel={t('purchaseOrders.scanner.undoScan')}
+                    />
+                  ))
                 ))}
             </ul>
           </aside>

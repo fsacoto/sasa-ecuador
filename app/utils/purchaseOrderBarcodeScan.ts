@@ -102,19 +102,20 @@ export type InvoiceScannerSummary = {
   completedLines: number;
 };
 
-export function summarizeInvoiceForScanner(
+function summarizeEligibleScannerLines(
   invoice: string,
-  orders: PurchaseOrder[]
+  lines: PurchaseOrder[]
 ): InvoiceScannerSummary | null {
-  const lines = orders.filter((o) => o.invoice === invoice);
   if (lines.length === 0) return null;
 
   let pendingLines = 0;
   let pendingUnits = 0;
   let completedLines = 0;
+  let lineCount = 0;
 
   for (const order of lines) {
     if (!isLineEligibleForScanner(order)) continue;
+    lineCount++;
     const prog = getScanProgress(order);
     pendingLines++;
     pendingUnits += prog.remaining;
@@ -123,14 +124,33 @@ export function summarizeInvoiceForScanner(
     }
   }
 
+  if (lineCount === 0) return null;
+
   return {
     invoice,
     supplierId: lines[0]?.supplierId ?? '',
-    lineCount: lines.filter(isLineEligibleForScanner).length,
+    lineCount,
     pendingLines,
     pendingUnits,
     completedLines,
   };
+}
+
+/** Summary for one invoice when `orders` is the full PO list (scans all rows). */
+export function summarizeInvoiceForScanner(
+  invoice: string,
+  orders: PurchaseOrder[]
+): InvoiceScannerSummary | null {
+  const lines = orders.filter((o) => o.invoice === invoice);
+  return summarizeEligibleScannerLines(invoice, lines);
+}
+
+/** Summary when caller already has lines for this invoice (faster). */
+export function summarizeInvoiceLinesForScanner(
+  invoice: string,
+  invoiceLines: PurchaseOrder[]
+): InvoiceScannerSummary | null {
+  return summarizeEligibleScannerLines(invoice, invoiceLines);
 }
 
 export function listInvoicesEligibleForScanner(orders: PurchaseOrder[]): string[] {

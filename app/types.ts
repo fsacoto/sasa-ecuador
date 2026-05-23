@@ -57,6 +57,10 @@ export interface PurchaseOrder {
   createdAt: Date;
   /** Label image URL (Firebase Storage): generated on the PO when there is SKU; reused from inventory or other OC lines with the same internal SKU; copied to inventory when verified. */
   barcode?: string;
+  /** Shared id for all lines created in one bulk CSV import (used to edit/delete as a batch). */
+  bulkImportId?: string;
+  /** Display label for the bulk import (e.g. CSV filename). */
+  bulkImportLabel?: string;
 }
 
 /** Problem qty from PO verification (damaged, etc.) — stock still counts units on hand. */

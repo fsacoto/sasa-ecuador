@@ -174,3 +174,15 @@ export async function deletePurchaseOrder(id: string): Promise<void> {
   }
 }
 
+/** Delete many orders in parallel; one UI update should follow in context. */
+export async function deletePurchaseOrdersBulk(ids: string[]): Promise<void> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return;
+  try {
+    await Promise.all(unique.map((id) => deletePurchaseOrder(id)));
+  } catch (error) {
+    console.error('Error deleting purchase orders in bulk:', error);
+    throw error;
+  }
+}
+

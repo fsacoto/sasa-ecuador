@@ -1,17 +1,38 @@
 'use client';
 
-import { useState } from 'react';
-import { PurchaseOrder } from '../types';
+import { useMemo, useState } from 'react';
+import { PurchaseOrder, Supplier } from '../types';
 import ConfirmDialog from './ui/ConfirmDialog';
 import { useTranslation } from '../context/TranslationContext';
+import { effectivePurchaseOrderStatus } from '../utils/purchaseOrderStatusTheme';
+import { statusLabelKey } from '../utils/purchaseOrderStatusFlow';
+import { formatPONumber } from '../utils/purchaseOrderFormat';
+
+const PREVIEW_LINE_LIMIT = 4;
 
 interface BulkDeleteModalProps {
   purchaseOrders: PurchaseOrder[];
+  suppliers: Supplier[];
   onClose: () => void;
-  onBulkDelete: (invoiceNumbers: string[]) => void;
+  onBulkDelete: (invoiceNumbers: string[]) => void | Promise<void>;
 }
 
-export default function BulkDeleteModal({ purchaseOrders, onClose, onBulkDelete }: BulkDeleteModalProps) {
+function formatStatusLabel(
+  status: string,
+  t: (key: string) => string
+): string {
+  const normalized = effectivePurchaseOrderStatus(status);
+  const key = `purchaseOrders.${statusLabelKey(normalized)}`;
+  const label = t(key);
+  return label === key ? normalized : label;
+}
+
+export default function BulkDeleteModal({
+  purchaseOrders,
+  suppliers,
+  onClose,
+  onBulkDelete,
+}: BulkDeleteModalProps) {
   const { t } = useTranslation();
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [pendingInvoices, setPendingInvoices] = useState<string[]>([]);
@@ -19,43 +40,81 @@ export default function BulkDeleteModal({ purchaseOrders, onClose, onBulkDelete 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterSupplier, setFilterSupplier] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [expandedInvoices, setExpandedInvoices] = useState<Set<string>>(new Set());
 
-  // Get unique suppliers
-  const suppliers = [...new Set(purchaseOrders.map(order => order.supplierId))];
-  
-  // Get unique statuses
-  const statuses = [...new Set(purchaseOrders.map(order => order.status))];
-
-  // Filter orders based on search and filters
-  const filteredOrders = purchaseOrders.filter(order => {
-    const matchesSearch = order.invoice.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         order.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesSupplier = filterSupplier === 'all' || order.supplierId === filterSupplier;
-    const matchesStatus = filterStatus === 'all' || order.status === filterStatus;
-    
-    return matchesSearch && matchesSupplier && matchesStatus;
-  });
-
-  // Group orders by invoice
-  const ordersByInvoice = filteredOrders.reduce((acc, order) => {
-    if (!acc[order.invoice]) {
-      acc[order.invoice] = [];
+  const supplierNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of suppliers) {
+      map.set(s.id, s.name);
     }
-    acc[order.invoice].push(order);
+    return map;
+  }, [suppliers]);
+
+  const supplierOptions = useMemo(() => {
+    const ids = new Set(purchaseOrders.map((o) => o.supplierId).filter(Boolean));
+    return [...ids].sort((a, b) =>
+      (supplierNameById.get(a) ?? a).localeCompare(supplierNameById.get(b) ?? '')
+    );
+  }, [purchaseOrders, supplierNameById]);
+
+  const statusOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const order of purchaseOrders) {
+      set.add(effectivePurchaseOrderStatus(order.status));
+    }
+    return [...set].sort();
+  }, [purchaseOrders]);
+
+  const filteredOrders = useMemo(
+    () =>
+      purchaseOrders.filter((order) => {
+        const q = searchQuery.toLowerCase();
+        const matchesSearch =
+          !q ||
+          order.invoice.toLowerCase().includes(q) ||
+          order.description.toLowerCase().includes(q) ||
+          (order.sku || '').toLowerCase().includes(q);
+        const matchesSupplier =
+          filterSupplier === 'all' || order.supplierId === filterSupplier;
+        const matchesStatus =
+          filterStatus === 'all' ||
+          effectivePurchaseOrderStatus(order.status) === filterStatus;
+        return matchesSearch && matchesSupplier && matchesStatus;
+      }),
+    [purchaseOrders, searchQuery, filterSupplier, filterStatus]
+  );
+
+  const ordersByInvoice = useMemo(() => {
+    const acc: Record<string, PurchaseOrder[]> = {};
+    for (const order of filteredOrders) {
+      if (!acc[order.invoice]) acc[order.invoice] = [];
+      acc[order.invoice].push(order);
+    }
     return acc;
-  }, {} as Record<string, PurchaseOrder[]>);
+  }, [filteredOrders]);
+
+  const invoiceKeys = useMemo(
+    () => Object.keys(ordersByInvoice).sort((a, b) => a.localeCompare(b)),
+    [ordersByInvoice]
+  );
+
+  const toggleExpanded = (invoice: string) => {
+    setExpandedInvoices((prev) => {
+      const next = new Set(prev);
+      if (next.has(invoice)) next.delete(invoice);
+      else next.add(invoice);
+      return next;
+    });
+  };
 
   const handleInvoiceToggle = (invoice: string) => {
-    setSelectedInvoices(prev => 
-      prev.includes(invoice) 
-        ? prev.filter(inv => inv !== invoice)
-        : [...prev, invoice]
+    setSelectedInvoices((prev) =>
+      prev.includes(invoice) ? prev.filter((inv) => inv !== invoice) : [...prev, invoice]
     );
   };
 
   const handleSelectAll = () => {
-    const allInvoices = Object.keys(ordersByInvoice);
-    setSelectedInvoices(allInvoices);
+    setSelectedInvoices(invoiceKeys);
   };
 
   const handleSelectNone = () => {
@@ -63,163 +122,242 @@ export default function BulkDeleteModal({ purchaseOrders, onClose, onBulkDelete 
   };
 
   const handleDelete = () => {
-    console.log('Delete button clicked');
-    console.log('Selected invoices:', selectedInvoices);
-    console.log('Orders by invoice:', ordersByInvoice);
-    
     if (selectedInvoices.length === 0) {
-      alert('Please select at least one invoice to delete.');
+      alert(t('purchaseOrders.bulkDelete.selectOneAlert'));
       return;
     }
-
-    const totalOrders = selectedInvoices.reduce((total, invoice) => total + ordersByInvoice[invoice].length, 0);
-    
-    console.log(`Total orders to delete: ${totalOrders} from ${selectedInvoices.length} invoices`);
-    
     setPendingInvoices(selectedInvoices);
     setDeleteConfirmOpen(true);
   };
 
+  const deleteConfirmDescription = useMemo(() => {
+    if (pendingInvoices.length === 0) return '';
+    const totalOrders = pendingInvoices.reduce(
+      (total, inv) => total + (ordersByInvoice[inv]?.length ?? 0),
+      0
+    );
+    const invoiceCount = pendingInvoices.length;
+    const invoicePhrase =
+      invoiceCount === 1
+        ? t('common.bulkDeleteWarningInvoiceOne')
+        : t('common.bulkDeleteWarningInvoiceMany').replace('{count}', String(invoiceCount));
+    return t('common.bulkDeleteWarning')
+      .replace('{totalOrders}', String(totalOrders))
+      .replace('{invoicePhrase}', invoicePhrase);
+  }, [pendingInvoices, ordersByInvoice, t]);
+
+  const ordersCountLabel = (count: number) =>
+    count === 1
+      ? t('purchaseOrders.bulkDelete.ordersCountOne')
+      : t('purchaseOrders.bulkDelete.ordersCount').replace('{count}', String(count));
+
   return (
-    <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-6xl max-h-[90vh] overflow-hidden shadow-2xl animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 duration-300">
-        <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">Bulk Delete Purchase Orders</h3>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/20 p-0 backdrop-blur-sm animate-in fade-in duration-200 sm:items-center sm:p-4">
+      <div className="max-h-[90vh] w-full overflow-hidden rounded-t-3xl bg-white shadow-2xl animate-in slide-in-from-bottom duration-300 sm:max-w-6xl sm:rounded-2xl sm:slide-in-from-bottom-0">
+        <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-6 py-4">
+          <h3 className="text-lg font-semibold text-gray-900">
+            {t('purchaseOrders.bulkDelete.title')}
+          </h3>
           <button
             type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-gray-400 transition-colors hover:text-gray-600"
+            aria-label={t('common.close')}
           >
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
-        <div className="overflow-y-auto max-h-[calc(90vh-8rem)] p-6 space-y-4">
-          {/* Search and Filters */}
-          <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-            <div className="flex gap-3">
+        <div className="max-h-[calc(90vh-8rem)] space-y-4 overflow-y-auto p-6">
+          <div className="space-y-3 rounded-lg bg-gray-50 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row">
               <div className="flex-1">
                 <input
                   type="text"
-                  placeholder="Search by invoice or description..."
+                  placeholder={t('purchaseOrders.bulkDelete.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-red-500"
                 />
               </div>
-              <div className="w-48">
+              <div className="w-full sm:w-48">
                 <select
                   value={filterSupplier}
                   onChange={(e) => setFilterSupplier(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-red-500"
                 >
-                  <option value="all">All Suppliers</option>
-                  {suppliers.map(supplierId => (
+                  <option value="all">{t('purchaseOrders.allSuppliers')}</option>
+                  {supplierOptions.map((supplierId) => (
                     <option key={supplierId} value={supplierId}>
-                      {supplierId}
+                      {supplierNameById.get(supplierId) ?? t('purchaseOrders.unknownSupplier')}
                     </option>
                   ))}
                 </select>
               </div>
-              <div className="w-32">
+              <div className="w-full sm:w-40">
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-red-500"
                 >
-                  <option value="all">All Status</option>
-                  {statuses.map(status => (
-                    <option key={status} value={status}>{status}</option>
+                  <option value="all">{t('purchaseOrders.allStatus')}</option>
+                  {statusOptions.map((status) => (
+                    <option key={status} value={status}>
+                      {formatStatusLabel(status, t)}
+                    </option>
                   ))}
                 </select>
               </div>
             </div>
-            
-            <div className="flex gap-2">
+
+            <div className="flex flex-wrap items-center gap-2">
               <button
+                type="button"
                 onClick={handleSelectAll}
-                className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
+                className="rounded bg-gray-200 px-3 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-300"
               >
-                Select All
+                {t('purchaseOrders.selectAll')}
               </button>
               <button
+                type="button"
                 onClick={handleSelectNone}
-                className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
+                className="rounded bg-gray-200 px-3 py-1 text-sm text-gray-700 transition-colors hover:bg-gray-300"
               >
-                Select None
+                {t('purchaseOrders.selectNone')}
               </button>
-              <span className="text-sm text-gray-600 self-center">
-                {selectedInvoices.length} of {Object.keys(ordersByInvoice).length} invoices selected
+              <span className="text-sm text-gray-600">
+                {t('purchaseOrders.bulkDelete.selectionCount')
+                  .replace('{selected}', String(selectedInvoices.length))
+                  .replace('{total}', String(invoiceKeys.length))}
               </span>
             </div>
           </div>
 
-          {/* Orders List */}
           <div className="space-y-2">
-            {Object.keys(ordersByInvoice).length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                No purchase orders found matching your criteria.
+            {invoiceKeys.length === 0 ? (
+              <div className="py-8 text-center text-gray-500">
+                {t('purchaseOrders.bulkDelete.noResults')}
               </div>
             ) : (
-              Object.entries(ordersByInvoice).map(([invoice, orders]) => (
-                <div key={invoice} className="border border-gray-200 rounded-lg overflow-hidden">
-                  <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedInvoices.includes(invoice)}
-                        onChange={() => handleInvoiceToggle(invoice)}
-                        className="rounded border-gray-300 text-red-600 focus:ring-red-500"
-                      />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-4">
-                          <span className="font-semibold text-gray-900">Invoice: {invoice}</span>
-                          <span className="text-sm text-gray-600">
-                            {orders.length} order{orders.length !== 1 ? 's' : ''}
-                          </span>
-                          <span className="text-sm text-gray-600">
-                            Total: ${orders.reduce((sum, order) => sum + order.totalCostWithDiscount, 0).toFixed(2)}
-                          </span>
+              invoiceKeys.map((invoice) => {
+                const orders = ordersByInvoice[invoice];
+                const total = orders.reduce(
+                  (sum, order) => sum + (order.totalCostWithDiscount ?? 0),
+                  0
+                );
+                const currency = orders[0]?.currency || 'USD';
+                const expanded = expandedInvoices.has(invoice);
+                const previewOrders = expanded
+                  ? orders
+                  : orders.slice(0, PREVIEW_LINE_LIMIT);
+                const hiddenCount = Math.max(0, orders.length - PREVIEW_LINE_LIMIT);
+
+                return (
+                  <div key={invoice} className="overflow-hidden rounded-lg border border-gray-200">
+                    <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
+                      <label className="flex cursor-pointer items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedInvoices.includes(invoice)}
+                          onChange={() => handleInvoiceToggle(invoice)}
+                          className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                            <span className="font-semibold text-gray-900">
+                              {t('purchaseOrders.bulkDelete.invoiceLabel')}: {invoice}
+                            </span>
+                            <span className="text-sm text-gray-500">
+                              {formatPONumber(invoice)}
+                            </span>
+                            <span className="text-sm text-gray-600">{ordersCountLabel(orders.length)}</span>
+                            <span className="text-sm font-medium text-gray-700">
+                              {t('purchaseOrders.bulkDelete.totalLabel')}:{' '}
+                              {total.toLocaleString('es-EC', {
+                                style: 'currency',
+                                currency,
+                              })}
+                            </span>
+                          </div>
                         </div>
+                      </label>
+                    </div>
+
+                    <div className="px-4 py-2">
+                      <div className="mb-1 hidden gap-4 border-b border-gray-100 pb-1 text-xs font-medium uppercase tracking-wide text-gray-400 sm:flex">
+                        <span className="min-w-0 flex-1">{t('common.description')}</span>
+                        <span className="w-16 text-right">{t('common.quantity')}</span>
+                        <span className="w-24 text-right">{t('purchaseOrders.bulkDelete.skuColumn')}</span>
+                        <span className="w-24">{t('purchaseOrders.bulkDelete.statusColumn')}</span>
                       </div>
-                    </label>
-                  </div>
-                  
-                  <div className="px-4 py-2">
-                    <div className="space-y-1">
-                      {orders.map(order => (
-                        <div key={order.id} className="flex items-center gap-4 text-sm text-gray-600">
-                          <span className="w-32 truncate">{order.description}</span>
-                          <span className="w-20">{order.quantity} units</span>
-                          <span className="w-20">${order.costPerUnitWithDiscount.toFixed(2)}</span>
-                          <span className="w-20">{order.status}</span>
-                        </div>
-                      ))}
+                      <ul className="divide-y divide-gray-100">
+                        {previewOrders.map((order) => (
+                          <li
+                            key={order.id}
+                            className="flex flex-wrap items-center gap-x-4 gap-y-0.5 py-2 text-sm text-gray-600 sm:flex-nowrap"
+                          >
+                            <span className="min-w-0 flex-1 truncate font-medium text-gray-800">
+                              {order.description || '—'}
+                            </span>
+                            <span className="w-16 shrink-0 text-right tabular-nums">
+                              {t('purchaseOrders.bulkDelete.quantityUnits').replace(
+                                '{count}',
+                                String(order.quantity ?? 0)
+                              )}
+                            </span>
+                            <span className="w-24 shrink-0 truncate font-mono text-xs text-gray-500">
+                              {order.sku || '—'}
+                            </span>
+                            <span className="w-24 shrink-0 text-xs">
+                              {formatStatusLabel(order.status, t)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      {hiddenCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(invoice)}
+                          className="mt-2 text-sm font-medium text-[#515151] hover:underline"
+                        >
+                          {expanded
+                            ? t('purchaseOrders.bulkDelete.previewLess')
+                            : t('purchaseOrders.bulkDelete.previewMore').replace(
+                                '{count}',
+                                String(hiddenCount)
+                              )}
+                        </button>
+                      )}
                     </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
 
-        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 flex gap-3">
+        <div className="sticky bottom-0 flex gap-3 border-t border-gray-100 bg-white px-6 py-4">
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 px-6 py-2.5 border border-gray-300 rounded-xl hover:bg-gray-50 transition-all font-medium text-gray-700"
+            className="flex-1 rounded-xl border border-gray-300 px-6 py-2.5 font-medium text-gray-700 transition-all hover:bg-gray-50"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             type="button"
             onClick={handleDelete}
             disabled={selectedInvoices.length === 0}
-            className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-xl transition-all font-medium shadow-sm hover:shadow active:scale-95"
+            className="flex-1 rounded-xl bg-red-600 px-6 py-2.5 font-medium text-white shadow-sm transition-all hover:bg-red-700 hover:shadow active:scale-95 disabled:cursor-not-allowed disabled:bg-gray-400"
           >
-            Delete {selectedInvoices.length} Invoice{selectedInvoices.length !== 1 ? 's' : ''}
+            {selectedInvoices.length === 1
+              ? t('purchaseOrders.bulkDelete.deleteInvoiceOne')
+              : t('purchaseOrders.bulkDelete.deleteInvoices').replace(
+                  '{count}',
+                  String(selectedInvoices.length)
+                )}
           </button>
         </div>
       </div>
@@ -227,19 +365,17 @@ export default function BulkDeleteModal({ purchaseOrders, onClose, onBulkDelete 
       {pendingInvoices.length > 0 && (
         <ConfirmDialog
           open={deleteConfirmOpen}
-          title={`⚠️ ${t('common.deletePurchaseOrders')}`}
-          description={t('common.bulkDeleteWarning')
-            .replace('{totalOrders}', pendingInvoices.reduce((total, invoice) => total + ordersByInvoice[invoice].length, 0).toString())
-            .replace('{invoiceCount}', pendingInvoices.length.toString())}
+          title={t('purchaseOrders.bulkDelete.confirmTitle')}
+          description={deleteConfirmDescription}
           confirmText={t('common.delete')}
           cancelText={t('common.cancel')}
           confirmVariant="danger"
-          onConfirm={() => {
-            console.log('User confirmed deletion, calling onBulkDelete');
-            onBulkDelete(pendingInvoices);
-            setPendingInvoices([]);
+          onConfirm={async () => {
+            const invoices = [...pendingInvoices];
             setDeleteConfirmOpen(false);
+            setPendingInvoices([]);
             onClose();
+            await onBulkDelete(invoices);
           }}
           onCancel={() => {
             setDeleteConfirmOpen(false);

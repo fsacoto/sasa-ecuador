@@ -15,7 +15,8 @@ import {
   generateUniqueSKU,
 } from '../utils/skuGenerator';
 import { getExchangeRates, getExchangeRate, formatLastUpdate, type ExchangeRateResponse } from '../utils/currencyApi';
-import BulkImportModal, { type BulkImportModalMode } from './BulkImportModal';
+import BulkImportModal from './BulkImportModal';
+import BulkImportEditPickerModal from './BulkImportEditPickerModal';
 import BulkDeleteModal from './BulkDeleteModal';
 import BulkStatusChangeModal from './BulkStatusChangeModal';
 import BarcodePrintModal from './BarcodePrintModal';
@@ -46,12 +47,8 @@ import {
   generateBarcodeForInventoryItem,
   attachBarcodeToPurchaseOrderIfNeeded,
 } from '../utils/syncUpdates';
-import {
-  listBulkImportSessionsMeta,
-  deleteBulkImportSession,
-  type BulkImportSessionListItem,
-} from '../utils/bulkImportDraftStorage';
 import { useTranslation } from '../context/TranslationContext';
+import { useDarkMode } from '../hooks/useDarkMode';
 import POVerificationModal from './POVerificationModal';
 import { generatePOVerificationPDF } from '../utils/poVerificationPDF';
 import ConfirmDialog from './ui/ConfirmDialog';
@@ -88,17 +85,29 @@ function purchaseOrderHasSkusForVerification(po: PurchaseOrder): boolean {
 }
 
 export default function PurchaseOrders() {
-  const { purchaseOrders, addPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, suppliers, inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, addSupplier } = useInventory();
-  const { t } = useTranslation();
+  const {
+    purchaseOrders,
+    addPurchaseOrder,
+    updatePurchaseOrder,
+    deletePurchaseOrder,
+    deletePurchaseOrdersBulk,
+    suppliers,
+    inventory,
+    addInventoryItem,
+    updateInventoryItem,
+    deleteInventoryItem,
+    addSupplier,
+  } = useInventory();
+  const { t, tf } = useTranslation();
+  const darkMode = useDarkMode();
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [poLineDetailOrder, setPoLineDetailOrder] = useState<PurchaseOrder | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
-  const [bulkImportModalMode, setBulkImportModalMode] = useState<BulkImportModalMode>('new');
-  const [bulkImportResumeSessionId, setBulkImportResumeSessionId] = useState<string | null>(null);
-  const [bulkImportSessionPickerOpen, setBulkImportSessionPickerOpen] = useState(false);
-  const [bulkImportSessionPickerList, setBulkImportSessionPickerList] = useState<BulkImportSessionListItem[]>([]);
+  const [bulkImportEditId, setBulkImportEditId] = useState<string | null>(null);
+  const [bulkImportEditPickerOpen, setBulkImportEditPickerOpen] = useState(false);
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
+  const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [isBulkStatusChangeOpen, setIsBulkStatusChangeOpen] = useState(false);
   const [isPOVerificationModalOpen, setIsPOVerificationModalOpen] = useState(false);
   const [isBarcodePrintModalOpen, setIsBarcodePrintModalOpen] = useState(false);
@@ -268,11 +277,6 @@ export default function PurchaseOrders() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showColumnDropdown, showSearchDropdown, showGroupByDropdown, showBulkDropdown]);
 
-  useEffect(() => {
-    if (!bulkImportSessionPickerOpen) return;
-    setBulkImportSessionPickerList(listBulkImportSessionsMeta());
-  }, [bulkImportSessionPickerOpen]);
-  
   // Get unique categories and lines from existing data (excluding predefined ones)
   const existingCategories = [...new Set([
     ...inventory.map(item => item.category),
@@ -1893,14 +1897,14 @@ export default function PurchaseOrders() {
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-between items-center">
-        <div>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
           <h2 className="text-2xl font-semibold text-gray-900">{t('purchaseOrders.title')}</h2>
           <p className="text-sm text-gray-500 mt-1">{t('purchaseOrders.subtitle')}</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 sm:justify-end sm:gap-3">
           {/* Verification Sheet Button */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <button
               onClick={() => {
                 const unverifiedInvoices = getUnverifiedInvoices();
@@ -1910,9 +1914,9 @@ export default function PurchaseOrders() {
                 }
                 setIsPOVerificationModalOpen(true);
               }}
-              className="flex items-center gap-2 px-3 py-2 border border-blue-300 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 hover:shadow-md transition-all duration-200 text-sm font-medium"
+              className="inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 transition-all duration-200 hover:bg-blue-100 hover:shadow-md"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="size-4 shrink-0 flex-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
               <span>{t('purchaseOrders.downloadVerificationSheet')}</span>
@@ -1921,41 +1925,51 @@ export default function PurchaseOrders() {
           
           <button
             type="button"
+            title={t('purchaseOrders.scanner.openButton')}
             onClick={() => setScannerSession({})}
-            className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 transition-all hover:bg-indigo-100 hover:shadow-md"
+            className="inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 transition-all hover:bg-indigo-100 hover:shadow-md"
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="size-4 shrink-0 flex-none text-indigo-800" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 16h4.01M8 16H4.01M8 12H4.01M8 8H4.01M12 8h4.01" />
             </svg>
-            <span>{t('purchaseOrders.scanner.openButton')}</span>
+            <span className="hidden xl:inline">{t('purchaseOrders.scanner.openButton')}</span>
+            <span className="xl:hidden">
+              {tf('purchaseOrders.scannerOpenShort', 'Escáner')}
+            </span>
           </button>
 
           {/* Print Barcodes Button */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <button
+              type="button"
+              title={t('purchaseOrders.printBarcodes') || 'Print Barcodes'}
               onClick={() => {
                 setIsBarcodePrintModalOpen(true);
               }}
-              className="flex items-center gap-2 px-3 py-2 border border-green-300 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 hover:shadow-md transition-all duration-200 text-sm font-medium"
+              className="inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm font-medium text-green-700 transition-all duration-200 hover:bg-green-100 hover:shadow-md"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="size-4 shrink-0 flex-none text-green-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
               </svg>
-              <span>{t('purchaseOrders.printBarcodes') || 'Print Barcodes'}</span>
+              <span className="hidden xl:inline">{t('purchaseOrders.printBarcodes') || 'Print Barcodes'}</span>
+              <span className="xl:hidden">
+                {tf('purchaseOrders.printBarcodesShort', 'Imprimir códigos')}
+              </span>
             </button>
           </div>
           
           {/* Bulk Operations Dropdown */}
-          <div className="relative">
+          <div className="relative shrink-0">
           <button
+              type="button"
               onClick={() => setShowBulkDropdown(!showBulkDropdown)}
-              className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm"
+              className="inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-gray-300 px-3 py-2 text-sm transition-all duration-200 hover:bg-gray-50 hover:shadow-md"
             >
-              <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="size-4 shrink-0 flex-none text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
               </svg>
               <span className="text-sm font-medium text-gray-700">{t('purchaseOrders.bulk')}</span>
-              <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="size-4 shrink-0 flex-none text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
           </button>
@@ -1965,8 +1979,7 @@ export default function PurchaseOrders() {
                 <div className="p-2">
           <button
                     onClick={() => {
-                      setBulkImportResumeSessionId(null);
-                      setBulkImportModalMode('new');
+                      setBulkImportEditId(null);
                       setIsBulkImportOpen(true);
                       setShowBulkDropdown(false);
                     }}
@@ -1979,17 +1992,17 @@ export default function PurchaseOrders() {
                   </button>
                   <button
                     type="button"
-                    title={t('purchaseOrders.editSavedBulkImport')}
+                    title={t('purchaseOrders.editBulkImport')}
                     onClick={() => {
                       setShowBulkDropdown(false);
-                      setBulkImportSessionPickerOpen(true);
+                      setBulkImportEditPickerOpen(true);
                     }}
                     className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors text-gray-700 hover:bg-gray-50"
                   >
                     <svg className="w-4 h-4 shrink-0 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                     </svg>
-                    <span className="text-left leading-snug">{t('purchaseOrders.editSavedBulkImport')}</span>
+                    <span className="text-left leading-snug">{t('purchaseOrders.editBulkImport')}</span>
                   </button>
                   <button
                     onClick={() => {
@@ -2021,16 +2034,17 @@ export default function PurchaseOrders() {
       </div>
 
           <button
+            type="button"
             onClick={() => setIsFormOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-[#515151] hover:bg-[#000000] text-white rounded-lg transition-all font-medium text-sm shadow-sm hover:shadow-md active:scale-95"
+            className="inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg bg-[#515151] px-4 py-2 text-sm font-medium text-white shadow-sm transition-all hover:bg-[#000000] hover:shadow-md active:scale-95"
           >
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="size-4 shrink-0 flex-none text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
             </svg>
-            <span className="text-sm font-medium text-white">{t('purchaseOrders.addOrder')}</span>
+            <span>{t('purchaseOrders.addOrder')}</span>
           </button>
         </div>
-          </div>
+      </div>
           
       {/* Filtro rápido por estado */}
       <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -3060,7 +3074,7 @@ export default function PurchaseOrders() {
                   </div>
                 </th>
                   )}
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                   {t('purchaseOrders.actions')}
                 </th>
               </tr>
@@ -3143,7 +3157,7 @@ export default function PurchaseOrders() {
                   </div>
                 </th>
                   )}
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                   {t('purchaseOrders.actions')}
                 </th>
               </tr>
@@ -3239,11 +3253,11 @@ export default function PurchaseOrders() {
                         <div className="text-xs text-gray-500">{t('purchaseOrders.total')}: ${order.totalLandedCost.toFixed(2)}</div>
                       </td>
                       )}
-                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
+                      <td className="px-4 py-4 whitespace-nowrap text-center text-sm">
                         <div className="flex items-center gap-2 justify-center">
                         <button
                           onClick={() => handleEdit(order)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
+                          className="sasa-po-row-action flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border shadow-sm transition-colors"
                           >
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -3253,7 +3267,7 @@ export default function PurchaseOrders() {
                         {order.status === 'Verified' && (
                           <button
                             onClick={() => handleEditVerification(order)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
+                            className="sasa-po-row-action flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border shadow-sm transition-colors"
                             title={t('purchaseOrders.editVerification') || 'Edit Verification'}
                           >
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3265,7 +3279,7 @@ export default function PurchaseOrders() {
                         {order.status !== 'Verified' && (
                           <button
                             onClick={() => handleDownloadVerificationSheet(order.invoice)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
+                            className="sasa-po-row-action flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border shadow-sm transition-colors"
                             title={t('purchaseOrders.downloadVerificationSheet') || 'Download Verification Sheet'}
                           >
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3279,7 +3293,7 @@ export default function PurchaseOrders() {
                             setOrderToDelete(order);
                             setDeleteConfirmOpen(true);
                           }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
+                          className="sasa-po-row-action flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border shadow-sm transition-colors"
                         >
                             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -3458,11 +3472,11 @@ export default function PurchaseOrders() {
                             )}
                             
                             {/* Actions */}
-                            <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
+                            <td className="px-4 py-4 whitespace-nowrap text-center text-sm">
                               <div className="flex items-center gap-2 justify-center">
                                 <button
                                   onClick={() => handleEdit(order)}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
+                                  className="sasa-po-row-action flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border shadow-sm transition-colors"
                                 >
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -3472,7 +3486,7 @@ export default function PurchaseOrders() {
                                 {order.status === 'Verified' && (
                                   <button
                                     onClick={() => handleEditVerification(order)}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
+                                    className="sasa-po-row-action flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border shadow-sm transition-colors"
                                     title={t('purchaseOrders.editVerification') || 'Edit Verification'}
                                   >
                                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3484,7 +3498,7 @@ export default function PurchaseOrders() {
                                 {order.status !== 'Verified' && (
                                   <button
                                     onClick={() => handleDownloadVerificationSheet(order.invoice)}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
+                                    className="sasa-po-row-action flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border shadow-sm transition-colors"
                                     title={t('purchaseOrders.downloadVerificationSheet') || 'Download Verification Sheet'}
                                   >
                                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -3498,7 +3512,7 @@ export default function PurchaseOrders() {
                                     setOrderToDelete(order);
                                     setDeleteConfirmOpen(true);
                                   }}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border border-gray-200/90 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 hover:border-gray-300"
+                                  className="sasa-po-row-action flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium text-sm border shadow-sm transition-colors"
                                 >
                                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -3560,93 +3574,25 @@ export default function PurchaseOrders() {
         />
       )}
 
-      {/* Bulk import: choose which saved session to edit */}
-      {bulkImportSessionPickerOpen && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4"
-          role="presentation"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setBulkImportSessionPickerOpen(false);
+      {bulkImportEditPickerOpen && (
+        <BulkImportEditPickerModal
+          purchaseOrders={purchaseOrders}
+          onClose={() => setBulkImportEditPickerOpen(false)}
+          onSelect={(id) => {
+            setBulkImportEditId(id);
+            setIsBulkImportOpen(true);
+            setBulkImportEditPickerOpen(false);
           }}
-        >
-          <div
-            className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-xl"
-            role="dialog"
-            aria-labelledby="bulk-session-picker-title"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <h2 id="bulk-session-picker-title" className="text-lg font-semibold text-gray-900">
-              {t('bulkImport.sessionPickerTitle')}
-            </h2>
-            <p className="mt-1 text-sm text-gray-600">{t('bulkImport.sessionPickerSubtitle')}</p>
-            <ul className="mt-4 max-h-80 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-100">
-              {bulkImportSessionPickerList.length === 0 ? (
-                <li className="px-3 py-6 text-center text-sm text-gray-500">{t('bulkImport.sessionPickerEmpty')}</li>
-              ) : (
-                bulkImportSessionPickerList.map((item) => (
-                  <li key={item.id} className="flex items-stretch gap-1">
-                    <button
-                      type="button"
-                      className="min-w-0 flex-1 px-3 py-3 text-left text-sm transition-colors hover:bg-gray-50"
-                      onClick={() => {
-                        setBulkImportResumeSessionId(item.id);
-                        setBulkImportModalMode('resume');
-                        setIsBulkImportOpen(true);
-                        setBulkImportSessionPickerOpen(false);
-                      }}
-                    >
-                      <div className="truncate font-medium text-gray-900">{item.label}</div>
-                      <div className="mt-0.5 text-xs text-gray-500">
-                        {t('bulkImport.sessionPickerRows').replace('{count}', String(item.rowCount))}
-                        {' · '}
-                        {formatDateTimeShort(item.savedAt)}
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      className="shrink-0 px-3 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
-                      title={t('bulkImport.deleteSessionAria')}
-                      aria-label={t('bulkImport.deleteSessionAria')}
-                      onClick={() => {
-                        if (!window.confirm(t('bulkImport.deleteSessionConfirm'))) return;
-                        deleteBulkImportSession(item.id);
-                        setBulkImportSessionPickerList(listBulkImportSessionsMeta());
-                      }}
-                    >
-                      <svg className="mx-auto h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                        />
-                      </svg>
-                    </button>
-                  </li>
-                ))
-              )}
-            </ul>
-            <button
-              type="button"
-              className="mt-4 w-full rounded-lg border border-gray-200 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              onClick={() => setBulkImportSessionPickerOpen(false)}
-            >
-              {t('bulkImport.sessionPickerClose')}
-            </button>
-          </div>
-        </div>
+        />
       )}
 
-      {/* Bulk Import Modal */}
       {isBulkImportOpen && (
         <BulkImportModal
-          key={`bulk-import-${bulkImportModalMode}-${bulkImportModalMode === 'resume' ? bulkImportResumeSessionId ?? '' : 'new'}`}
-          mode={bulkImportModalMode}
-          resumeSessionId={bulkImportResumeSessionId}
+          key={`bulk-import-${bulkImportEditId ?? 'new'}`}
+          editBulkImportId={bulkImportEditId}
           onClose={() => {
             setIsBulkImportOpen(false);
-            setBulkImportModalMode('new');
-            setBulkImportResumeSessionId(null);
+            setBulkImportEditId(null);
           }}
         />
       )}
@@ -3726,37 +3672,31 @@ export default function PurchaseOrders() {
 
       {/* Bulk Delete Modal */}
       {isBulkDeleteOpen && (
-        <BulkDeleteModal 
+        <BulkDeleteModal
           purchaseOrders={purchaseOrders}
+          suppliers={suppliers}
           onClose={() => setIsBulkDeleteOpen(false)}
-          onBulkDelete={(invoiceNumbers) => {
-            console.log('Bulk delete triggered with invoices:', invoiceNumbers);
-            console.log('Total purchase orders before delete:', purchaseOrders.length);
-            
-            // Collect all order IDs that will be deleted
-            const deletedOrderIds: string[] = [];
-            
-            // Delete orders by invoice numbers
-            invoiceNumbers.forEach(invoice => {
-              const ordersToDelete = purchaseOrders.filter(order => order.invoice === invoice);
-              console.log(`Deleting ${ordersToDelete.length} orders for invoice: ${invoice}`);
-              ordersToDelete.forEach(order => {
-                console.log('Deleting order:', order.id, order.invoice);
-                deletedOrderIds.push(order.id);
-                deletePurchaseOrder(order.id);
-              });
-            });
-            
-            // Clean up orphaned inventory items
-            console.log('Cleaning up inventory items for deleted orders:', deletedOrderIds);
-            void cleanupInventoryAfterOrderDeletion(
-              deletedOrderIds,
-              inventory,
-              updateInventoryItem,
-              purchaseOrders
-            );
-            
-            console.log('Bulk delete completed');
+          onBulkDelete={async (invoiceNumbers) => {
+            const invoiceSet = new Set(invoiceNumbers);
+            const ordersSnapshot = purchaseOrders.filter((o) => invoiceSet.has(o.invoice));
+            const deletedOrderIds = ordersSnapshot.map((o) => o.id);
+            if (deletedOrderIds.length === 0) return;
+
+            setBulkDeleteBusy(true);
+            try {
+              await deletePurchaseOrdersBulk(deletedOrderIds);
+              await cleanupInventoryAfterOrderDeletion(
+                deletedOrderIds,
+                inventory,
+                updateInventoryItem,
+                ordersSnapshot
+              );
+            } catch (error) {
+              console.error('Bulk delete failed:', error);
+              alert(t('purchaseOrders.bulkDelete.deleteError'));
+            } finally {
+              setBulkDeleteBusy(false);
+            }
           }}
         />
       )}
@@ -4174,6 +4114,30 @@ export default function PurchaseOrders() {
             setQuantityMismatchData(null);
           }}
         />
+      )}
+
+      {bulkDeleteBusy && (
+        <div
+          className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[70] flex items-center justify-center p-4 backdrop-blur-sm`}
+          aria-busy="true"
+          aria-live="polite"
+          role="status"
+        >
+          <div className="sasa-modal-panel w-full max-w-sm rounded-2xl px-8 py-7 text-center shadow-xl">
+            <div
+              className={`mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-t-transparent ${
+                darkMode ? 'border-gray-300' : 'border-[#515151]'
+              }`}
+              aria-hidden
+            />
+            <p className="text-base font-medium text-gray-900">
+              {t('purchaseOrders.bulkDelete.deleting')}
+            </p>
+            <p className="mt-1 text-sm text-gray-500">
+              {t('purchaseOrders.bulkDelete.deletingHint')}
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );
