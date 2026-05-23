@@ -45,6 +45,7 @@ export default function Clients() {
   const searchDropdownRef = useRef<HTMLDivElement>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc' | 'desc'}>({key: 'name', direction: 'asc'});
 
   useEffect(() => {
@@ -134,6 +135,8 @@ export default function Clients() {
           return;
         }
         await createClient(formData);
+        setToastMessage(t('clients.addedSuccess'));
+        setTimeout(() => setToastMessage(null), 4000);
       }
       closeModal();
       loadClients();
@@ -645,7 +648,17 @@ export default function Clients() {
           setClientToDelete(null);
         }}
       />
+
+      {toastMessage && (
+        <div className="fixed bottom-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-in slide-in-from-bottom-5">
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

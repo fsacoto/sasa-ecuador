@@ -80,18 +80,18 @@
   },
   "navigation": {
     "dashboard": "Panel de Control",
-    "inventorySuite": "Inventario y Suministro",
+    "inventorySuite": "Inventario",
     "suppliers": "Proveedores",
     "purchaseOrders": "Órdenes de Compra",
     "inventory": "Inventario",
     "inventoryEC": "Inventario (EC)",
     "landedCosts": "Costos de Desembarque",
     "cms": "CMS",
-    "salesSuite": "Ventas y notas de venta",
+    "salesSuite": "Ventas",
     "clients": "Clientes",
-    "sales": "Generación de notas de venta",
+    "sales": "Nueva nota de venta",
     "salesNotes": "Notas de ventas",
-    "invoiceTracking": "Seguimiento de notas de ventas",
+    "invoiceTracking": "Entregas y cobros",
     "consignments": "Consignaciones"
   },
   "inventory": {
@@ -344,6 +344,7 @@
     "noSuppliersMatching": "No se encontraron proveedores que coincidan con su búsqueda.",
     "noSuppliersYet": "Aún no hay proveedores. Agregue su primer proveedor para comenzar.",
     "deleteConfirm": "¿Está seguro de que desea eliminar este proveedor?",
+    "addedSuccess": "Proveedor añadido con éxito",
     "footerSuppliers": "proveedores",
     "footerCountsHint": "Los totales reflejan la búsqueda actual",
     "other": "Otro"
@@ -795,12 +796,13 @@
     "deleteConfirm": "¿Está seguro de que desea eliminar",
     "errorLoading": "Error al cargar clientes",
     "errorSaving": "Error al guardar cliente",
+    "addedSuccess": "Cliente añadido con éxito",
     "errorDeleting": "Error al eliminar cliente",
     "onlyEditEcuador": "Solo puede editar clientes de Ecuador",
     "onlyCreateEcuador": "Solo puede crear clientes de Ecuador"
   },
   "sales": {
-    "title": "Generación de notas de venta",
+    "title": "Nueva nota de venta",
     "subtitle": "Cree y registre una nueva nota de venta (NOTAV)",
     "createInvoice": "Crear nota de venta",
     "editInvoice": "Editar nota de venta",
@@ -873,8 +875,8 @@
     "items": "Artículos",
     "cannotExceedStock": "No puede exceder el stock disponible. La cantidad máxima es",
     "pleaseAddProducts": "Por favor agregue productos a la nota de venta",
-    "invoiceSubmitted": "¡Nota de venta registrada! El PDF se descargó automáticamente. La nota queda en Notas de ventas y en Seguimiento de notas de ventas.",
-    "pdfDownloadFailedHint": "(No se pudo descargar el PDF automáticamente; puede generarlo desde Notas de ventas o Seguimiento.)",
+    "invoiceSubmitted": "¡Nota de venta registrada! El PDF se descargó automáticamente. La nota queda en el historial y en Entregas y cobros.",
+    "pdfDownloadFailedHint": "(No se pudo descargar el PDF automáticamente; puede generarlo desde Notas de ventas o Entregas y cobros.)",
     "errorSubmitting": "Error al enviar la nota de venta"
   },
   "salesNotes": {
@@ -898,13 +900,13 @@
     "loading": "Cargando notas…",
     "empty": "No hay notas que coincidan con los filtros.",
     "actions": "Acciones",
-    "openInTracking": "Ver en seguimiento",
+    "openInTracking": "Ver en entregas y cobros",
     "all": "Todos",
     "loadError": "Error al cargar el historial de notas de venta"
   },
   "invoiceTracking": {
-    "title": "Seguimiento de notas de ventas",
-    "subtitle": "Seguimiento de entrega y cobro de notas de ventas",
+    "title": "Entregas y cobros",
+    "subtitle": "Estado de entrega y cobro de las notas de venta",
     "totalInvoices": "TOTAL DE NOTAS DE VENTAS",
     "unpaidInvoices": "NOTAS DE VENTAS NO PAGADAS",
     "partiallyPaid": "PAGO PARCIAL",
@@ -1166,7 +1168,7 @@
     "salePaymentMethodPh": "Efectivo, transferencia, tarjeta…",
     "salePaymentComment": "Comentario (opcional)",
     "salePaymentCommentPh": "Referencia, banco, acuerdos…",
-    "salePaymentHint": "La nota aparecerá en Seguimiento de notas de ventas con estos datos; puede registrar pagos adicionales allí.",
+    "salePaymentHint": "La nota aparecerá en Entregas y cobros con estos datos; puede registrar pagos adicionales allí.",
     "sourceConsignmentTag": "Consignación",
     "available": "Disponible",
     "registerSalesButton": "Registrar Ventas",
@@ -1277,7 +1279,7 @@
     "needAttention": "necesitan atención",
     "viewAll": "Ver Todo",
     "viewMoreItems": "Ver {count} artículos más",
-    "salesSectionTitle": "Ventas y notas de venta",
+    "salesSectionTitle": "Ventas",
     "salesPeriodFilter": "Filtrar período de ventas",
     "salesFilterLast30": "Últimos 30 días",
     "salesFilterThisMonth": "Este mes",
@@ -1295,7 +1297,7 @@
     "noRecentNotes": "Aún no hay notas de venta registradas",
     "newSalesNote": "Nueva nota",
     "viewSalesNotes": "Historial",
-    "viewTracking": "Seguimiento",
+    "viewTracking": "Entregas y cobros",
     "lowStockZero": "Sin stock"
   },
   "cms": {

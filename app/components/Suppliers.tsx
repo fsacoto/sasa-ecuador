@@ -32,6 +32,7 @@ export default function Suppliers() {
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const searchDropdownRef = useRef<HTMLDivElement>(null);
 
   // Search state
@@ -75,12 +76,19 @@ export default function Suppliers() {
     supplier.country.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (editingSupplier) {
       updateSupplier(editingSupplier.id, formData);
     } else {
-      addSupplier(formData);
+      try {
+        await addSupplier(formData);
+        setToastMessage(t('suppliers.addedSuccess'));
+        setTimeout(() => setToastMessage(null), 4000);
+      } catch (error) {
+        console.error('Error adding supplier:', error);
+        return;
+      }
     }
     resetForm();
   };
@@ -486,6 +494,17 @@ export default function Suppliers() {
           setSupplierToDelete(null);
         }}
       />
+
+      {toastMessage && (
+        <div className="fixed bottom-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-in slide-in-from-bottom-5">
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
