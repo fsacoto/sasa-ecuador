@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useAuth } from './AuthContext';
 import { Supplier, PurchaseOrder, InventoryItem, AdditionalCost, LandedCostCalculation } from '../types';
+import { calculateLandedCostsForInvoice } from '../utils/landedCostCalculation';
 import * as suppliersService from '../services/suppliersService';
 import * as purchaseOrdersService from '../services/purchaseOrdersService';
 import * as inventoryService from '../services/inventoryService';
@@ -21,6 +22,9 @@ interface InventoryContextType {
   addPurchaseOrder: (order: Omit<PurchaseOrder, 'id' | 'createdAt'>) => Promise<string>;
   addPurchaseOrdersBulk: (orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]) => Promise<PurchaseOrder[]>;
   updatePurchaseOrder: (id: string, order: Partial<PurchaseOrder>) => Promise<void>;
+  updatePurchaseOrdersBulk: (
+    updates: Array<{ id: string; orderUpdate: Partial<PurchaseOrder> }>
+  ) => Promise<void>;
   deletePurchaseOrder: (id: string) => Promise<void>;
   deletePurchaseOrdersBulk: (ids: string[]) => Promise<void>;
   
@@ -165,6 +169,26 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const updatePurchaseOrdersBulk = async (
+    updates: Array<{ id: string; orderUpdate: Partial<PurchaseOrder> }>
+  ) => {
+    const unique = updates.filter((entry) => entry.id && Object.keys(entry.orderUpdate).length > 0);
+    if (unique.length === 0) return;
+    try {
+      await purchaseOrdersService.updatePurchaseOrdersBulk(unique);
+      const patchById = new Map(unique.map((entry) => [entry.id, entry.orderUpdate]));
+      setPurchaseOrders((prev) =>
+        prev.map((order) => {
+          const patch = patchById.get(order.id);
+          return patch ? { ...order, ...patch } : order;
+        })
+      );
+    } catch (error) {
+      console.error('Error updating purchase orders in bulk:', error);
+      throw error;
+    }
+  };
+
   const deletePurchaseOrder = async (id: string) => {
     try {
       await purchaseOrdersService.deletePurchaseOrder(id);
@@ -281,47 +305,8 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     return additionalCosts.filter(cost => cost.invoiceNumber === invoiceNumber);
   };
 
-  const calculateLandedCosts = (invoiceNumber: string): LandedCostCalculation | null => {
-    // Get all purchase orders for this invoice
-    const invoiceOrders = purchaseOrders.filter(order => order.invoice === invoiceNumber);
-    if (invoiceOrders.length === 0) return null;
-
-    // Get all additional costs for this invoice
-    const costs = getAdditionalCostsByInvoice(invoiceNumber);
-    const totalAdditionalCosts = costs.reduce((sum, cost) => sum + cost.amount, 0);
-
-    // Calculate base item total (sum of all item totals)
-    const baseItemTotal = invoiceOrders.reduce((sum, order) => sum + order.costInUSD, 0);
-
-    // Calculate proportional allocation for each item
-    const items = invoiceOrders.map(order => {
-      const proportionalShare = baseItemTotal > 0 ? (order.costInUSD / baseItemTotal) : 0;
-      const additionalCostAllocation = totalAdditionalCosts * proportionalShare;
-      const finalCostPerUnit = order.costInUSD / order.quantity + (additionalCostAllocation / order.quantity);
-      const finalItemTotal = order.costInUSD + additionalCostAllocation;
-
-      return {
-        purchaseOrderId: order.id,
-        sku: order.sku,
-        description: order.description,
-        quantity: order.quantity,
-        baseCostPerUnit: order.costInUSD / order.quantity,
-        baseItemTotal: order.costInUSD,
-        proportionalShare: proportionalShare * 100, // Convert to percentage
-        additionalCostAllocation,
-        finalCostPerUnit,
-        finalItemTotal,
-      };
-    });
-
-    return {
-      invoiceNumber,
-      baseItemTotal,
-      totalAdditionalCosts,
-      totalLandedCost: baseItemTotal + totalAdditionalCosts,
-      items,
-    };
-  };
+  const calculateLandedCosts = (invoiceNumber: string): LandedCostCalculation | null =>
+    calculateLandedCostsForInvoice(invoiceNumber, purchaseOrders, additionalCosts);
 
   return (
     <InventoryContext.Provider
@@ -335,6 +320,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         addPurchaseOrder,
         addPurchaseOrdersBulk,
         updatePurchaseOrder,
+        updatePurchaseOrdersBulk,
         deletePurchaseOrder,
         deletePurchaseOrdersBulk,
         inventory,

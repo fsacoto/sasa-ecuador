@@ -174,6 +174,22 @@ export async function deletePurchaseOrder(id: string): Promise<void> {
   }
 }
 
+/** Update many orders in parallel; one UI merge should follow in context. */
+export async function updatePurchaseOrdersBulk(
+  updates: Array<{ id: string; orderUpdate: Partial<PurchaseOrder> }>
+): Promise<void> {
+  const unique = updates.filter((entry) => entry.id && Object.keys(entry.orderUpdate).length > 0);
+  if (unique.length === 0) return;
+  try {
+    await Promise.all(
+      unique.map(({ id, orderUpdate }) => updatePurchaseOrder(id, orderUpdate))
+    );
+  } catch (error) {
+    console.error('Error updating purchase orders in bulk:', error);
+    throw error;
+  }
+}
+
 /** Delete many orders in parallel; one UI update should follow in context. */
 export async function deletePurchaseOrdersBulk(ids: string[]): Promise<void> {
   const unique = [...new Set(ids.filter(Boolean))];

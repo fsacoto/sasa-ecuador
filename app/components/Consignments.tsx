@@ -1299,7 +1299,6 @@ export default function Consignments() {
           description={t('consignments.deleteConfirm') || `Are you sure you want to delete consignment ${consignmentToDelete?.consignmentId}? This will return all unsold items to inventory.`}
           confirmText={t('common.delete') || 'Delete'}
           cancelText={t('common.cancel') || 'Cancel'}
-          confirmVariant="danger"
           onConfirm={handleDeleteConfirm}
           onCancel={() => {
             setDeleteConfirmOpen(false);

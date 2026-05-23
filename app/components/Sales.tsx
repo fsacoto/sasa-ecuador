@@ -301,7 +301,7 @@ export default function Sales() {
 
       showAlert(
         pdfOk ? t('sales.invoiceSubmitted') : `${t('sales.invoiceSubmitted')} ${t('sales.pdfDownloadFailedHint')}`,
-        'Success'
+        t('common.success')
       );
 
       setInvoiceItems([]);

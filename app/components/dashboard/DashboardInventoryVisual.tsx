@@ -5,6 +5,7 @@ import ChartLegend from './charts/ChartLegend';
 import HorizontalBarChart from './charts/HorizontalBarChart';
 import {
   colorAt,
+  lineBarColor,
   dashboardChartTitleClass,
   dashboardHintClass,
   dashboardPanelClass,
@@ -72,7 +73,7 @@ export default function DashboardInventoryVisual({
   const lineBars = lineEntries.map(([label, value], i) => ({
     label,
     value,
-    color: colorAt(i),
+    color: lineBarColor(label, i),
   }));
 
   return (

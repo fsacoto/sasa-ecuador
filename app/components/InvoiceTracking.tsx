@@ -2,9 +2,8 @@
 
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from 'react';
 import { createPortal } from 'react-dom';
-import { SalesInvoice, Client, PaymentRecord, ConsignmentItem, ConsignmentStatus } from '../types';
-import { getAllInvoices, updateInvoice, deleteInvoice } from '../services/invoicesService';
-import { getConsignment, updateConsignment } from '../services/consignmentsService';
+import { SalesInvoice, Client, PaymentRecord } from '../types';
+import { getAllInvoices, updateInvoice } from '../services/invoicesService';
 import { getAllClients } from '../services/clientsService';
 import { useAuth } from '../context/AuthContext';
 import { useInventory } from '../context/InventoryContext';
@@ -13,6 +12,8 @@ import { downloadSalesInvoicePdf } from '../utils/salesInvoicePdf';
 import AlertDialog from './ui/AlertDialog';
 import ConfirmDialog from './ui/ConfirmDialog';
 import InvoiceEditModal from './InvoiceEditModal';
+import SalesInvoiceDeleteModal from './SalesInvoiceDeleteModal';
+import { type InvoiceDeleteReturnItem } from '../utils/salesInvoiceDelete';
 import MonthYearSelectEs from './ui/MonthYearSelectEs';
 import TableSortIcon from './ui/TableSortIcon';
 import {
@@ -33,15 +34,6 @@ import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 import { useDarkMode } from '../hooks/useDarkMode';
 import ModalPortal from './ui/ModalPortal';
 
-type InvoiceDeleteReturnItem = {
-  description: string;
-  sku: string;
-  quantity: number;
-  currentStock: number;
-  newStock: number;
-  kind: 'ecuador' | 'consignment';
-};
-
 /** Cantidad ya descontada de inventario Ecuador para esta línea (antes de editar en el modal). */
 function getPreviouslyDeliveredQty(invoice: SalesInvoice, index: number): number {
   const item = invoice.items[index];
@@ -52,16 +44,6 @@ function getPreviouslyDeliveredQty(invoice: SalesInvoice, index: number): number
     return item.quantity;
   }
   return 0;
-}
-
-function consignmentStatusFromItems(items: ConsignmentItem[]): ConsignmentStatus {
-  const totalDelivered = items.reduce((sum, item) => sum + item.quantityDelivered, 0);
-  const totalSold = items.reduce((sum, item) => sum + item.quantitySold, 0);
-  const totalReturned = items.reduce((sum, item) => sum + item.quantityReturned, 0);
-  const totalAccounted = totalSold + totalReturned;
-  if (totalAccounted >= totalDelivered) return 'Closed';
-  if (totalAccounted > 0) return 'Partially Closed';
-  return 'Open';
 }
 
 function GroupByLayersIcon({ className = 'h-4 w-4 shrink-0' }: { className?: string }) {
@@ -212,8 +194,6 @@ export default function InvoiceTracking() {
   const [warningItems, setWarningItems] = useState<Array<{description: string, quantity: number, currentStock: number, remainingStock: number}>>([]);
   const [warningCallback, setWarningCallback] = useState<(() => void) | null>(null);
 
-  // Delete confirmation modal state
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [invoiceToDelete, setInvoiceToDelete] = useState<SalesInvoice | null>(null);
   const [itemsReturningToStock, setItemsReturningToStock] = useState<InvoiceDeleteReturnItem[]>([]);
   const darkMode = useDarkMode();
@@ -532,7 +512,7 @@ export default function InvoiceTracking() {
     
     if (isReversingDelivery) {
       // Calculate items to return to inventory
-      const itemsToReturn: Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}> = [];
+      const itemsToReturn: InvoiceDeleteReturnItem[] = [];
       
       invoice.items.forEach((item, index) => {
         const quantityToReturn = getPreviouslyDeliveredQty(invoice, index);
@@ -547,6 +527,7 @@ export default function InvoiceTracking() {
             quantity: quantityToReturn,
             currentStock,
             newStock,
+            kind: 'ecuador',
           });
         }
       });
@@ -1015,56 +996,12 @@ export default function InvoiceTracking() {
     });
   };
 
-  const buildDeleteReturnItems = (invoice: SalesInvoice): InvoiceDeleteReturnItem[] => {
-    const items: InvoiceDeleteReturnItem[] = [];
-
-    if (invoice.sourceConsignmentFirestoreId) {
-      invoice.items.forEach((item) => {
-        const inventoryItem = inventory.find((inv) => inv.sku === item.sku);
-        if (!inventoryItem) return;
-        const currentStock = inventoryItem.consignmentStock || 0;
-        items.push({
-          description: item.description,
-          sku: item.sku,
-          quantity: item.quantity,
-          currentStock,
-          newStock: currentStock + item.quantity,
-          kind: 'consignment',
-        });
-      });
-      return items;
-    }
-
-    const wasDelivered =
-      invoice.deliveryStatus === 'Delivered' || invoice.deliveryStatus === 'Partially Delivered';
-    if (!wasDelivered) return items;
-
-    invoice.items.forEach((item) => {
-      const inventoryItem = inventory.find((inv) => inv.sku === item.sku);
-      if (!inventoryItem) return;
-      const currentStock = inventoryItem.ecuadorStock;
-      items.push({
-        description: item.description,
-        sku: item.sku,
-        quantity: item.quantity,
-        currentStock,
-        newStock: currentStock + item.quantity,
-        kind: 'ecuador',
-      });
-    });
-    return items;
-  };
-
   const handleDeleteInvoice = (invoice: SalesInvoice) => {
-    setItemsReturningToStock(buildDeleteReturnItems(invoice));
     setInvoiceToDelete(invoice);
-    setShowDeleteModal(true);
   };
 
   const closeDeleteModal = () => {
-    setShowDeleteModal(false);
     setInvoiceToDelete(null);
-    setItemsReturningToStock([]);
   };
 
   const closeWarningModal = () => {
@@ -1072,61 +1009,6 @@ export default function InvoiceTracking() {
     setWarningItems([]);
     setItemsReturningToStock([]);
     setWarningCallback(null);
-  };
-
-  const deleteInvoiceAndReturnItems = async (
-    invoice: SalesInvoice,
-    itemsToReturn: InvoiceDeleteReturnItem[],
-    revertInventory: boolean
-  ) => {
-    try {
-      if (revertInventory && itemsToReturn.length > 0) {
-        const isConsignment = itemsToReturn.some((i) => i.kind === 'consignment');
-
-        if (isConsignment && invoice.sourceConsignmentFirestoreId) {
-          const consignment = await getConsignment(invoice.sourceConsignmentFirestoreId);
-          if (consignment) {
-            const updatedItems = consignment.items.map((cItem) => {
-              const line = invoice.items.find((i) => i.sku === cItem.sku);
-              if (!line) return cItem;
-              return {
-                ...cItem,
-                quantitySold: Math.max(0, cItem.quantitySold - line.quantity),
-              };
-            });
-            await updateConsignment(consignment.id, {
-              items: updatedItems,
-              status: consignmentStatusFromItems(updatedItems),
-            });
-          }
-          for (const itemReturn of itemsToReturn) {
-            const inventoryItem = inventory.find((inv) => inv.sku === itemReturn.sku);
-            if (inventoryItem) {
-              await updateInventoryItem(inventoryItem.id, {
-                consignmentStock: itemReturn.newStock,
-              });
-            }
-          }
-        } else {
-          for (const itemReturn of itemsToReturn) {
-            if (itemReturn.kind !== 'ecuador') continue;
-            const inventoryItem = inventory.find((inv) => inv.sku === itemReturn.sku);
-            if (inventoryItem) {
-              await updateInventoryItem(inventoryItem.id, {
-                ecuadorStock: itemReturn.newStock,
-              });
-            }
-          }
-        }
-      }
-
-      await deleteInvoice(invoice.id);
-      showAlert(t('invoiceTracking.invoiceDeleted'), t('common.success'));
-      loadInvoices();
-    } catch (error) {
-      console.error('Error deleting invoice:', error);
-      showAlert(t('invoiceTracking.errorDeletingInvoice'), t('common.error'));
-    }
   };
 
   const activeFiltersCount = [
@@ -2330,149 +2212,16 @@ export default function InvoiceTracking() {
         </ModalPortal>
       )}
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && invoiceToDelete && (
-        <ModalPortal>
-          <div
-            className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[90] flex items-center justify-center p-4 backdrop-blur-sm`}
-            role="dialog"
-            aria-modal="true"
-            onClick={closeDeleteModal}
-          >
-            <div
-              className="sasa-modal-panel w-full max-w-2xl overflow-hidden rounded-2xl shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="border-b border-gray-200 px-6 py-5">
-                <h3 className="text-xl font-semibold text-gray-900">
-                  {t('invoiceTracking.deleteInvoice')}
-                </h3>
-                <p className="mt-2 text-sm text-gray-500">
-                  {t('invoiceTracking.deleteInvoiceOptions')}
-                </p>
-              </div>
-
-              <div className="max-h-[min(70vh,520px)] overflow-y-auto px-6 py-5 space-y-4">
-                {itemsReturningToStock.length > 0 ? (
-                  <div className="sasa-delete-preview rounded-xl border border-gray-200 p-4">
-                    <h4 className="font-semibold text-gray-900 mb-1">
-                      {t('invoiceTracking.itemsReturningToStock')}
-                    </h4>
-                    <p className="text-sm text-gray-500 mb-3">
-                      {invoiceToDelete.sourceConsignmentFirestoreId
-                        ? t('invoiceTracking.deleteConsignmentItemsMessage')
-                        : t('invoiceTracking.itemsReturningToStockMessage')}
-                    </p>
-                    <div className="space-y-2">
-                      {itemsReturningToStock.map((item, index) => (
-                        <div
-                          key={`${item.sku}-${index}`}
-                          className="sasa-delete-preview-row flex flex-col gap-2 rounded-lg border border-gray-200 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="font-medium text-gray-900">{item.description}</div>
-                            <div className="text-sm text-gray-500">
-                              {t('invoiceTracking.quantityReturning')}: {item.quantity}{' '}
-                              {t('invoiceTracking.units')}
-                            </div>
-                          </div>
-                          <div className="shrink-0 text-left sm:text-right">
-                            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                              {item.kind === 'consignment'
-                                ? t('invoiceTracking.consignmentStockLabel')
-                                : t('invoiceTracking.ecuadorStock')}
-                            </div>
-                            <div className="font-semibold text-gray-900 tabular-nums">
-                              {item.currentStock}{' '}
-                              <span className="font-normal text-gray-400">→</span> {item.newStock}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <p className="rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-500">
-                    {t('invoiceTracking.deleteNoStockToReturn')}
-                  </p>
-                )}
-
-                <div className="space-y-3">
-                  {itemsReturningToStock.length > 0 ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const inv = invoiceToDelete;
-                          const items = [...itemsReturningToStock];
-                          closeDeleteModal();
-                          if (inv) void deleteInvoiceAndReturnItems(inv, items, true);
-                        }}
-                        className="sasa-delete-option sasa-delete-option--primary w-full rounded-xl px-4 py-3 text-left transition-colors"
-                      >
-                        <div className="font-semibold text-gray-900">
-                          {t('invoiceTracking.reverseAndReturn')}
-                        </div>
-                        <div className="mt-1 text-sm text-gray-500">
-                          {t('invoiceTracking.reverseAndReturnDescription')}
-                        </div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const inv = invoiceToDelete;
-                          closeDeleteModal();
-                          if (inv) void deleteInvoiceAndReturnItems(inv, [], false);
-                        }}
-                        className="sasa-delete-option w-full rounded-xl px-4 py-3 text-left transition-colors"
-                      >
-                        <div className="font-semibold text-gray-900">
-                          {t('invoiceTracking.cancelWithoutAffecting')}
-                        </div>
-                        <div className="mt-1 text-sm text-gray-500">
-                          {t('invoiceTracking.cancelWithoutAffectingDescription')}
-                        </div>
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const inv = invoiceToDelete;
-                        closeDeleteModal();
-                        if (inv) void deleteInvoiceAndReturnItems(inv, [], false);
-                      }}
-                      className="sasa-delete-option sasa-delete-option--primary w-full rounded-xl px-4 py-3 text-left transition-colors"
-                    >
-                      <div className="font-semibold text-gray-900">
-                        {t('invoiceTracking.deleteInvoiceOnly')}
-                      </div>
-                      <div className="mt-1 text-sm text-gray-500">
-                        {t('invoiceTracking.deleteInvoiceOnlyDescription')}
-                      </div>
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div className="border-t border-gray-200 px-6 py-4">
-                <button
-                  type="button"
-                  onClick={closeDeleteModal}
-                  className={`w-full rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors ${
-                    darkMode
-                      ? 'border-white/20 bg-transparent text-gray-200 hover:bg-white/10'
-                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  {t('invoiceTracking.cancel')}
-                </button>
-              </div>
-            </div>
-          </div>
-        </ModalPortal>
-      )}
+      <SalesInvoiceDeleteModal
+        open={!!invoiceToDelete}
+        invoice={invoiceToDelete}
+        onClose={closeDeleteModal}
+        onDeleted={() => {
+          showAlert(t('invoiceTracking.invoiceDeleted'), t('common.success'));
+          loadInvoices();
+        }}
+        onError={(message) => showAlert(message, t('common.error'))}
+      />
 
       {/* Alert Dialog */}
       <AlertDialog

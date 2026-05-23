@@ -11,6 +11,7 @@ import { downloadSalesInvoicePdf } from '../utils/salesInvoicePdf';
 import AlertDialog from './ui/AlertDialog';
 import MonthYearSelectEs from './ui/MonthYearSelectEs';
 import InvoiceEditModal from './InvoiceEditModal';
+import SalesInvoiceDeleteModal from './SalesInvoiceDeleteModal';
 import TableSortIcon from './ui/TableSortIcon';
 import {
   tableTheadClass,
@@ -79,6 +80,7 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
   const [sortKey, setSortKey] = useState<'date' | 'invoiceNumber' | 'grandTotal'>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [editingInvoice, setEditingInvoice] = useState<SalesInvoice | null>(null);
+  const [invoiceToDelete, setInvoiceToDelete] = useState<SalesInvoice | null>(null);
   const [hiddenColumns, setHiddenColumns] = useState<Set<ColKey>>(new Set());
 
   const [showFilters, setShowFilters] = useState(false);
@@ -835,6 +837,24 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
               </svg>
               {t('salesNotes.openInTracking')}
             </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              onClick={() => {
+                setInvoiceToDelete(invoiceForSalesNotesActionsMenu);
+                closeSalesNotesActionsMenu();
+              }}
+            >
+              <svg className="h-4 w-4 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                />
+              </svg>
+              {t('invoiceTracking.deleteInvoice')}
+            </button>
           </div>,
           document.body
         )}
@@ -846,6 +866,18 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
           setEditingInvoice(null);
           void load();
         }}
+      />
+
+      <SalesInvoiceDeleteModal
+        open={!!invoiceToDelete}
+        invoice={invoiceToDelete}
+        onClose={() => setInvoiceToDelete(null)}
+        onDeleted={() => {
+          setInvoiceToDelete(null);
+          showAlert(t('invoiceTracking.invoiceDeleted'), t('common.success'));
+          void load();
+        }}
+        onError={(message) => showAlert(message, t('common.error'))}
       />
 
       <AlertDialog

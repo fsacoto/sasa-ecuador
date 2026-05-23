@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { PurchaseOrder, PurchaseOrderStatus, Supplier } from '../types';
 import ConfirmDialog from './ui/ConfirmDialog';
 import { useTranslation } from '../context/TranslationContext';
@@ -26,7 +26,7 @@ export default function BulkStatusChangeModal({
   const { t } = useTranslation();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
-  const [newStatus, setNewStatus] = useState<PurchaseOrderStatus>('Ordered');
+  const [newStatus, setNewStatus] = useState<PurchaseOrderStatus>('Received');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterSupplier, setFilterSupplier] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -68,11 +68,24 @@ export default function BulkStatusChangeModal({
     0
   );
 
-  const handleConfirm = () => {
-    const orderIds: string[] = [];
+  const ordersEligibleForChange = useMemo(() => {
+    const orders: PurchaseOrder[] = [];
     selectedInvoices.forEach((invoice) => {
-      (ordersByInvoice[invoice] ?? []).forEach((order) => orderIds.push(order.id));
+      (ordersByInvoice[invoice] ?? []).forEach((order) => {
+        if (effectivePurchaseOrderStatus(order.status) !== newStatus) {
+          orders.push(order);
+        }
+      });
     });
+    return orders;
+  }, [selectedInvoices, ordersByInvoice, newStatus]);
+
+  const handleConfirm = () => {
+    if (ordersEligibleForChange.length === 0) {
+      alert(t('purchaseOrders.noStatusChangeNeeded'));
+      return;
+    }
+    const orderIds = ordersEligibleForChange.map((order) => order.id);
     onBulkStatusChange(orderIds, newStatus);
     setConfirmOpen(false);
     onClose();
@@ -246,7 +259,7 @@ export default function BulkStatusChangeModal({
                 }
                 setConfirmOpen(true);
               }}
-              disabled={selectedInvoices.length === 0}
+              disabled={selectedInvoices.length === 0 || ordersEligibleForChange.length === 0}
               className="rounded-lg bg-[#515151] px-4 py-2 font-medium text-white hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
             >
               {t('purchaseOrders.changeStatus')}
@@ -259,7 +272,7 @@ export default function BulkStatusChangeModal({
         open={confirmOpen}
         title={t('purchaseOrders.confirmBulkStatusChange')}
         description={(t('purchaseOrders.bulkStatusChangeConfirmDesc') || '')
-          .replace('{count}', String(totalOrders))
+          .replace('{count}', String(ordersEligibleForChange.length))
           .replace('{invoiceCount}', String(selectedInvoices.length))
           .replace('{status}', statusLabel(newStatus))}
         confirmText={t('common.confirm')}

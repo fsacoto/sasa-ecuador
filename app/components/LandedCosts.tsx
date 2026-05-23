@@ -6,6 +6,7 @@ import { AdditionalCost, AdditionalCostType } from '../types';
 import { useTranslation } from '../context/TranslationContext';
 import ConfirmDialog from './ui/ConfirmDialog';
 import AlertDialog from './ui/AlertDialog';
+import ModalPortal from './ui/ModalPortal';
 import TableSortIcon from './ui/TableSortIcon';
 import { tableThAlignClass, tableThLabelFlexClass } from './ui/tableHeaderClass';
 import { formatDateMedium, formatMonthYearLong, toValidDate } from '../utils/formatDate';
@@ -734,24 +735,39 @@ export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
 
       {/* Modal agregar costos */}
       {isFormOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+        <ModalPortal>
           <div
-            ref={formRef}
-            role="dialog"
-            className="sasa-modal-light max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6"
+            className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm`}
+            onClick={resetForm}
           >
-            <div className="mb-6 flex items-center justify-between">
-              <h3 className="text-xl font-semibold text-gray-900">
-                {t('landedCosts.addAdditionalCosts')}
-              </h3>
-              <button type="button" onClick={resetForm} className="text-gray-400 hover:text-gray-600">
-                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
+            <div
+              ref={formRef}
+              role="dialog"
+              aria-modal="true"
+              className="sasa-modal-panel flex max-h-[min(90vh,calc(100dvh-2rem))] w-full max-w-2xl flex-col overflow-hidden rounded-2xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-6 py-5">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {t('landedCosts.addAdditionalCosts')}
+                </h3>
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                  aria-label={t('common.cancel')}
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
 
-            <form onSubmit={handleSubmit} className="space-y-6">
+              <form
+                id="landed-costs-add-form"
+                onSubmit={handleSubmit}
+                className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5"
+              >
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-700">
                   {t('landedCosts.selectInvoice')} *
@@ -759,7 +775,7 @@ export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
                 <select
                   value={formData.invoiceNumber}
                   onChange={(e) => setFormData({ ...formData, invoiceNumber: e.target.value })}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-[#515151]"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#515151]"
                   required
                 >
                   <option value="">{t('landedCosts.selectInvoice')}</option>
@@ -773,13 +789,13 @@ export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
 
               <div className="space-y-4">
                 {formData.costs.map((cost, index) => (
-                  <div key={cost.type} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-                    <div className="mb-3 flex items-center gap-3">
-                      <span className="rounded bg-[#515151] px-3 py-1 text-sm font-medium text-white">
-                        {translateCostType(cost.type)}
-                      </span>
-                      <div className="flex-1">
-                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                  <div key={cost.type} className="sasa-modal-section rounded-xl border border-gray-200 p-4">
+                    <span className="sasa-modal-chip mb-3 inline-flex rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wide">
+                      {translateCostType(cost.type)}
+                    </span>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-gray-700">
                           {t('landedCosts.amount')} (USD)
                         </label>
                         <input
@@ -790,21 +806,21 @@ export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
                           onChange={(e) =>
                             updateCostField(index, 'amount', parseFloat(e.target.value) || 0)
                           }
-                          className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-[#515151]"
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#515151]"
                           placeholder="0.00"
                         />
                       </div>
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-gray-700">
-                        {t('landedCosts.description')}
-                      </label>
-                      <input
-                        type="text"
-                        value={cost.description}
-                        onChange={(e) => updateCostField(index, 'description', e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-[#515151]"
-                      />
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                          {t('landedCosts.description')}
+                        </label>
+                        <input
+                          type="text"
+                          value={cost.description}
+                          onChange={(e) => updateCostField(index, 'description', e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#515151]"
+                        />
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -818,7 +834,7 @@ export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
                   type="date"
                   value={formData.date}
                   onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-[#515151]"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#515151]"
                   required
                 />
               </div>
@@ -830,29 +846,36 @@ export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
                 <textarea
                   value={formData.comments}
                   onChange={(e) => setFormData({ ...formData, comments: e.target.value })}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-[#515151]"
+                  className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#515151]"
                   rows={3}
                 />
               </div>
 
-              <div className="flex gap-3 pt-2">
+              </form>
+
+              <div className="sasa-modal-footer flex shrink-0 gap-3 border-t border-gray-200 px-6 py-4">
                 <button
                   type="button"
                   onClick={resetForm}
-                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 font-medium hover:bg-gray-50"
+                  className={`flex-1 rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors ${
+                    darkMode
+                      ? 'border-white/20 bg-transparent text-gray-200 hover:bg-white/10'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
                 >
                   {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 rounded-lg bg-[#515151] px-4 py-2 font-medium text-white hover:bg-black"
+                  form="landed-costs-add-form"
+                  className="sasa-btn-primary flex-1 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors"
                 >
                   {t('landedCosts.addAdditionalCosts')}
                 </button>
               </div>
-            </form>
+            </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       <ConfirmDialog

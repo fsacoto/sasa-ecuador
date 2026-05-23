@@ -14,6 +14,24 @@ export function colorAt(index: number): string {
   return CHART_COLORS[index % CHART_COLORS.length];
 }
 
+/** Dorados para líneas de mercancía en barras de inventario (Enchapado = oro premium). */
+const LINE_BAR_GOLD: Record<string, string> = {
+  'enchapado en oro': '#E8C547',
+  'oro relleno': '#E8C547',
+  'gold filled': '#E8C547',
+  'bañado en oro': '#E8C547',
+  'banado en oro': '#E8C547',
+  'baño en oro': '#9A7224',
+  'bano en oro': '#9A7224',
+  'oro laminado': '#9A7224',
+  'gold plated': '#9A7224',
+};
+
+export function lineBarColor(label: string, index: number): string {
+  const key = label.trim().toLowerCase();
+  return LINE_BAR_GOLD[key] ?? colorAt(index);
+}
+
 export const dashboardPanelClass =
   'sasa-dashboard-panel rounded-2xl border border-gray-200/90 bg-white p-4 text-left sm:p-5';
 

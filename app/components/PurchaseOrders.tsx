@@ -21,6 +21,7 @@ import BulkDeleteModal from './BulkDeleteModal';
 import BulkStatusChangeModal from './BulkStatusChangeModal';
 import BarcodePrintModal from './BarcodePrintModal';
 import BarcodePrintProgress from './BarcodePrintProgress';
+import ModalPortal from './ui/ModalPortal';
 import {
   downloadBarcodePdfBlob,
   prepareBarcodePrintItemsForPdf,
@@ -97,6 +98,7 @@ export default function PurchaseOrders() {
     purchaseOrders,
     addPurchaseOrder,
     updatePurchaseOrder,
+    updatePurchaseOrdersBulk,
     deletePurchaseOrder,
     deletePurchaseOrdersBulk,
     suppliers,
@@ -116,6 +118,7 @@ export default function PurchaseOrders() {
   const [bulkImportEditPickerOpen, setBulkImportEditPickerOpen] = useState(false);
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
+  const [bulkStatusChangeBusy, setBulkStatusChangeBusy] = useState(false);
   const [isBulkStatusChangeOpen, setIsBulkStatusChangeOpen] = useState(false);
   const [isPOVerificationModalOpen, setIsPOVerificationModalOpen] = useState(false);
   const [isBarcodePrintModalOpen, setIsBarcodePrintModalOpen] = useState(false);
@@ -1386,6 +1389,10 @@ export default function PurchaseOrders() {
 
   const handleStatusChange = async (order: PurchaseOrder, newStatus: PurchaseOrderStatus) => {
     const oldStatus = effectivePurchaseOrderStatus(order.status);
+
+    if (oldStatus === newStatus) {
+      return;
+    }
     
     // SAFEGUARD: Prevent moving backwards from Verified without confirmation
     if (oldStatus === 'Verified' && newStatus !== 'Verified') {
@@ -1449,6 +1456,74 @@ export default function PurchaseOrders() {
       stockBaselineOrder,
       updatePurchaseOrder
     );
+  };
+
+  const handleBulkStatusChange = async (orderIds: string[], newStatus: PurchaseOrderStatus) => {
+    const ordersToUpdate = orderIds
+      .map((id) => purchaseOrders.find((o) => o.id === id))
+      .filter((order): order is PurchaseOrder => !!order)
+      .filter((order) => effectivePurchaseOrderStatus(order.status) !== newStatus);
+
+    if (ordersToUpdate.length === 0) return;
+
+    setBulkStatusChangeBusy(true);
+    try {
+      const statusUpdates = ordersToUpdate.map((order) => {
+        const statusUpdate: Partial<PurchaseOrder> = { status: newStatus };
+        if ((newStatus === 'Received' || newStatus === 'Verified') && !order.receivedDate) {
+          statusUpdate.receivedDate = new Date();
+        }
+        return { id: order.id, orderUpdate: statusUpdate };
+      });
+
+      await updatePurchaseOrdersBulk(statusUpdates);
+
+      const baselineById = new Map(ordersToUpdate.map((order) => [order.id, order]));
+      const updatedOrders = ordersToUpdate.map(
+        (order) =>
+          ({
+            ...order,
+            ...statusUpdates.find((entry) => entry.id === order.id)!.orderUpdate,
+          }) as PurchaseOrder
+      );
+
+      for (let i = 0; i < updatedOrders.length; i++) {
+        let order = updatedOrders[i]!;
+        const stockBaselineOrder = baselineById.get(order.id);
+        if (order.sku) {
+          order = await attachBarcodeToPurchaseOrderIfNeeded(
+            order,
+            updatePurchaseOrder,
+            inventory,
+            undefined,
+            purchaseOrders
+          );
+          updatedOrders[i] = order;
+        }
+        await syncPurchaseOrderToInventory(
+          order,
+          inventory,
+          updateInventoryItem,
+          addInventoryItem,
+          deleteInventoryItem,
+          purchaseOrders,
+          undefined,
+          order.status === 'Verified',
+          stockBaselineOrder,
+          updatePurchaseOrder
+        );
+      }
+
+      setToastMessage(
+        t('purchaseOrders.statusChangedSuccessfully').replace('{count}', String(ordersToUpdate.length))
+      );
+      setTimeout(() => setToastMessage(null), 4000);
+    } catch (error) {
+      console.error('Bulk status change failed:', error);
+      alert(t('purchaseOrders.bulkStatusChangeError'));
+    } finally {
+      setBulkStatusChangeBusy(false);
+    }
   };
 
   const handlePoRowActivate = (order: PurchaseOrder, e: React.MouseEvent) => {
@@ -3611,22 +3686,7 @@ export default function PurchaseOrders() {
           purchaseOrders={purchaseOrders}
           suppliers={suppliers}
           onClose={() => setIsBulkStatusChangeOpen(false)}
-          onBulkStatusChange={async (orderIds, newStatus) => {
-            let changed = 0;
-            for (const orderId of orderIds) {
-              const order = purchaseOrders.find((o) => o.id === orderId);
-              if (!order) continue;
-              await handleStatusChange(order, newStatus);
-              changed++;
-            }
-            setToastMessage(
-              (t('purchaseOrders.statusChangedSuccessfully') || 'Estado cambiado para {count} órdenes').replace(
-                '{count}',
-                String(changed)
-              )
-            );
-            setTimeout(() => setToastMessage(null), 4000);
-          }}
+          onBulkStatusChange={handleBulkStatusChange}
         />
       )}
 
@@ -3655,14 +3715,20 @@ export default function PurchaseOrders() {
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-in slide-in-from-bottom-5">
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-            <span>{toastMessage}</span>
+        <ModalPortal>
+          <div
+            className="fixed bottom-4 right-4 z-[200] rounded-lg bg-green-600 px-6 py-3 text-white shadow-lg animate-in slide-in-from-bottom-5"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="flex items-center gap-2">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <span>{toastMessage}</span>
+            </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {/* Bulk Delete Modal */}
@@ -3835,7 +3901,7 @@ export default function PurchaseOrders() {
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {t('purchaseOrders.quantityGood') || 'Good'} ✓
+                      {t('purchaseOrders.quantityGood') || 'Good'}
                     </label>
                     <input
                       type="number"
@@ -3851,7 +3917,7 @@ export default function PurchaseOrders() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {t('purchaseOrders.quantityProblem') || 'Problems'} ⚠️
+                      {t('purchaseOrders.quantityProblem') || 'Problems'}
                     </label>
                     <input
                       type="number"
@@ -3867,7 +3933,7 @@ export default function PurchaseOrders() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {t('purchaseOrders.quantityNotReceived') || 'Not Received'} ✗
+                      {t('purchaseOrders.quantityNotReceived') || 'Not Received'}
                     </label>
                     <input
                       type="number"
@@ -3883,41 +3949,66 @@ export default function PurchaseOrders() {
                   </div>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <p className="text-xs text-blue-800 font-medium mb-1">
-                    {t('purchaseOrders.quantityBreakdown') || 'Breakdown:'}
-                  </p>
-                  <p className="text-sm text-blue-900">
-                    {(() => {
-                      const good = parseInt(verificationQuantityGood || '0');
-                      const problem = parseInt(verificationQuantityProblem || '0');
-                      const notReceived = parseInt(verificationQuantityNotReceived || '0');
-                      const total = parseInt(verificationQuantity || '0');
-                      const sum = good + problem + notReceived;
-                      const isValid = sum === total;
-                      const breakdownText = t('purchaseOrders.quantityBreakdownText')
-                        .replace('{good}', good.toString())
-                        .replace('{problem}', problem.toString())
-                        .replace('{notReceived}', notReceived.toString())
-                        .replace('{total}', sum.toString())
-                        .replace('{received}', total.toString());
-                      const claimPending = notReceived > 0;
-                      return (
-                        <>
-                          <span className={isValid ? 'text-blue-900' : 'text-red-600 font-medium'}>
-                            {breakdownText}
-                            {!isValid && ' ⚠️'}
-                          </span>
-                          {claimPending && isValid && (
-                            <p className="mt-2 text-xs font-medium text-red-700">
-                              {t('purchaseOrders.claimWillBePending')}
-                            </p>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </p>
-                </div>
+                {(() => {
+                  const good = parseInt(verificationQuantityGood || '0', 10);
+                  const problem = parseInt(verificationQuantityProblem || '0', 10);
+                  const notReceived = parseInt(verificationQuantityNotReceived || '0', 10);
+                  const total = parseInt(verificationQuantity || '0', 10);
+                  const sum = good + problem + notReceived;
+                  const isValid = sum === total;
+                  const claimPending = notReceived > 0;
+                  const breakdownRows = [
+                    { key: 'good', label: t('purchaseOrders.quantityGood'), value: good },
+                    { key: 'problem', label: t('purchaseOrders.quantityProblem'), value: problem },
+                    {
+                      key: 'notReceived',
+                      label: t('purchaseOrders.quantityNotReceived'),
+                      value: notReceived,
+                    },
+                  ];
+
+                  return (
+                    <div className="overflow-hidden rounded-xl border border-gray-200">
+                      <div className="border-b border-gray-200 px-4 py-2.5">
+                        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                          {t('purchaseOrders.quantityBreakdown')}
+                        </p>
+                      </div>
+                      <dl className="divide-y divide-gray-100">
+                        {breakdownRows.map((row) => (
+                          <div
+                            key={row.key}
+                            className="flex items-center justify-between px-4 py-2.5 text-sm"
+                          >
+                            <dt className="text-gray-600">{row.label}</dt>
+                            <dd className="font-semibold tabular-nums text-gray-900">{row.value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                      <div
+                        className={`flex items-center justify-between border-t px-4 py-3 text-sm ${
+                          isValid ? 'border-gray-200 bg-gray-50' : 'border-red-200 bg-red-50'
+                        }`}
+                      >
+                        <span className={`font-medium ${isValid ? 'text-gray-700' : 'text-red-800'}`}>
+                          {isValid
+                            ? t('purchaseOrders.quantityBreakdownOk')
+                            : t('purchaseOrders.quantityBreakdownError')}
+                        </span>
+                        <span
+                          className={`font-semibold tabular-nums ${isValid ? 'text-gray-900' : 'text-red-700'}`}
+                        >
+                          {sum} / {total}
+                        </span>
+                      </div>
+                      {claimPending && isValid && (
+                        <p className="border-t border-gray-200 px-4 py-2.5 text-xs font-medium text-red-700">
+                          {t('purchaseOrders.claimWillBePending')}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -4103,6 +4194,30 @@ export default function PurchaseOrders() {
             </p>
             <p className="mt-1 text-sm text-gray-500">
               {t('purchaseOrders.bulkDelete.deletingHint')}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {bulkStatusChangeBusy && (
+        <div
+          className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[70] flex items-center justify-center p-4 backdrop-blur-sm`}
+          aria-busy="true"
+          aria-live="polite"
+          role="status"
+        >
+          <div className="sasa-modal-panel w-full max-w-sm rounded-2xl px-8 py-7 text-center shadow-xl">
+            <div
+              className={`mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-t-transparent ${
+                darkMode ? 'border-gray-300' : 'border-[#515151]'
+              }`}
+              aria-hidden
+            />
+            <p className="text-base font-medium text-gray-900">
+              {t('purchaseOrders.bulkStatusChanging')}
+            </p>
+            <p className="mt-1 text-sm text-gray-500">
+              {t('purchaseOrders.bulkStatusChangingHint')}
             </p>
           </div>
         </div>

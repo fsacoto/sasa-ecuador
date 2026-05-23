@@ -21,6 +21,7 @@ import Sales from './components/Sales';
 import SalesNotesHistory from './components/SalesNotesHistory';
 import InvoiceTracking from './components/InvoiceTracking';
 import Consignments from './components/Consignments';
+import SalesProfitability from './components/SalesProfitability';
 import SettingsHub from './components/SettingsHub';
 
 type Tab =
@@ -37,6 +38,7 @@ type Tab =
   | 'sales-notes'
   | 'invoice-tracking'
   | 'consignments'
+  | 'sales-profitability'
   | 'settings';
 
 /** Palabras clave extra para búsqueda en navegación */
@@ -52,6 +54,7 @@ const TAB_SEARCH_ALIASES: Partial<Record<Tab, string>> = {
   'sales-notes': 'historial notas ventas listado NOTAV pdf',
   'invoice-tracking': 'notas de ventas seguimiento cobranza pagos NOTAV',
   consignments: 'consignaciones consigna',
+  'sales-profitability': 'rentabilidad margen utilidad profit ganancia costos desembarque',
   settings: 'configuración perfil preferencias integraciones notificaciones escáner contabilidad',
 };
 
@@ -206,7 +209,14 @@ function IconCog({ className = 'w-5 h-5 shrink-0' }: { className?: string }) {
 }
 
 const INVENTORY_TABS: Tab[] = ['suppliers', 'purchase-orders', 'inventory', 'landed-costs'];
-const SALES_TABS: Tab[] = ['clients', 'sales', 'sales-notes', 'invoice-tracking', 'consignments'];
+const SALES_TABS: Tab[] = [
+  'clients',
+  'sales',
+  'sales-notes',
+  'invoice-tracking',
+  'consignments',
+  'sales-profitability',
+];
 
 /** Ocultar el CMS en la barra lateral y el contenido. El módulo sigue en el proyecto; poner `true` para mostrarlo de nuevo. */
 const SHOW_CMS_IN_NAVIGATION = false;
@@ -537,7 +547,12 @@ function AppContent() {
         { id: 'clients', label: t('navigation.clients'), permission: 'clients.view.ecuador' },
         { id: 'sales', label: t('navigation.sales'), permission: 'sales.view' },
         { id: 'sales-notes', label: t('navigation.salesNotes'), permission: 'sales.view' },
-        { id: 'invoice-tracking', label: t('navigation.invoiceTracking'), permission: 'sales.view' }
+        { id: 'invoice-tracking', label: t('navigation.invoiceTracking'), permission: 'sales.view' },
+        {
+          id: 'sales-profitability',
+          label: t('navigation.salesProfitability'),
+          permission: 'sales.view',
+        }
       );
     } else {
       if (SHOW_CMS_IN_NAVIGATION && hasPermission('cms.view')) {
@@ -621,6 +636,12 @@ function AppContent() {
       label: t('navigation.consignments'),
       IconEl: IconArchive,
       visible: hasPermission('sales.view') || hasPermission('sales.create'),
+    },
+    {
+      id: 'sales-profitability' as Tab,
+      label: t('navigation.salesProfitability'),
+      IconEl: IconTrending,
+      visible: hasPermission('sales.view'),
     },
   ].filter((item) => item.visible);
 
@@ -1456,6 +1477,9 @@ function AppContent() {
             {activeTab === 'invoice-tracking' && hasPermission('sales.view') && <InvoiceTracking />}
             {activeTab === 'consignments' &&
               (hasPermission('sales.view') || hasPermission('sales.create')) && <Consignments />}
+            {activeTab === 'sales-profitability' && hasPermission('sales.view') && (
+              <SalesProfitability />
+            )}
             {activeTab === 'settings' && hasPermission('settings.view') && (
               <SettingsHub
                 user={user}
