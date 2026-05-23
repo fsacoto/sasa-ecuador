@@ -34,6 +34,7 @@ import { displayCategory, displayLine } from '../utils/merchandiseLabels';
 import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 import { HUB_GROUP_STACK_ICON_PATH } from '../constants/businessHubUi';
 import { formatSalePriceDisplay, itemHasSalePrice, parseSalePriceInput } from '../utils/salePrice';
+import { usePersistedFilterState, usePersistedStringSetFilter } from '../hooks/usePersistedFilterState';
 
 interface InventoryProps {
   darkMode?: boolean;
@@ -67,17 +68,33 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
   const [imageUploading, setImageUploading] = useState(false);
   const [pendingImagePreviews, setPendingImagePreviews] = useState<{ file: File; previewUrl: string }[]>([]);
   
+  const userId = user?.id;
   // Sorting and filtering state
-  const [sortField, setSortField] = useState<string>('name');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterCategory, setFilterCategory] = useState<string>('all');
-  const [filterLine, setFilterLine] = useState<string>('all');
-  const [filterSalePrice, setFilterSalePrice] = useState<'all' | 'with' | 'without'>('all');
-  const [filterStock, setFilterStock] = useState<'all' | 'inStock' | 'outOfStock'>('all');
-  const [showProblemsOnly, setShowProblemsOnly] = useState(false);
+  const [sortField, setSortField] = usePersistedFilterState('inventory', 'sortField', 'name', userId);
+  const [sortDirection, setSortDirection] = usePersistedFilterState<'asc' | 'desc'>(
+    'inventory',
+    'sortDirection',
+    'asc',
+    userId
+  );
+  const [searchQuery, setSearchQuery] = usePersistedFilterState('inventory', 'searchQuery', '', userId);
+  const [filterCategory, setFilterCategory] = usePersistedFilterState('inventory', 'filterCategory', 'all', userId);
+  const [filterLine, setFilterLine] = usePersistedFilterState('inventory', 'filterLine', 'all', userId);
+  const [filterSalePrice, setFilterSalePrice] = usePersistedFilterState<'all' | 'with' | 'without'>(
+    'inventory',
+    'filterSalePrice',
+    'all',
+    userId
+  );
+  const [filterStock, setFilterStock] = usePersistedFilterState<'all' | 'inStock' | 'outOfStock'>(
+    'inventory',
+    'filterStock',
+    'all',
+    userId
+  );
+  const [showProblemsOnly, setShowProblemsOnly] = usePersistedFilterState('inventory', 'showProblemsOnly', false, userId);
   const [showFilters, setShowFilters] = useState(false);
-  const [groupByField, setGroupByField] = useState<string>('');
+  const [groupByField, setGroupByField] = usePersistedFilterState('inventory', 'groupByField', '', userId);
   const [showGroupByDropdown, setShowGroupByDropdown] = useState(false);
   const groupByDropdownRef = useRef<HTMLDivElement>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -111,12 +128,12 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
   const searchDropdownRef = useRef<HTMLDivElement>(null);
   
   // Column visibility state
-  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
+  const [hiddenColumns, setHiddenColumns] = usePersistedStringSetFilter('inventory', 'hiddenColumns', userId);
   const [showColumnDropdown, setShowColumnDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   
   // View mode state
-  const [viewMode, setViewMode] = useState<'grid' | 'gallery'>('grid');
+  const [viewMode, setViewMode] = usePersistedFilterState<'grid' | 'gallery'>('inventory', 'viewMode', 'grid', userId);
   const [showViewDropdown, setShowViewDropdown] = useState(false);
   const viewDropdownRef = useRef<HTMLDivElement>(null);
   

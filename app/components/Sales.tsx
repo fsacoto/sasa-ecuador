@@ -12,6 +12,7 @@ import { useTranslation } from '../context/TranslationContext';
 import { findInventoryItemByBarcodeScan } from '../utils/barcodeGenerator';
 import { filterSellableInventory, hasSellableStock } from '../utils/inventoryStock';
 import AlertDialog from './ui/AlertDialog';
+import DateInput from './ui/DateInput';
 
 interface InvoiceLineWithDetails extends SalesInvoiceLine {
   line?: string;
@@ -400,11 +401,10 @@ export default function Sales() {
           <h3 className="text-lg font-semibold text-gray-900">{t('sales.clientInformation')}</h3>
           <div className="flex items-center gap-2">
             <label className="text-sm font-medium text-gray-700">{t('sales.date')}:</label>
-            <input
-              type="date"
+            <DateInput
               value={invoiceDate}
-              onChange={(e) => setInvoiceDate(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#515151] focus:border-transparent"
+              onChange={setInvoiceDate}
+              inputClassName="px-3 py-2 border border-gray-300 rounded-lg text-sm flex items-center gap-2 min-w-[10rem]"
             />
           </div>
         </div>

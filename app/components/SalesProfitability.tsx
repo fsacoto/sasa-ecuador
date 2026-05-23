@@ -15,6 +15,9 @@ import {
   tableThSortableClass,
 } from './ui/tableHeaderClass';
 import { formatDateDMY } from '../utils/formatDate';
+import DateInput from './ui/DateInput';
+import { useAuth } from '../context/AuthContext';
+import { usePersistedFilterState } from '../hooks/usePersistedFilterState';
 import {
   dashboardCardLabelClass,
   dashboardHintClass,
@@ -48,13 +51,20 @@ type InvoiceSortKey = 'invoiceNumber' | 'clientName' | 'date' | 'revenue' | 'cog
 
 export default function SalesProfitability() {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const userId = user?.id;
   const { inventory, purchaseOrders, additionalCosts, isLoading: inventoryLoading } = useInventory();
 
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(true);
-  const [period, setPeriod] = useState<PeriodPreset>('thisMonth');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
+  const [period, setPeriod] = usePersistedFilterState<PeriodPreset>(
+    'sales-profitability',
+    'period',
+    'thisMonth',
+    userId
+  );
+  const [customFrom, setCustomFrom] = usePersistedFilterState('sales-profitability', 'customFrom', '', userId);
+  const [customTo, setCustomTo] = usePersistedFilterState('sales-profitability', 'customTo', '', userId);
   const [viewTab, setViewTab] = useState<ViewTab>('bySku');
   const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
 
@@ -218,18 +228,16 @@ export default function SalesProfitability() {
         </button>
         {period === 'custom' && (
           <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="date"
+            <DateInput
               value={customFrom}
-              onChange={(e) => setCustomFrom(e.target.value)}
-              className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
+              onChange={setCustomFrom}
+              inputClassName="min-w-[9rem] rounded-lg border border-gray-300 px-2 py-1.5 text-sm flex items-center gap-2"
             />
             <span className="text-gray-400">—</span>
-            <input
-              type="date"
+            <DateInput
               value={customTo}
-              onChange={(e) => setCustomTo(e.target.value)}
-              className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
+              onChange={setCustomTo}
+              inputClassName="min-w-[9rem] rounded-lg border border-gray-300 px-2 py-1.5 text-sm flex items-center gap-2"
             />
           </div>
         )}

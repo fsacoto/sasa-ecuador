@@ -29,6 +29,9 @@ import {
 import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 import AlertDialog from './ui/AlertDialog';
 import MonthYearSelectEs from './ui/MonthYearSelectEs';
+import DateInput from './ui/DateInput';
+import { isInsideDatePickerPortal } from '../utils/calendarUtils';
+import { usePersistedFilterState } from '../hooks/usePersistedFilterState';
 import ConsignmentReturnModal from './ConsignmentReturnModal';
 import { HUB_GROUP_STACK_ICON_PATH } from '../constants/businessHubUi';
 import { formatDateDMY } from '../utils/formatDate';
@@ -38,13 +41,19 @@ type View = 'list' | 'create' | 'details';
 
 export default function Consignments() {
   const { user } = useAuth();
+  const userId = user?.id;
   const { inventory, updateInventoryItem: updateInventory } = useInventory();
   const { t } = useTranslation();
   const [view, setView] = useState<View>('list');
   const [consignments, setConsignments] = useState<Consignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedConsignment, setSelectedConsignment] = useState<Consignment | null>(null);
-  const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc' | 'desc'}>({key: 'dateCreated', direction: 'desc'});
+  const [sortConfig, setSortConfig] = usePersistedFilterState<{ key: string; direction: 'asc' | 'desc' }>(
+    'consignments',
+    'sortConfig',
+    { key: 'dateCreated', direction: 'desc' },
+    userId
+  );
   
   // Create consignment state
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
@@ -75,16 +84,16 @@ export default function Consignments() {
   // Alert dialog state
   const [alertDialog, setAlertDialog] = useState<{open: boolean, title?: string, message: string}>({open: false, message: ''});
 
-  const [filterMonth, setFilterMonth] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [filterClientId, setFilterClientId] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
-  const [listSearch, setListSearch] = useState('');
+  const [filterMonth, setFilterMonth] = usePersistedFilterState('consignments', 'filterMonth', '', userId);
+  const [dateFrom, setDateFrom] = usePersistedFilterState('consignments', 'dateFrom', '', userId);
+  const [dateTo, setDateTo] = usePersistedFilterState('consignments', 'dateTo', '', userId);
+  const [filterClientId, setFilterClientId] = usePersistedFilterState('consignments', 'filterClientId', '', userId);
+  const [filterStatus, setFilterStatus] = usePersistedFilterState('consignments', 'filterStatus', '', userId);
+  const [listSearch, setListSearch] = usePersistedFilterState('consignments', 'listSearch', '', userId);
   const [showFilters, setShowFilters] = useState(false);
   const [showGroupByDropdown, setShowGroupByDropdown] = useState(false);
   const [showSearchPanel, setShowSearchPanel] = useState(false);
-  const [groupByField, setGroupByField] = useState<string>('');
+  const [groupByField, setGroupByField] = usePersistedFilterState('consignments', 'groupByField', '', userId);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const listToolbarRef = useRef<HTMLDivElement>(null);
   const groupByDropdownRef = useRef<HTMLDivElement>(null);
@@ -150,6 +159,7 @@ export default function Consignments() {
   useEffect(() => {
     if (view !== 'list') return;
     const onDocMouseDown = (e: MouseEvent) => {
+      if (isInsideDatePickerPortal(e.target)) return;
       if (!listToolbarRef.current?.contains(e.target as Node)) {
         setShowFilters(false);
         setShowGroupByDropdown(false);
@@ -1085,20 +1095,16 @@ export default function Consignments() {
                       </div>
                       <div>
                         <label className="mb-1 block text-xs font-medium text-gray-700">{t('salesNotes.dateFrom')}</label>
-                        <input
-                          type="date"
+                        <DateInput
                           value={dateFrom}
-                          onChange={(e) => setDateFrom(e.target.value)}
-                          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-[#515151]"
+                          onChange={setDateFrom}
                         />
                       </div>
                       <div>
                         <label className="mb-1 block text-xs font-medium text-gray-700">{t('salesNotes.dateTo')}</label>
-                        <input
-                          type="date"
+                        <DateInput
                           value={dateTo}
-                          onChange={(e) => setDateTo(e.target.value)}
-                          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-[#515151]"
+                          onChange={setDateTo}
                         />
                       </div>
                       <div>

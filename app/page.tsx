@@ -8,7 +8,7 @@ import { db } from './utils/firebase';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import { auth } from './utils/firebase';
-import { uploadImage } from './services/storageService';
+import { uploadImage, downloadStorageImageAsDataUrl } from './services/storageService';
 import LoginForm from './components/LoginForm';
 import Dashboard from './components/Dashboard';
 import Suppliers from './components/Suppliers';
@@ -22,7 +22,6 @@ import SalesNotesHistory from './components/SalesNotesHistory';
 import InvoiceTracking from './components/InvoiceTracking';
 import Consignments from './components/Consignments';
 import SalesProfitability from './components/SalesProfitability';
-import SettingsHub from './components/SettingsHub';
 
 type Tab =
   | 'dashboard'
@@ -38,8 +37,7 @@ type Tab =
   | 'sales-notes'
   | 'invoice-tracking'
   | 'consignments'
-  | 'sales-profitability'
-  | 'settings';
+  | 'sales-profitability';
 
 /** Palabras clave extra para búsqueda en navegación */
 const TAB_SEARCH_ALIASES: Partial<Record<Tab, string>> = {
@@ -55,7 +53,6 @@ const TAB_SEARCH_ALIASES: Partial<Record<Tab, string>> = {
   'invoice-tracking': 'notas de ventas seguimiento cobranza pagos NOTAV',
   consignments: 'consignaciones consigna',
   'sales-profitability': 'rentabilidad margen utilidad profit ganancia costos desembarque',
-  settings: 'configuración perfil preferencias integraciones notificaciones escáner contabilidad',
 };
 
 type NavSearchEntry = { tab: Tab; title: string; path: string; haystack: string };
@@ -199,15 +196,6 @@ function IconUserOutline({ className = 'w-5 h-5 shrink-0' }: { className?: strin
   );
 }
 
-function IconCog({ className = 'w-5 h-5 shrink-0' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.757.427 1.757 2.925 0 3.351a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.427 1.757-2.925 1.757-3.351 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.757-.427-1.757-2.925 0-3.351a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.607 2.296.07 2.572-1.065z" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    </svg>
-  );
-}
-
 const INVENTORY_TABS: Tab[] = ['suppliers', 'purchase-orders', 'inventory', 'landed-costs'];
 const SALES_TABS: Tab[] = [
   'clients',
@@ -253,9 +241,17 @@ function AppContent() {
   });
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState('');
+  const [passwordCurrent, setPasswordCurrent] = useState('');
+  const [passwordNext, setPasswordNext] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [passwordStatus, setPasswordStatus] = useState('');
+  const [passwordUpdating, setPasswordUpdating] = useState(false);
+  const [photoReadjustBusy, setPhotoReadjustBusy] = useState(false);
   const [profilePhotoMenuOpen, setProfilePhotoMenuOpen] = useState(false);
-  const profilePhotoMenuRef = useRef<HTMLDivElement>(null);
   const profilePhotoInputRef = useRef<HTMLInputElement>(null);
+  const profilePhotoMenuRef = useRef<HTMLDivElement>(null);
+  /** Última imagen en data URL usada al recortar (misma sesión, evita re-descargar de Storage). */
+  const profilePhotoReadjustSrcRef = useRef<string>('');
   const [darkModeOn, setDarkModeOn] = useState(false);
   const [photoCropOpen, setPhotoCropOpen] = useState(false);
   const [photoCropSrc, setPhotoCropSrc] = useState('');
@@ -273,8 +269,7 @@ function AppContent() {
     if (
       SHOW_CMS_IN_NAVIGATION &&
       user?.role === 'marketing' &&
-      activeTab !== 'cms' &&
-      activeTab !== 'settings'
+      activeTab !== 'cms'
     ) {
       setActiveTab('cms');
     } else if (user?.role !== 'marketing' && activeTab === 'cms' && !hasPermission('cms.view')) {
@@ -349,6 +344,7 @@ function AppContent() {
           const next = { firstName, lastName, photoURL };
           setProfileSaved(next);
           setProfileForm(next);
+          profilePhotoReadjustSrcRef.current = '';
         }
       } catch (error) {
         console.error('Error loading profile:', error);
@@ -402,6 +398,52 @@ function AppContent() {
   const PHOTO_FRAME_SIZE = 260;
   const displayName = `${profileSaved.firstName || user.name}${profileSaved.lastName ? ` ${profileSaved.lastName}` : ''}`.trim();
 
+  const resetProfilePhotoInput = () => {
+    if (profilePhotoInputRef.current) profilePhotoInputRef.current.value = '';
+  };
+
+  const openProfilePhotoPicker = () => {
+    resetProfilePhotoInput();
+    profilePhotoInputRef.current?.click();
+  };
+
+  const closePhotoCropModal = () => {
+    setPhotoCropOpen(false);
+    setPhotoCropSrc('');
+    setPhotoCropDragging(false);
+    resetProfilePhotoInput();
+  };
+
+  const openPhotoCropFromSrc = (src: string, naturalWidth: number, naturalHeight: number) => {
+    setPhotoCropImageSize({ width: naturalWidth || 1, height: naturalHeight || 1 });
+    setPhotoCropOffset({ x: 0, y: 0 });
+    setPhotoCropZoom(1);
+    setPhotoCropSrc(src);
+    setPhotoCropOpen(true);
+  };
+
+  const readjustCurrentProfilePhoto = async () => {
+    const url = profileForm.photoURL?.trim();
+    if (!url || photoReadjustBusy) return;
+    try {
+      setPhotoReadjustBusy(true);
+      setProfileError('');
+      const src = profilePhotoReadjustSrcRef.current || (await downloadStorageImageAsDataUrl(url));
+      const img = new window.Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('image load failed'));
+        img.src = src;
+      });
+      openPhotoCropFromSrc(src, img.naturalWidth, img.naturalHeight);
+    } catch (error) {
+      console.error('Error loading profile photo for readjust:', error);
+      setProfileError(t('settings.readjustPhotoError'));
+    } finally {
+      setPhotoReadjustBusy(false);
+    }
+  };
+
   const handleProfilePhotoChange = async (file: File | null) => {
     if (!file) return;
     const reader = new FileReader();
@@ -410,11 +452,8 @@ function AppContent() {
       if (!src) return;
       const img = new window.Image();
       img.onload = () => {
-        setPhotoCropImageSize({ width: img.naturalWidth || 1, height: img.naturalHeight || 1 });
-        setPhotoCropOffset({ x: 0, y: 0 });
-        setPhotoCropZoom(1);
-        setPhotoCropSrc(src);
-        setPhotoCropOpen(true);
+        profilePhotoReadjustSrcRef.current = src;
+        openPhotoCropFromSrc(src, img.naturalWidth || 1, img.naturalHeight || 1);
       };
       img.src = src;
     };
@@ -461,11 +500,11 @@ function AppContent() {
       const path = `images/profiles/${user.id}/${Date.now()}_profile.jpg`;
       const photoURL = await uploadImage(croppedFile, path);
       setProfileForm((prev) => ({ ...prev, photoURL }));
-      setPhotoCropOpen(false);
-      setPhotoCropSrc('');
+      profilePhotoReadjustSrcRef.current = photoCropSrc;
+      closePhotoCropModal();
     } catch (error) {
       console.error('Error uploading profile photo:', error);
-      setProfileError('Could not upload profile photo. Please try again.');
+      setProfileError(t('settings.uploadPhotoError'));
     } finally {
       setProfileSaving(false);
     }
@@ -476,7 +515,7 @@ function AppContent() {
     const firstName = profileForm.firstName.trim();
     const lastName = profileForm.lastName.trim();
     if (!firstName) {
-      setProfileError('First name is required.');
+      setProfileError(t('settings.firstNameRequired'));
       return;
     }
     try {
@@ -497,10 +536,14 @@ function AppContent() {
         lastName,
         photoURL: profileForm.photoURL || '',
       });
+      setPasswordCurrent('');
+      setPasswordNext('');
+      setPasswordConfirm('');
+      setPasswordStatus('');
       setProfileModalOpen(false);
     } catch (error) {
       console.error('Error saving profile:', error);
-      setProfileError('Could not save profile. Please try again.');
+      setProfileError(t('settings.saveProfileError'));
     } finally {
       setProfileSaving(false);
     }
@@ -508,17 +551,53 @@ function AppContent() {
 
   const resetProfileDraft = () => {
     setProfileForm(profileSaved);
-    setProfilePhotoMenuOpen(false);
     setProfileError('');
+    setProfilePhotoMenuOpen(false);
+  };
+
+  const closeProfileModal = () => {
+    resetProfileDraft();
+    setProfileModalOpen(false);
+    setPasswordCurrent('');
+    setPasswordNext('');
+    setPasswordConfirm('');
+    setPasswordStatus('');
+    resetProfilePhotoInput();
+    setPhotoCropOpen(false);
+    setPhotoCropSrc('');
+    setPhotoCropDragging(false);
+  };
+
+  const submitPasswordChange = async () => {
+    if (!passwordCurrent || !passwordNext || !passwordConfirm) {
+      setPasswordStatus(t('settings.passwordCompleteFields'));
+      return;
+    }
+    if (passwordNext !== passwordConfirm) {
+      setPasswordStatus(t('settings.passwordMismatch'));
+      return;
+    }
+    setPasswordUpdating(true);
+    setPasswordStatus('');
+    const err = await changePasswordWithReauth(passwordCurrent, passwordNext);
+    setPasswordUpdating(false);
+    if (err) {
+      setPasswordStatus(err);
+      return;
+    }
+    setPasswordCurrent('');
+    setPasswordNext('');
+    setPasswordConfirm('');
+    setPasswordStatus(t('settings.passwordUpdated'));
   };
 
   const changePasswordWithReauth = async (currentPassword: string, nextPassword: string): Promise<string | null> => {
     try {
       if (!auth.currentUser || !auth.currentUser.email) {
-        return 'No authenticated user found.';
+        return t('settings.noAuthenticatedUser');
       }
       if (nextPassword.length < 8) {
-        return 'New password must be at least 8 characters.';
+        return t('settings.passwordMinLength');
       }
       const credential = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
       await reauthenticateWithCredential(auth.currentUser, credential);
@@ -526,7 +605,7 @@ function AppContent() {
       return null;
     } catch (error) {
       console.error('Error updating password:', error);
-      return 'Could not update password. Verify your current password and try again.';
+      return t('settings.passwordUpdateError');
     }
   };
 
@@ -879,9 +958,7 @@ function AppContent() {
                           ? IconClipboard
                           : tab.id === 'invoice-tracking'
                             ? IconDocument
-                            : tab.id === 'settings'
-                              ? IconCog
-                              : IconDashboard;
+                            : IconDashboard;
 
             return (
               <button
@@ -900,27 +977,6 @@ function AppContent() {
         </nav>
 
         <div className="mt-auto px-1.5 py-2 space-y-1.5">
-          {hasPermission('settings.view') && (
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('settings');
-                setSuiteFlyout(null);
-              }}
-              className={`flex w-full items-center gap-1.5 rounded-md py-1.5 text-xs transition-colors ${
-                sidebarCollapsed ? 'justify-center px-0' : 'justify-start px-2 text-left'
-              } ${
-                activeTab === 'settings'
-                  ? 'bg-[#232323] text-[#c5c5c5]'
-                  : 'text-[#c5c5c5] hover:bg-[#1a1a1a] hover:text-[#c5c5c5]'
-              }`}
-              title="Settings"
-              style={activeTab === 'settings' ? { boxShadow: `inset 2px 0 0 0 ${SIDEBAR_ACCENT}` } : undefined}
-            >
-              <IconCog className="h-4 w-4 shrink-0" />
-              {!sidebarCollapsed && <span className="min-w-0 flex-1 truncate text-left">Settings</span>}
-            </button>
-          )}
           <button
             type="button"
             onClick={() => {
@@ -1083,7 +1139,7 @@ function AppContent() {
                 {(profileModalOpen ? profileForm.photoURL : profileSaved.photoURL) ? (
                   <img
                     src={profileModalOpen ? profileForm.photoURL : profileSaved.photoURL}
-                    alt="Profile"
+                    alt={t('settings.profileAlt')}
                     className="h-full w-full object-cover"
                   />
                 ) : (
@@ -1116,6 +1172,11 @@ function AppContent() {
                   role="menuitem"
                   onClick={() => {
                     setProfileForm(profileSaved);
+                    setPasswordCurrent('');
+                    setPasswordNext('');
+                    setPasswordConfirm('');
+                    setPasswordStatus('');
+                    setProfileError('');
                     setProfilePhotoMenuOpen(false);
                     setProfileModalOpen(true);
                     setUserMenuOpen(false);
@@ -1161,28 +1222,27 @@ function AppContent() {
           type="file"
           accept="image/*"
           className="hidden"
-          onChange={(e) => handleProfilePhotoChange(e.target.files?.[0] ?? null)}
+          onChange={(e) => {
+            const file = e.target.files?.[0] ?? null;
+            void handleProfilePhotoChange(file);
+            e.target.value = '';
+          }}
         />
 
         {profileModalOpen && (
           <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
             <div
-              className={`w-full max-w-md rounded-xl p-5 shadow-2xl ${
+              className={`max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl p-5 shadow-2xl ${
                 darkModeOn ? 'border border-gray-700 bg-[#101010]' : 'border border-gray-200 bg-white'
               }`}
             >
               <div className="mb-4 flex items-center justify-between">
-                <h3 className={`text-sm font-semibold ${darkModeOn ? 'text-white' : 'text-gray-900'}`}>Profile Settings</h3>
+                <h3 className={`text-sm font-semibold ${darkModeOn ? 'text-white' : 'text-gray-900'}`}>{t('settings.profileSettingsTitle')}</h3>
                 <button
                   type="button"
-                  onClick={() => {
-                    setProfileForm(profileSaved);
-                    setProfilePhotoMenuOpen(false);
-                    setProfileModalOpen(false);
-                    setProfileError('');
-                  }}
+                  onClick={closeProfileModal}
                   className={`rounded p-1 ${darkModeOn ? 'text-gray-300 hover:bg-[#1a1a1a]' : 'text-gray-600 hover:bg-gray-100'}`}
-                  aria-label="Close profile settings"
+                  aria-label={t('settings.closeProfileSettings')}
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -1191,71 +1251,81 @@ function AppContent() {
               </div>
 
               <div className="mb-4 flex items-center gap-3">
-                <div ref={profilePhotoMenuRef} className="group relative">
-                  <div className={`h-14 w-14 overflow-hidden rounded-full ${darkModeOn ? 'border border-gray-600 bg-[#1a1a1a]' : 'border border-gray-300 bg-gray-100'}`}>
+                <div ref={profilePhotoMenuRef} className="relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setProfilePhotoMenuOpen((open) => !open)}
+                    aria-expanded={profilePhotoMenuOpen}
+                    aria-haspopup="menu"
+                    aria-label={t('settings.photoOptions')}
+                    className={`relative h-14 w-14 overflow-hidden rounded-full transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[#515151] ${
+                      darkModeOn ? 'border border-gray-600 bg-[#1a1a1a]' : 'border border-gray-300 bg-gray-100'
+                    }`}
+                  >
                     {profileForm.photoURL ? (
-                      <img src={profileForm.photoURL} alt="Profile" className="h-full w-full object-cover" />
+                      <img src={profileForm.photoURL} alt={t('settings.profileAlt')} className="h-full w-full object-cover" />
                     ) : (
                       <div className={`flex h-full w-full items-center justify-center ${darkModeOn ? 'text-gray-300' : 'text-gray-500'}`}>
                         <IconUserOutline className="h-6 w-6" />
                       </div>
                     )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setProfilePhotoMenuOpen((v) => !v)}
-                    className={`absolute bottom-0 right-0 rounded-full p-1 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 ${
-                      darkModeOn
-                        ? 'border border-gray-600 bg-[#101010] text-gray-200 hover:bg-[#1a1a1a]'
-                        : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-100'
-                    }`}
-                    aria-label="Photo options"
-                  >
-                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
-                    </svg>
                   </button>
-
-                  {profilePhotoMenuOpen && (
+                  {profilePhotoMenuOpen ? (
                     <div
-                      className={`absolute -right-2 top-16 z-10 w-44 overflow-hidden rounded-md shadow-lg ${
+                      role="menu"
+                      className={`absolute left-0 top-full z-10 mt-1.5 min-w-[8.5rem] overflow-hidden rounded-md py-0.5 shadow-lg ${
                         darkModeOn ? 'border border-gray-700 bg-[#101010]' : 'border border-gray-200 bg-white'
                       }`}
                     >
                       <button
                         type="button"
+                        role="menuitem"
                         onClick={() => {
                           setProfilePhotoMenuOpen(false);
-                          profilePhotoInputRef.current?.click();
+                          openProfilePhotoPicker();
                         }}
-                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
-                          darkModeOn ? 'text-gray-200 hover:bg-[#1a1a1a]' : 'text-gray-700 hover:bg-gray-50'
+                        className={`block w-full px-2.5 py-1.5 text-left text-[11px] transition-colors ${
+                          darkModeOn ? 'text-gray-200 hover:bg-white/10' : 'text-gray-700 hover:bg-gray-100'
                         }`}
                       >
-                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16l4-4a2 2 0 012.828 0L14 16m-1-1 1.586-1.586a2 2 0 012.828 0L21 17m-9-9h.01M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                        Choose new photo
+                        {profileForm.photoURL ? t('settings.changePhoto') : t('settings.chooseNewPhoto')}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setProfileForm((prev) => ({ ...prev, photoURL: '' }));
-                          setProfilePhotoMenuOpen(false);
-                        }}
-                        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs ${
-                          darkModeOn ? 'text-red-400 hover:bg-red-900/20' : 'text-red-600 hover:bg-red-50'
-                        }`}
-                      >
-                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7V5h6v2m-7 4v6m4-6v6m4-6v6M8 7h8l-1 13H9L8 7z" />
-                        </svg>
-                        Delete photo
-                      </button>
+                      {profileForm.photoURL ? (
+                        <>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            disabled={photoReadjustBusy}
+                            onClick={() => {
+                              setProfilePhotoMenuOpen(false);
+                              void readjustCurrentProfilePhoto();
+                            }}
+                            className={`block w-full px-2.5 py-1.5 text-left text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                              darkModeOn ? 'text-gray-200 hover:bg-white/10' : 'text-gray-700 hover:bg-gray-100'
+                            }`}
+                          >
+                            {photoReadjustBusy ? t('common.loading') : t('settings.readjustPhoto')}
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              profilePhotoReadjustSrcRef.current = '';
+                              setProfileForm((prev) => ({ ...prev, photoURL: '' }));
+                              setProfilePhotoMenuOpen(false);
+                            }}
+                            className={`block w-full px-2.5 py-1.5 text-left text-[11px] transition-colors ${
+                              darkModeOn ? 'text-red-400 hover:bg-red-500/10' : 'text-red-600 hover:bg-red-50'
+                            }`}
+                          >
+                            {t('settings.deletePhoto')}
+                          </button>
+                        </>
+                      ) : null}
                     </div>
-                  )}
+                  ) : null}
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className={`truncate text-sm font-semibold ${darkModeOn ? 'text-white' : 'text-gray-900'}`}>{displayName || user.name}</p>
                   <p className={`truncate text-xs ${darkModeOn ? 'text-gray-400' : 'text-gray-500'}`}>{user.email}</p>
                 </div>
@@ -1263,39 +1333,45 @@ function AppContent() {
 
               <div className="space-y-3">
                 <div>
-                  <label className={`mb-1 block text-xs ${darkModeOn ? 'text-gray-300' : 'text-gray-700'}`}>First name</label>
+                  <label className={`mb-1 block text-xs ${darkModeOn ? 'text-gray-300' : 'text-gray-700'}`}>{t('settings.firstName')}</label>
                   <input
                     type="text"
                     value={profileForm.firstName}
                     onChange={(e) => setProfileForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                    autoComplete="given-name"
+                    name="sasa-profile-given-name"
                     className={`w-full rounded-lg px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#515151] ${
                       darkModeOn
                         ? 'border border-gray-600 bg-[#1a1a1a] text-white'
                         : 'border border-gray-300 bg-white text-gray-900'
                     }`}
-                    placeholder="First name"
+                    placeholder={t('settings.firstName')}
                   />
                 </div>
                 <div>
-                  <label className={`mb-1 block text-xs ${darkModeOn ? 'text-gray-300' : 'text-gray-700'}`}>Last name</label>
+                  <label className={`mb-1 block text-xs ${darkModeOn ? 'text-gray-300' : 'text-gray-700'}`}>{t('settings.lastName')}</label>
                   <input
                     type="text"
                     value={profileForm.lastName}
                     onChange={(e) => setProfileForm((prev) => ({ ...prev, lastName: e.target.value }))}
+                    autoComplete="family-name"
+                    name="sasa-profile-family-name"
                     className={`w-full rounded-lg px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#515151] ${
                       darkModeOn
                         ? 'border border-gray-600 bg-[#1a1a1a] text-white'
                         : 'border border-gray-300 bg-white text-gray-900'
                     }`}
-                    placeholder="Last name"
+                    placeholder={t('settings.lastName')}
                   />
                 </div>
                 <div>
-                  <label className={`mb-1 block text-xs ${darkModeOn ? 'text-gray-300' : 'text-gray-700'}`}>Email</label>
+                  <label className={`mb-1 block text-xs ${darkModeOn ? 'text-gray-300' : 'text-gray-700'}`}>{t('common.email')}</label>
                   <input
                     type="email"
                     value={user.email}
                     readOnly
+                    autoComplete="email"
+                    name="sasa-profile-email"
                     className={`w-full cursor-not-allowed rounded-lg px-3 py-2 text-sm ${
                       darkModeOn
                         ? 'border border-gray-700 bg-[#1a1a1a] text-gray-400'
@@ -1305,24 +1381,81 @@ function AppContent() {
                 </div>
               </div>
 
+              <div
+                className={`mt-4 rounded-lg border p-4 ${darkModeOn ? 'border-gray-700' : 'border-gray-200'}`}
+              >
+                <h4 className={`text-xs font-semibold ${darkModeOn ? 'text-white' : 'text-gray-900'}`}>
+                  {t('settings.updatePassword')}
+                </h4>
+                <div className="mt-3 space-y-3">
+                  <input
+                    type="password"
+                    placeholder={t('settings.currentPassword')}
+                    value={passwordCurrent}
+                    onChange={(e) => setPasswordCurrent(e.target.value)}
+                    autoComplete="current-password"
+                    name="sasa-profile-current-password"
+                    className={`w-full rounded-lg px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#515151] ${
+                      darkModeOn
+                        ? 'border border-gray-600 bg-[#1a1a1a] text-white'
+                        : 'border border-gray-300 bg-white text-gray-900'
+                    }`}
+                  />
+                  <input
+                    type="password"
+                    placeholder={t('settings.newPassword')}
+                    value={passwordNext}
+                    onChange={(e) => setPasswordNext(e.target.value)}
+                    autoComplete="new-password"
+                    name="sasa-profile-new-password"
+                    className={`w-full rounded-lg px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#515151] ${
+                      darkModeOn
+                        ? 'border border-gray-600 bg-[#1a1a1a] text-white'
+                        : 'border border-gray-300 bg-white text-gray-900'
+                    }`}
+                  />
+                  <input
+                    type="password"
+                    placeholder={t('settings.confirmNewPassword')}
+                    value={passwordConfirm}
+                    onChange={(e) => setPasswordConfirm(e.target.value)}
+                    autoComplete="new-password"
+                    name="sasa-profile-confirm-password"
+                    className={`w-full rounded-lg px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-[#515151] ${
+                      darkModeOn
+                        ? 'border border-gray-600 bg-[#1a1a1a] text-white'
+                        : 'border border-gray-300 bg-white text-gray-900'
+                    }`}
+                  />
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={passwordUpdating}
+                    onClick={submitPasswordChange}
+                    className="rounded-md bg-[#515151] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#626262] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {passwordUpdating ? t('settings.saving') : t('settings.updatePasswordBtn')}
+                  </button>
+                  {passwordStatus && (
+                    <p className={`text-xs ${darkModeOn ? 'text-gray-400' : 'text-gray-600'}`}>{passwordStatus}</p>
+                  )}
+                </div>
+              </div>
+
               {profileError && <p className="mt-3 text-xs text-red-400">{profileError}</p>}
 
               <div className="mt-5 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setProfileForm(profileSaved);
-                    setProfilePhotoMenuOpen(false);
-                    setProfileModalOpen(false);
-                    setProfileError('');
-                  }}
+                  onClick={closeProfileModal}
                   className={`rounded-md border px-3 py-1.5 text-xs ${
                     darkModeOn
                       ? 'border-gray-600 text-gray-200 hover:bg-[#1a1a1a]'
                       : 'border-gray-300 text-gray-700 hover:bg-gray-100'
                   }`}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="button"
@@ -1330,7 +1463,7 @@ function AppContent() {
                   onClick={saveProfile}
                   className="rounded-md bg-[#515151] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#626262] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {profileSaving ? 'Saving...' : 'Save'}
+                  {profileSaving ? t('settings.saving') : t('common.save')}
                 </button>
               </div>
             </div>
@@ -1345,16 +1478,12 @@ function AppContent() {
               }`}
             >
               <div className="mb-3 flex items-center justify-between">
-                <h3 className={`text-sm font-semibold ${darkModeOn ? 'text-white' : 'text-gray-900'}`}>Adjust profile photo</h3>
+                <h3 className={`text-sm font-semibold ${darkModeOn ? 'text-white' : 'text-gray-900'}`}>{t('settings.adjustProfilePhoto')}</h3>
                 <button
                   type="button"
-                  onClick={() => {
-                    setPhotoCropOpen(false);
-                    setPhotoCropSrc('');
-                    setPhotoCropDragging(false);
-                  }}
+                  onClick={closePhotoCropModal}
                   className={`rounded p-1 ${darkModeOn ? 'text-gray-300 hover:bg-[#1a1a1a]' : 'text-gray-600 hover:bg-gray-100'}`}
-                  aria-label="Close crop editor"
+                  aria-label={t('settings.closeCropEditor')}
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -1362,7 +1491,7 @@ function AppContent() {
                 </button>
               </div>
 
-              <div className={`mb-3 text-xs ${darkModeOn ? 'text-gray-400' : 'text-gray-500'}`}>Drag to position and use zoom to fit inside the frame.</div>
+              <div className={`mb-3 text-xs ${darkModeOn ? 'text-gray-400' : 'text-gray-500'}`}>{t('settings.cropHint')}</div>
               <div
                 className={`relative mx-auto overflow-hidden rounded-full ${
                   darkModeOn ? 'border border-gray-600 bg-[#1a1a1a]' : 'border border-gray-300 bg-gray-100'
@@ -1389,7 +1518,7 @@ function AppContent() {
                 {photoCropSrc && (
                   <img
                     src={photoCropSrc}
-                    alt="Crop preview"
+                    alt={t('settings.cropPreviewAlt')}
                     draggable={false}
                     className="select-none"
                     style={{
@@ -1406,7 +1535,7 @@ function AppContent() {
               </div>
 
               <div className="mt-4">
-                <label className={`mb-1 block text-xs ${darkModeOn ? 'text-gray-300' : 'text-gray-700'}`}>Zoom</label>
+                <label className={`mb-1 block text-xs ${darkModeOn ? 'text-gray-300' : 'text-gray-700'}`}>{t('settings.zoom')}</label>
                 <input
                   type="range"
                   min={1}
@@ -1421,18 +1550,14 @@ function AppContent() {
               <div className="mt-5 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setPhotoCropOpen(false);
-                    setPhotoCropSrc('');
-                    setPhotoCropDragging(false);
-                  }}
+                  onClick={closePhotoCropModal}
                   className={`rounded-md border px-3 py-1.5 text-xs ${
                     darkModeOn
                       ? 'border-gray-600 text-gray-200 hover:bg-[#1a1a1a]'
                       : 'border-gray-300 text-gray-700 hover:bg-gray-100'
                   }`}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="button"
@@ -1440,7 +1565,7 @@ function AppContent() {
                   onClick={uploadCroppedProfilePhoto}
                   className="rounded-md bg-[#515151] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#626262] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {profileSaving ? 'Uploading...' : 'Use photo'}
+                  {profileSaving ? t('settings.uploading') : t('settings.usePhoto')}
                 </button>
               </div>
             </div>
@@ -1479,20 +1604,6 @@ function AppContent() {
               (hasPermission('sales.view') || hasPermission('sales.create')) && <Consignments />}
             {activeTab === 'sales-profitability' && hasPermission('sales.view') && (
               <SalesProfitability />
-            )}
-            {activeTab === 'settings' && hasPermission('settings.view') && (
-              <SettingsHub
-                user={user}
-                profileForm={profileForm}
-                profileSaving={profileSaving}
-                profileError={profileError}
-                onProfileFieldChange={(field, value) => setProfileForm((prev) => ({ ...prev, [field]: value }))}
-                onProfileChoosePhoto={() => profilePhotoInputRef.current?.click()}
-                onProfileDeletePhoto={() => setProfileForm((prev) => ({ ...prev, photoURL: '' }))}
-                onSaveProfile={saveProfile}
-                onResetProfileDraft={resetProfileDraft}
-                onChangePassword={changePasswordWithReauth}
-              />
             )}
           </div>
         </main>

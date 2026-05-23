@@ -4,6 +4,7 @@ import {
   uploadBytes,
   uploadBytesResumable,
   getDownloadURL,
+  getBlob,
   deleteObject,
   listAll,
   getStorage,
@@ -643,5 +644,44 @@ export function extractStoragePath(url: string): string | null {
  */
 export function isFirebaseStorageURL(url: string): boolean {
   return url.includes('firebasestorage.googleapis.com');
+}
+
+/** Descarga una imagen (Firebase Storage o URL http) como data URL para edición local. */
+export async function downloadStorageImageAsDataUrl(url: string): Promise<string> {
+  const trimmed = url.trim();
+  if (!trimmed) throw new Error('empty url');
+  if (trimmed.startsWith('data:')) return trimmed;
+
+  let blob: Blob | null = null;
+
+  if (isFirebaseStorageURL(trimmed)) {
+    const path = extractStoragePath(trimmed);
+    if (path) {
+      try {
+        blob = await getBlob(ref(storage, path));
+      } catch (error) {
+        console.warn('Firebase getBlob failed for profile photo:', path, error);
+      }
+    }
+  }
+
+  if (!blob) {
+    const res = await fetch(trimmed, { mode: 'cors', credentials: 'omit', cache: 'no-store' });
+    if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
+    blob = await res.blob();
+  }
+
+  if (!blob.size) throw new Error('empty blob');
+
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      if (result) resolve(result);
+      else reject(new Error('read failed'));
+    };
+    reader.onerror = () => reject(new Error('read failed'));
+    reader.readAsDataURL(blob);
+  });
 }
 

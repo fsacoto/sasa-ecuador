@@ -10,6 +10,9 @@ import { useTranslation } from '../context/TranslationContext';
 import { downloadSalesInvoicePdf } from '../utils/salesInvoicePdf';
 import AlertDialog from './ui/AlertDialog';
 import MonthYearSelectEs from './ui/MonthYearSelectEs';
+import DateInput from './ui/DateInput';
+import { isInsideDatePickerPortal } from '../utils/calendarUtils';
+import { usePersistedFilterState, usePersistedStringSetFilter } from '../hooks/usePersistedFilterState';
 import InvoiceEditModal from './InvoiceEditModal';
 import SalesInvoiceDeleteModal from './SalesInvoiceDeleteModal';
 import TableSortIcon from './ui/TableSortIcon';
@@ -69,19 +72,25 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
   const [rows, setRows] = useState<SalesInvoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState<Client[]>([]);
-  const [search, setSearch] = useState('');
-  const [clientId, setClientId] = useState('');
-  const [paymentStatus, setPaymentStatus] = useState('');
-  const [deliveryStatus, setDeliveryStatus] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [filterMonth, setFilterMonth] = useState('');
-  const [groupBy, setGroupBy] = useState<GroupBy>('none');
-  const [sortKey, setSortKey] = useState<'date' | 'invoiceNumber' | 'grandTotal'>('date');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const userId = user?.id;
+  const [search, setSearch] = usePersistedFilterState('sales-notes', 'search', '', userId);
+  const [clientId, setClientId] = usePersistedFilterState('sales-notes', 'clientId', '', userId);
+  const [paymentStatus, setPaymentStatus] = usePersistedFilterState('sales-notes', 'paymentStatus', '', userId);
+  const [deliveryStatus, setDeliveryStatus] = usePersistedFilterState('sales-notes', 'deliveryStatus', '', userId);
+  const [dateFrom, setDateFrom] = usePersistedFilterState('sales-notes', 'dateFrom', '', userId);
+  const [dateTo, setDateTo] = usePersistedFilterState('sales-notes', 'dateTo', '', userId);
+  const [filterMonth, setFilterMonth] = usePersistedFilterState('sales-notes', 'filterMonth', '', userId);
+  const [groupBy, setGroupBy] = usePersistedFilterState<GroupBy>('sales-notes', 'groupBy', 'none', userId);
+  const [sortKey, setSortKey] = usePersistedFilterState<'date' | 'invoiceNumber' | 'grandTotal'>(
+    'sales-notes',
+    'sortKey',
+    'date',
+    userId
+  );
+  const [sortDir, setSortDir] = usePersistedFilterState<'asc' | 'desc'>('sales-notes', 'sortDir', 'desc', userId);
   const [editingInvoice, setEditingInvoice] = useState<SalesInvoice | null>(null);
   const [invoiceToDelete, setInvoiceToDelete] = useState<SalesInvoice | null>(null);
-  const [hiddenColumns, setHiddenColumns] = useState<Set<ColKey>>(new Set());
+  const [hiddenColumns, setHiddenColumns] = usePersistedStringSetFilter('sales-notes', 'hiddenColumns', userId);
 
   const [showFilters, setShowFilters] = useState(false);
   const [showGroupPanel, setShowGroupPanel] = useState(false);
@@ -139,6 +148,7 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
 
   useEffect(() => {
     const onDocMouseDown = (e: MouseEvent) => {
+      if (isInsideDatePickerPortal(e.target)) return;
       if (!toolbarRef.current?.contains(e.target as Node)) {
         setShowFilters(false);
         setShowGroupPanel(false);
@@ -681,20 +691,16 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-700">{t('salesNotes.dateFrom')}</label>
-                <input
-                  type="date"
+                <DateInput
                   value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-[#515151]"
+                  onChange={setDateFrom}
                 />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-700">{t('salesNotes.dateTo')}</label>
-                <input
-                  type="date"
+                <DateInput
                   value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-[#515151]"
+                  onChange={setDateTo}
                 />
               </div>
               <div>

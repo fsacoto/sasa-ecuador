@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
+import { usePersistedFilterState } from '../hooks/usePersistedFilterState';
 import { useCMS } from '../context/CMSContext';
 import { useTranslation } from '../context/TranslationContext';
 import { ContentType, ContentStatus, InventoryItem, CMSContent } from '../types';
@@ -53,6 +54,7 @@ type ViewMode = 'dashboard' | 'upload' | 'manage' | 'products';
 
 export default function CMSModuleNew() {
   const { user, hasPermission } = useAuth();
+  const userId = user?.id;
   const { inventory, updateInventoryItem } = useInventory();
   const { t } = useTranslation();
   const { 
@@ -67,8 +69,13 @@ export default function CMSModuleNew() {
   
   const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
   const [uploadType, setUploadType] = useState<ContentType>('product');
-  const [filterStatus, setFilterStatus] = useState<ContentStatus | 'all'>('all');
-  const [filterSKU, setFilterSKU] = useState('');
+  const [filterStatus, setFilterStatus] = usePersistedFilterState<ContentStatus | 'all'>(
+    'cms-manage',
+    'filterStatus',
+    'all',
+    userId
+  );
+  const [filterSKU, setFilterSKU] = usePersistedFilterState('cms-manage', 'filterSKU', '', userId);
   const [showFilters, setShowFilters] = useState(false);
   const [sortField, setSortField] = useState<string>('createdAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
@@ -3366,6 +3373,7 @@ function ContentView({
 }) {
   const { t } = useTranslation();
   const { user, hasPermission } = useAuth();
+  const userId = user?.id;
   const { updateInventoryItem } = useInventory();
   const { deleteContent, updateContentStatus, updateContent } = useCMS();
   
@@ -3376,12 +3384,24 @@ function ContentView({
   const [contentToDelete, setContentToDelete] = useState<CMSContent | null>(null);
   const [contentToCancel, setContentToCancel] = useState<CMSContent | null>(null);
   
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterCategory, setFilterCategory] = useState('all');
-  const [filterLine, setFilterLine] = useState('all');
-  const [filterAvailability, setFilterAvailability] = useState('all');
-  const [filterCollectionName, setFilterCollectionName] = useState('all');
-  const [contentTypeFilter, setContentTypeFilter] = useState<'all' | 'product' | 'collection' | 'general' | 'inventory'>('all');
+  const [searchTerm, setSearchTerm] = usePersistedFilterState('cms-products', 'searchTerm', '', userId);
+  const [filterCategory, setFilterCategory] = usePersistedFilterState('cms-products', 'filterCategory', 'all', userId);
+  const [filterLine, setFilterLine] = usePersistedFilterState('cms-products', 'filterLine', 'all', userId);
+  const [filterAvailability, setFilterAvailability] = usePersistedFilterState(
+    'cms-products',
+    'filterAvailability',
+    'all',
+    userId
+  );
+  const [filterCollectionName, setFilterCollectionName] = usePersistedFilterState(
+    'cms-products',
+    'filterCollectionName',
+    'all',
+    userId
+  );
+  const [contentTypeFilter, setContentTypeFilter] = usePersistedFilterState<
+    'all' | 'product' | 'collection' | 'general' | 'inventory'
+  >('cms-products', 'contentTypeFilter', 'all', userId);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [selectedCollections, setSelectedCollections] = useState<Set<string>>(new Set());
   const [selectedGeneral, setSelectedGeneral] = useState<Set<string>>(new Set());

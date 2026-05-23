@@ -58,9 +58,12 @@ import {
 } from '../utils/syncUpdates';
 import { useTranslation } from '../context/TranslationContext';
 import { useDarkMode } from '../hooks/useDarkMode';
+import { useAuth } from '../context/AuthContext';
+import { usePersistedFilterState, usePersistedStringSetFilter } from '../hooks/usePersistedFilterState';
 import POVerificationModal from './POVerificationModal';
 import { generatePOVerificationPDF } from '../utils/poVerificationPDF';
 import ConfirmDialog from './ui/ConfirmDialog';
+import DateInput from './ui/DateInput';
 import {
   PREDEFINED_CATEGORIES_ES,
   PREDEFINED_LINES_ES,
@@ -109,6 +112,8 @@ export default function PurchaseOrders() {
     addSupplier,
   } = useInventory();
   const { t, tf } = useTranslation();
+  const { user } = useAuth();
+  const userId = user?.id;
   const darkMode = useDarkMode();
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [poLineDetailOrder, setPoLineDetailOrder] = useState<PurchaseOrder | null>(null);
@@ -174,14 +179,24 @@ export default function PurchaseOrders() {
   const [originalSku, setOriginalSku] = useState<string>('');
   
   // Sorting and filtering state
-  const [sortField, setSortField] = useState<string>('createdAt');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [filterSupplier, setFilterSupplier] = useState<string>('all');
-  const [filterDuplicateSku, setFilterDuplicateSku] = useState<boolean>(false);
-  const [filterCategory, setFilterCategory] = useState<string>('all');
-  const [filterLine, setFilterLine] = useState<string>('all');
+  const [sortField, setSortField] = usePersistedFilterState('purchase-orders', 'sortField', 'createdAt', userId);
+  const [sortDirection, setSortDirection] = usePersistedFilterState<'asc' | 'desc'>(
+    'purchase-orders',
+    'sortDirection',
+    'desc',
+    userId
+  );
+  const [searchQuery, setSearchQuery] = usePersistedFilterState('purchase-orders', 'searchQuery', '', userId);
+  const [filterStatus, setFilterStatus] = usePersistedFilterState('purchase-orders', 'filterStatus', 'all', userId);
+  const [filterSupplier, setFilterSupplier] = usePersistedFilterState('purchase-orders', 'filterSupplier', 'all', userId);
+  const [filterDuplicateSku, setFilterDuplicateSku] = usePersistedFilterState(
+    'purchase-orders',
+    'filterDuplicateSku',
+    false,
+    userId
+  );
+  const [filterCategory, setFilterCategory] = usePersistedFilterState('purchase-orders', 'filterCategory', 'all', userId);
+  const [filterLine, setFilterLine] = usePersistedFilterState('purchase-orders', 'filterLine', 'all', userId);
 
   // Load filters from sessionStorage when component mounts (from dashboard navigation)
   useEffect(() => {
@@ -200,19 +215,24 @@ export default function PurchaseOrders() {
       }
     }
   }, []);
-  const [filterQuantityIssues, setFilterQuantityIssues] = useState<string>('all'); // 'all', 'problems', 'missing', 'both'
+  const [filterQuantityIssues, setFilterQuantityIssues] = usePersistedFilterState(
+    'purchase-orders',
+    'filterQuantityIssues',
+    'all',
+    userId
+  );
   const [showFilters, setShowFilters] = useState(false);
   const [showColumnDropdown, setShowColumnDropdown] = useState(false);
   
   // Column visibility state
-  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
+  const [hiddenColumns, setHiddenColumns] = usePersistedStringSetFilter('purchase-orders', 'hiddenColumns', userId);
   const dropdownRef = useRef<HTMLDivElement>(null);
   
   // Search dropdown state
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   
   // Group by state
-  const [groupByField, setGroupByField] = useState<string>('');
+  const [groupByField, setGroupByField] = usePersistedFilterState('purchase-orders', 'groupByField', '', userId);
   const [showGroupByDropdown, setShowGroupByDropdown] = useState(false);
   const groupByDropdownRef = useRef<HTMLDivElement>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -3039,12 +3059,10 @@ export default function PurchaseOrders() {
 
               <div>
                 <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.purchaseDate')}</label>
-                <input
-                  type="date"
+                <DateInput
                   required
                   value={formData.purchaseDate}
-                  onChange={(e) => setFormData({ ...formData, purchaseDate: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
+                  onChange={(purchaseDate) => setFormData({ ...formData, purchaseDate })}
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   {t('purchaseOrders.productImagesManaged')}

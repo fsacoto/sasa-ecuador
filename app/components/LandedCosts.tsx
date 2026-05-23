@@ -10,6 +10,10 @@ import ModalPortal from './ui/ModalPortal';
 import TableSortIcon from './ui/TableSortIcon';
 import { tableThAlignClass, tableThLabelFlexClass } from './ui/tableHeaderClass';
 import { formatDateMedium, formatMonthYearLong, toValidDate } from '../utils/formatDate';
+import DateInput from './ui/DateInput';
+import { isInsideDatePickerPortal } from '../utils/calendarUtils';
+import { usePersistedFilterState } from '../hooks/usePersistedFilterState';
+import { useAuth } from '../context/AuthContext';
 
 const FIXED_COST_TYPES: AdditionalCostType[] = [
   'Shipping',
@@ -70,11 +74,18 @@ export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
     calculateLandedCosts,
   } = useInventory();
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const userId = user?.id;
 
-  const [selectedInvoice, setSelectedInvoice] = useState('');
-  const [invoiceSearch, setInvoiceSearch] = useState('');
-  const [monthFilter, setMonthFilter] = useState<'all' | string>('all');
-  const [withCostsOnly, setWithCostsOnly] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = usePersistedFilterState('landed-costs', 'selectedInvoice', '', userId);
+  const [invoiceSearch, setInvoiceSearch] = usePersistedFilterState('landed-costs', 'invoiceSearch', '', userId);
+  const [monthFilter, setMonthFilter] = usePersistedFilterState<'all' | string>(
+    'landed-costs',
+    'monthFilter',
+    'all',
+    userId
+  );
+  const [withCostsOnly, setWithCostsOnly] = usePersistedFilterState('landed-costs', 'withCostsOnly', false, userId);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [costToDelete, setCostToDelete] = useState<string | null>(null);
@@ -212,6 +223,7 @@ export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      if (isInsideDatePickerPortal(event.target)) return;
       if (formRef.current && !formRef.current.contains(event.target as Node)) {
         resetForm();
       }
@@ -830,11 +842,9 @@ export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
                 <label className="mb-2 block text-sm font-medium text-gray-700">
                   {t('landedCosts.date')} *
                 </label>
-                <input
-                  type="date"
+                <DateInput
                   value={formData.date}
-                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#515151]"
+                  onChange={(date) => setFormData({ ...formData, date })}
                   required
                 />
               </div>

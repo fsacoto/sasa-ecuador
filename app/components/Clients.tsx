@@ -9,6 +9,7 @@ import {
   deleteClient 
 } from '../services/clientsService';
 import { useAuth } from '../context/AuthContext';
+import { usePersistedFilterState } from '../hooks/usePersistedFilterState';
 import { useTranslation } from '../context/TranslationContext';
 import ConfirmDialog from './ui/ConfirmDialog';
 import TableSortIcon from './ui/TableSortIcon';
@@ -23,6 +24,7 @@ import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 
 export default function Clients() {
   const { user, hasPermission } = useAuth();
+  const userId = user?.id;
   const { t } = useTranslation();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,7 +39,7 @@ export default function Clients() {
     country: 'Ecuador' as 'Ecuador' | 'USA',
     notes: ''
   });
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = usePersistedFilterState('clients', 'searchTerm', '', userId);
   const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
   const [showColumnDropdown, setShowColumnDropdown] = useState(false);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);

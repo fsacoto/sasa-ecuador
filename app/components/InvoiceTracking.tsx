@@ -15,6 +15,9 @@ import InvoiceEditModal from './InvoiceEditModal';
 import SalesInvoiceDeleteModal from './SalesInvoiceDeleteModal';
 import { type InvoiceDeleteReturnItem } from '../utils/salesInvoiceDelete';
 import MonthYearSelectEs from './ui/MonthYearSelectEs';
+import DateInput from './ui/DateInput';
+import { isInsideDatePickerPortal } from '../utils/calendarUtils';
+import { usePersistedFilterState } from '../hooks/usePersistedFilterState';
 import TableSortIcon from './ui/TableSortIcon';
 import {
   tableTheadClass,
@@ -142,29 +145,42 @@ function formatTrackingMonthGroupLabel(ymKey: string): string {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
+const DEFAULT_INVOICE_TRACKING_FILTERS = {
+  clientId: '',
+  paymentStatus: '',
+  deliveryStatus: '',
+  filterMonth: '',
+  dateFrom: '',
+  dateTo: '',
+};
+
 export default function InvoiceTracking() {
   const { user } = useAuth();
+  const userId = user?.id;
   const { inventory, updateInventoryItem } = useInventory();
   const { t } = useTranslation();
   const [allInvoices, setAllInvoices] = useState<SalesInvoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [uniqueClients, setUniqueClients] = useState<{id: string, name: string}[]>([]);
-  const [filters, setFilters] = useState({
-    clientId: '',
-    paymentStatus: '',
-    deliveryStatus: '',
-    filterMonth: '',
-    dateFrom: '',
-    dateTo: ''
-  });
-  const [searchQuery, setSearchQuery] = useState('');
-  const [groupByField, setGroupByField] = useState<string>('');
+  const [filters, setFilters] = usePersistedFilterState(
+    'invoice-tracking',
+    'filters',
+    DEFAULT_INVOICE_TRACKING_FILTERS,
+    userId
+  );
+  const [searchQuery, setSearchQuery] = usePersistedFilterState('invoice-tracking', 'searchQuery', '', userId);
+  const [groupByField, setGroupByField] = usePersistedFilterState('invoice-tracking', 'groupByField', '', userId);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [showFiltersPanel, setShowFiltersPanel] = useState(false);
   const [showGroupByPanel, setShowGroupByPanel] = useState(false);
   const [showSearchPanel, setShowSearchPanel] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
-  const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc' | 'desc'}>({key: 'date', direction: 'desc'});
+  const [sortConfig, setSortConfig] = usePersistedFilterState<{ key: string; direction: 'asc' | 'desc' }>(
+    'invoice-tracking',
+    'sortConfig',
+    { key: 'date', direction: 'desc' },
+    userId
+  );
   const [selectedInvoice, setSelectedInvoice] = useState<SalesInvoice | null>(null);
   const [showModal, setShowModal] = useState(false);
   
@@ -247,6 +263,7 @@ export default function InvoiceTracking() {
 
   useEffect(() => {
     const onDocMouseDown = (e: MouseEvent) => {
+      if (isInsideDatePickerPortal(e.target)) return;
       if (!toolbarRef.current?.contains(e.target as Node)) {
         setShowFiltersPanel(false);
         setShowGroupByPanel(false);
@@ -1341,22 +1358,16 @@ export default function InvoiceTracking() {
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">{t('invoiceTracking.dateFrom')}</label>
-                  <input
-                    type="date"
-                    lang="es"
+                  <DateInput
                     value={filters.dateFrom}
-                    onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                    onChange={(v) => setFilters({ ...filters, dateFrom: v })}
                   />
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">{t('invoiceTracking.dateTo')}</label>
-                  <input
-                    type="date"
-                    lang="es"
+                  <DateInput
                     value={filters.dateTo}
-                    onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                    onChange={(v) => setFilters({ ...filters, dateTo: v })}
                   />
                 </div>
                 <div>
@@ -1660,11 +1671,9 @@ export default function InvoiceTracking() {
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.paymentDate')}</label>
-                <input
-                  type="date"
+                <DateInput
                   value={paymentDate}
-                  onChange={(e) => setPaymentDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
+                  onChange={setPaymentDate}
                 />
               </div>
 
@@ -1741,11 +1750,9 @@ export default function InvoiceTracking() {
                     <label className="mb-1.5 block text-sm font-medium text-gray-700">
                       {t('invoiceTracking.deliveryDate')}
                     </label>
-                    <input
-                      type="date"
+                    <DateInput
                       value={deliveryDate}
-                      onChange={(e) => setDeliveryDate(e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-[#515151]"
+                      onChange={setDeliveryDate}
                     />
                   </div>
                   <div className="sm:col-span-2">

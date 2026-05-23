@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '../../context/TranslationContext';
+import { useDarkMode } from '../../hooks/useDarkMode';
 
 const MONTH_CODES = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'] as const;
 
@@ -18,6 +19,7 @@ type MonthYearSelectEsProps = {
 /** Mes y año en español (evita `input type="month"`, que suele seguir el idioma del SO). Valor: `YYYY-MM` o cadena vacía. */
 export default function MonthYearSelectEs({ value, onChange, selectClassName }: MonthYearSelectEsProps) {
   const { t } = useTranslation();
+  const darkMode = useDarkMode();
   const [y, setY] = useState('');
   const [m, setM] = useState('');
 
@@ -44,7 +46,9 @@ export default function MonthYearSelectEs({ value, onChange, selectClassName }: 
     return list;
   }, []);
 
-  const cls = selectClassName ?? DEFAULT_SELECT_CLASS;
+  const cls =
+    selectClassName ??
+    `${DEFAULT_SELECT_CLASS}${darkMode ? ' border-white/20 bg-white/5 text-white focus:ring-white/30' : ''}`;
 
   const commit = (nextY: string, nextM: string) => {
     setY(nextY);

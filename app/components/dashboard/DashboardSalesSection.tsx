@@ -18,6 +18,9 @@ import {
   dashboardSectionTitleClass,
   dashboardValueLgClass,
 } from './charts/chartTheme';
+import DateInput from '../ui/DateInput';
+import { useAuth } from '../../context/AuthContext';
+import { usePersistedFilterState } from '../../hooks/usePersistedFilterState';
 
 type SalesPeriodPreset = 'last30' | 'thisMonth' | 'custom';
 
@@ -58,12 +61,19 @@ type Props = {
 };
 
 export default function DashboardSalesSection({ t }: Props) {
+  const { user } = useAuth();
+  const userId = user?.id;
   const [salesInvoices, setSalesInvoices] = useState<SalesInvoice[]>([]);
   const [consignments, setConsignments] = useState<Consignment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<SalesPeriodPreset>('thisMonth');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
+  const [period, setPeriod] = usePersistedFilterState<SalesPeriodPreset>(
+    'dashboard-sales',
+    'period',
+    'thisMonth',
+    userId
+  );
+  const [customFrom, setCustomFrom] = usePersistedFilterState('dashboard-sales', 'customFrom', '', userId);
+  const [customTo, setCustomTo] = usePersistedFilterState('dashboard-sales', 'customTo', '', userId);
 
   useEffect(() => {
     let cancelled = false;
@@ -264,19 +274,17 @@ export default function DashboardSalesSection({ t }: Props) {
           </div>
           {period === 'custom' && (
             <div className="sasa-sales-period-dates flex flex-wrap items-center gap-1.5 text-xs">
-              <input
-                type="date"
+              <DateInput
                 value={customFrom}
-                onChange={(e) => setCustomFrom(e.target.value)}
-                className="sasa-sales-period-date"
+                onChange={setCustomFrom}
+                inputClassName="sasa-sales-period-date flex min-w-[8.5rem] w-auto items-center gap-1 focus:outline-none"
                 aria-label={t('dashboard.salesFilterFrom')}
               />
               <span className="sasa-sales-period-dates-sep">—</span>
-              <input
-                type="date"
+              <DateInput
                 value={customTo}
-                onChange={(e) => setCustomTo(e.target.value)}
-                className="sasa-sales-period-date"
+                onChange={setCustomTo}
+                inputClassName="sasa-sales-period-date flex min-w-[8.5rem] w-auto items-center gap-1 focus:outline-none"
                 aria-label={t('dashboard.salesFilterTo')}
               />
             </div>

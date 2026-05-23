@@ -18,6 +18,7 @@ import {
 } from '../utils/bulkImportSystem';
 import { cleanupInventoryAfterOrderDeletion } from '../utils/syncUpdates';
 import POModalShell from './ui/POModalShell';
+import DateInput from './ui/DateInput';
 
 type BulkImportDbField =
   | 'invoice'
@@ -1204,11 +1205,9 @@ export default function BulkImportModal({
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1 text-gray-700">{t('bulkImport.purchaseDate')}</label>
-                    <input
-                      type="date"
+                    <DateInput
                       value={purchaseDate}
-                      onChange={(e) => setPurchaseDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
+                      onChange={setPurchaseDate}
                     />
                   </div>
                 </div>

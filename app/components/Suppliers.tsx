@@ -5,12 +5,16 @@ import { useInventory } from '../context/InventoryContext';
 import { Supplier } from '../types';
 import SupplierDetailPanel from './SupplierDetailPanel';
 import { useTranslation } from '../context/TranslationContext';
+import { useAuth } from '../context/AuthContext';
+import { usePersistedFilterState } from '../hooks/usePersistedFilterState';
 import ConfirmDialog from './ui/ConfirmDialog';
 import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 
 export default function Suppliers() {
   const { suppliers, addSupplier, updateSupplier, deleteSupplier } = useInventory();
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const userId = user?.id;
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
@@ -36,7 +40,7 @@ export default function Suppliers() {
   const searchDropdownRef = useRef<HTMLDivElement>(null);
 
   // Search state
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = usePersistedFilterState('suppliers', 'searchQuery', '', userId);
 
   // Get visible columns for suppliers table
   const getVisibleColumns = () => {

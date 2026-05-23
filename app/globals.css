@@ -299,6 +299,16 @@ body {
   filter: invert(1) brightness(1.2);
 }
 
+/* Custom date picker (DateInput) — popover siempre sólido en portal */
+.sasa-date-picker {
+  font-variant-numeric: tabular-nums;
+}
+
+.sasa-date-input-trigger-dark:focus {
+  border-color: rgba(255, 255, 255, 0.35) !important;
+  outline: none;
+}
+
 .app-dark-main .toggle-knob {
   background-color: #ffffff !important;
 }
