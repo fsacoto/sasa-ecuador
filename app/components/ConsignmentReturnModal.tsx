@@ -8,6 +8,8 @@ import {
   InventoryItem,
 } from '../types';
 import { useTranslation } from '../context/TranslationContext';
+import { useDarkMode } from '../hooks/useDarkMode';
+import ModalPortal from './ui/ModalPortal';
 
 export interface ConsignmentReturnModalProps {
   open: boolean;
@@ -25,6 +27,12 @@ export interface ConsignmentReturnModalProps {
   }) => Promise<void>;
 }
 
+const inputClass =
+  'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-[#515151] focus:outline-none focus:ring-2 focus:ring-[#515151]/25';
+
+const qtyInputClass =
+  'w-24 rounded-lg border border-gray-300 px-2 py-2 text-center text-sm tabular-nums focus:border-[#515151] focus:outline-none focus:ring-2 focus:ring-[#515151]/25';
+
 /** Remaining units still out on this consignment line. */
 function availableOnLine(c: ConsignmentItem): number {
   return c.quantityDelivered - c.quantitySold - c.quantityReturned;
@@ -38,6 +46,7 @@ export default function ConsignmentReturnModal({
   onSubmit,
 }: ConsignmentReturnModalProps) {
   const { t } = useTranslation();
+  const darkMode = useDarkMode();
   const [search, setSearch] = useState('');
   const [returnQty, setReturnQty] = useState<Record<number, string>>({});
   const [problemQty, setProblemQty] = useState<Record<number, string>>({});
@@ -54,6 +63,18 @@ export default function ConsignmentReturnModal({
       setFilesByIndex({});
     }
   }, [open, consignment.id]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !submitting) {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, submitting, onClose]);
 
   const rows = useMemo(() => {
     return consignment.items.map((item, index) => ({
@@ -153,7 +174,6 @@ export default function ConsignmentReturnModal({
           if (files.length > 0) {
             const consignmentLabel = consignment.consignmentId.replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 64);
             const skuSeg = item.sku.replace(/[^a-zA-Z0-9-_]/g, '_');
-            // Path includes Firestore id + human-readable CSG-xxxxx for support / Storage browser
             const basePath = `consignment-returns/${consignment.id}/${consignmentLabel}/${batchTs}/${skuSeg}/`;
             mediaUrls = await uploadMultipleFiles(files, basePath);
           }
@@ -205,180 +225,222 @@ export default function ConsignmentReturnModal({
 
   if (!open) return null;
 
+  const cancelBtnClass = darkMode
+    ? 'rounded-lg border border-white/20 bg-transparent px-4 py-2 text-sm font-medium text-gray-200 transition-colors hover:bg-white/10 disabled:opacity-50'
+    : 'rounded-lg border border-gray-300 bg-transparent px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50';
+
   return (
-    <div
-      className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/50"
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-    >
+    <ModalPortal>
       <div
-        className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
+        className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[80] flex items-center justify-center p-4 backdrop-blur-sm`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="consignment-return-modal-title"
+        onClick={onClose}
       >
-        <div className="px-6 py-4 border-b border-gray-200 flex items-start justify-between gap-4">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">
-              {t('consignments.returnModalTitle') || 'Registrar devolución'}
-            </h3>
-            <p className="text-sm text-gray-500 mt-1">
-              {consignment.consignmentId} · {t('consignments.returnModalSubtitle') || 'Busque líneas, indique cantidades devueltas. Las no marcadas con problema se consideran en buen estado.'}
-            </p>
+        <div
+          className="sasa-modal-panel flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Encabezado */}
+          <div className="shrink-0 border-b border-gray-200 px-6 py-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h3 id="consignment-return-modal-title" className="text-xl font-semibold text-gray-900">
+                  {t('consignments.returnModalTitle')}
+                </h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  <span className="font-mono font-medium text-gray-700">{consignment.consignmentId}</span>
+                  <span className="mx-2 text-gray-400">·</span>
+                  {t('consignments.returnModalSubtitle')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={submitting}
+                className="shrink-0 rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50"
+                aria-label={t('common.close')}
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="mt-4">
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t('consignments.returnModalSearch')}
+                className={inputClass}
+              />
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 p-2 rounded-lg hover:bg-gray-100"
-            aria-label={t('common.close')}
-          >
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
 
-        <div className="px-6 py-3 border-b border-gray-100 bg-gray-50">
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t('consignments.returnModalSearch') || 'Buscar por SKU o descripción...'}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#515151] focus:border-[#515151]"
-          />
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          {filteredRows.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-8">
-              {t('consignments.returnModalNoMatch') || 'Ninguna línea coincide con la búsqueda.'}
-            </p>
-          ) : (
-            filteredRows.map(({ item, index, available }) => {
-              if (available <= 0) {
-                return (
-                  <div
-                    key={index}
-                    className="border border-gray-100 rounded-xl p-4 bg-gray-50 text-sm text-gray-500"
-                  >
-                    <span className="font-mono font-medium text-gray-700">{item.sku}</span> — {item.description}{' '}
-                    <span className="text-amber-700">({t('consignments.nothingToReturn') || 'Sin unidades por devolver'})</span>
-                  </div>
-                );
-              }
-              const r = parseInt(returnQty[index] || '0', 10) || 0;
-              const showProblem = r > 0;
-              return (
-                <div
-                  key={index}
-                  className="border border-gray-200 rounded-xl p-4 space-y-3"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <div className="font-mono text-sm font-semibold text-[#515151]">{item.sku}</div>
-                      <div className="text-sm text-gray-800">{item.description}</div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {t('consignments.available')}: {available}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs text-gray-600 whitespace-nowrap">
-                        {t('consignments.qtyToReturn') || 'A devolver'}
-                        <input
-                          type="number"
-                          min={0}
-                          max={available}
-                          value={returnQty[index] ?? ''}
-                          onChange={(e) =>
-                            setReturnQty((prev) => ({ ...prev, [index]: e.target.value }))
-                          }
-                          className="ml-2 w-20 px-2 py-1 border border-gray-300 rounded text-center text-sm"
-                        />
-                      </label>
-                    </div>
-                  </div>
-
-                  {showProblem && (
-                    <div className="pl-3 border-l-4 border-amber-400 bg-amber-50/60 rounded-r-lg p-3 space-y-2">
-                      <p className="text-xs font-medium text-amber-900 uppercase tracking-wide">
-                        {t('consignments.returnProblemSection') || 'Incidencias (opcional)'}
-                      </p>
-                      <p className="text-xs text-amber-800">
-                        {t('consignments.returnProblemHint') ||
-                          'Si no indica unidades con problema, toda la devolución de esta línea se considera en buen estado. Las unidades con problema siguen sumando al stock físico y aparecen como alerta en inventario.'}
-                      </p>
-                      <label className="flex items-center gap-2 text-sm">
-                        <span className="text-gray-700 w-44 shrink-0">
-                          {t('consignments.qtyWithProblem') || 'Cant. con problema'}
+          {/* Líneas */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            <div className="space-y-3">
+              {filteredRows.length === 0 ? (
+                <p className="py-12 text-center text-sm text-gray-500">
+                  {t('consignments.returnModalNoMatch')}
+                </p>
+              ) : (
+                filteredRows.map(({ item, index, available }) => {
+                  if (available <= 0) {
+                    return (
+                      <div key={index} className="sasa-return-line-muted px-4 py-3 text-sm text-gray-500">
+                        <span className="font-mono font-medium text-gray-700">{item.sku}</span>
+                        <span className="mx-2 text-gray-400">—</span>
+                        {item.description}
+                        <span className="mt-1 block text-xs text-amber-600 dark:text-amber-400">
+                          {t('consignments.nothingToReturn')}
                         </span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={r}
-                          value={problemQty[index] ?? ''}
-                          onChange={(e) =>
-                            setProblemQty((prev) => ({ ...prev, [index]: e.target.value }))
-                          }
-                          className="w-20 px-2 py-1 border border-gray-300 rounded text-center text-sm"
-                        />
-                      </label>
-                      <label className="block text-sm">
-                        <span className="text-gray-700">{t('consignments.returnComment') || 'Comentario'}</span>
-                        <textarea
-                          value={comment[index] ?? ''}
-                          onChange={(e) =>
-                            setComment((prev) => ({ ...prev, [index]: e.target.value }))
-                          }
-                          rows={2}
-                          className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                          placeholder={t('consignments.returnCommentPh') || 'Detalle del daño o incidencia…'}
-                        />
-                      </label>
-                      <div>
-                        <label className="text-xs font-medium text-gray-700">
-                          {t('consignments.returnPhotosForLine') || 'Imágenes para esta línea (SKU arriba)'}
-                        </label>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          onChange={(e) => setFileList(index, e.target.files)}
-                          className="mt-1 block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5"
-                        />
-                        {(filesByIndex[index]?.length ?? 0) > 0 && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            {filesByIndex[index]!.length} archivo(s) · {item.sku}
-                          </p>
-                        )}
                       </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
+                    );
+                  }
 
-        <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3 bg-white">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={submitting}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
-            {t('common.cancel')}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleConfirm()}
-            disabled={submitting}
-            className="px-5 py-2 bg-[#515151] text-white rounded-lg hover:bg-black disabled:opacity-50 font-medium"
-          >
-            {submitting
-              ? t('consignments.returnModalSubmitting') || 'Procesando…'
-              : t('consignments.registerReturnsButton') || 'Registrar devoluciones'}
-          </button>
+                  const r = parseInt(returnQty[index] || '0', 10) || 0;
+                  const showProblem = r > 0;
+                  const fileInputId = `return-files-${consignment.id}-${index}`;
+
+                  return (
+                    <div key={index} className="sasa-return-line-card p-4 sm:p-5">
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-mono text-sm font-semibold text-[#515151]">{item.sku}</div>
+                          <div className="mt-0.5 text-sm text-gray-800">{item.description}</div>
+                          <span
+                            className={`mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                              darkMode
+                                ? 'border border-white/15 bg-white/10 text-gray-300'
+                                : 'border border-gray-200 bg-gray-50 text-gray-600'
+                            }`}
+                          >
+                            {t('consignments.available')}: {available}
+                          </span>
+                        </div>
+                        <div className="shrink-0 sm:text-right">
+                          <label
+                            htmlFor={`return-qty-${index}`}
+                            className="block text-xs font-medium uppercase tracking-wide text-gray-500"
+                          >
+                            {t('consignments.qtyToReturn')}
+                          </label>
+                          <input
+                            id={`return-qty-${index}`}
+                            type="number"
+                            min={0}
+                            max={available}
+                            value={returnQty[index] ?? ''}
+                            onChange={(e) =>
+                              setReturnQty((prev) => ({ ...prev, [index]: e.target.value }))
+                            }
+                            className={`${qtyInputClass} mt-1 sm:ml-auto sm:block`}
+                          />
+                        </div>
+                      </div>
+
+                      {showProblem && (
+                        <div className="sasa-return-incidents mt-4 space-y-3">
+                          <div>
+                            <p className="sasa-return-incidents-title">
+                              {t('consignments.returnProblemSection')}
+                            </p>
+                            <p className="sasa-return-incidents-hint mt-1">
+                              {t('consignments.returnProblemHint')}
+                            </p>
+                          </div>
+
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div>
+                              <label
+                                htmlFor={`problem-qty-${index}`}
+                                className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide"
+                              >
+                                {t('consignments.qtyWithProblem')}
+                              </label>
+                              <input
+                                id={`problem-qty-${index}`}
+                                type="number"
+                                min={0}
+                                max={r}
+                                value={problemQty[index] ?? ''}
+                                onChange={(e) =>
+                                  setProblemQty((prev) => ({ ...prev, [index]: e.target.value }))
+                                }
+                                className={qtyInputClass}
+                              />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <label
+                                htmlFor={`problem-comment-${index}`}
+                                className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide"
+                              >
+                                {t('consignments.returnComment')}
+                              </label>
+                              <textarea
+                                id={`problem-comment-${index}`}
+                                value={comment[index] ?? ''}
+                                onChange={(e) =>
+                                  setComment((prev) => ({ ...prev, [index]: e.target.value }))
+                                }
+                                rows={2}
+                                className={inputClass}
+                                placeholder={t('consignments.returnCommentPh')}
+                              />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <span className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                {t('consignments.returnPhotosForLine')}
+                              </span>
+                              <input
+                                id={fileInputId}
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                className="sr-only"
+                                onChange={(e) => setFileList(index, e.target.files)}
+                              />
+                              <label htmlFor={fileInputId} className="sasa-return-file-btn">
+                                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                {t('consignments.returnChooseImages')}
+                              </label>
+                              {(filesByIndex[index]?.length ?? 0) > 0 && (
+                                <p className="mt-2 text-xs text-gray-500">
+                                  {filesByIndex[index]!.length}{' '}
+                                  {filesByIndex[index]!.length === 1 ? 'archivo' : 'archivos'} · {item.sku}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Pie */}
+          <div className="flex shrink-0 justify-end gap-3 border-t border-gray-200 px-6 py-4">
+            <button type="button" onClick={onClose} disabled={submitting} className={cancelBtnClass}>
+              {t('common.cancel')}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleConfirm()}
+              disabled={submitting}
+              className="sasa-btn-primary rounded-lg px-5 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              {submitting ? t('consignments.returnModalSubmitting') : t('consignments.registerReturnsButton')}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </ModalPortal>
   );
 }

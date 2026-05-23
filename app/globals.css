@@ -482,6 +482,360 @@ body {
   border-color: rgba(255, 255, 255, 0.3) !important;
 }
 
+/* Seguimiento de notas: tarjetas de resumen */
+.sasa-invoice-metric {
+  border: 1px solid #e5e7eb;
+  background-color: #ffffff;
+}
+
+.sasa-invoice-metric-icon-line {
+  color: #6b7280;
+}
+
+.sasa-invoice-metric-value--neutral {
+  color: #111827;
+}
+
+.sasa-invoice-metric-value--danger {
+  color: #b91c1c;
+}
+
+.sasa-invoice-metric-value--warning {
+  color: #b45309;
+}
+
+.sasa-invoice-metric-value--success {
+  color: #047857;
+}
+
+.sasa-invoice-metric-value--pending {
+  color: #c2410c;
+}
+
+.app-dark-main .sasa-invoice-metric {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.app-dark-main .sasa-invoice-metric-icon-line {
+  color: #9ca3af !important;
+}
+
+.app-dark-main .sasa-invoice-metric-value--neutral {
+  color: #f3f4f6 !important;
+}
+
+.app-dark-main .sasa-invoice-metric-value--danger {
+  color: #d4a0a0 !important;
+}
+
+.app-dark-main .sasa-invoice-metric-value--warning {
+  color: #d4c47a !important;
+}
+
+.app-dark-main .sasa-invoice-metric-value--success {
+  color: #6ee7a8 !important;
+}
+
+.app-dark-main .sasa-invoice-metric-value--pending {
+  color: #d4b896 !important;
+}
+
+/* Consignment detail: stat tiles and primary actions in dark mode */
+.sasa-consignment-stat {
+  border: 1px solid #e5e7eb;
+  background-color: #ffffff;
+}
+
+.app-dark-main .sasa-consignment-stat {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.sasa-btn-primary {
+  background-color: #515151;
+  color: #ffffff;
+}
+
+.sasa-btn-primary:hover {
+  background-color: #000000;
+}
+
+.app-dark-main .sasa-btn-primary {
+  background-color: #515151 !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.app-dark-main .sasa-btn-primary:hover {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+}
+
+.app-dark-main .sasa-consignment-status-open {
+  background-color: rgba(59, 130, 246, 0.2) !important;
+  color: #93c5fd !important;
+}
+
+.app-dark-main .sasa-consignment-status-partial {
+  background-color: rgba(234, 179, 8, 0.2) !important;
+  color: #fde047 !important;
+}
+
+.app-dark-main .sasa-consignment-status-closed {
+  background-color: rgba(34, 197, 94, 0.2) !important;
+  color: #86efac !important;
+}
+
+/* Consignment return modal — incidencias legibles en claro y oscuro */
+.sasa-return-incidents {
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  background-color: rgba(254, 243, 199, 0.35);
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+.sasa-return-incidents-title {
+  color: #92400e;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.sasa-return-incidents-hint {
+  color: #a16207;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-return-incidents,
+.app-dark-main .sasa-return-incidents {
+  border-color: rgba(251, 191, 36, 0.28) !important;
+  background-color: rgba(251, 191, 36, 0.08) !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-return-incidents-title,
+.app-dark-main .sasa-return-incidents-title {
+  color: #fcd34d !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-return-incidents-hint,
+.app-dark-main .sasa-return-incidents-hint {
+  color: #d1d5db !important;
+}
+
+.sasa-return-line-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  background-color: #ffffff;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-return-line-card,
+.app-dark-main .sasa-return-line-card {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  background-color: rgba(255, 255, 255, 0.03) !important;
+}
+
+.sasa-return-line-muted {
+  border: 1px dashed rgba(156, 163, 175, 0.6);
+  border-radius: 0.75rem;
+  background-color: rgba(249, 250, 251, 0.8);
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-return-line-muted,
+.app-dark-main .sasa-return-line-muted {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background-color: rgba(255, 255, 255, 0.02) !important;
+}
+
+.sasa-return-file-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  background-color: #ffffff;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.sasa-return-file-btn:hover {
+  background-color: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-return-file-btn,
+.app-dark-main .sasa-return-file-btn {
+  border-color: rgba(255, 255, 255, 0.22) !important;
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: #f3f4f6 !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-return-file-btn:hover,
+.app-dark-main .sasa-return-file-btn:hover {
+  background-color: rgba(255, 255, 255, 0.14) !important;
+  border-color: rgba(255, 255, 255, 0.32) !important;
+}
+
+/* Invoice payment / delivery badges & selects (Notas de ventas + Seguimiento) */
+.app-dark-main .sasa-invoice-pay-paid,
+.sasa-modal-root.sasa-modal-dark .sasa-invoice-pay-paid {
+  background-color: rgba(34, 197, 94, 0.1) !important;
+  border-color: rgba(74, 222, 128, 0.22) !important;
+  color: #6ee7a8 !important;
+}
+
+.app-dark-main .sasa-invoice-pay-partial,
+.sasa-modal-root.sasa-modal-dark .sasa-invoice-pay-partial {
+  background-color: rgba(234, 179, 8, 0.1) !important;
+  border-color: rgba(250, 204, 21, 0.22) !important;
+  color: #d9c97a !important;
+}
+
+.app-dark-main .sasa-invoice-pay-unpaid,
+.sasa-modal-root.sasa-modal-dark .sasa-invoice-pay-unpaid {
+  background-color: rgba(239, 68, 68, 0.1) !important;
+  border-color: rgba(248, 113, 113, 0.22) !important;
+  color: #e8a8a8 !important;
+}
+
+.app-dark-main .sasa-invoice-del-delivered,
+.sasa-modal-root.sasa-modal-dark .sasa-invoice-del-delivered {
+  background-color: rgba(34, 197, 94, 0.1) !important;
+  border-color: rgba(74, 222, 128, 0.22) !important;
+  color: #6ee7a8 !important;
+}
+
+.app-dark-main .sasa-invoice-del-partial,
+.sasa-modal-root.sasa-modal-dark .sasa-invoice-del-partial {
+  background-color: rgba(59, 130, 246, 0.1) !important;
+  border-color: rgba(96, 165, 250, 0.22) !important;
+  color: #93b8e8 !important;
+}
+
+.app-dark-main .sasa-invoice-del-pending,
+.app-dark-main .sasa-invoice-del-canceled,
+.sasa-modal-root.sasa-modal-dark .sasa-invoice-del-pending,
+.sasa-modal-root.sasa-modal-dark .sasa-invoice-del-canceled {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  color: #c4c8ce !important;
+}
+
+/* Seguimiento: selects de estado — compactos, esquinas como botones de fila */
+.sasa-invoice-status-select,
+.app-dark-main .sasa-invoice-status-select {
+  box-sizing: border-box !important;
+  width: 8.5rem !important;
+  min-width: 8.5rem !important;
+  max-width: 8.5rem !important;
+  height: 1.5rem !important;
+  min-height: 1.5rem !important;
+  max-height: 1.5rem !important;
+  padding: 0 1.125rem 0 0.35rem !important;
+  border-radius: 0.5rem !important;
+  font-size: 0.625rem !important;
+  line-height: 1.25rem !important;
+  text-align: center !important;
+  text-align-last: center !important;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05) !important;
+}
+
+.app-dark-main .sasa-invoice-status-select {
+  box-shadow: none !important;
+}
+
+.sasa-invoice-status-select-wrap {
+  position: relative;
+  display: inline-block;
+  width: 8.5rem;
+  max-width: 8.5rem;
+  vertical-align: middle;
+}
+
+.sasa-invoice-status-select-wrap .sasa-invoice-status-chevron {
+  right: 0.3rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.sasa-invoice-status-select-wrap .sasa-invoice-status-chevron svg {
+  width: 0.625rem;
+  height: 0.625rem;
+}
+
+/* Eliminar nota de venta — opciones neutras (dark mode) */
+.sasa-delete-preview {
+  background-color: #f9fafb;
+  border-color: #e5e7eb;
+}
+
+.sasa-delete-preview-row {
+  background-color: #ffffff;
+  border-color: #e5e7eb;
+}
+
+.sasa-delete-option {
+  border: 1px solid #d1d5db;
+  background-color: #ffffff;
+}
+
+.sasa-delete-option:hover {
+  background-color: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.sasa-delete-option--primary {
+  border-color: #6b7280;
+  background-color: #f3f4f6;
+}
+
+.sasa-delete-option--primary:hover {
+  background-color: #e5e7eb;
+  border-color: #4b5563;
+}
+
+.app-dark-main .sasa-delete-preview,
+.sasa-modal-root.sasa-modal-dark .sasa-delete-preview {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.app-dark-main .sasa-delete-preview-row,
+.sasa-modal-root.sasa-modal-dark .sasa-delete-preview-row {
+  background-color: rgba(255, 255, 255, 0.03) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.app-dark-main .sasa-delete-option,
+.sasa-modal-root.sasa-modal-dark .sasa-delete-option {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+}
+
+.app-dark-main .sasa-delete-option:hover,
+.sasa-modal-root.sasa-modal-dark .sasa-delete-option:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.28) !important;
+}
+
+.app-dark-main .sasa-delete-option--primary,
+.sasa-modal-root.sasa-modal-dark .sasa-delete-option--primary {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.28) !important;
+}
+
+.app-dark-main .sasa-delete-option--primary:hover,
+.sasa-modal-root.sasa-modal-dark .sasa-delete-option--primary:hover {
+  background-color: rgba(255, 255, 255, 0.16) !important;
+  border-color: rgba(255, 255, 255, 0.36) !important;
+}
+
 /* Dashboard inventory chips (categoría / línea) */
 .sasa-dashboard-chip {
   border-color: #d1d5db;

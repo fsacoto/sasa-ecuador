@@ -1,5 +1,9 @@
 'use client';
 
+import { useTranslation } from '../../context/TranslationContext';
+import { useDarkMode } from '../../hooks/useDarkMode';
+import ModalPortal from './ModalPortal';
+
 interface AlertDialogProps {
   open: boolean;
   title?: string;
@@ -10,44 +14,51 @@ interface AlertDialogProps {
 
 export default function AlertDialog({
   open,
-  title = 'Alert',
+  title,
   message,
-  buttonText = 'OK',
+  buttonText,
   onClose,
 }: AlertDialogProps) {
+  const { t } = useTranslation();
+  const darkMode = useDarkMode();
+
   if (!open) return null;
 
+  const resolvedTitle = title ?? t('common.info');
+  const resolvedButton = buttonText ?? t('common.accept');
+
   return (
-    <div
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-      onClick={onClose}
-    >
+    <ModalPortal>
       <div
-        className="bg-white rounded-2xl w-full max-w-md shadow-lg"
-        onClick={(e) => e.stopPropagation()}
+        className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[90] flex items-center justify-center p-4 backdrop-blur-sm`}
+        onClick={onClose}
       >
-        <div className="px-6 py-5">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">
-            {title}
-          </h3>
-          <p className="text-gray-600 text-sm whitespace-pre-line">
-            {message}
-          </p>
-        </div>
-        <div className="flex justify-end px-6 py-4 border-t border-gray-100">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-[#515151] text-white hover:bg-[#000000] font-medium transition-colors"
-          >
-            {buttonText}
-          </button>
+        <div
+          className="sasa-modal-panel w-full max-w-md overflow-hidden rounded-2xl shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+          role="alertdialog"
+          aria-labelledby="alert-dialog-title"
+          aria-describedby="alert-dialog-message"
+        >
+          <div className="px-6 py-5">
+            <h3 id="alert-dialog-title" className="mb-2 text-lg font-semibold text-gray-900">
+              {resolvedTitle}
+            </h3>
+            <p id="alert-dialog-message" className="text-sm text-gray-600 whitespace-pre-line">
+              {message}
+            </p>
+          </div>
+          <div className="flex justify-end border-t border-gray-200 px-6 py-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="sasa-btn-primary rounded-xl px-4 py-2 text-sm font-medium transition-colors"
+            >
+              {resolvedButton}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </ModalPortal>
   );
 }
-
-
-
-
-

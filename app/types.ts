@@ -202,6 +202,8 @@ export interface SalesInvoiceLine {
   sku: string;
   description: string;
   quantity: number;
+  /** Unidades ya descontadas de inventario Ecuador por entrega (parcial o total). */
+  quantityDelivered?: number;
   unitPrice: number;
   totalPrice: number;
   line?: string;

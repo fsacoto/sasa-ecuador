@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from 'react';
 import { createPortal } from 'react-dom';
-import { SalesInvoice, Client, PaymentRecord } from '../types';
+import { SalesInvoice, Client, PaymentRecord, ConsignmentItem, ConsignmentStatus } from '../types';
 import { getAllInvoices, updateInvoice, deleteInvoice } from '../services/invoicesService';
+import { getConsignment, updateConsignment } from '../services/consignmentsService';
 import { getAllClients } from '../services/clientsService';
 import { useAuth } from '../context/AuthContext';
 import { useInventory } from '../context/InventoryContext';
@@ -22,6 +23,46 @@ import {
   tableThSortableClass,
 } from './ui/tableHeaderClass';
 import { formatDateDMY, formatMonthYearLong } from '../utils/formatDate';
+import {
+  deliveryStatusBadgeClass,
+  deliveryStatusSelectClass,
+  paymentStatusBadgeClass,
+  paymentStatusSelectClass,
+} from '../utils/invoiceStatusStyles';
+import { tableRowActionButtonClass } from './ui/tableRowActionClass';
+import { useDarkMode } from '../hooks/useDarkMode';
+import ModalPortal from './ui/ModalPortal';
+
+type InvoiceDeleteReturnItem = {
+  description: string;
+  sku: string;
+  quantity: number;
+  currentStock: number;
+  newStock: number;
+  kind: 'ecuador' | 'consignment';
+};
+
+/** Cantidad ya descontada de inventario Ecuador para esta línea (antes de editar en el modal). */
+function getPreviouslyDeliveredQty(invoice: SalesInvoice, index: number): number {
+  const item = invoice.items[index];
+  if (typeof item.quantityDelivered === 'number') {
+    return Math.min(item.quantity, Math.max(0, item.quantityDelivered));
+  }
+  if (invoice.deliveryStatus === 'Delivered') {
+    return item.quantity;
+  }
+  return 0;
+}
+
+function consignmentStatusFromItems(items: ConsignmentItem[]): ConsignmentStatus {
+  const totalDelivered = items.reduce((sum, item) => sum + item.quantityDelivered, 0);
+  const totalSold = items.reduce((sum, item) => sum + item.quantitySold, 0);
+  const totalReturned = items.reduce((sum, item) => sum + item.quantityReturned, 0);
+  const totalAccounted = totalSold + totalReturned;
+  if (totalAccounted >= totalDelivered) return 'Closed';
+  if (totalAccounted > 0) return 'Partially Closed';
+  return 'Open';
+}
 
 function GroupByLayersIcon({ className = 'h-4 w-4 shrink-0' }: { className?: string }) {
   return (
@@ -33,6 +74,79 @@ function GroupByLayersIcon({ className = 'h-4 w-4 shrink-0' }: { className?: str
         d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
       />
     </svg>
+  );
+}
+
+type InvoiceMetricTone = 'neutral' | 'danger' | 'warning' | 'success' | 'pending';
+
+const invoiceMetricIconStroke = { strokeWidth: 1.5 };
+
+function InvoiceMetricIcon({
+  tone,
+  className = 'sasa-invoice-metric-icon-line h-5 w-5 text-gray-500',
+}: {
+  tone: InvoiceMetricTone;
+  className?: string;
+}) {
+  const stroke = { strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+  if (tone === 'neutral') {
+    return (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden {...invoiceMetricIconStroke}>
+        <path
+          {...stroke}
+          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+        />
+      </svg>
+    );
+  }
+  if (tone === 'danger') {
+    return (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden {...invoiceMetricIconStroke}>
+        <path
+          {...stroke}
+          d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+        />
+      </svg>
+    );
+  }
+  if (tone === 'warning') {
+    return (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden {...invoiceMetricIconStroke}>
+        <path {...stroke} d="M10.5 6a7.5 7.5 0 107.5 7.5h-7.5V6z" />
+        <path {...stroke} d="M13.5 10.5H21A7.5 7.5 0 0013.5 3v7.5z" />
+      </svg>
+    );
+  }
+  if (tone === 'success') {
+    return (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden {...invoiceMetricIconStroke}>
+        <path
+          {...stroke}
+          d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden {...invoiceMetricIconStroke}>
+      <path
+        {...stroke}
+        d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
+    </svg>
+  );
+}
+
+function StatusSelectChevron() {
+  return (
+    <span
+      className="sasa-invoice-status-chevron pointer-events-none absolute opacity-60"
+      aria-hidden
+    >
+      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+      </svg>
+    </span>
   );
 }
 
@@ -101,7 +215,8 @@ export default function InvoiceTracking() {
   // Delete confirmation modal state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [invoiceToDelete, setInvoiceToDelete] = useState<SalesInvoice | null>(null);
-  const [itemsReturningToStock, setItemsReturningToStock] = useState<Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}>>([]);
+  const [itemsReturningToStock, setItemsReturningToStock] = useState<InvoiceDeleteReturnItem[]>([]);
+  const darkMode = useDarkMode();
 
   // PDF language selection modal state
 
@@ -292,16 +407,45 @@ export default function InvoiceTracking() {
   const openDeliveryModal = (invoice: SalesInvoice) => {
     setDeliveryInvoice(invoice);
     setDeliveryNotes(invoice.deliveryNotes || '');
-    
-    // Initialize delivery items with all items set to 0 initially
-    const initialItems: {[key: number]: number} = {};
-    invoice.items.forEach((item, index) => {
-      initialItems[index] = 0;
+    const initialItems: { [key: number]: number } = {};
+    invoice.items.forEach((_, index) => {
+      initialItems[index] = getPreviouslyDeliveredQty(invoice, index);
     });
     setDeliveryItems(initialItems);
-    
+    if (invoice.deliveryDate) {
+      const d = invoice.deliveryDate;
+      setDeliveryDate(
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      );
+    } else {
+      setDeliveryDate(new Date().toISOString().split('T')[0]);
+    }
     setShowDeliveryModal(true);
   };
+
+  const deliveryStockPreview = useMemo(() => {
+    if (!deliveryInvoice) return [];
+    return deliveryInvoice.items.map((item, index) => {
+      const prev = getPreviouslyDeliveredQty(deliveryInvoice, index);
+      const next = Math.min(
+        item.quantity,
+        Math.max(0, deliveryItems[index] ?? prev)
+      );
+      const delta = next - prev;
+      const inventoryItem = inventory.find((inv) => inv.sku === item.sku);
+      const currentStock = inventoryItem?.ecuadorStock ?? 0;
+      return {
+        description: item.description,
+        sku: item.sku,
+        ordered: item.quantity,
+        prev,
+        next,
+        delta,
+        currentStock,
+        newStock: currentStock - delta,
+      };
+    });
+  }, [deliveryInvoice, deliveryItems, inventory]);
 
   const closeDeliveryModal = () => {
     setShowDeliveryModal(false);
@@ -317,7 +461,7 @@ export default function InvoiceTracking() {
     
     // Don't allow more than the original quantity
     if (quantity > invoice.items[index].quantity) {
-      showAlert(`${t('invoiceTracking.cannotDeliverMore')} ${invoice.items[index].quantity} ${t('invoiceTracking.units')}`, 'Validation Error');
+      showAlert(`${t('invoiceTracking.cannotDeliverMore')} ${invoice.items[index].quantity} ${t('invoiceTracking.units')}`, t('common.error'));
       return;
     }
     
@@ -327,76 +471,54 @@ export default function InvoiceTracking() {
   const savePartialDelivery = async () => {
     if (!deliveryInvoice) return;
 
-    // Check if at least one item has quantity > 0
-    const totalDelivered = Object.values(deliveryItems).reduce((sum, qty) => sum + qty, 0);
+    const totalDelivered = deliveryStockPreview.reduce((sum, row) => sum + row.next, 0);
     if (totalDelivered === 0) {
-      showAlert(t('invoiceTracking.pleaseSpecifyQuantities'), 'Validation Error');
+      showAlert(t('invoiceTracking.pleaseSpecifyQuantities'), t('common.error'));
       return;
     }
 
-    // Show warning about inventory subtraction with current and remaining stock
-    const itemsToSubtract = deliveryInvoice.items
-      .filter((item, index) => deliveryItems[index] > 0)
-      .map((item, index) => {
-        const inventoryItem = inventory.find(inv => inv.sku === item.sku);
-        const currentStock = inventoryItem?.ecuadorStock || 0;
-        const remainingStock = Math.max(0, currentStock - deliveryItems[index]);
-        return `- ${item.description}: ${deliveryItems[index]} units (Ecuador stock: ${currentStock} → ${remainingStock})`;
-      })
-      .join('\n');
-
-    const warningMessage = `${t('invoiceTracking.warningSubtractInventory')}\n\n` +
-      `${t('invoiceTracking.itemsToBeSubtracted')}\n${itemsToSubtract}\n\n` +
-      `${t('invoiceTracking.stockLevelsWillBeReduced')}`;
-
-    showConfirm(
-      warningMessage,
-      () => {
-        processPartialDeliveryConfirmed();
-      },
-      t('invoiceTracking.confirmDelivery') || 'Confirm Delivery'
-    );
+    await processPartialDeliveryConfirmed();
   };
 
   const processPartialDeliveryConfirmed = async () => {
     if (!deliveryInvoice) return;
 
     try {
+      const updatedItems = deliveryInvoice.items.map((item, index) => ({
+        ...item,
+        quantityDelivered: deliveryStockPreview[index]?.next ?? 0,
+      }));
+
       const updateData: Partial<SalesInvoice> = {
         deliveryStatus: 'Partially Delivered',
         deliveryDate: new Date(deliveryDate),
-        deliveryNotes: deliveryNotes
+        deliveryNotes: deliveryNotes,
+        items: updatedItems,
       };
 
-      await updateInvoice(deliveryInvoice.id, updateData);
-
-      // Update inventory for delivered items only
-      for (let i = 0; i < deliveryInvoice.items.length; i++) {
-        const quantityToDeliver = deliveryItems[i] || 0;
-        if (quantityToDeliver > 0) {
-          const item = deliveryInvoice.items[i];
-          const inventoryItem = inventory.find(inv => inv.sku === item.sku);
-          if (inventoryItem) {
-            const newEcuadorStock = Math.max(0, inventoryItem.ecuadorStock - quantityToDeliver);
-            await updateInventoryItem(inventoryItem.id, {
-              ecuadorStock: newEcuadorStock
-            });
-          }
+      for (const row of deliveryStockPreview) {
+        if (row.delta === 0) continue;
+        const inventoryItem = inventory.find((inv) => inv.sku === row.sku);
+        if (inventoryItem) {
+          await updateInventoryItem(inventoryItem.id, {
+            ecuadorStock: Math.max(0, row.newStock),
+          });
         }
       }
 
-      showAlert(t('invoiceTracking.partialDeliveryRegistered') || 'Partial delivery registered successfully', 'Success');
+      await updateInvoice(deliveryInvoice.id, updateData);
+
+      showAlert(t('invoiceTracking.partialDeliveryRegistered'), t('common.success'));
       closeDeliveryModal();
       loadInvoices();
     } catch (error) {
       console.error('Error updating delivery:', error);
-      showAlert(t('invoiceTracking.errorUpdatingDeliveryStatus'), 'Error');
+      showAlert(t('invoiceTracking.errorUpdatingDeliveryStatus'), t('common.error'));
     }
   };
 
   const handleUpdateDelivery = async (invoice: SalesInvoice, status: 'Pending' | 'Partially Delivered' | 'Delivered' | 'Canceled') => {
-    // Open modal for partial delivery
-    if (status === 'Partially Delivered' && invoice.deliveryStatus === 'Pending') {
+    if (status === 'Partially Delivered') {
       openDeliveryModal(invoice);
       return;
     }
@@ -412,21 +534,19 @@ export default function InvoiceTracking() {
       // Calculate items to return to inventory
       const itemsToReturn: Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}> = [];
       
-      invoice.items.forEach(item => {
-        const inventoryItem = inventory.find(inv => inv.sku === item.sku);
+      invoice.items.forEach((item, index) => {
+        const quantityToReturn = getPreviouslyDeliveredQty(invoice, index);
+        if (quantityToReturn <= 0) return;
+        const inventoryItem = inventory.find((inv) => inv.sku === item.sku);
         if (inventoryItem) {
           const currentStock = inventoryItem.ecuadorStock;
-          // For full delivery reversal, return full quantity. For partial, we'd need to track what was delivered
-          // For now, we'll return the full invoice quantity since we don't track partial deliveries per item
-          const quantityToReturn = item.quantity;
           const newStock = currentStock + quantityToReturn;
-          
           itemsToReturn.push({
             description: item.description,
             sku: item.sku,
             quantity: quantityToReturn,
             currentStock,
-            newStock
+            newStock,
           });
         }
       });
@@ -436,6 +556,9 @@ export default function InvoiceTracking() {
         setWarningMessage(t('invoiceTracking.itemsReturningToStockMessage'));
         setWarningCallback(() => async () => {
           setShowWarningModal(false);
+          setWarningItems([]);
+          setItemsReturningToStock([]);
+          setWarningCallback(null);
           await processDeliveryUpdateWithReturns(invoice, status, itemsToReturn);
         });
         setShowWarningModal(true);
@@ -443,22 +566,29 @@ export default function InvoiceTracking() {
       }
     } else if (isMarkingDelivered) {
       // Create warning message with stock information
-      const itemsList = invoice.items.map(item => {
-        const inventoryItem = inventory.find(inv => inv.sku === item.sku);
-        const currentStock = inventoryItem?.ecuadorStock || 0;
-        const remainingStock = Math.max(0, currentStock - item.quantity);
-        return {
-          description: item.description,
-          quantity: item.quantity,
-          currentStock,
-          remainingStock
-        };
-      });
+      const itemsList = invoice.items
+        .map((item, index) => {
+          const inventoryItem = inventory.find((inv) => inv.sku === item.sku);
+          const currentStock = inventoryItem?.ecuadorStock || 0;
+          const prev = getPreviouslyDeliveredQty(invoice, index);
+          const qtyToDeliver = item.quantity - prev;
+          const remainingStock = Math.max(0, currentStock - qtyToDeliver);
+          return {
+            description: item.description,
+            quantity: qtyToDeliver,
+            currentStock,
+            remainingStock,
+          };
+        })
+        .filter((row) => row.quantity > 0);
       
       setWarningItems(itemsList);
       setWarningMessage(t('invoiceTracking.changingStatusWillAffect'));
       setWarningCallback(() => async () => {
         setShowWarningModal(false);
+        setWarningItems([]);
+        setItemsReturningToStock([]);
+        setWarningCallback(null);
         await processDeliveryUpdate(invoice, status);
       });
       setShowWarningModal(true);
@@ -466,11 +596,11 @@ export default function InvoiceTracking() {
     } else {
       // For other status changes, use simple confirmation
       showConfirm(
-        `${t('invoiceTracking.changeDeliveryStatus')} ${status}?`,
+        t('invoiceTracking.changeDeliveryStatusTo').replace('{status}', deliveryStatusLabel(status)),
         () => {
           processDeliveryUpdate(invoice, status);
         },
-        t('invoiceTracking.confirmStatusChange') || 'Confirm Status Change'
+        t('invoiceTracking.confirmStatusChange')
       );
       return;
     }
@@ -481,27 +611,34 @@ export default function InvoiceTracking() {
       const updateData: Partial<SalesInvoice> = {
         deliveryStatus: status as SalesInvoice['deliveryStatus'],
       };
-      
+
       if (status === 'Delivered') {
         updateData.deliveryDate = new Date();
+        updateData.items = invoice.items.map((item) => ({
+          ...item,
+          quantityDelivered: item.quantity,
+        }));
       }
 
       await updateInvoice(invoice.id, updateData);
 
-      // Update inventory if delivered (full delivery)
       if (status === 'Delivered') {
-        for (const item of invoice.items) {
-          const inventoryItem = inventory.find(inv => inv.sku === item.sku);
+        for (let i = 0; i < invoice.items.length; i++) {
+          const item = invoice.items[i];
+          const prev = getPreviouslyDeliveredQty(invoice, i);
+          const add = item.quantity - prev;
+          if (add <= 0) continue;
+          const inventoryItem = inventory.find((inv) => inv.sku === item.sku);
           if (inventoryItem) {
-            const newEcuadorStock = Math.max(0, inventoryItem.ecuadorStock - item.quantity);
+            const newEcuadorStock = Math.max(0, inventoryItem.ecuadorStock - add);
             await updateInventoryItem(inventoryItem.id, {
-              ecuadorStock: newEcuadorStock
+              ecuadorStock: newEcuadorStock,
             });
           }
         }
       }
 
-      showAlert(t('invoiceTracking.deliveryStatusUpdated'), 'Success');
+      showAlert(t('invoiceTracking.deliveryStatusUpdated'), t('common.success'));
       loadInvoices();
     } catch (error) {
       console.error('Error updating delivery:', error);
@@ -525,14 +662,17 @@ export default function InvoiceTracking() {
         deliveryStatus: status as SalesInvoice['deliveryStatus'],
       };
       
-      // Clear delivery date if canceling
       if (status === 'Canceled' || status === 'Pending') {
         updateData.deliveryDate = undefined;
+        updateData.items = invoice.items.map((item) => ({
+          ...item,
+          quantityDelivered: 0,
+        }));
       }
 
       await updateInvoice(invoice.id, updateData);
 
-      showAlert(t('invoiceTracking.deliveryStatusUpdated') + `\n${itemsToReturn.length} ${t('invoiceTracking.itemsReturned') || 'item(s) returned to inventory'}.`, 'Success');
+      showAlert(t('invoiceTracking.deliveryStatusUpdated'), t('common.success'));
       loadInvoices();
     } catch (error) {
       console.error('Error updating delivery:', error);
@@ -737,6 +877,42 @@ export default function InvoiceTracking() {
     [invoicesSearchFiltered]
   );
 
+  const summaryMetrics = useMemo(
+    () => [
+      {
+        key: 'total',
+        label: t('invoiceTracking.totalInvoices'),
+        value: String(metrics.totalInvoices),
+        tone: 'neutral' as InvoiceMetricTone,
+      },
+      {
+        key: 'unpaid',
+        label: t('invoiceTracking.unpaidInvoices'),
+        value: String(metrics.unpaidInvoices),
+        tone: 'danger' as InvoiceMetricTone,
+      },
+      {
+        key: 'partial',
+        label: t('invoiceTracking.partiallyPaid'),
+        value: String(metrics.partiallyPaidInvoices),
+        tone: 'warning' as InvoiceMetricTone,
+      },
+      {
+        key: 'collected',
+        label: t('invoiceTracking.totalCollected'),
+        value: `$${metrics.totalCollected.toFixed(2)}`,
+        tone: 'success' as InvoiceMetricTone,
+      },
+      {
+        key: 'pending',
+        label: t('invoiceTracking.pendingCollection'),
+        value: `$${metrics.totalPending.toFixed(2)}`,
+        tone: 'pending' as InvoiceMetricTone,
+      },
+    ],
+    [metrics, t]
+  );
+
   const sortedInvoices = useMemo(() => {
     return [...invoicesSearchFiltered].sort((a, b) => {
       const aValue = a[sortConfig.key as keyof SalesInvoice];
@@ -839,54 +1015,117 @@ export default function InvoiceTracking() {
     });
   };
 
-  const handleDeleteInvoice = (invoice: SalesInvoice) => {
-    // Always calculate items that could be returned (if invoice was delivered)
-    const wasDelivered = invoice.deliveryStatus === 'Delivered' || invoice.deliveryStatus === 'Partially Delivered';
-    const itemsToReturn: Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}> = [];
-    
-    if (wasDelivered) {
-      invoice.items.forEach(item => {
-        const inventoryItem = inventory.find(inv => inv.sku === item.sku);
-        if (inventoryItem) {
-          const currentStock = inventoryItem.ecuadorStock;
-          const newStock = currentStock + item.quantity;
-          
-          itemsToReturn.push({
-            description: item.description,
-            sku: item.sku,
-            quantity: item.quantity,
-            currentStock,
-            newStock
-          });
-        }
+  const buildDeleteReturnItems = (invoice: SalesInvoice): InvoiceDeleteReturnItem[] => {
+    const items: InvoiceDeleteReturnItem[] = [];
+
+    if (invoice.sourceConsignmentFirestoreId) {
+      invoice.items.forEach((item) => {
+        const inventoryItem = inventory.find((inv) => inv.sku === item.sku);
+        if (!inventoryItem) return;
+        const currentStock = inventoryItem.consignmentStock || 0;
+        items.push({
+          description: item.description,
+          sku: item.sku,
+          quantity: item.quantity,
+          currentStock,
+          newStock: currentStock + item.quantity,
+          kind: 'consignment',
+        });
       });
+      return items;
     }
-    
-    // Always show modal with both options
-    setItemsReturningToStock(itemsToReturn);
+
+    const wasDelivered =
+      invoice.deliveryStatus === 'Delivered' || invoice.deliveryStatus === 'Partially Delivered';
+    if (!wasDelivered) return items;
+
+    invoice.items.forEach((item) => {
+      const inventoryItem = inventory.find((inv) => inv.sku === item.sku);
+      if (!inventoryItem) return;
+      const currentStock = inventoryItem.ecuadorStock;
+      items.push({
+        description: item.description,
+        sku: item.sku,
+        quantity: item.quantity,
+        currentStock,
+        newStock: currentStock + item.quantity,
+        kind: 'ecuador',
+      });
+    });
+    return items;
+  };
+
+  const handleDeleteInvoice = (invoice: SalesInvoice) => {
+    setItemsReturningToStock(buildDeleteReturnItems(invoice));
     setInvoiceToDelete(invoice);
     setShowDeleteModal(true);
   };
 
-  const deleteInvoiceAndReturnItems = async (invoice: SalesInvoice, itemsToReturn: Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}>) => {
+  const closeDeleteModal = () => {
+    setShowDeleteModal(false);
+    setInvoiceToDelete(null);
+    setItemsReturningToStock([]);
+  };
+
+  const closeWarningModal = () => {
+    setShowWarningModal(false);
+    setWarningItems([]);
+    setItemsReturningToStock([]);
+    setWarningCallback(null);
+  };
+
+  const deleteInvoiceAndReturnItems = async (
+    invoice: SalesInvoice,
+    itemsToReturn: InvoiceDeleteReturnItem[],
+    revertInventory: boolean
+  ) => {
     try {
-      // Return items to inventory first
-      for (const itemReturn of itemsToReturn) {
-        const inventoryItem = inventory.find(inv => inv.sku === itemReturn.sku);
-        if (inventoryItem) {
-          await updateInventoryItem(inventoryItem.id, {
-            ecuadorStock: itemReturn.newStock
-          });
+      if (revertInventory && itemsToReturn.length > 0) {
+        const isConsignment = itemsToReturn.some((i) => i.kind === 'consignment');
+
+        if (isConsignment && invoice.sourceConsignmentFirestoreId) {
+          const consignment = await getConsignment(invoice.sourceConsignmentFirestoreId);
+          if (consignment) {
+            const updatedItems = consignment.items.map((cItem) => {
+              const line = invoice.items.find((i) => i.sku === cItem.sku);
+              if (!line) return cItem;
+              return {
+                ...cItem,
+                quantitySold: Math.max(0, cItem.quantitySold - line.quantity),
+              };
+            });
+            await updateConsignment(consignment.id, {
+              items: updatedItems,
+              status: consignmentStatusFromItems(updatedItems),
+            });
+          }
+          for (const itemReturn of itemsToReturn) {
+            const inventoryItem = inventory.find((inv) => inv.sku === itemReturn.sku);
+            if (inventoryItem) {
+              await updateInventoryItem(inventoryItem.id, {
+                consignmentStock: itemReturn.newStock,
+              });
+            }
+          }
+        } else {
+          for (const itemReturn of itemsToReturn) {
+            if (itemReturn.kind !== 'ecuador') continue;
+            const inventoryItem = inventory.find((inv) => inv.sku === itemReturn.sku);
+            if (inventoryItem) {
+              await updateInventoryItem(inventoryItem.id, {
+                ecuadorStock: itemReturn.newStock,
+              });
+            }
+          }
         }
       }
-      
-      // Delete the invoice
+
       await deleteInvoice(invoice.id);
-      showAlert(t('invoiceTracking.invoiceDeleted'), 'Success');
+      showAlert(t('invoiceTracking.invoiceDeleted'), t('common.success'));
       loadInvoices();
     } catch (error) {
       console.error('Error deleting invoice:', error);
-      showAlert(t('invoiceTracking.errorDeletingInvoice'), 'Error');
+      showAlert(t('invoiceTracking.errorDeletingInvoice'), t('common.error'));
     }
   };
 
@@ -898,6 +1137,13 @@ export default function InvoiceTracking() {
     filters.dateFrom,
     filters.dateTo,
   ].filter(Boolean).length;
+
+  const deliveryStatusLabel = (status: SalesInvoice['deliveryStatus']) => {
+    if (status === 'Delivered') return t('invoiceTracking.delivered');
+    if (status === 'Partially Delivered') return t('invoiceTracking.partiallyDelivered');
+    if (status === 'Canceled') return t('invoiceTracking.canceled');
+    return t('invoiceTracking.pending');
+  };
 
   const groupDisplayLabel = (groupKey: string) => {
     if (groupByField === 'month') {
@@ -955,34 +1201,46 @@ export default function InvoiceTracking() {
         <div className="text-lg font-bold text-[#515151]">${invoice.grandTotal.toFixed(2)}</div>
         <div className="text-xs text-gray-500">{invoice.currency}</div>
       </td>
-      <td className="px-6 py-4 whitespace-nowrap">
-        <select
-          value={invoice.paymentStatus}
-          onChange={(e) => handleUpdatePayment(invoice, e.target.value as SalesInvoice['paymentStatus'])}
-          className="rounded border border-gray-300 px-3 py-1 text-sm"
-        >
-          <option value="Unpaid">🔴 {t('invoiceTracking.unpaid')}</option>
-          <option value="Partially Paid">🟡 {t('invoiceTracking.partial')}</option>
-          <option value="Paid">🟢 {t('invoiceTracking.paid')}</option>
-        </select>
+      <td className="px-3 py-3 text-center align-middle">
+        <div className="flex justify-center">
+          <div className="sasa-invoice-status-select-wrap">
+            <select
+              value={invoice.paymentStatus}
+              onChange={(e) => handleUpdatePayment(invoice, e.target.value as SalesInvoice['paymentStatus'])}
+              className={paymentStatusSelectClass(invoice.paymentStatus)}
+              aria-label={t('invoiceTracking.paymentStatus')}
+            >
+              <option value="Unpaid">{t('invoiceTracking.unpaid')}</option>
+              <option value="Partially Paid">{t('invoiceTracking.partial')}</option>
+              <option value="Paid">{t('invoiceTracking.paid')}</option>
+            </select>
+            <StatusSelectChevron />
+          </div>
+        </div>
       </td>
-      <td className="px-6 py-4 whitespace-nowrap">
-        <select
-          value={invoice.deliveryStatus}
-          onChange={(e) => handleUpdateDelivery(invoice, e.target.value as SalesInvoice['deliveryStatus'])}
-          className="rounded border border-gray-300 px-3 py-1 text-sm"
-        >
-          <option value="Pending">⏳ {t('invoiceTracking.pending')}</option>
-          <option value="Partially Delivered">📦 {t('invoiceTracking.partiallyDelivered')}</option>
-          <option value="Delivered">✅ {t('invoiceTracking.delivered')}</option>
-          <option value="Canceled">❌ {t('invoiceTracking.canceled')}</option>
-        </select>
+      <td className="px-3 py-3 text-center align-middle">
+        <div className="flex justify-center">
+          <div className="sasa-invoice-status-select-wrap">
+            <select
+              value={invoice.deliveryStatus}
+              onChange={(e) => handleUpdateDelivery(invoice, e.target.value as SalesInvoice['deliveryStatus'])}
+              className={deliveryStatusSelectClass(invoice.deliveryStatus)}
+              aria-label={t('invoiceTracking.deliveryStatus')}
+            >
+              <option value="Pending">{t('invoiceTracking.pending')}</option>
+              <option value="Partially Delivered">{t('invoiceTracking.partiallyDeliveredShort')}</option>
+              <option value="Delivered">{t('invoiceTracking.delivered')}</option>
+              <option value="Canceled">{t('invoiceTracking.canceled')}</option>
+            </select>
+            <StatusSelectChevron />
+          </div>
+        </div>
       </td>
-      <td className="px-6 py-4 whitespace-nowrap text-right">
-        <div className="text-sm font-medium text-green-600">${invoice.amountPaid.toFixed(2)}</div>
+      <td className="px-6 py-4 whitespace-nowrap text-center">
+        <div className="text-sm font-medium text-gray-900 tabular-nums">${invoice.amountPaid.toFixed(2)}</div>
       </td>
-      <td className="px-6 py-4 whitespace-nowrap text-right">
-        <div className="text-sm font-medium text-red-600">${invoice.remainingBalance.toFixed(2)}</div>
+      <td className="px-6 py-4 whitespace-nowrap text-center">
+        <div className="text-sm font-medium text-gray-900 tabular-nums">${invoice.remainingBalance.toFixed(2)}</div>
       </td>
       <td className="px-6 py-4 whitespace-nowrap text-center">
         <div className="inline-flex justify-center" data-invoice-actions-root>
@@ -997,7 +1255,7 @@ export default function InvoiceTracking() {
                 closeInvoiceActionsMenu();
               }
             }}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+            className={tableRowActionButtonClass}
             aria-expanded={invoiceActionsMenuId === invoice.id}
             aria-haspopup="menu"
           >
@@ -1025,27 +1283,25 @@ export default function InvoiceTracking() {
       </div>
 
       {/* Summary Dashboard */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t('invoiceTracking.totalInvoices')}</div>
-          <div className="text-2xl font-bold text-gray-900 mt-2">{metrics.totalInvoices}</div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t('invoiceTracking.unpaidInvoices')}</div>
-          <div className="text-2xl font-bold text-red-600 mt-2">{metrics.unpaidInvoices}</div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t('invoiceTracking.partiallyPaid')}</div>
-          <div className="text-2xl font-bold text-yellow-600 mt-2">{metrics.partiallyPaidInvoices}</div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t('invoiceTracking.totalCollected')}</div>
-          <div className="text-2xl font-bold text-green-600 mt-2">${metrics.totalCollected.toFixed(2)}</div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">{t('invoiceTracking.pendingCollection')}</div>
-          <div className="text-2xl font-bold text-amber-600 mt-2">${metrics.totalPending.toFixed(2)}</div>
-        </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {summaryMetrics.map((stat) => (
+          <div
+            key={stat.key}
+            className="sasa-invoice-metric rounded-lg border border-gray-200 p-4 text-left shadow-sm"
+          >
+            <div className="mb-3" aria-hidden>
+              <InvoiceMetricIcon tone={stat.tone} />
+            </div>
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+              {stat.label}
+            </p>
+            <p
+              className={`sasa-invoice-metric-value sasa-invoice-metric-value--${stat.tone} text-2xl font-semibold tabular-nums tracking-tight`}
+            >
+              {stat.value}
+            </p>
+          </div>
+        ))}
       </div>
 
       <div ref={toolbarRef} className="space-y-4">
@@ -1345,37 +1601,37 @@ export default function InvoiceTracking() {
                   </div>
                 </th>
                 <th
-                  className={`${tableThSortableClass} ${tableThAlignClass('left')}`}
+                  className={`${tableThSortableClass} ${tableThAlignClass('center')}`}
                   onClick={() => handleSort('paymentStatus')}
                 >
-                  <div className={tableThLabelFlexClass('left')}>
+                  <div className={tableThLabelFlexClass('center')}>
                     {t('invoiceTracking.paymentStatus')}
                     <TableSortIcon columnKey="paymentStatus" activeKey={sortConfig.key} direction={sortConfig.direction} />
                   </div>
                 </th>
                 <th
-                  className={`${tableThSortableClass} ${tableThAlignClass('left')}`}
+                  className={`${tableThSortableClass} ${tableThAlignClass('center')}`}
                   onClick={() => handleSort('deliveryStatus')}
                 >
-                  <div className={tableThLabelFlexClass('left')}>
+                  <div className={tableThLabelFlexClass('center')}>
                     {t('invoiceTracking.deliveryStatus')}
                     <TableSortIcon columnKey="deliveryStatus" activeKey={sortConfig.key} direction={sortConfig.direction} />
                   </div>
                 </th>
                 <th
-                  className={`${tableThSortableClass} ${tableThAlignClass('right')}`}
+                  className={`${tableThSortableClass} ${tableThAlignClass('center')}`}
                   onClick={() => handleSort('amountPaid')}
                 >
-                  <div className={tableThLabelFlexClass('right')}>
+                  <div className={tableThLabelFlexClass('center')}>
                     {t('invoiceTracking.totalPaid')}
                     <TableSortIcon columnKey="amountPaid" activeKey={sortConfig.key} direction={sortConfig.direction} />
                   </div>
                 </th>
                 <th
-                  className={`${tableThSortableClass} ${tableThAlignClass('right')}`}
+                  className={`${tableThSortableClass} ${tableThAlignClass('center')}`}
                   onClick={() => handleSort('remainingBalance')}
                 >
-                  <div className={tableThLabelFlexClass('right')}>
+                  <div className={tableThLabelFlexClass('center')}>
                     {t('invoiceTracking.pending')}
                     <TableSortIcon
                       columnKey="remainingBalance"
@@ -1571,60 +1827,97 @@ export default function InvoiceTracking() {
         </div>
       )}
 
-      {/* Delivery Modal */}
+      {/* Modal entrega parcial — cantidades e inventario */}
       {showDeliveryModal && deliveryInvoice && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-semibold mb-4">{t('invoiceTracking.partialDeliveryTitle')} - {deliveryInvoice.invoiceNumber}</h3>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.deliveryDate')}</label>
-                <input
-                  type="date"
-                  value={deliveryDate}
-                  onChange={(e) => setDeliveryDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
-                />
+        <ModalPortal>
+          <div
+            className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[90] flex items-center justify-center p-4 backdrop-blur-sm`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="partial-delivery-title"
+            onClick={closeDeliveryModal}
+          >
+            <div
+              className="sasa-modal-panel w-full max-w-2xl overflow-hidden rounded-2xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="border-b border-gray-200 px-6 py-5">
+                <h3 id="partial-delivery-title" className="text-xl font-semibold text-gray-900">
+                  {t('invoiceTracking.partialDeliveryTitle')} — {deliveryInvoice.invoiceNumber}
+                </h3>
+                <p className="mt-2 text-sm text-gray-500">{t('invoiceTracking.partialDeliveryIntro')}</p>
+                {deliveryInvoice.deliveryStatus === 'Delivered' && (
+                  <p className="mt-1 text-sm text-gray-500">
+                    {t('invoiceTracking.partialDeliveryFromDeliveredHint')}
+                  </p>
+                )}
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.deliveryNotesOptional')}</label>
-                <textarea
-                  value={deliveryNotes}
-                  onChange={(e) => setDeliveryNotes(e.target.value)}
-                  rows={3}
-                  placeholder={t('invoiceTracking.deliveryNotesPlaceholder')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
-                />
-              </div>
+              <div className="max-h-[min(70vh,520px)] overflow-y-auto px-6 py-5 space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                      {t('invoiceTracking.deliveryDate')}
+                    </label>
+                    <input
+                      type="date"
+                      value={deliveryDate}
+                      onChange={(e) => setDeliveryDate(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-[#515151]"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                      {t('invoiceTracking.deliveryNotesOptional')}
+                    </label>
+                    <textarea
+                      value={deliveryNotes}
+                      onChange={(e) => setDeliveryNotes(e.target.value)}
+                      rows={2}
+                      placeholder={t('invoiceTracking.deliveryNotesPlaceholder')}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-[#515151]"
+                    />
+                  </div>
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.itemsToDeliver')}</label>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto rounded-xl border border-gray-200">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b border-gray-200">
+                    <thead className="border-b border-gray-200 bg-gray-50">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.sku')}</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.description')}</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.ordered')}</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.delivering')}</th>
+                        <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+                          {t('invoiceTracking.sku')}
+                        </th>
+                        <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+                          {t('invoiceTracking.description')}
+                        </th>
+                        <th className="px-4 py-2.5 text-center text-xs font-medium uppercase tracking-wide text-gray-500">
+                          {t('invoiceTracking.ordered')}
+                        </th>
+                        <th className="px-4 py-2.5 text-center text-xs font-medium uppercase tracking-wide text-gray-500">
+                          {t('invoiceTracking.qtyPreviouslyDelivered')}
+                        </th>
+                        <th className="px-4 py-2.5 text-center text-xs font-medium uppercase tracking-wide text-gray-500">
+                          {t('invoiceTracking.qtyDelivered')}
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {deliveryInvoice.items.map((item, index) => (
-                        <tr key={index} className="transition-colors hover:bg-gray-50">
-                          <td className="px-6 py-3 font-mono text-xs text-gray-900">{item.sku}</td>
-                          <td className="px-6 py-3 text-gray-700">{item.description}</td>
-                          <td className="px-6 py-3 text-center text-gray-700">{item.quantity}</td>
-                          <td className="px-6 py-3 text-center">
+                        <tr key={`${item.sku}-${index}`}>
+                          <td className="px-4 py-2.5 font-mono text-xs text-gray-900">{item.sku}</td>
+                          <td className="px-4 py-2.5 text-gray-700">{item.description}</td>
+                          <td className="px-4 py-2.5 text-center tabular-nums text-gray-700">{item.quantity}</td>
+                          <td className="px-4 py-2.5 text-center tabular-nums text-gray-500">
+                            {deliveryStockPreview[index]?.prev ?? 0}
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
                             <input
                               type="number"
-                              min="0"
+                              min={0}
                               max={item.quantity}
-                              value={deliveryItems[index] || 0}
+                              value={deliveryItems[index] ?? 0}
                               onChange={(e) => handleUpdateDeliveryQuantity(index, e.target.value)}
-                              className="w-20 px-2 py-1 border border-gray-300 rounded text-center"
+                              className="w-16 rounded-lg border border-gray-300 px-2 py-1 text-center text-sm tabular-nums focus:border-transparent focus:ring-2 focus:ring-[#515151]"
                             />
                           </td>
                         </tr>
@@ -1632,31 +1925,75 @@ export default function InvoiceTracking() {
                     </tbody>
                   </table>
                 </div>
-              </div>
 
-              <div className="bg-blue-50 rounded-lg p-4">
-                <div className="text-sm text-blue-800">
-                  <strong>{t('invoiceTracking.note')}</strong> {t('invoiceTracking.noteOnlyQuantities')}
+                <div className="sasa-delete-preview rounded-xl border border-gray-200 p-4">
+                  <h4 className="mb-1 font-semibold text-gray-900">
+                    {t('invoiceTracking.stockAdjustment')}
+                  </h4>
+                  {deliveryStockPreview.some((row) => row.delta !== 0) ? (
+                    <div className="mt-3 space-y-2">
+                      {deliveryStockPreview
+                        .filter((row) => row.delta !== 0)
+                        .map((row) => (
+                          <div
+                            key={row.sku}
+                            className="sasa-delete-preview-row flex flex-col gap-2 rounded-lg border border-gray-200 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="font-medium text-gray-900">{row.description}</div>
+                              <div className="text-sm text-gray-500">
+                                {t('invoiceTracking.qtyDelivered')}: {row.prev}{' '}
+                                <span className="text-gray-400">→</span> {row.next}{' '}
+                                {t('invoiceTracking.units')}
+                                {row.delta !== 0 && (
+                                  <span className="ml-1 text-gray-600">
+                                    ({row.delta > 0 ? '−' : '+'}
+                                    {Math.abs(row.delta)} {t('invoiceTracking.units')})
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="shrink-0 text-left sm:text-right">
+                              <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                                {t('invoiceTracking.ecuadorStock')}
+                              </div>
+                              <div className="font-semibold tabular-nums text-gray-900">
+                                {row.currentStock}{' '}
+                                <span className="font-normal text-gray-400">→</span> {row.newStock}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-gray-500">{t('invoiceTracking.noStockChange')}</p>
+                  )}
                 </div>
               </div>
-            </div>
 
-            <div className="flex gap-2 mt-6">
-              <button
-                onClick={savePartialDelivery}
-                className="flex-1 px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000]"
-              >
-                {t('invoiceTracking.registerPartialDelivery')}
-              </button>
-              <button
-                onClick={closeDeliveryModal}
-                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-              >
-                {t('invoiceTracking.cancel')}
-              </button>
+              <div className="flex justify-end gap-3 border-t border-gray-200 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={closeDeliveryModal}
+                  className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${
+                    darkMode
+                      ? 'border-white/20 bg-transparent text-gray-200 hover:bg-white/10'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={savePartialDelivery}
+                  className="sasa-btn-primary rounded-xl px-5 py-2 text-sm font-medium transition-colors"
+                >
+                  {t('invoiceTracking.registerPartialDelivery')}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {/* Invoice Details Modal */}
@@ -1761,19 +2098,19 @@ export default function InvoiceTracking() {
                 <div className="grid grid-cols-3 gap-4 mb-4">
                   <div>
                     <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.status')}</div>
-                    <div className="font-semibold text-blue-700">
-                      {detailsInvoice.paymentStatus === 'Unpaid' && `🔴 ${t('invoiceTracking.unpaid')}`}
-                      {detailsInvoice.paymentStatus === 'Partially Paid' && `🟡 ${t('invoiceTracking.partial')}`}
-                      {detailsInvoice.paymentStatus === 'Paid' && `🟢 ${t('invoiceTracking.paid')}`}
-                    </div>
+                    <span className={paymentStatusBadgeClass(detailsInvoice.paymentStatus)}>
+                      {detailsInvoice.paymentStatus === 'Unpaid' && t('invoiceTracking.unpaid')}
+                      {detailsInvoice.paymentStatus === 'Partially Paid' && t('invoiceTracking.partial')}
+                      {detailsInvoice.paymentStatus === 'Paid' && t('invoiceTracking.paid')}
+                    </span>
                   </div>
                   <div>
                     <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.amountPaid')}</div>
-                    <div className="font-semibold text-green-600">${detailsInvoice.amountPaid.toFixed(2)}</div>
+                    <div className="font-semibold text-gray-900 tabular-nums">${detailsInvoice.amountPaid.toFixed(2)}</div>
                   </div>
                   <div>
                     <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.remaining')}</div>
-                    <div className="font-semibold text-red-600">${detailsInvoice.remainingBalance.toFixed(2)}</div>
+                    <div className="font-semibold text-gray-900 tabular-nums">${detailsInvoice.remainingBalance.toFixed(2)}</div>
                   </div>
                 </div>
 
@@ -1801,12 +2138,12 @@ export default function InvoiceTracking() {
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.status')}</div>
-                    <div className="font-semibold text-purple-700">
-                      {detailsInvoice.deliveryStatus === 'Pending' && `⏳ ${t('invoiceTracking.pending')}`}
-                      {detailsInvoice.deliveryStatus === 'Partially Delivered' && `📦 ${t('invoiceTracking.partiallyDelivered')}`}
-                      {detailsInvoice.deliveryStatus === 'Delivered' && `✅ ${t('invoiceTracking.delivered')}`}
-                      {detailsInvoice.deliveryStatus === 'Canceled' && `❌ ${t('invoiceTracking.canceled')}`}
-                    </div>
+                    <span className={deliveryStatusBadgeClass(detailsInvoice.deliveryStatus)}>
+                      {detailsInvoice.deliveryStatus === 'Pending' && t('invoiceTracking.pending')}
+                      {detailsInvoice.deliveryStatus === 'Partially Delivered' && t('invoiceTracking.partiallyDelivered')}
+                      {detailsInvoice.deliveryStatus === 'Delivered' && t('invoiceTracking.delivered')}
+                      {detailsInvoice.deliveryStatus === 'Canceled' && t('invoiceTracking.canceled')}
+                    </span>
                   </div>
                   <div>
                     <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.deliveryDate')}</div>
@@ -1864,201 +2201,277 @@ export default function InvoiceTracking() {
         </div>
       )}
 
-      {/* Warning Modal */}
+      {/* Warning Modal — impacto en inventario al cambiar entrega */}
       {showWarningModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-2xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="text-4xl">⚠️</div>
-              <h3 className="text-xl font-bold text-orange-600">{t('invoiceTracking.inventoryImpactWarning')}</h3>
-            </div>
-            
-            <p className="text-gray-700 mb-4">
-              {warningMessage}
-            </p>
-            
-            {warningItems.length > 0 && (
-              <div className="bg-orange-50 rounded-lg p-4 mb-4">
-                <h4 className="font-semibold text-gray-900 mb-3">{t('invoiceTracking.ecuadorStockImpact')}</h4>
-                <div className="space-y-2">
-                  {warningItems.map((item, index) => (
-                    <div key={index} className="flex justify-between items-center bg-white rounded p-2">
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900">{item.description}</div>
-                        <div className="text-sm text-gray-600">{t('invoiceTracking.delivering')}: {item.quantity} {t('invoiceTracking.units')}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm text-gray-600">{t('invoiceTracking.ecuadorStock')}</div>
-                        <div className="font-semibold text-orange-600">
-                          {item.currentStock} → {item.remainingStock}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+        <ModalPortal>
+          <div
+            className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[90] flex items-center justify-center p-4 backdrop-blur-sm`}
+            role="dialog"
+            aria-modal="true"
+            onClick={closeWarningModal}
+          >
+            <div
+              className="sasa-modal-panel w-full max-w-2xl overflow-hidden rounded-2xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="border-b border-gray-200 px-6 py-5">
+                <h3 className="text-xl font-semibold text-gray-900">
+                  {t('invoiceTracking.inventoryImpactWarning')}
+                </h3>
+                <p className="mt-2 text-sm text-gray-500">{warningMessage}</p>
               </div>
-            )}
 
-            {itemsReturningToStock.length > 0 && (
-              <div className="bg-green-50 rounded-lg p-4 mb-4">
-                <h4 className="font-semibold text-gray-900 mb-3">{t('invoiceTracking.itemsReturningToStock')}</h4>
-                <div className="space-y-2">
-                  {itemsReturningToStock.map((item, index) => (
-                    <div key={index} className="flex justify-between items-center bg-white rounded p-2">
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900">{item.description}</div>
-                        <div className="text-sm text-gray-600">{t('invoiceTracking.quantityReturning')}: {item.quantity} {t('invoiceTracking.units')}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm text-gray-600">{t('invoiceTracking.ecuadorStock')}</div>
-                        <div className="font-semibold text-green-600">
-                          {item.currentStock} → {item.newStock}
+              <div className="max-h-[min(70vh,480px)] overflow-y-auto px-6 py-5 space-y-4">
+                {warningItems.length > 0 && (
+                  <div className="sasa-delete-preview rounded-xl border border-gray-200 p-4">
+                    <h4 className="mb-1 font-semibold text-gray-900">
+                      {t('invoiceTracking.ecuadorStockImpact')}
+                    </h4>
+                    <p className="mb-3 text-sm text-gray-500">
+                      {t('invoiceTracking.changingStatusWillAffect')}
+                    </p>
+                    <div className="space-y-2">
+                      {warningItems.map((item, index) => (
+                        <div
+                          key={`warn-${index}`}
+                          className="sasa-delete-preview-row flex flex-col gap-2 rounded-lg border border-gray-200 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium text-gray-900">{item.description}</div>
+                            <div className="text-sm text-gray-500">
+                              {t('invoiceTracking.delivering')}: {item.quantity}{' '}
+                              {t('invoiceTracking.units')}
+                            </div>
+                          </div>
+                          <div className="shrink-0 text-left sm:text-right">
+                            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                              {t('invoiceTracking.ecuadorStock')}
+                            </div>
+                            <div className="font-semibold text-gray-900 tabular-nums">
+                              {item.currentStock}{' '}
+                              <span className="font-normal text-gray-400">→</span> {item.remainingStock}
+                            </div>
+                          </div>
                         </div>
-                      </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
+
+                {itemsReturningToStock.length > 0 && (
+                  <div className="sasa-delete-preview rounded-xl border border-gray-200 p-4">
+                    <h4 className="mb-1 font-semibold text-gray-900">
+                      {t('invoiceTracking.itemsReturningToStock')}
+                    </h4>
+                    <p className="mb-3 text-sm text-gray-500">
+                      {t('invoiceTracking.itemsReturningToStockMessage')}
+                    </p>
+                    <div className="space-y-2">
+                      {itemsReturningToStock.map((item, index) => (
+                        <div
+                          key={`ret-${item.sku}-${index}`}
+                          className="sasa-delete-preview-row flex flex-col gap-2 rounded-lg border border-gray-200 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium text-gray-900">{item.description}</div>
+                            <div className="text-sm text-gray-500">
+                              {t('invoiceTracking.quantityReturning')}: {item.quantity}{' '}
+                              {t('invoiceTracking.units')}
+                            </div>
+                          </div>
+                          <div className="shrink-0 text-left sm:text-right">
+                            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                              {item.kind === 'consignment'
+                                ? t('invoiceTracking.consignmentStockLabel')
+                                : t('invoiceTracking.ecuadorStock')}
+                            </div>
+                            <div className="font-semibold text-gray-900 tabular-nums">
+                              {item.currentStock}{' '}
+                              <span className="font-normal text-gray-400">→</span> {item.newStock}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-sm text-gray-500">
+                  {itemsReturningToStock.length > 0
+                    ? t('invoiceTracking.returningToStock')
+                    : t('invoiceTracking.stockLevelsWillBeReduced')}
+                </p>
               </div>
-            )}
-            
-            <div className="bg-blue-50 rounded-lg p-3 mb-4">
-              <p className="text-sm text-blue-800">
-                <strong>{t('invoiceTracking.note')}</strong> {itemsReturningToStock.length > 0 ? t('invoiceTracking.returningToStock') : t('invoiceTracking.stockLevelsWillBeReduced')}
-              </p>
-            </div>
-            
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowWarningModal(false);
-                  setWarningItems([]);
-                  setItemsReturningToStock([]);
-                  setWarningCallback(null);
-                }}
-                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
-              >
-                {t('invoiceTracking.cancel')}
-              </button>
-              <button
-                onClick={() => {
-                  if (warningCallback) {
-                    warningCallback();
-                  }
-                }}
-                className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium"
-              >
-                {t('invoiceTracking.confirmAndUpdate')}
-              </button>
+
+              <div className="flex justify-end gap-3 border-t border-gray-200 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={closeWarningModal}
+                  className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${
+                    darkMode
+                      ? 'border-white/20 bg-transparent text-gray-200 hover:bg-white/10'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {t('invoiceTracking.cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (warningCallback) warningCallback();
+                  }}
+                  className="sasa-btn-primary rounded-xl px-5 py-2 text-sm font-medium transition-colors"
+                >
+                  {t('invoiceTracking.confirmAndUpdate')}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && invoiceToDelete && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-gray-200 bg-white shadow-2xl">
-            <div className="border-b border-gray-200 px-6 py-5">
-              <h3 className="text-xl font-semibold text-gray-900">
-                {t('invoiceTracking.deleteInvoice')}
-              </h3>
-              <p className="mt-2 text-sm text-gray-600">
-                {t('invoiceTracking.deleteInvoiceOptions')}
-              </p>
-            </div>
+        <ModalPortal>
+          <div
+            className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[90] flex items-center justify-center p-4 backdrop-blur-sm`}
+            role="dialog"
+            aria-modal="true"
+            onClick={closeDeleteModal}
+          >
+            <div
+              className="sasa-modal-panel w-full max-w-2xl overflow-hidden rounded-2xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="border-b border-gray-200 px-6 py-5">
+                <h3 className="text-xl font-semibold text-gray-900">
+                  {t('invoiceTracking.deleteInvoice')}
+                </h3>
+                <p className="mt-2 text-sm text-gray-500">
+                  {t('invoiceTracking.deleteInvoiceOptions')}
+                </p>
+              </div>
 
-            <div className="px-6 py-5 space-y-4">
-              {itemsReturningToStock.length > 0 && (
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                  <h4 className="font-semibold text-gray-900 mb-1">
-                    {t('invoiceTracking.itemsReturningToStock')}
-                  </h4>
-                  <p className="text-sm text-gray-600 mb-3">
-                    {t('invoiceTracking.itemsReturningToStockMessage')}
+              <div className="max-h-[min(70vh,520px)] overflow-y-auto px-6 py-5 space-y-4">
+                {itemsReturningToStock.length > 0 ? (
+                  <div className="sasa-delete-preview rounded-xl border border-gray-200 p-4">
+                    <h4 className="font-semibold text-gray-900 mb-1">
+                      {t('invoiceTracking.itemsReturningToStock')}
+                    </h4>
+                    <p className="text-sm text-gray-500 mb-3">
+                      {invoiceToDelete.sourceConsignmentFirestoreId
+                        ? t('invoiceTracking.deleteConsignmentItemsMessage')
+                        : t('invoiceTracking.itemsReturningToStockMessage')}
+                    </p>
+                    <div className="space-y-2">
+                      {itemsReturningToStock.map((item, index) => (
+                        <div
+                          key={`${item.sku}-${index}`}
+                          className="sasa-delete-preview-row flex flex-col gap-2 rounded-lg border border-gray-200 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="font-medium text-gray-900">{item.description}</div>
+                            <div className="text-sm text-gray-500">
+                              {t('invoiceTracking.quantityReturning')}: {item.quantity}{' '}
+                              {t('invoiceTracking.units')}
+                            </div>
+                          </div>
+                          <div className="shrink-0 text-left sm:text-right">
+                            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                              {item.kind === 'consignment'
+                                ? t('invoiceTracking.consignmentStockLabel')
+                                : t('invoiceTracking.ecuadorStock')}
+                            </div>
+                            <div className="font-semibold text-gray-900 tabular-nums">
+                              {item.currentStock}{' '}
+                              <span className="font-normal text-gray-400">→</span> {item.newStock}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-500">
+                    {t('invoiceTracking.deleteNoStockToReturn')}
                   </p>
-                  <div className="space-y-2">
-                    {itemsReturningToStock.map((item, index) => (
-                      <div
-                        key={index}
-                        className="flex justify-between items-center rounded-lg border border-gray-200 bg-white px-3 py-2"
+                )}
+
+                <div className="space-y-3">
+                  {itemsReturningToStock.length > 0 ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const inv = invoiceToDelete;
+                          const items = [...itemsReturningToStock];
+                          closeDeleteModal();
+                          if (inv) void deleteInvoiceAndReturnItems(inv, items, true);
+                        }}
+                        className="sasa-delete-option sasa-delete-option--primary w-full rounded-xl px-4 py-3 text-left transition-colors"
                       >
-                        <div className="flex-1">
-                          <div className="font-medium text-gray-900">{item.description}</div>
-                          <div className="text-sm text-gray-600">
-                            {t('invoiceTracking.quantityReturning')}: {item.quantity}{' '}
-                            {t('invoiceTracking.units')}
-                          </div>
+                        <div className="font-semibold text-gray-900">
+                          {t('invoiceTracking.reverseAndReturn')}
                         </div>
-                        <div className="text-right">
-                          <div className="text-xs uppercase tracking-wide text-gray-500">
-                            {t('invoiceTracking.ecuadorStock')}
-                          </div>
-                          <div className="font-semibold text-gray-900">
-                            {item.currentStock} <span className="text-gray-400">→</span>{' '}
-                            <span className="text-emerald-600">{item.newStock}</span>
-                          </div>
+                        <div className="mt-1 text-sm text-gray-500">
+                          {t('invoiceTracking.reverseAndReturnDescription')}
                         </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const inv = invoiceToDelete;
+                          closeDeleteModal();
+                          if (inv) void deleteInvoiceAndReturnItems(inv, [], false);
+                        }}
+                        className="sasa-delete-option w-full rounded-xl px-4 py-3 text-left transition-colors"
+                      >
+                        <div className="font-semibold text-gray-900">
+                          {t('invoiceTracking.cancelWithoutAffecting')}
+                        </div>
+                        <div className="mt-1 text-sm text-gray-500">
+                          {t('invoiceTracking.cancelWithoutAffectingDescription')}
+                        </div>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const inv = invoiceToDelete;
+                        closeDeleteModal();
+                        if (inv) void deleteInvoiceAndReturnItems(inv, [], false);
+                      }}
+                      className="sasa-delete-option sasa-delete-option--primary w-full rounded-xl px-4 py-3 text-left transition-colors"
+                    >
+                      <div className="font-semibold text-gray-900">
+                        {t('invoiceTracking.deleteInvoiceOnly')}
                       </div>
-                    ))}
-                  </div>
+                      <div className="mt-1 text-sm text-gray-500">
+                        {t('invoiceTracking.deleteInvoiceOnlyDescription')}
+                      </div>
+                    </button>
+                  )}
                 </div>
-              )}
+              </div>
 
-              <div className="space-y-3">
+              <div className="border-t border-gray-200 px-6 py-4">
                 <button
-                  onClick={() => {
-                    setShowDeleteModal(false);
-                    if (invoiceToDelete) {
-                      deleteInvoiceAndReturnItems(invoiceToDelete, itemsReturningToStock);
-                    }
-                    setInvoiceToDelete(null);
-                    setItemsReturningToStock([]);
-                  }}
-                  className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-left transition-colors hover:bg-emerald-100"
+                  type="button"
+                  onClick={closeDeleteModal}
+                  className={`w-full rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors ${
+                    darkMode
+                      ? 'border-white/20 bg-transparent text-gray-200 hover:bg-white/10'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
                 >
-                  <div className="font-semibold text-emerald-800">
-                    {t('invoiceTracking.reverseAndReturn')}
-                  </div>
-                  <div className="text-sm text-emerald-700 mt-1">
-                    {t('invoiceTracking.reverseAndReturnDescription')}
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setShowDeleteModal(false);
-                    if (invoiceToDelete) {
-                      deleteInvoiceAndReturnItems(invoiceToDelete, []);
-                    }
-                    setInvoiceToDelete(null);
-                    setItemsReturningToStock([]);
-                  }}
-                  className="w-full rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-left transition-colors hover:bg-rose-100"
-                >
-                  <div className="font-semibold text-rose-800">
-                    {t('invoiceTracking.cancelWithoutAffecting')}
-                  </div>
-                  <div className="text-sm text-rose-700 mt-1">
-                    {t('invoiceTracking.cancelWithoutAffectingDescription')}
-                  </div>
+                  {t('invoiceTracking.cancel')}
                 </button>
               </div>
             </div>
-
-            <div className="border-t border-gray-200 px-6 py-4">
-              <button
-                onClick={() => {
-                  setShowDeleteModal(false);
-                  setInvoiceToDelete(null);
-                  setItemsReturningToStock([]);
-                }}
-                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-700 font-medium transition-colors hover:bg-gray-50"
-              >
-                {t('invoiceTracking.cancel')}
-              </button>
-            </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {/* Alert Dialog */}
@@ -2074,6 +2487,8 @@ export default function InvoiceTracking() {
         open={confirmDialog.open}
         title={confirmDialog.title}
         description={confirmDialog.message}
+        cancelText={t('common.cancel')}
+        confirmText={t('common.accept')}
         onConfirm={() => {
           confirmDialog.onConfirm();
           setConfirmDialog({ open: false, message: '', onConfirm: () => {} });

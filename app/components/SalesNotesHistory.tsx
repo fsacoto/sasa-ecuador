@@ -22,6 +22,7 @@ import {
 } from './ui/tableHeaderClass';
 import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 import { formatDateDMY, formatMonthYearLong } from '../utils/formatDate';
+import { deliveryStatusBadgeClass, paymentStatusBadgeClass } from '../utils/invoiceStatusStyles';
 
 const SESSION_TRACKING_FOCUS = 'sasa_focus_invoice_tracking_id';
 
@@ -287,19 +288,6 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
     dateTo,
   ].filter(Boolean).length;
 
-  const statusBadge = (kind: 'pay' | 'del', value: string) => {
-    const base = 'inline-flex rounded-full px-2 py-0.5 text-xs font-medium';
-    if (kind === 'pay') {
-      if (value === 'Paid') return `${base} bg-green-100 text-green-800`;
-      if (value === 'Partially Paid') return `${base} bg-amber-100 text-amber-900`;
-      return `${base} bg-red-50 text-red-700`;
-    }
-    if (value === 'Delivered') return `${base} bg-green-100 text-green-800`;
-    if (value === 'Partially Delivered') return `${base} bg-blue-100 text-blue-800`;
-    if (value === 'Canceled') return `${base} bg-gray-200 text-gray-700`;
-    return `${base} bg-gray-100 text-gray-700`;
-  };
-
   const paymentLabel = (s: SalesInvoice['paymentStatus']) => {
     if (s === 'Paid') return t('invoiceTracking.paid');
     if (s === 'Partially Paid') return t('invoiceTracking.partial');
@@ -357,21 +345,21 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
             <thead className={tableTheadClass}>
               <tr>
                 {!hiddenColumns.has('comprobante') &&
-                  thSortable('invoiceNumber', t('salesNotes.comprobante'))}
+                  thSortable('invoiceNumber', t('salesNotes.comprobante'), 'center')}
                 {!hiddenColumns.has('client') && (
-                  <th className={`${tableThBaseClass} ${tableThAlignClass('left')}`}>
+                  <th className={`${tableThBaseClass} ${tableThAlignClass('center')}`}>
                     {t('invoiceTracking.client')}
                   </th>
                 )}
-                {!hiddenColumns.has('date') && thSortable('date', t('invoiceTracking.invoiceDate'))}
-                {!hiddenColumns.has('total') && thSortable('grandTotal', t('invoiceTracking.total'), 'right')}
+                {!hiddenColumns.has('date') && thSortable('date', t('invoiceTracking.invoiceDate'), 'center')}
+                {!hiddenColumns.has('total') && thSortable('grandTotal', t('invoiceTracking.total'), 'center')}
                 {!hiddenColumns.has('payment') && (
-                  <th className={`${tableThBaseClass} ${tableThAlignClass('left')}`}>
+                  <th className={`${tableThBaseClass} ${tableThAlignClass('center')}`}>
                     {t('invoiceTracking.paymentStatus')}
                   </th>
                 )}
                 {!hiddenColumns.has('delivery') && (
-                  <th className={`${tableThBaseClass} ${tableThAlignClass('left')}`}>
+                  <th className={`${tableThBaseClass} ${tableThAlignClass('center')}`}>
                     {t('invoiceTracking.deliveryStatus')}
                   </th>
                 )}
@@ -386,33 +374,33 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
               {items.map((inv) => (
                 <tr key={inv.id} className="transition-colors hover:bg-gray-50">
                   {!hiddenColumns.has('comprobante') && (
-                    <td className="whitespace-nowrap px-6 py-4 font-mono text-sm font-semibold text-[#515151]">
+                    <td className="whitespace-nowrap px-6 py-4 text-center font-mono text-sm font-semibold text-[#515151]">
                       {inv.invoiceNumber}
                     </td>
                   )}
                   {!hiddenColumns.has('client') && (
-                    <td className="px-6 py-4 text-sm text-gray-900">{inv.clientName}</td>
+                    <td className="px-6 py-4 text-center text-sm text-gray-900">{inv.clientName}</td>
                   )}
                   {!hiddenColumns.has('date') && (
-                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">
+                    <td className="whitespace-nowrap px-6 py-4 text-center text-sm text-gray-600">
                       {formatDateDMY(inv.date)}
                     </td>
                   )}
                   {!hiddenColumns.has('total') && (
-                    <td className="px-6 py-4 text-right text-sm font-medium text-gray-900">
+                    <td className="px-6 py-4 text-center text-sm font-medium text-gray-900 tabular-nums">
                       ${inv.grandTotal.toFixed(2)}
                     </td>
                   )}
                   {!hiddenColumns.has('payment') && (
-                    <td className="px-6 py-4">
-                      <span className={statusBadge('pay', inv.paymentStatus)}>
+                    <td className="px-6 py-4 text-center">
+                      <span className={paymentStatusBadgeClass(inv.paymentStatus)}>
                         {paymentLabel(inv.paymentStatus)}
                       </span>
                     </td>
                   )}
                   {!hiddenColumns.has('delivery') && (
-                    <td className="px-6 py-4">
-                      <span className={statusBadge('del', inv.deliveryStatus)}>
+                    <td className="px-6 py-4 text-center">
+                      <span className={deliveryStatusBadgeClass(inv.deliveryStatus)}>
                         {deliveryLabel(inv.deliveryStatus)}
                       </span>
                     </td>

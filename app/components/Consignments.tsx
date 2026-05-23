@@ -89,10 +89,41 @@ export default function Consignments() {
   const listToolbarRef = useRef<HTMLDivElement>(null);
   const groupByDropdownRef = useRef<HTMLDivElement>(null);
   
+  const formatTemplate = (template: string, vars: Record<string, string>) => {
+    let result = template;
+    for (const [key, value] of Object.entries(vars)) {
+      result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+    }
+    return result;
+  };
+
+  const resolveAlertTitle = (title?: string) => {
+    if (!title) return t('common.info');
+    const englishTitles: Record<string, string> = {
+      Success: t('common.success'),
+      Error: t('common.error'),
+      'Validation Error': t('common.warning'),
+      'Stock Error': t('consignments.stock'),
+      'Stock Limit': t('consignments.stock'),
+      Stock: t('consignments.stock'),
+    };
+    return englishTitles[title] ?? title;
+  };
+
   // Helper function for styled alerts
   const showAlert = (message: string, title?: string) => {
-    setAlertDialog({ open: true, message, title });
+    setAlertDialog({ open: true, message, title: resolveAlertTitle(title) });
   };
+
+  const alertDialogElement = (
+    <AlertDialog
+      open={alertDialog.open}
+      title={alertDialog.title}
+      message={alertDialog.message}
+      buttonText={t('common.accept')}
+      onClose={() => setAlertDialog({ open: false, message: '', title: undefined })}
+    />
+  );
 
   // Create a stable string identifier - always a string, never changes array size
   const userIdString = (user?.id || '') as string;
@@ -233,6 +264,26 @@ export default function Consignments() {
     return items.reduce((sum, item) => sum + item.quantityReturned, 0);
   };
 
+  const calculateTotalRemaining = (items: ConsignmentItem[]) => {
+    return items.reduce(
+      (sum, item) => sum + (item.quantityDelivered - item.quantitySold - item.quantityReturned),
+      0
+    );
+  };
+
+  const consignmentStatusBadgeClass = (status: Consignment['status']) => {
+    const base = 'rounded-full px-2.5 py-1 text-xs font-medium';
+    if (status === 'Open') return `${base} bg-blue-100 text-blue-800 sasa-consignment-status-open`;
+    if (status === 'Partially Closed') return `${base} bg-yellow-100 text-yellow-800 sasa-consignment-status-partial`;
+    return `${base} bg-green-100 text-green-800 sasa-consignment-status-closed`;
+  };
+
+  const consignmentStatusLabel = (status: Consignment['status']) => {
+    if (status === 'Open') return t('consignments.statusOpen');
+    if (status === 'Partially Closed') return t('consignments.statusPartiallyClosed');
+    return t('consignments.statusClosed');
+  };
+
   const calculateStatus = (items: ConsignmentItem[]): ConsignmentStatus => {
     const totalDelivered = calculateTotalItems(items);
     const totalSold = calculateTotalSold(items);
@@ -308,14 +359,20 @@ export default function Consignments() {
         }
       }
 
-      showAlert(t('consignments.consignmentCreated'), 'Success');
+      const createdConsignmentId = String(newConsignment.consignmentId ?? '').trim();
+      showAlert(
+        formatTemplate(t('consignments.consignmentCreated'), {
+          consignmentId: createdConsignmentId || '—',
+        }),
+        t('consignments.consignmentCreatedTitle')
+      );
       setView('list');
       setSelectedClient(null);
       setConsignmentItems([]);
       loadConsignments();
     } catch (error) {
       console.error('Error creating consignment:', error);
-      showAlert(t('consignments.errorCreating'), 'Error');
+      showAlert(t('consignments.errorCreating'), t('common.error'));
     }
   };
 
@@ -482,7 +539,7 @@ export default function Consignments() {
         });
       }
 
-      showAlert(t('consignments.salesRegistered'), 'Success');
+      showAlert(t('consignments.salesRegistered'), t('common.success'));
       setSalesQuantities({});
       loadConsignments();
       // Reload selected consignment
@@ -493,7 +550,7 @@ export default function Consignments() {
       }
     } catch (error: any) {
       console.error('Error registering sales:', error);
-      showAlert(error.message || t('consignments.errorRegisteringSales'), 'Error');
+      showAlert(error.message || t('consignments.errorRegisteringSales'), t('common.error'));
     }
   };
 
@@ -536,7 +593,7 @@ export default function Consignments() {
       });
     }
 
-    showAlert(t('consignments.returnsRegistered'), 'Success');
+    showAlert(t('consignments.returnsRegistered'), t('common.success'));
     await loadConsignments();
     const updated = await getAllConsignments();
     const refreshed = updated.find((c) => c.id === selectedConsignment.id);
@@ -580,13 +637,13 @@ export default function Consignments() {
       // Delete the consignment
       await deleteConsignment(consignmentToDelete.id);
       
-      showAlert(t('consignments.consignmentDeleted') || 'Consignment deleted successfully', 'Success');
+      showAlert(t('consignments.consignmentDeleted'), t('common.success'));
       setDeleteConfirmOpen(false);
       setConsignmentToDelete(null);
       loadConsignments();
     } catch (error: any) {
       console.error('Error deleting consignment:', error);
-      showAlert(error.message || t('consignments.errorDeleting') || 'Error deleting consignment', 'Error');
+      showAlert(error.message || t('consignments.errorDeleting'), t('common.error'));
       setDeleteConfirmOpen(false);
       setConsignmentToDelete(null);
     }
@@ -629,7 +686,7 @@ export default function Consignments() {
       
     } catch (error) {
       console.error('Error generating PDF:', error);
-      showAlert(t('consignments.errorGeneratingPdf'), 'Error');
+      showAlert(t('consignments.errorGeneratingPdf'), t('common.error'));
     }
   };
 
@@ -779,20 +836,8 @@ export default function Consignments() {
         <div className="text-sm text-gray-700">{formatDateDMY(consignment.dateCreated)}</div>
       </td>
       <td className="whitespace-nowrap px-6 py-4">
-        <span
-          className={`rounded-full px-2 py-1 text-xs font-medium ${
-            consignment.status === 'Open'
-              ? 'bg-blue-100 text-blue-800'
-              : consignment.status === 'Partially Closed'
-                ? 'bg-yellow-100 text-yellow-800'
-                : 'bg-green-100 text-green-800'
-          }`}
-        >
-          {consignment.status === 'Open'
-            ? t('consignments.statusOpen')
-            : consignment.status === 'Partially Closed'
-              ? t('consignments.statusPartiallyClosed')
-              : t('consignments.statusClosed')}
+        <span className={consignmentStatusBadgeClass(consignment.status)}>
+          {consignmentStatusLabel(consignment.status)}
         </span>
       </td>
       <td className="whitespace-nowrap px-6 py-4 text-center">
@@ -1262,12 +1307,7 @@ export default function Consignments() {
           }}
         />
         {/* Alert Dialog */}
-        <AlertDialog
-          open={alertDialog.open}
-          title={alertDialog.title}
-          message={alertDialog.message}
-          onClose={() => setAlertDialog({ open: false, message: '' })}
-        />
+        {alertDialogElement}
       </>
     );
   }
@@ -1321,7 +1361,7 @@ export default function Consignments() {
                 <div className="flex gap-2 ml-4">
                   <button
                     onClick={() => setSelectedClient(null)}
-                    className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
                   >
                     {t('consignments.changeClient')}
                   </button>
@@ -1421,9 +1461,14 @@ export default function Consignments() {
                           </td>
                           <td className="whitespace-nowrap px-6 py-4 text-center">
                             <button
+                              type="button"
                               onClick={() => removeItem(index)}
-                              className="text-red-600 hover:text-red-700 text-sm font-medium"
+                              className={tableRowActionButtonClass}
+                              aria-label={t('consignments.remove')}
                             >
+                              <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
                               {t('consignments.remove')}
                             </button>
                           </td>
@@ -1453,157 +1498,129 @@ export default function Consignments() {
         )}
       </div>
         {/* Alert Dialog */}
-        <AlertDialog
-          open={alertDialog.open}
-          title={alertDialog.title}
-          message={alertDialog.message}
-          onClose={() => setAlertDialog({ open: false, message: '' })}
-        />
+        {alertDialogElement}
       </>
     );
   }
 
   // Details View
   if (view === 'details' && selectedConsignment) {
+    const detailItems = selectedConsignment.items;
+    const detailDelivered = calculateTotalItems(detailItems);
+    const detailSold = calculateTotalSold(detailItems);
+    const detailReturned = calculateTotalReturned(detailItems);
+    const detailRemaining = calculateTotalRemaining(detailItems);
+    const estimatedSaleTotal = detailItems.reduce((sum, item, index) => {
+      const qty = salesQuantities[index] || 0;
+      const unitRaw = (saleUnitPrices[index] ?? '').trim().replace(',', '.');
+      const unit = parseFloat(unitRaw);
+      if (qty > 0 && Number.isFinite(unit) && unit > 0) {
+        return sum + roundMoney2(qty * unit);
+      }
+      return sum;
+    }, 0);
+
     return (
       <>
         <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <div>
-            <h2 className="text-2xl font-semibold text-gray-900">{selectedConsignment.consignmentId}</h2>
-            <p className="text-sm text-gray-500 mt-1">{t('consignments.client')}: {selectedConsignment.clientName}</p>
+          {/* Encabezado */}
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 space-y-2">
+              <div className="flex flex-wrap items-center gap-3">
+                <h2 className="text-2xl font-semibold text-gray-900">{selectedConsignment.consignmentId}</h2>
+                <span className={consignmentStatusBadgeClass(selectedConsignment.status)}>
+                  {consignmentStatusLabel(selectedConsignment.status)}
+                </span>
+              </div>
+              <p className="text-sm text-gray-500">
+                {t('consignments.client')}:{' '}
+                <span className="font-medium text-gray-900">{selectedConsignment.clientName}</span>
+              </p>
+              {selectedConsignment.clientAddress ? (
+                <p className="text-sm text-gray-500">{selectedConsignment.clientAddress}</p>
+              ) : null}
+              <p className="text-sm text-gray-500">
+                {t('consignments.dateCreated')}: {formatDateDMY(selectedConsignment.dateCreated)}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleGeneratePDFClick(selectedConsignment)}
+                className={tableRowActionButtonClass}
+              >
+                <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                {t('consignments.generatePdf')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setView('list');
+                  setSelectedConsignment(null);
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
+              >
+                {t('consignments.backToList')}
+              </button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => handleGeneratePDFClick(selectedConsignment)}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-            >
-              {t('consignments.generatePdf')}
-            </button>
-            <button
-              onClick={() => {
-                setView('list');
-                setSelectedConsignment(null);
-              }}
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-            >
-              {t('consignments.backToList')}
-            </button>
-          </div>
-        </div>
 
-        {/* Items Delivered Table */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('consignments.itemsDelivered')}</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.sku')}</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.description')}</th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.qtyDelivered')}</th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.qtySold')}</th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.qtyReturned')}</th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.remaining')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {selectedConsignment.items.map((item, index) => {
-                  const remaining = item.quantityDelivered - item.quantitySold - item.quantityReturned;
-                  return (
-                    <tr key={index} className="transition-colors hover:bg-gray-50">
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <div className="font-mono text-sm font-medium text-gray-900">{item.sku}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-gray-900">{item.description}</div>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-center">
-                        <div className="text-sm text-gray-900">{item.quantityDelivered}</div>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-center">
-                        <div className="text-sm text-gray-900">{item.quantitySold}</div>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-center">
-                        <div className="text-sm text-gray-900">{item.quantityReturned}</div>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-center">
-                        <div className="text-sm font-medium text-gray-900">{remaining}</div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          {/* Resumen */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              { label: t('consignments.totalItemsDelivered'), value: detailDelivered },
+              { label: t('consignments.totalSold'), value: detailSold },
+              { label: t('consignments.totalReturned'), value: detailReturned },
+              { label: t('consignments.remaining'), value: detailRemaining },
+            ].map((stat) => (
+              <div key={stat.label} className="sasa-consignment-stat rounded-xl px-4 py-3">
+                <div className="text-xs font-medium uppercase tracking-wider text-gray-500">{stat.label}</div>
+                <div className="mt-1 text-2xl font-semibold text-gray-900 tabular-nums">{stat.value}</div>
+              </div>
+            ))}
           </div>
-        </div>
 
-        {/* Register Sales Section */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">{t('consignments.registerSales')}</h3>
-          <p className="text-sm text-gray-600 mb-4">
-            {t('consignments.registerSalesIntro') ||
-              'Indique cantidades, precio unitario (USD) por línea y el estado de pago. Se creará una nota de venta en el seguimiento.'}
-          </p>
-          <div className="space-y-6">
+          {/* Artículos entregados */}
+          <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="border-b border-gray-200 px-6 py-4">
+              <h3 className="text-lg font-semibold text-gray-900">{t('consignments.itemsDelivered')}</h3>
+            </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
+              <table className="w-full text-sm">
+                <thead className={tableTheadClass}>
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.sku')}</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.description')}</th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.available')}</th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.qtySold')}</th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.saleUnitPriceUsd')}</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('consignments.saleLineTotalUsd')}</th>
+                    <th className={`${tableThBaseClass} text-left`}>{t('consignments.sku')}</th>
+                    <th className={`${tableThBaseClass} text-left`}>{t('consignments.description')}</th>
+                    <th className={`${tableThBaseClass} text-center`}>{t('consignments.qtyDelivered')}</th>
+                    <th className={`${tableThBaseClass} text-center`}>{t('consignments.qtySold')}</th>
+                    <th className={`${tableThBaseClass} text-center`}>{t('consignments.qtyReturned')}</th>
+                    <th className={`${tableThBaseClass} text-center`}>{t('consignments.remaining')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {selectedConsignment.items.map((item, index) => {
-                    const available = item.quantityDelivered - item.quantitySold - item.quantityReturned;
-                    const qty = salesQuantities[index] || 0;
-                    const unitRaw = (saleUnitPrices[index] ?? '').trim().replace(',', '.');
-                    const unit = parseFloat(unitRaw);
-                    const lineTotal =
-                      qty > 0 && Number.isFinite(unit) && unit > 0
-                        ? roundMoney2(qty * unit)
-                        : null;
+                  {detailItems.map((item, index) => {
+                    const remaining = item.quantityDelivered - item.quantitySold - item.quantityReturned;
                     return (
                       <tr key={index} className="transition-colors hover:bg-gray-50">
-                        <td className="px-6 py-3 font-mono text-xs text-gray-900">{item.sku}</td>
-                        <td className="px-6 py-3 text-gray-700">{item.description}</td>
-                        <td className="px-6 py-3 text-center text-gray-700">{available}</td>
-                        <td className="px-6 py-3 text-center">
-                          <input
-                            type="number"
-                            min="0"
-                            max={available}
-                            value={salesQuantities[index] ?? ''}
-                            onChange={(e) =>
-                              setSalesQuantities({
-                                ...salesQuantities,
-                                [index]: parseInt(e.target.value, 10) || 0,
-                              })
-                            }
-                            className="w-20 px-2 py-1 border border-gray-300 rounded text-center"
-                            disabled={available === 0}
-                          />
+                        <td className="whitespace-nowrap px-6 py-4">
+                          <div className="font-mono text-sm font-medium text-gray-900">{item.sku}</div>
                         </td>
-                        <td className="px-6 py-3 text-center">
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            placeholder="0.00"
-                            value={saleUnitPrices[index] ?? ''}
-                            onChange={(e) =>
-                              setSaleUnitPrices({ ...saleUnitPrices, [index]: e.target.value })
-                            }
-                            className="w-24 px-2 py-1 border border-gray-300 rounded text-center"
-                            disabled={available === 0}
-                          />
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-gray-900">{item.description}</div>
                         </td>
-                        <td className="px-6 py-3 text-right font-medium text-gray-800">
-                          {lineTotal != null ? `$${lineTotal.toFixed(2)}` : '—'}
+                        <td className="whitespace-nowrap px-6 py-4 text-center text-gray-900 tabular-nums">
+                          {item.quantityDelivered}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-center text-gray-900 tabular-nums">
+                          {item.quantitySold}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-center text-gray-900 tabular-nums">
+                          {item.quantityReturned}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-center font-medium text-gray-900 tabular-nums">
+                          {remaining}
                         </td>
                       </tr>
                     );
@@ -1611,100 +1628,189 @@ export default function Consignments() {
                 </tbody>
               </table>
             </div>
+          </section>
 
-            <div className="border border-gray-200 rounded-xl p-4 bg-gray-50/80 space-y-4">
-              <h4 className="text-sm font-semibold text-gray-900">
-                {t('consignments.salePaymentSection') || 'Pago de esta venta'}
-              </h4>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    {t('consignments.salePaymentStatus') || 'Estado de pago'}
-                  </label>
-                  <select
-                    value={salePaymentStatus}
-                    onChange={(e) =>
-                      setSalePaymentStatus(e.target.value as 'Unpaid' | 'Partially Paid' | 'Paid')
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-                  >
-                    <option value="Unpaid">{t('invoiceTracking.unpaid')}</option>
-                    <option value="Paid">{t('invoiceTracking.paid')}</option>
-                    <option value="Partially Paid">{t('invoiceTracking.partial')}</option>
-                  </select>
-                </div>
-                {salePaymentStatus === 'Partially Paid' && (
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">
-                      {t('consignments.saleAmountReceived') || 'Monto cobrado (USD)'}
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={saleAmountPaidInput}
-                      onChange={(e) => setSaleAmountPaidInput(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      placeholder="0.00"
-                    />
-                  </div>
-                )}
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    {t('consignments.salePaymentMethod') || 'Método de pago (opcional)'}
-                  </label>
-                  <input
-                    type="text"
-                    value={salePaymentMethod}
-                    onChange={(e) => setSalePaymentMethod(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    placeholder={t('consignments.salePaymentMethodPh') || 'Efectivo, transferencia…'}
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    {t('consignments.salePaymentComment') || 'Comentario (opcional)'}
-                  </label>
-                  <textarea
-                    value={salePaymentComment}
-                    onChange={(e) => setSalePaymentComment(e.target.value)}
-                    rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    placeholder={t('consignments.salePaymentCommentPh') || 'Referencia, banco, acuerdos…'}
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-gray-500">
-                {t('consignments.salePaymentHint') ||
-                  'La nota de venta quedará con el mismo estado en Seguimiento de notas de ventas; puede ajustar pagos después allí.'}
-              </p>
+          {/* Registrar ventas */}
+          <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="border-b border-gray-200 px-6 py-4">
+              <h3 className="text-lg font-semibold text-gray-900">{t('consignments.registerSales')}</h3>
+              <p className="mt-1 text-sm text-gray-500">{t('consignments.registerSalesIntro')}</p>
             </div>
+            <div className="p-6">
+              <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] xl:gap-8">
+                <div className="min-w-0 overflow-x-auto">
+                  <table className="w-full min-w-[640px] text-sm">
+                    <thead className={tableTheadClass}>
+                      <tr>
+                        <th className={`${tableThBaseClass} text-left`}>{t('consignments.sku')}</th>
+                        <th className={`${tableThBaseClass} text-left`}>{t('consignments.description')}</th>
+                        <th className={`${tableThBaseClass} text-center`}>{t('consignments.available')}</th>
+                        <th className={`${tableThBaseClass} text-center`}>{t('consignments.qtySold')}</th>
+                        <th className={`${tableThBaseClass} text-center`}>{t('consignments.saleUnitPriceUsd')}</th>
+                        <th className={`${tableThBaseClass} text-right`}>{t('consignments.saleLineTotalUsd')}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {detailItems.map((item, index) => {
+                        const available = item.quantityDelivered - item.quantitySold - item.quantityReturned;
+                        const qty = salesQuantities[index] || 0;
+                        const unitRaw = (saleUnitPrices[index] ?? '').trim().replace(',', '.');
+                        const unit = parseFloat(unitRaw);
+                        const lineTotal =
+                          qty > 0 && Number.isFinite(unit) && unit > 0
+                            ? roundMoney2(qty * unit)
+                            : null;
+                        return (
+                          <tr key={index} className="transition-colors hover:bg-gray-50">
+                            <td className="px-6 py-3 font-mono text-xs text-gray-900">{item.sku}</td>
+                            <td className="px-6 py-3 text-gray-700">{item.description}</td>
+                            <td className="px-6 py-3 text-center text-gray-700 tabular-nums">{available}</td>
+                            <td className="px-6 py-3 text-center">
+                              <input
+                                type="number"
+                                min="0"
+                                max={available}
+                                value={salesQuantities[index] ?? ''}
+                                onChange={(e) =>
+                                  setSalesQuantities({
+                                    ...salesQuantities,
+                                    [index]: parseInt(e.target.value, 10) || 0,
+                                  })
+                                }
+                                className="w-20 px-2 py-1 border border-gray-300 rounded text-center"
+                                disabled={available === 0}
+                              />
+                            </td>
+                            <td className="px-6 py-3 text-center">
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                placeholder="0.00"
+                                value={saleUnitPrices[index] ?? ''}
+                                onChange={(e) =>
+                                  setSaleUnitPrices({ ...saleUnitPrices, [index]: e.target.value })
+                                }
+                                className="w-24 px-2 py-1 border border-gray-300 rounded text-center"
+                                disabled={available === 0}
+                              />
+                            </td>
+                            <td className="px-6 py-3 text-right font-medium text-gray-800 tabular-nums">
+                              {lineTotal != null ? `$${lineTotal.toFixed(2)}` : '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
 
-            <button
-              type="button"
-              onClick={handleRegisterSales}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
-            >
-              {t('consignments.registerSalesButton')}
-            </button>
-          </div>
-        </div>
+                <aside className="mt-8 space-y-4 border-t border-gray-200 pt-8 xl:mt-0 xl:border-l xl:border-t-0 xl:pl-8 xl:pt-0">
+                  <h4 className="text-sm font-semibold text-gray-900">
+                    {t('consignments.salePaymentSection')}
+                  </h4>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide">
+                        {t('consignments.salePaymentStatus')}
+                      </label>
+                      <select
+                        value={salePaymentStatus}
+                        onChange={(e) =>
+                          setSalePaymentStatus(e.target.value as 'Unpaid' | 'Partially Paid' | 'Paid')
+                        }
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      >
+                        <option value="Unpaid">{t('invoiceTracking.unpaid')}</option>
+                        <option value="Paid">{t('invoiceTracking.paid')}</option>
+                        <option value="Partially Paid">{t('invoiceTracking.partial')}</option>
+                      </select>
+                    </div>
+                    {salePaymentStatus === 'Partially Paid' && (
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide">
+                          {t('consignments.saleAmountReceived')}
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={saleAmountPaidInput}
+                          onChange={(e) => setSaleAmountPaidInput(e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          placeholder="0.00"
+                        />
+                      </div>
+                    )}
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide">
+                        {t('consignments.salePaymentMethod')}
+                      </label>
+                      <input
+                        type="text"
+                        value={salePaymentMethod}
+                        onChange={(e) => setSalePaymentMethod(e.target.value)}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        placeholder={t('consignments.salePaymentMethodPh')}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide">
+                        {t('consignments.salePaymentComment')}
+                      </label>
+                      <textarea
+                        value={salePaymentComment}
+                        onChange={(e) => setSalePaymentComment(e.target.value)}
+                        rows={3}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        placeholder={t('consignments.salePaymentCommentPh')}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500">{t('consignments.salePaymentHint')}</p>
+                </aside>
+              </div>
 
-        {/* Register Returns — modal with search, quantities, problems & photos per line */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">{t('consignments.registerReturns')}</h3>
-          <p className="text-sm text-gray-600 mb-4">
-            {t('consignments.registerReturnsIntro') ||
-              'Abra el formulario para indicar qué líneas devuelve, cantidades, unidades con problema y fotos por artículo.'}
-          </p>
-          <button
-            type="button"
-            onClick={() => setReturnModalOpen(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            {t('consignments.openReturnModal') || 'Registrar devolución…'}
-          </button>
+              <div className="mt-8 flex flex-col gap-4 border-t border-gray-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-sm text-gray-600">
+                  {estimatedSaleTotal > 0 ? (
+                    <>
+                      <span className="text-gray-500">{t('common.total')}: </span>
+                      <span className="text-lg font-semibold text-gray-900 tabular-nums">
+                        ${estimatedSaleTotal.toFixed(2)}
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRegisterSales}
+                  className="sasa-btn-primary shrink-0 rounded-lg px-5 py-2.5 text-sm font-medium transition-colors"
+                >
+                  {t('consignments.registerSalesButton')}
+                </button>
+              </div>
+            </div>
+          </section>
+
+          {/* Registrar devoluciones */}
+          <section className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h3 className="text-lg font-semibold text-gray-900">{t('consignments.registerReturns')}</h3>
+                <p className="mt-1 text-sm text-gray-500">{t('consignments.registerReturnsIntro')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReturnModalOpen(true)}
+                className={`${tableRowActionButtonClass} shrink-0`}
+              >
+                <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+                {t('consignments.openReturnModal')}
+              </button>
+            </div>
+          </section>
         </div>
-      </div>
         <ConsignmentReturnModal
           open={returnModalOpen}
           consignment={selectedConsignment}
@@ -1713,12 +1819,7 @@ export default function Consignments() {
           onSubmit={handleReturnModalSubmit}
         />
         {/* Alert Dialog */}
-        <AlertDialog
-          open={alertDialog.open}
-          title={alertDialog.title}
-          message={alertDialog.message}
-          onClose={() => setAlertDialog({ open: false, message: '' })}
-        />
+        {alertDialogElement}
       </>
     );
   }
