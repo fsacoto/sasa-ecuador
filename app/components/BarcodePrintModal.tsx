@@ -19,7 +19,7 @@ interface BarcodePrintModalProps {
   onPrint: (
     items: Array<{ order: PurchaseOrder | null; inventoryItem: InventoryItem; quantity: number }>,
     printMode: 'full' | 'one-per-item' | 'single'
-  ) => void;
+  ) => void | Promise<void>;
 }
 
 type GroupingMode = 'invoice' | 'item';
@@ -99,6 +99,7 @@ export default function BarcodePrintModal({
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null);
   const [printMode, setPrintMode] = useState<PrintMode>('full');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const itemsByInvoice = useMemo(
     () => buildPrintRowsByInvoice(purchaseOrders, inventory),
@@ -210,7 +211,8 @@ export default function BarcodePrintModal({
     }
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    if (isSubmitting) return;
     const itemsToPrint: Array<{
       order: PurchaseOrder | null;
       inventoryItem: InventoryItem;
@@ -255,7 +257,12 @@ export default function BarcodePrintModal({
       return;
     }
 
-    onPrint(itemsToPrint, printMode);
+    setIsSubmitting(true);
+    try {
+      await onPrint(itemsToPrint, printMode);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const totalSelectedItems =
@@ -543,10 +550,12 @@ export default function BarcodePrintModal({
         <button
           type="button"
           onClick={handlePrint}
-          disabled={!canPrint}
+          disabled={!canPrint || isSubmitting}
           className="rounded-xl bg-[#515151] px-4 py-2 font-medium text-white transition-colors hover:bg-[#000000] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {t('purchaseOrders.print') || 'Print'}
+          {isSubmitting
+            ? t('purchaseOrders.barcodePrintPreparing')
+            : t('purchaseOrders.print') || 'Print'}
         </button>
       </div>
     </POModalShell>

@@ -20,6 +20,13 @@ import BulkImportEditPickerModal from './BulkImportEditPickerModal';
 import BulkDeleteModal from './BulkDeleteModal';
 import BulkStatusChangeModal from './BulkStatusChangeModal';
 import BarcodePrintModal from './BarcodePrintModal';
+import BarcodePrintProgress from './BarcodePrintProgress';
+import {
+  downloadBarcodePdfBlob,
+  prepareBarcodePrintItemsForPdf,
+  type BarcodePrintPdfItem,
+  type BarcodePrintProgressPhase,
+} from '../utils/barcodePrintPdf';
 import PurchaseOrderStatusCell from './PurchaseOrderStatusCell';
 import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 import PurchaseOrderQuantityCell from './PurchaseOrderQuantityCell';
@@ -112,6 +119,13 @@ export default function PurchaseOrders() {
   const [isBulkStatusChangeOpen, setIsBulkStatusChangeOpen] = useState(false);
   const [isPOVerificationModalOpen, setIsPOVerificationModalOpen] = useState(false);
   const [isBarcodePrintModalOpen, setIsBarcodePrintModalOpen] = useState(false);
+  const [barcodePrintBusy, setBarcodePrintBusy] = useState(false);
+  const [barcodePrintProgress, setBarcodePrintProgress] = useState<{
+    phase: BarcodePrintProgressPhase;
+    current: number;
+    total: number;
+  }>({ phase: 'images', current: 0, total: 0 });
+  const barcodePrintLockRef = useRef(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [editingOrder, setEditingOrder] = useState<PurchaseOrder | null>(null);
   
@@ -3707,80 +3721,53 @@ export default function PurchaseOrders() {
       )}
 
       {/* Barcode Print Modal */}
-      {isBarcodePrintModalOpen && (
+      {isBarcodePrintModalOpen && !barcodePrintBusy && (
         <BarcodePrintModal
           purchaseOrders={purchaseOrders}
           inventory={inventory}
           onClose={() => setIsBarcodePrintModalOpen(false)}
-          onPrint={async (items, printMode) => {
+          onPrint={async (items) => {
+            if (barcodePrintLockRef.current) return;
+            barcodePrintLockRef.current = true;
+            setIsBarcodePrintModalOpen(false);
+            setBarcodePrintBusy(true);
+            setBarcodePrintProgress({ phase: 'images', current: 0, total: 0 });
+
             try {
-              // Convert barcode images for PDF compatibility
-              const { convertImageForPDF } = await import('../utils/imageConverter');
-              const convertedItems = await Promise.all(
-                items.map(async (item) => {
-                  const rawUrl =
-                    item.inventoryItem?.barcode?.trim() ||
-                    item.order?.barcode?.trim() ||
-                    '';
-                  if (!rawUrl) {
-                    return item;
-                  }
-                  let convertedBarcode: string | null = null;
-                  try {
-                    convertedBarcode = await convertImageForPDF(rawUrl);
-                  } catch (e) {
-                    console.warn('Barcode image convert for PDF:', rawUrl.slice(0, 80), e);
-                  }
-                  const svgish =
-                    rawUrl.includes('image/svg+xml') ||
-                    rawUrl.toLowerCase().includes('.svg') ||
-                    rawUrl.includes('data:image/svg');
-                  if (!convertedBarcode && svgish && item.order?.sku) {
-                    try {
-                      const { generateBarcodeFromSKU, isValidBarcodeInput } = await import(
-                        '../utils/barcodeGenerator'
-                      );
-                      if (isValidBarcodeInput(item.order.sku)) {
-                        convertedBarcode = generateBarcodeFromSKU(item.order.sku);
-                      }
-                    } catch (e) {
-                      console.warn('Fallback PNG barcode from SKU failed:', e);
-                    }
-                  }
-                  const barcode = (convertedBarcode || rawUrl).trim();
-                  return {
-                    ...item,
-                    inventoryItem: {
-                      ...item.inventoryItem,
-                      barcode,
-                    },
-                  };
-                })
+              const prepared = await prepareBarcodePrintItemsForPdf(
+                items as BarcodePrintPdfItem[],
+                (phase, current, total) => {
+                  setBarcodePrintProgress({ phase, current, total });
+                }
               );
+              setBarcodePrintProgress({ phase: 'pdf', current: 0, total: 1 });
 
               const [{ pdf }, { default: BarcodeLabelPDF }] = await Promise.all([
                 import('@react-pdf/renderer'),
-                import('./BarcodeLabelPDF')
+                import('./BarcodeLabelPDF'),
               ]);
 
-              const pdfDocument = <BarcodeLabelPDF items={convertedItems} />;
-              const instance = pdf(pdfDocument);
-              const blob = await instance.toBlob();
-
-              const url = URL.createObjectURL(blob);
-              const link = document.createElement('a');
-              link.href = url;
-              link.download = `barcodes-${new Date().toISOString().split('T')[0]}.pdf`;
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-              URL.revokeObjectURL(url);
-              setIsBarcodePrintModalOpen(false);
+              const blob = await pdf(<BarcodeLabelPDF items={prepared} />).toBlob();
+              downloadBarcodePdfBlob(blob);
             } catch (error) {
               console.error('Error generating PDF:', error);
-              alert(t('purchaseOrders.barcodePrintError') || 'Error generating barcode labels. Please try again.');
+              alert(
+                t('purchaseOrders.barcodePrintError') ||
+                  'Error generating barcode labels. Please try again.'
+              );
+            } finally {
+              setBarcodePrintBusy(false);
+              barcodePrintLockRef.current = false;
             }
           }}
+        />
+      )}
+
+      {barcodePrintBusy && (
+        <BarcodePrintProgress
+          phase={barcodePrintProgress.phase}
+          current={barcodePrintProgress.current}
+          total={barcodePrintProgress.total}
         />
       )}
 
