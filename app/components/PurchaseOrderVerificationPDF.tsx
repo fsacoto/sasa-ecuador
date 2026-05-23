@@ -3,6 +3,7 @@
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { PurchaseOrder, Supplier } from '../types';
 import { formatDateLong } from '../utils/formatDate';
+import { formatPONumber } from '../utils/purchaseOrderFormat';
 
 const styles = StyleSheet.create({
   page: {
@@ -205,18 +206,6 @@ interface PurchaseOrderVerificationPDFProps {
   supplier: Supplier | null;
   logoSrc?: string;
 }
-
-// Format PO number from invoice
-const formatPONumber = (invoice: string): string => {
-  if (invoice && invoice.startsWith('PO-')) {
-    return invoice;
-  }
-  const numbers = invoice.match(/\d+/);
-  if (numbers) {
-    return `PO-${String(numbers[0]).padStart(5, '0')}`;
-  }
-  return invoice || 'PO-00000';
-};
 
 export default function PurchaseOrderVerificationPDF({ 
   orders, 

@@ -162,7 +162,7 @@ export default function POVerificationModal({
                           <span>{supplier?.name || t('purchaseOrders.unknownSupplier') || 'Unknown'}</span>
                         </div>
                         <div>
-                          <span className="font-medium">{t('purchaseOrders.invoiceDate') || 'Invoice Date'}:</span>{' '}
+                          <span className="font-medium">{t('purchaseOrders.invoiceDate') || 'Invoice Date'}</span>{' '}
                           <span>{invoiceDate}</span>
                         </div>
                         <div>

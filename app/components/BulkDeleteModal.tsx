@@ -350,7 +350,7 @@ export default function BulkDeleteModal({
             type="button"
             onClick={handleDelete}
             disabled={selectedInvoices.length === 0}
-            className="flex-1 rounded-xl bg-red-600 px-6 py-2.5 font-medium text-white shadow-sm transition-all hover:bg-red-700 hover:shadow active:scale-95 disabled:cursor-not-allowed disabled:bg-gray-400"
+            className="sasa-btn-primary flex-1 rounded-xl px-6 py-2.5 font-medium shadow-sm transition-all hover:shadow active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {selectedInvoices.length === 1
               ? t('purchaseOrders.bulkDelete.deleteInvoiceOne')
@@ -369,7 +369,7 @@ export default function BulkDeleteModal({
           description={deleteConfirmDescription}
           confirmText={t('common.delete')}
           cancelText={t('common.cancel')}
-          confirmVariant="danger"
+          confirmVariant="default"
           onConfirm={async () => {
             const invoices = [...pendingInvoices];
             setDeleteConfirmOpen(false);

@@ -1,11 +1,18 @@
-/** Formato PO-##### para mostrar en listas de facturas (misma lógica que verificación PDF). */
+/** Formato OC-##### para mostrar en listas de facturas (órdenes de compra). */
 export function formatPONumber(invoice: string): string {
-  if (invoice && invoice.startsWith('PO-')) {
-    return invoice;
+  const raw = (invoice || '').trim();
+  if (!raw) {
+    return 'OC-00000';
   }
-  const numbers = invoice.match(/\d+/);
+  if (raw.startsWith('OC-')) {
+    return raw;
+  }
+  if (raw.startsWith('PO-')) {
+    return `OC-${raw.slice(3)}`;
+  }
+  const numbers = raw.match(/\d+/);
   if (numbers) {
-    return `PO-${String(numbers[0]).padStart(5, '0')}`;
+    return `OC-${String(numbers[0]).padStart(5, '0')}`;
   }
-  return invoice || 'PO-00000';
+  return raw;
 }
