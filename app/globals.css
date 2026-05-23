@@ -836,6 +836,20 @@ body {
   border-color: rgba(255, 255, 255, 0.36) !important;
 }
 
+/* Inventario — columna código de barras centrada */
+.sasa-inventory-barcode-cell {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.app-dark-main .sasa-barcode-regenerate-btn {
+  color: #9ca3af !important;
+}
+
+.app-dark-main .sasa-barcode-regenerate-btn:hover {
+  color: #e5e7eb !important;
+}
+
 /* Dashboard inventory chips (categoría / línea) */
 .sasa-dashboard-chip {
   border-color: #d1d5db;

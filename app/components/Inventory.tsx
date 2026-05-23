@@ -20,6 +20,7 @@ import {
 } from '../utils/syncUpdates';
 import { handleMultipleImageUpload, validateImageFile } from '../utils/imageUpload';
 import { generateBarcodeFromSKU, isValidBarcodeInput } from '../utils/barcodeGenerator';
+import InventoryBarcodeCell from './InventoryBarcodeCell';
 import { useTranslation } from '../context/TranslationContext';
 import ConfirmDialog from './ui/ConfirmDialog';
 import { deleteMediaFile } from '../services/inventoryMediaService';
@@ -852,46 +853,18 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
           <td className="whitespace-nowrap px-6 py-4 text-center font-mono text-sm text-gray-700">{item.sku}</td>
         )}
         {!hiddenColumns.has('barcode') && (
-          <td className="whitespace-nowrap px-6 py-4 text-center text-sm">
-            {item.barcode ? (
-              <div className="flex items-center justify-center gap-2">
-                <img
-                  src={item.barcode}
-                  alt={`Barcode for ${item.sku}`}
-                  className="h-12 w-auto rounded border border-gray-200"
-                />
-                {!isReadOnly && (
-                  <button
-                    type="button"
-                    onClick={() => handleGenerateBarcode(item)}
-                    className="text-gray-400 transition-colors hover:text-[#515151]"
-                    title={t('inventory.regenerateBarcode') || 'Regenerate barcode'}
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                      />
-                    </svg>
-                  </button>
-                )}
-              </div>
-            ) : (
-              <button
-                type="button"
-                disabled={isReadOnly}
-                onClick={() => handleGenerateBarcode(item)}
-                className="mx-auto flex items-center justify-center gap-1 text-sm font-medium text-[#515151] transition-colors hover:text-[#000000] disabled:pointer-events-none disabled:opacity-50"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Generate
-              </button>
-            )}
-          </td>
+          <InventoryBarcodeCell
+            item={item}
+            isReadOnly={isReadOnly}
+            onGenerate={handleGenerateBarcode}
+            labels={{
+              generate: t('inventory.generateBarcode'),
+              regenerate: t('purchaseOrders.regenerateBarcode'),
+              alt: t('purchaseOrders.barcodeAlt'),
+              needSku: t('inventory.invalidSkuFormat'),
+              failed: t('inventory.barcodeGenerationFailed'),
+            }}
+          />
         )}
         {!hiddenColumns.has('category') && (
           <td className="whitespace-nowrap px-6 py-4 text-center text-sm text-gray-700">
@@ -1951,7 +1924,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                   </th>
                 )}
                 {!hiddenColumns.has('barcode') && (
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="sasa-inventory-barcode-cell px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('inventory.barcode')}
                   </th>
                 )}

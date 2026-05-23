@@ -89,7 +89,7 @@ export default function PurchaseOrderBarcodeCell({
             type="button"
             disabled={loading}
             onClick={(e) => run(e, true)}
-            className="text-[10px] font-medium text-[#515151] hover:text-black underline disabled:opacity-50"
+            className="sasa-barcode-regenerate-btn text-[10px] font-medium text-[#515151] hover:text-black underline disabled:opacity-50"
           >
             {loading ? '…' : labels.regenerate}
           </button>
