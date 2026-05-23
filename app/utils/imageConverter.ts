@@ -209,6 +209,38 @@ async function dataUrlForPdfRaster(base64String: string, sourceHint: string, mim
   }
 }
 
+/**
+ * Logo de marca para PDF sobre fondo de color (p. ej. portada del catálogo).
+ * Conserva el canal alpha; no usar convertImageForPDF, que rellena blanco.
+ */
+export async function loadTransparentBrandLogoForPdf(
+  publicPath = '/sasa.png'
+): Promise<string | null> {
+  if (typeof window === 'undefined' || !publicPath.trim()) return null;
+
+  try {
+    const response = await fetch(publicPath, { method: 'GET', cache: 'no-store' });
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    if (!blob.size) return null;
+
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result;
+        resolve(typeof result === 'string' ? result : '');
+      };
+      reader.onerror = () => reject(new Error('Failed to read brand logo'));
+      reader.readAsDataURL(blob);
+    });
+
+    return dataUrl.startsWith('data:image/') ? dataUrl : null;
+  } catch (error) {
+    console.warn('loadTransparentBrandLogoForPdf failed:', error);
+    return null;
+  }
+}
+
 export async function convertImageForPDF(imageUrl: string | undefined): Promise<string | null> {
   if (!imageUrl?.trim()) return null;
 

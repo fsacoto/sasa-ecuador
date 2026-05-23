@@ -51,7 +51,12 @@ const translateMaterialName = (materialName: string): string => {
       materialLower.includes('banado en oro') ||
       materialLower.includes('enchapado en oro')
     ) {
-      return materialTranslations.goldFilled || materialTranslations.oroRelleno || materialName.toUpperCase();
+      return (
+        materialTranslations.enchapadoEnOro ||
+        materialTranslations.goldFilled ||
+        materialTranslations.oroRelleno ||
+        materialName.toUpperCase()
+      );
     }
     if (materialLower.includes('sterling silver') || materialLower.includes('plata')) {
       return materialTranslations.sterlingSilver || materialTranslations.plata || materialName.toUpperCase();
@@ -67,6 +72,18 @@ function formatSkuNonBreaking(sku: string): string {
   return sku.replace(/-/g, '\u2011').replace(/ /g, '\u00A0');
 }
 
+/** Descripción: salto solo entre palabras; sin guiones de corte automático. */
+function formatCatalogDescriptionText(text: string): string {
+  return text
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.replace(/-/g, '\u2011'))
+    .join(' ');
+}
+
+/** react-pdf: no partir palabras con guiones; mover la palabra entera a la siguiente línea. */
+const catalogNoHyphenation = (word: string): string[] => [word];
+
 /** Fondo catálogo (página). */
 const CATALOG_PAGE_BG = '#FFFFFF';
 /** Pastilla “línea” (material): color de marca principal. */
@@ -76,54 +93,117 @@ const CATALOG_LINE_PILL_TEXT = '#2D141C';
 const CATALOG_PRICE_BG = '#D9D4CF';
 const CATALOG_PRICE_PLACEHOLDER_BG = '#E8E4E0';
 
-// A4 Landscape dimensions at 72 DPI: 842 × 595 px
-// Margin: 32px on all sides
-// Available content area: 778 × 531 px (842-64 × 595-64)
-// Gap between columns: 24px
-// Gap between rows: 32px
-// Product block width: (778 - 24) / 2 = 377px
-// Product block height: (531 - 32) / 2 = 249.5px ≈ 250px
-// Left panel (image): 377 × 0.7 = 263.9px ≈ 264px
-// Right panel (text): 377 × 0.3 = 113.1px ≈ 113px
+const PAGE_MARGIN = 32;
+
+type CatalogLayout = {
+  productsPerPage: number;
+  grid: { width: number; height: number };
+  rowGap: number;
+  colGap: number;
+  columnsPerRow: number;
+  productBlock: { width: number; height: number };
+  imagePanel: { width: number; height: number };
+  textPanel: { width: number; height: number };
+  imageTopOffset: number;
+  descriptionMaxHeight: number;
+  productDetailFontSize: number;
+  pagePaddingTop: number;
+  pagePaddingBottom: number;
+};
+
+/** Evita mostrar nombre y descripción cuando dicen lo mismo (o casi). */
+function catalogTextsAreDuplicate(name: string, description: string): boolean {
+  const normalize = (value: string) =>
+    value
+      .trim()
+      .replace(/\s+/g, ' ')
+      .toUpperCase();
+  const a = normalize(name);
+  const b = normalize(description);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return a.startsWith(b) || b.startsWith(a);
+}
+
+function getCatalogLayout(orientation: 'landscape' | 'portrait'): CatalogLayout {
+  if (orientation === 'portrait') {
+    // A4 vertical: 595 × 842 pt — 2 productos apilados a ancho completo
+    const pagePaddingTop = 14;
+    const pagePaddingBottom = 50;
+    const gridWidth = 595 - PAGE_MARGIN * 2; // 531
+    const gridHeight = 842 - pagePaddingTop - pagePaddingBottom; // 778
+    const rowGap = 24;
+    const blockHeight = (gridHeight - rowGap) / 2; // 377
+    const blockWidth = gridWidth;
+    const imageSize = Math.round(Math.min(blockHeight, blockWidth * 0.55)); // cuadrado
+    const textWidth = blockWidth - imageSize;
+    const imageTopOffset = (blockHeight - imageSize) / 2;
+    const priceFooterHeight = 58;
+    const textChrome = 72; // badge, categoría y márgenes del bloque superior
+
+    return {
+      productsPerPage: 2,
+      grid: { width: gridWidth, height: gridHeight },
+      rowGap,
+      colGap: 0,
+      columnsPerRow: 1,
+      productBlock: { width: blockWidth, height: blockHeight },
+      imagePanel: { width: imageSize, height: imageSize },
+      textPanel: { width: textWidth, height: blockHeight },
+      imageTopOffset,
+      descriptionMaxHeight: Math.round(
+        blockHeight - imageTopOffset - priceFooterHeight - textChrome
+      ),
+      productDetailFontSize: 15,
+      pagePaddingTop,
+      pagePaddingBottom,
+    };
+  }
+
+  // A4 horizontal: 842 × 595 pt — rejilla 2×2
+  const pagePaddingTop = PAGE_MARGIN;
+  const pagePaddingBottom = PAGE_MARGIN;
+  const gridWidth = 842 - PAGE_MARGIN * 2; // 778
+  const gridHeight = 595 - PAGE_MARGIN * 2; // 531
+  const rowGap = 32;
+  const colGap = 24;
+  const blockWidth = (gridWidth - colGap) / 2; // 377
+  const blockHeight = (gridHeight - rowGap) / 2; // 249.5
+  const imageSize = Math.round(Math.min(blockHeight, blockWidth * 0.7)); // cuadrado
+  const textWidth = blockWidth - imageSize;
+  const imageTopOffset = (blockHeight - imageSize) / 2;
+  const priceFooterHeight = 58;
+
+  return {
+    productsPerPage: 4,
+    grid: { width: gridWidth, height: gridHeight },
+    rowGap,
+    colGap,
+    columnsPerRow: 2,
+    productBlock: { width: blockWidth, height: blockHeight },
+    imagePanel: { width: imageSize, height: imageSize },
+    textPanel: { width: textWidth, height: blockHeight },
+    imageTopOffset,
+    descriptionMaxHeight: Math.round(
+      blockHeight - imageTopOffset - priceFooterHeight - 52
+    ),
+    productDetailFontSize: 14,
+    pagePaddingTop,
+    pagePaddingBottom,
+  };
+}
+
+function catalogPageStyle(layout: CatalogLayout) {
+  return {
+    backgroundColor: CATALOG_PAGE_BG,
+    paddingTop: layout.pagePaddingTop,
+    paddingBottom: layout.pagePaddingBottom,
+    paddingLeft: PAGE_MARGIN,
+    paddingRight: PAGE_MARGIN,
+  };
+}
 
 const styles = StyleSheet.create({
-  page: {
-    backgroundColor: CATALOG_PAGE_BG,
-    padding: 32,
-    paddingTop: 32,
-    paddingBottom: 32,
-    width: 842,
-    height: 595,
-  },
-  grid: {
-    flexDirection: 'column',
-    width: 778, // Available width: 842 - 64 (2×32px margins)
-    height: 531, // Available height: 595 - 64 (2×32px margins)
-  },
-  row: {
-    flexDirection: 'row',
-    width: 778,
-    height: 249.5, // (531 - 32) / 2 = 249.5px per row
-    marginBottom: 32, // Vertical spacing between rows (32px gap)
-    justifyContent: 'space-between', // Creates 24px gap between columns automatically
-  },
-  productBlock: {
-    width: 377, // (778 - 24) / 2 = 377px per product
-    height: 249.5, // (531 - 32) / 2 = 249.5px per product
-    flexDirection: 'row',
-  },
-  imagePanel: {
-    width: 264, // 70% of 377px = 263.9px ≈ 264px
-    height: 249.5, // Full block height
-    overflow: 'hidden',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  productImage: {
-    width: 264,
-    height: 249.5,
-  },
   noImage: {
     width: '100%',
     height: '100%',
@@ -136,19 +216,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#999',
     letterSpacing: 1,
-  },
-  textPanel: {
-    width: 113, // 30% of 377px = 113.1px ≈ 113px - FIXED WIDTH
-    height: 249.5, // Full block height - FIXED HEIGHT
-    paddingLeft: 12,
-    paddingTop: 9, // Top padding: 8-10px (using 9px)
-    paddingRight: 4,
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'flex-start', // Text at top, not centered
-    alignItems: 'flex-start',
-    // overflow: 'visible' removed - not supported in React PDF
-    flexWrap: 'nowrap', // Prevent wrapping of child elements
   },
   materialBadge: {
     paddingTop: 5,
@@ -167,6 +234,12 @@ const styles = StyleSheet.create({
     flexGrow: 0,
     flexWrap: 'nowrap',
     maxWidth: '100%',
+  },
+  materialBadgePortrait: {
+    paddingTop: 7,
+    paddingRight: 11,
+    paddingBottom: 6,
+    paddingLeft: 11,
   },
   materialBadgeText: {
     fontSize: 11,
@@ -198,34 +271,60 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     flexGrow: 0,
   },
-  productName: {
-    fontSize: 15, // 14-16px range (using 15px for balance)
+  materialBadgeTextPortrait: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.1,
+    fontFamily: 'Helvetica-Bold',
+    color: CATALOG_LINE_PILL_TEXT,
+    flexShrink: 0,
+    flexGrow: 0,
+  },
+  materialBadgeTextSmallPortrait: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.06,
+    fontFamily: 'Helvetica-Bold',
+    color: CATALOG_LINE_PILL_TEXT,
+    flexShrink: 0,
+    flexGrow: 0,
+  },
+  materialBadgeTextTinyPortrait: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.04,
+    fontFamily: 'Helvetica-Bold',
+    color: CATALOG_LINE_PILL_TEXT,
+    flexShrink: 0,
+    flexGrow: 0,
+  },
+  productDetail: {
     fontWeight: 'medium',
     color: '#333333',
-    marginBottom: 4,
+    marginBottom: 6,
     textTransform: 'uppercase',
-    lineHeight: 1.2, // Slightly more breathing room
-    letterSpacing: 0.15, // +1% letter spacing (15px * 0.01 = 0.15)
+    lineHeight: 1.25,
+    letterSpacing: 0.12,
     fontFamily: 'Helvetica',
     maxWidth: '100%',
-    maxHeight: 18, // Single line only: 15px * 1.2 = 18px
-    overflow: 'hidden',
-    whiteSpace: 'nowrap', // Never wrap to second line
-    textOverflow: 'ellipsis', // Truncate if too long (after font reduction)
   },
   descriptionWrap: {
-    maxHeight: 36,
-    overflow: 'hidden',
     width: '100%',
     marginBottom: 6,
+    flexGrow: 1,
+    flexShrink: 1,
   },
   productDescription: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: 'normal',
-    color: '#444444',
-    lineHeight: 1.25,
+    color: '#333333',
+    lineHeight: 1.5,
     fontFamily: 'Helvetica',
     maxWidth: '100%',
+    textTransform: 'uppercase',
   },
   sku: {
     fontSize: 7,
@@ -269,10 +368,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 8,
   },
+  pricePlaceholderPortrait: {
+    borderRadius: 18,
+    height: 36,
+    minWidth: 80,
+    paddingHorizontal: 10,
+  },
   pricePlaceholderDash: {
     fontSize: 13,
     color: '#666666',
     fontFamily: 'Helvetica',
+  },
+  pricePlaceholderDashPortrait: {
+    fontSize: 14,
   },
   priceBadge: {
     backgroundColor: CATALOG_PRICE_BG,
@@ -284,11 +392,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 8,
   },
+  priceBadgePortrait: {
+    borderRadius: 18,
+    height: 36,
+    minWidth: 80,
+    paddingHorizontal: 10,
+  },
   priceText: {
     fontSize: 14,
     fontWeight: 'bold',
     color: '#1a1a1a',
     fontFamily: 'Helvetica-Bold',
+  },
+  priceTextPortrait: {
+    fontSize: 15,
   },
   footer: {
     position: 'absolute',
@@ -303,6 +420,25 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: '#B0A598',
     letterSpacing: 0.5,
+  },
+  coverPage: {
+    backgroundColor: CATALOG_LINE_PILL_BG,
+    padding: 0,
+  },
+  coverInner: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+    height: '100%',
+  },
+  coverLogoLandscape: {
+    width: 300,
+    objectFit: 'contain',
+  },
+  coverLogoPortrait: {
+    width: 240,
+    objectFit: 'contain',
   },
 });
 
@@ -328,18 +464,34 @@ const getSkuSingleLineStyles = (
   return [styles.sku, { fontSize: 5, letterSpacing: 0.01 }];
 };
 
-const getBadgeTextStyle = (text: string) => {
+const getBadgeTextStyle = (text: string, isPortrait: boolean) => {
   const textLength = text.length;
+  if (isPortrait) {
+    if (textLength <= 10) return styles.materialBadgeTextPortrait;
+    if (textLength <= 16) return styles.materialBadgeTextSmallPortrait;
+    return styles.materialBadgeTextTinyPortrait;
+  }
   if (textLength <= 10) return styles.materialBadgeText;
   if (textLength <= 16) return styles.materialBadgeTextSmall;
   return styles.materialBadgeTextTiny;
 };
 
-function CatalogProductTextColumn({ product }: { product: InventoryItem }) {
+function CatalogProductTextColumn({
+  product,
+  layout,
+}: {
+  product: InventoryItem;
+  layout: CatalogLayout;
+}) {
   const t = (key: string) => translate(key);
   const skuDisplay = product.sku || t('inventory.catalog.noSku');
   const skuPdf = formatSkuNonBreaking(skuDisplay);
+  const nameTrim = (product.name || '').trim();
   const descriptionTrim = (product.description || '').trim();
+  const duplicateNameAndDescription =
+    Boolean(nameTrim && descriptionTrim) && catalogTextsAreDuplicate(nameTrim, descriptionTrim);
+  const showName = Boolean(nameTrim) && !duplicateNameAndDescription;
+  const showDescription = Boolean(descriptionTrim);
   const categoryTrim = (product.category || '').trim();
   const categoryDisplay = categoryTrim ? categoryTrim.toUpperCase() : '';
   const lineLabel = product.line ? translateMaterialName(product.line) : '';
@@ -349,46 +501,95 @@ function CatalogProductTextColumn({ product }: { product: InventoryItem }) {
     : [];
   const priceLabel = formatCatalogSalePrice(product.salePrice);
   const hasPrice = priceLabel !== '—';
+  const detailFontSize = layout.productDetailFontSize;
+  const descriptionPdf = formatCatalogDescriptionText(descriptionTrim);
+  const namePdf = formatCatalogDescriptionText(nameTrim);
+  const isPortrait = layout.columnsPerRow === 1;
 
   return (
-    <View style={styles.textPanel}>
-      {lineLabel ? (
-        <View style={styles.materialBadge}>
-          <Text style={getBadgeTextStyle(lineLabel)} wrap={false}>
-            {lineLabel}
+    <View
+      style={{
+        width: layout.textPanel.width,
+        height: layout.textPanel.height,
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <View style={{ height: layout.imageTopOffset, width: '100%', flexShrink: 0 }} />
+
+      <View
+        style={{
+          flexGrow: 1,
+          flexShrink: 1,
+          width: '100%',
+          paddingLeft: 12,
+          paddingRight: 4,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+        }}
+      >
+        {lineLabel ? (
+          <View style={[styles.materialBadge, isPortrait && styles.materialBadgePortrait]}>
+            <Text style={getBadgeTextStyle(lineLabel, isPortrait)} wrap={false}>
+              {lineLabel}
+            </Text>
+          </View>
+        ) : null}
+
+        {categoryDisplay ? (
+          <Text style={categoryTextStyles} wrap={false}>
+            {categoryDisplay}
           </Text>
-        </View>
-      ) : null}
+        ) : null}
 
-      {categoryDisplay ? (
-        <Text style={categoryTextStyles} wrap={false}>
-          {categoryDisplay}
-        </Text>
-      ) : null}
+        {showName ? (
+          <Text
+            style={[styles.productDetail, { fontSize: detailFontSize }]}
+            wrap
+            hyphenationCallback={catalogNoHyphenation}
+          >
+            {namePdf.toUpperCase()}
+          </Text>
+        ) : null}
 
-      <Text style={styles.productName} wrap={false}>
-        {product.name ? product.name.toUpperCase() : t('inventory.catalog.noName')}
-      </Text>
+        {showDescription ? (
+          <View style={[styles.descriptionWrap, { maxHeight: layout.descriptionMaxHeight }]}>
+            <Text
+              style={[styles.productDescription, { fontSize: detailFontSize - 1 }]}
+              wrap
+              hyphenationCallback={catalogNoHyphenation}
+            >
+              {descriptionPdf.toUpperCase()}
+            </Text>
+          </View>
+        ) : !showName ? (
+          <Text
+            style={[styles.productDetail, { fontSize: detailFontSize }]}
+            wrap
+            hyphenationCallback={catalogNoHyphenation}
+          >
+            {t('inventory.catalog.noName')}
+          </Text>
+        ) : null}
+      </View>
 
-      {descriptionTrim ? (
-        <View style={styles.descriptionWrap}>
-          <Text style={styles.productDescription}>{descriptionTrim}</Text>
-        </View>
-      ) : null}
-
-      <View style={styles.priceFooter}>
+      <View style={[styles.priceFooter, { paddingLeft: 12, paddingRight: 4, flexShrink: 0, width: '100%' }]}>
         <Text style={skuTextStyles} wrap={false}>
           {skuPdf}
         </Text>
         {hasPrice ? (
-          <View style={styles.priceBadge}>
-            <Text style={styles.priceText} wrap={false}>
+          <View style={[styles.priceBadge, isPortrait && styles.priceBadgePortrait]}>
+            <Text style={[styles.priceText, isPortrait && styles.priceTextPortrait]} wrap={false}>
               {priceLabel}
             </Text>
           </View>
         ) : (
-          <View style={styles.pricePlaceholder}>
-            <Text style={styles.pricePlaceholderDash} wrap={false}>
+          <View style={[styles.pricePlaceholder, isPortrait && styles.pricePlaceholderPortrait]}>
+            <Text
+              style={[styles.pricePlaceholderDash, isPortrait && styles.pricePlaceholderDashPortrait]}
+              wrap={false}
+            >
               —
             </Text>
           </View>
@@ -398,30 +599,220 @@ function CatalogProductTextColumn({ product }: { product: InventoryItem }) {
   );
 }
 
+function CatalogProductBlock({
+  product,
+  layout,
+  noImageLabel,
+}: {
+  product: InventoryItem;
+  layout: CatalogLayout;
+  noImageLabel: string;
+}) {
+  const hasImage =
+    product.images?.[0]?.startsWith('data:image/jpeg') ||
+    product.images?.[0]?.startsWith('data:image/jpg') ||
+    product.images?.[0]?.startsWith('data:image/png');
+
+  const imageSize = layout.imagePanel.width;
+
+  return (
+    <View
+      style={{
+        width: layout.productBlock.width,
+        height: layout.productBlock.height,
+        flexDirection: 'row',
+      }}
+    >
+      <View
+        style={{
+          width: imageSize,
+          height: layout.productBlock.height,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <View
+          style={{
+            width: imageSize,
+            height: imageSize,
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {hasImage ? (
+            <Image
+              src={product.images![0]}
+              style={{
+                width: imageSize,
+                height: imageSize,
+                objectFit: 'contain',
+              }}
+              cache={false}
+            />
+          ) : (
+            <View style={styles.noImage}>
+              <Text style={styles.noImageText}>{noImageLabel}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+
+      <CatalogProductTextColumn product={product} layout={layout} />
+    </View>
+  );
+}
+
+function chunkProducts(products: InventoryItem[], chunkSize: number): InventoryItem[][] {
+  const pages: InventoryItem[][] = [];
+  for (let i = 0; i < products.length; i += chunkSize) {
+    const pageProducts = products.slice(i, i + chunkSize);
+    if (pageProducts.length > 0) {
+      pages.push(pageProducts);
+    }
+  }
+  return pages;
+}
+
+function CatalogProductPage({
+  pageProducts,
+  layout,
+  noImageLabel,
+}: {
+  pageProducts: InventoryItem[];
+  layout: CatalogLayout;
+  noImageLabel: string;
+}) {
+  if (layout.columnsPerRow === 1) {
+    const singleProductPage = pageProducts.length === 1;
+
+    return (
+      <View
+        style={{
+          flexDirection: 'column',
+          width: layout.grid.width,
+          height: layout.grid.height,
+          justifyContent: singleProductPage ? 'center' : 'flex-start',
+        }}
+      >
+        {pageProducts.map((product, rowIndex) => (
+          <View
+            key={product.id}
+            style={{
+              flexDirection: 'row',
+              width: layout.grid.width,
+              height: layout.productBlock.height,
+              marginBottom: rowIndex < pageProducts.length - 1 ? layout.rowGap : 0,
+              justifyContent: 'flex-start',
+            }}
+          >
+            <CatalogProductBlock product={product} layout={layout} noImageLabel={noImageLabel} />
+          </View>
+        ))}
+      </View>
+    );
+  }
+
+  return (
+    <View
+      style={{
+        flexDirection: 'column',
+        width: layout.grid.width,
+        height: layout.grid.height,
+      }}
+    >
+      {pageProducts.length > 0 && (
+        <View
+          style={{
+            flexDirection: 'row',
+            width: layout.grid.width,
+            height: layout.productBlock.height,
+            marginBottom: pageProducts.length > 2 ? layout.rowGap : 0,
+            justifyContent: 'space-between',
+          }}
+        >
+          {pageProducts.slice(0, 2).map((product) => (
+            <CatalogProductBlock
+              key={product.id}
+              product={product}
+              layout={layout}
+              noImageLabel={noImageLabel}
+            />
+          ))}
+        </View>
+      )}
+
+      {pageProducts.length > 2 && (
+        <View
+          style={{
+            flexDirection: 'row',
+            width: layout.grid.width,
+            height: layout.productBlock.height,
+            justifyContent: 'space-between',
+          }}
+        >
+          {pageProducts.slice(2, 4).map((product) => (
+            <CatalogProductBlock
+              key={product.id}
+              product={product}
+              layout={layout}
+              noImageLabel={noImageLabel}
+            />
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function CatalogCoverPage({
+  orientation,
+  logoSrc,
+}: {
+  orientation: 'landscape' | 'portrait';
+  logoSrc: string;
+}) {
+  const logoStyle =
+    orientation === 'portrait' ? styles.coverLogoPortrait : styles.coverLogoLandscape;
+
+  return (
+    <Page size="A4" orientation={orientation} style={styles.coverPage} wrap={false}>
+      <View style={styles.coverInner}>
+        {logoSrc ? <Image src={logoSrc} style={logoStyle} cache={false} /> : null}
+      </View>
+    </Page>
+  );
+}
+
 interface ProductCatalogPDFProps {
   products: InventoryItem[];
   catalogTitle?: string;
   includeStock: boolean;
-  itemsPerPage: number;
   orientation: 'landscape' | 'portrait';
+  logoSrc?: string;
 }
 
 export default function ProductCatalogPDF({
   products = [],
   catalogTitle,
   includeStock = false,
-  itemsPerPage: _itemsPerPage = 4, // reservado: el layout 2×2 fija 4 ítems por página
   orientation = 'landscape',
+  logoSrc = '',
 }: ProductCatalogPDFProps) {
-  void _itemsPerPage;
   void catalogTitle;
   void includeStock;
   const t = (key: string) => translate(key);
+  const layout = getCatalogLayout(orientation);
+  const noImageLabel = t('inventory.catalog.noImage');
+
   // Handle empty products
   if (!products || products.length === 0) {
     return (
-      <Document>
-        <Page size="A4" orientation={orientation} style={styles.page}>
+      <Document hyphenationCallback={catalogNoHyphenation}>
+        <CatalogCoverPage orientation={orientation} logoSrc={logoSrc} />
+        <Page size="A4" orientation={orientation} style={catalogPageStyle(layout)}>
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
             <Text style={{ fontSize: 14, color: '#666' }}>{t('inventory.catalog.noProductsAvailable')}</Text>
           </View>
@@ -430,93 +821,25 @@ export default function ProductCatalogPDF({
     );
   }
 
-  // Layout fijo 2×2 = 4 productos por página (itemsPerPage del modal no cambia la rejilla aún)
-  const pages: InventoryItem[][] = [];
-  for (let i = 0; i < products.length; i += 4) {
-    const pageProducts = products.slice(i, i + 4);
-    // Only add page if it has at least one product (no empty pages, no placeholders)
-    if (pageProducts.length > 0) {
-      pages.push(pageProducts);
-    }
-  }
-  
-  // Ensure we don't have any empty pages (safety check)
-  const validPages = pages.filter(page => page.length > 0);
+  const validPages = chunkProducts(products, layout.productsPerPage);
 
   return (
-    <Document>
+    <Document hyphenationCallback={catalogNoHyphenation}>
+      <CatalogCoverPage orientation={orientation} logoSrc={logoSrc} />
       {validPages.map((pageProducts, pageIndex) => (
-        <Page 
-          key={pageIndex} 
-          size="A4" 
-          orientation={orientation} 
-          style={styles.page}
+        <Page
+          key={pageIndex}
+          size="A4"
+          orientation={orientation}
+          style={catalogPageStyle(layout)}
           wrap={false}
         >
-          {/* Product Grid - Render only actual products (no placeholders) */}
-          <View style={styles.grid}>
-            {/* First Row - Only render if products exist */}
-            {pageProducts.length > 0 && (
-              <View style={styles.row}>
-                {pageProducts.slice(0, 2).map((product) => {
-                  return (
-                    <View key={product.id} style={styles.productBlock}>
-                      {/* LEFT PANEL: Product Image (70% width) */}
-                      <View style={styles.imagePanel}>
-                        {product.images?.[0]?.startsWith('data:image/jpeg') ||
-                        product.images?.[0]?.startsWith('data:image/jpg') ||
-                        product.images?.[0]?.startsWith('data:image/png') ? (
-                          <Image
-                            src={product.images[0]}
-                            style={styles.productImage}
-                            cache={false}
-                          />
-                        ) : (
-                          <View style={styles.noImage}>
-                            <Text style={styles.noImageText}>{t('inventory.catalog.noImage')}</Text>
-                          </View>
-                        )}
-                      </View>
+          <CatalogProductPage
+            pageProducts={pageProducts}
+            layout={layout}
+            noImageLabel={noImageLabel}
+          />
 
-                      <CatalogProductTextColumn product={product} />
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-            
-            {/* Second Row - Only render if 3+ products exist */}
-            {pageProducts.length > 2 && (
-              <View style={[styles.row, { marginBottom: 0 }]}>
-                {pageProducts.slice(2, 4).map((product) => {
-                  return (
-                    <View key={product.id} style={styles.productBlock}>
-                      {/* LEFT PANEL: Product Image (70% width) */}
-                      <View style={styles.imagePanel}>
-                        {product.images?.[0]?.startsWith('data:image/jpeg') ||
-                        product.images?.[0]?.startsWith('data:image/jpg') ||
-                        product.images?.[0]?.startsWith('data:image/png') ? (
-                          <Image
-                            src={product.images[0]}
-                            style={styles.productImage}
-                            cache={false}
-                          />
-                        ) : (
-                          <View style={styles.noImage}>
-                            <Text style={styles.noImageText}>{t('inventory.catalog.noImage')}</Text>
-                          </View>
-                        )}
-                      </View>
-
-                      <CatalogProductTextColumn product={product} />
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-
-          {/* Footer */}
           <View style={styles.footer}>
             <Text style={styles.pageNumber}>
               {pageIndex + 1} / {validPages.length}

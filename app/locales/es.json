@@ -192,11 +192,12 @@
       "english": "Inglés",
       "spanish": "Español",
       "materialNames": {
-        "goldPlated": "ORO LAMINADO",
-        "goldFilled": "BAÑADO EN ORO",
+        "goldPlated": "BAÑO EN ORO",
+        "goldFilled": "ENCHAPADO EN ORO",
+        "enchapadoEnOro": "ENCHAPADO EN ORO",
         "sterlingSilver": "PLATA ESTERLINA",
-        "oroLaminado": "ORO LAMINADO",
-        "oroRelleno": "BAÑADO EN ORO",
+        "oroLaminado": "BAÑO EN ORO",
+        "oroRelleno": "ENCHAPADO EN ORO",
         "plata": "PLATA ESTERLINA"
       }
     },

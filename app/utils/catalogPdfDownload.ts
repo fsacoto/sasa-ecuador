@@ -6,14 +6,13 @@ export interface GenerateCatalogPDFParams {
   products: InventoryItem[];
   catalogTitle?: string;
   includeStock: boolean;
-  itemsPerPage: number;
   orientation: 'landscape' | 'portrait';
   fileName: string;
 }
 
 /** Genera y descarga el catálogo PDF (import estático desde el botón; evita fallos de chunk Turbopack). */
 export async function generateCatalogPDF(params: GenerateCatalogPDFParams): Promise<void> {
-  const { products, catalogTitle, includeStock, itemsPerPage, orientation, fileName } = params;
+  const { products, catalogTitle, includeStock, orientation, fileName } = params;
 
   let convertedProducts = products;
   try {
@@ -23,6 +22,14 @@ export async function generateCatalogPDF(params: GenerateCatalogPDFParams): Prom
     console.error('[catalog PDF] image prep failed, continuing without photos:', prepError);
     convertedProducts = products.map((p) => ({ ...p, images: [] }));
   }
+
+  const { loadTransparentBrandLogoForPdf } = await import('./imageConverter');
+  const { normalizePdfLogoSrc } = await import('./pdfRenderHelpers');
+  const logoPath = '/sasa.png';
+  const logoUrl =
+    typeof window !== 'undefined' ? `${window.location.origin}${logoPath}` : logoPath;
+  const logoBase64 = await loadTransparentBrandLogoForPdf(logoPath);
+  const logoSrc = normalizePdfLogoSrc(logoBase64, logoUrl);
 
   const React = await import('react');
 
@@ -42,8 +49,8 @@ export async function generateCatalogPDF(params: GenerateCatalogPDFParams): Prom
     products: convertedProducts,
     catalogTitle,
     includeStock,
-    itemsPerPage,
     orientation,
+    logoSrc,
   });
 
   const blob = await pdf(pdfDocument as never).toBlob();

@@ -22,7 +22,6 @@ export default function ProductCatalogModal({
   const { t } = useTranslation();
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [catalogTitle, setCatalogTitle] = useState(() => t('inventory.catalog.title'));
-  const [itemsPerPage, setItemsPerPage] = useState(4);
   const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape');
 
   // Filter states
@@ -148,35 +147,16 @@ export default function ProductCatalogModal({
               />
             </div>
 
-            {/* Diseño y orientación */}
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <label className={`block text-xs font-medium mb-1 ${fieldLabel}`}>{t('inventory.catalog.layoutLabel')}</label>
-                <select
-                  value={itemsPerPage}
-                  onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] text-sm ${fieldInput}`}
-                >
-                  <option value={2}>2 por página</option>
-                  <option value={4}>4 por página</option>
-                  <option value={6}>6 por página</option>
-                  <option value={8}>8 por página</option>
-                  <option value={9}>9 por página</option>
-                </select>
-              </div>
-
-              <div className="flex-1">
-                <label className={`block text-xs font-medium mb-1 ${fieldLabel}`}>{t('inventory.catalog.orientationLabel')}</label>
-                <select
-                  value={orientation}
-                  onChange={(e) => setOrientation(e.target.value as 'landscape' | 'portrait')}
-                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] text-sm ${fieldInput}`}
-                >
-                  <option value="landscape">{t('inventory.catalog.landscape')}</option>
-                  <option value="portrait">{t('inventory.catalog.portrait')}</option>
-                </select>
-              </div>
-
+            <div>
+              <label className={`block text-xs font-medium mb-1 ${fieldLabel}`}>{t('inventory.catalog.orientationLabel')}</label>
+              <select
+                value={orientation}
+                onChange={(e) => setOrientation(e.target.value as 'landscape' | 'portrait')}
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] text-sm ${fieldInput}`}
+              >
+                <option value="landscape">{t('inventory.catalog.landscape')}</option>
+                <option value="portrait">{t('inventory.catalog.portrait')}</option>
+              </select>
             </div>
           </div>
         </div>
@@ -404,7 +384,6 @@ export default function ProductCatalogModal({
                 products={selectedInventory}
                 catalogTitle={catalogTitle}
                 includeStock={false}
-                itemsPerPage={itemsPerPage}
                 orientation={orientation}
                 fileName={`${catalogTitle.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`}
               />

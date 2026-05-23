@@ -8,7 +8,7 @@ export const PREDEFINED_CATEGORIES_ES = [
   'Aretes',
 ] as const;
 
-export const PREDEFINED_LINES_ES = ['Baño en oro', 'Bañado en oro', 'Plata esterlina'] as const;
+export const PREDEFINED_LINES_ES = ['Baño en Oro', 'Enchapado en Oro'] as const;
 
 /** Valores en inglés legados (misma jerarquía que las categorías ES). */
 const LEGACY_CATEGORIES_EN = [
@@ -49,15 +49,22 @@ for (const c of PREDEFINED_CATEGORIES_ES) {
 }
 
 export const LINE_TO_ES: Record<string, string> = {
-  'gold plated': 'Baño en oro',
-  [LEGACY_LINES_EN[0]]: 'Baño en oro',
-  /** Gold filled / oro relleno → etiqueta comercial: bañado en oro */
-  'gold filled': 'Bañado en oro',
-  [LEGACY_LINES_EN[1]]: 'Bañado en oro',
-  'oro relleno': 'Bañado en oro',
-  'enchapado en oro': 'Bañado en oro',
+  'gold plated': 'Baño en Oro',
+  'oro laminado': 'Baño en Oro',
+  [LEGACY_LINES_EN[0]]: 'Baño en Oro',
+  'baño en oro': 'Baño en Oro',
+  'bano en oro': 'Baño en Oro',
+  'enchapado en oro': 'Enchapado en Oro',
+  'gold filled': 'Enchapado en Oro',
+  [LEGACY_LINES_EN[1]]: 'Enchapado en Oro',
+  'oro relleno': 'Enchapado en Oro',
+  /** Datos antiguos “bañado en oro” → Enchapado en Oro */
+  'bañado en oro': 'Enchapado en Oro',
+  'banado en oro': 'Enchapado en Oro',
+  /** Plata y otras líneas retiradas del catálogo; se muestran tal cual si ya existen en BD */
   'sterling silver': 'Plata esterlina',
   [LEGACY_LINES_EN[2]]: 'Plata esterlina',
+  'plata esterlina': 'Plata esterlina',
 };
 
 for (const line of PREDEFINED_LINES_ES) {

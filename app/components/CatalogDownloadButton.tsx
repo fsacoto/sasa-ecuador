@@ -9,7 +9,6 @@ interface CatalogDownloadButtonProps {
   products: InventoryItem[];
   catalogTitle: string;
   includeStock: boolean;
-  itemsPerPage: number;
   orientation: 'landscape' | 'portrait';
   fileName: string;
 }
@@ -18,7 +17,6 @@ export default function CatalogDownloadButton({
   products,
   catalogTitle,
   includeStock,
-  itemsPerPage,
   orientation,
   fileName,
 }: CatalogDownloadButtonProps) {
@@ -39,7 +37,6 @@ export default function CatalogDownloadButton({
         products,
         catalogTitle,
         includeStock,
-        itemsPerPage,
         orientation,
         fileName,
       });
