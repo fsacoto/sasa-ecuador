@@ -1435,14 +1435,7 @@ function AppContent() {
           >
             {activeTab === 'dashboard' &&
               (user?.role !== 'marketing' || !SHOW_CMS_IN_NAVIGATION) && (
-              <Dashboard
-                onNavigate={(tab, filters) => {
-                  setActiveTab(tab as Tab);
-                  if (filters) {
-                    sessionStorage.setItem(`dashboardFilters_${tab}`, JSON.stringify(filters));
-                  }
-                }}
-              />
+              <Dashboard />
             )}
             {activeTab === 'suppliers' && hasPermission('suppliers.view') && <Suppliers />}
             {activeTab === 'purchase-orders' && hasPermission('purchase.view') && <PurchaseOrders />}
