@@ -1,7 +1,6 @@
 import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy, QueryDocumentSnapshot, Timestamp, deleteField } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { PurchaseOrder, PurchaseOrderStatus } from '../types';
-import { cleanupPurchaseOrderAssets } from './firebaseDeleteAssets';
 
 const COLLECTION_NAME = 'purchaseOrders';
 
@@ -164,14 +163,10 @@ export async function updatePurchaseOrder(id: string, updates: Partial<PurchaseO
   }
 }
 
-// Delete a purchase order and its Storage assets (images, verification media, etc.)
+// Delete a purchase order
 export async function deletePurchaseOrder(id: string): Promise<void> {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      await cleanupPurchaseOrderAssets(toPurchaseOrder(docSnap));
-    }
     await deleteDoc(docRef);
   } catch (error) {
     console.error('Error deleting purchase order:', error);
@@ -200,16 +195,7 @@ export async function deletePurchaseOrdersBulk(ids: string[]): Promise<void> {
   const unique = [...new Set(ids.filter(Boolean))];
   if (unique.length === 0) return;
   try {
-    await Promise.all(
-      unique.map(async (id) => {
-        const docRef = doc(db, COLLECTION_NAME, id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          await cleanupPurchaseOrderAssets(toPurchaseOrder(docSnap));
-        }
-        await deleteDoc(docRef);
-      })
-    );
+    await Promise.all(unique.map((id) => deletePurchaseOrder(id)));
   } catch (error) {
     console.error('Error deleting purchase orders in bulk:', error);
     throw error;

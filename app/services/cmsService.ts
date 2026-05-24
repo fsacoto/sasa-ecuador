@@ -11,11 +11,9 @@ import {
   orderBy,
   QueryDocumentSnapshot,
   Timestamp,
-  DocumentSnapshot,
 } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { CMSContent, CMSContentDraftInput, ContentStatus } from '../types';
-import { cleanupCMSContentAssets } from './firebaseDeleteAssets';
 
 const COLLECTION_NAME = 'cmsContent';
 
@@ -51,8 +49,8 @@ export function sanitizeForFirestoreWrite(input: unknown): unknown {
 }
 
 // Helper to convert Firestore data to CMSContent
-const toCMSContent = (doc: QueryDocumentSnapshot | DocumentSnapshot): CMSContent => {
-  const data = doc.data() ?? {};
+const toCMSContent = (doc: QueryDocumentSnapshot): CMSContent => {
+  const data = doc.data();
   const metadataData = data.metadata || {};
   const publishedAtTimestamp = metadataData.publishedAt as Timestamp | undefined;
   const archivedAtTimestamp = metadataData.archivedAt as Timestamp | undefined;
@@ -413,14 +411,10 @@ export async function resubmitRejectedContent(
   }
 }
 
-// Delete a CMS content item and its Storage assets (images, videos)
+// Delete a CMS content item
 export async function deleteCMSContent(id: string): Promise<void> {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      await cleanupCMSContentAssets(toCMSContent(docSnap));
-    }
     await deleteDoc(docRef);
   } catch (error) {
     console.error('Error deleting CMS content:', error);

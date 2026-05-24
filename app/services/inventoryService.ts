@@ -2,8 +2,6 @@ import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, 
 import { db } from '../utils/firebase';
 import { ConsignmentReturnIssueRef, InventoryItem } from '../types';
 import { normalizeSalePrice } from '../utils/salePrice';
-import { cleanupInventoryItemAssets } from './firebaseDeleteAssets';
-import { deleteInventoryMediaForSku } from './inventoryMediaService';
 
 const COLLECTION_NAME = 'inventory';
 
@@ -168,18 +166,10 @@ export async function updateInventoryItem(id: string, updates: Partial<Inventory
   }
 }
 
-// Delete an inventory item and its Storage assets (images, barcode, media index, etc.)
+// Delete an inventory item
 export async function deleteInventoryItem(id: string): Promise<void> {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      const item = toInventoryItem(docSnap);
-      await cleanupInventoryItemAssets(item);
-      if (item.sku) {
-        await deleteInventoryMediaForSku(item.sku);
-      }
-    }
     await deleteDoc(docRef);
   } catch (error) {
     console.error('Error deleting inventory item:', error);

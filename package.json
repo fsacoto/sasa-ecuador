@@ -11,9 +11,7 @@
     "firebase:deploy:prod": "firebase deploy --only firestore:rules,firestore:indexes,storage --project sasa-ecuador",
     "firebase:deploy:dev": "firebase deploy --only firestore:rules,firestore:indexes,storage --project sasa-ecuador-dev",
     "firebase:cors:prod": "gsutil cors set storage-cors.json gs://sasa-ecuador.firebasestorage.app",
-    "firebase:cors": "echo \"Apply CORS: gsutil cors set storage-cors.json gs://YOUR_BUCKET_ID\" && echo \"Bucket id = Firebase Console → Storage (same as NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET).\"",
-    "storage:cleanup:dev": "tsx scripts/cleanup-orphaned-storage.ts --project=sasa-ecuador-dev",
-    "storage:cleanup:prod": "tsx scripts/cleanup-orphaned-storage.ts --project=sasa-ecuador"
+    "firebase:cors": "echo \"Apply CORS: gsutil cors set storage-cors.json gs://YOUR_BUCKET_ID\" && echo \"Bucket id = Firebase Console → Storage (same as NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET).\""
   },
   "dependencies": {
     "@dataconnect/generated": "file:src/dataconnect-generated",
@@ -38,9 +36,7 @@
     "@types/video.js": "^7.3.58",
     "eslint": "^9",
     "eslint-config-next": "15.5.14",
-    "firebase-admin": "^12.6.0",
     "tailwindcss": "^4",
-    "tsx": "^4.20.6",
     "typescript": "^5"
   }
 }

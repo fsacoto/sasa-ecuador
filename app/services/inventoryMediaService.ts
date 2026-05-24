@@ -1,8 +1,7 @@
 import { collection, doc, updateDoc, deleteDoc, getDocs, query, where, orderBy, limit, QueryDocumentSnapshot, Timestamp, setDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { InventoryMedia } from '../types';
-import { extractStoragePath, isFirebaseStorageURL } from './storageService';
-import { deleteStorageUrlsBestEffort, deleteStoragePathBestEffort } from './firebaseDeleteAssets';
+import { deleteFile, extractStoragePath, isFirebaseStorageURL } from './storageService';
 
 const COLLECTION_NAME = 'inventoryMedia';
 
@@ -139,19 +138,6 @@ export async function markMediaAsOrphaned(sku: string): Promise<void> {
   }
 }
 
-// Delete media document and all Storage files for a SKU (used when inventory item is deleted)
-export async function deleteInventoryMediaForSku(sku: string): Promise<void> {
-  try {
-    const existingMedia = await getMediaBySKU(sku);
-    if (!existingMedia) return;
-    await deleteStorageUrlsBestEffort(existingMedia.images);
-    await deleteInventoryMedia(existingMedia.id);
-  } catch (error) {
-    console.error('Error deleting inventory media for SKU:', sku, error);
-    throw error;
-  }
-}
-
 // Delete media (if needed)
 export async function deleteInventoryMedia(id: string): Promise<void> {
   try {
@@ -180,7 +166,8 @@ export async function deleteMediaFile(imageUrl: string): Promise<void> {
       throw new Error('Invalid storage URL');
     }
 
-  await deleteStoragePathBestEffort(storagePath);
+    // Delete the file from storage
+    await deleteFile(storagePath);
   } catch (error) {
     console.error('Error deleting media file from storage:', error);
     throw error;

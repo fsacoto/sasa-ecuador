@@ -1818,20 +1818,15 @@ export default function PurchaseOrders() {
   const groupedOrders = getGroupedOrders();
 
   // Confirmation handlers
-  const handleDeleteConfirm = async () => {
+  const handleDeleteConfirm = () => {
     if (orderToDelete) {
-      try {
-        await cleanupInventoryAfterOrderDeletion(
-          [orderToDelete.id],
-          inventory,
-          updateInventoryItem,
-          purchaseOrders
-        );
-        await deletePurchaseOrder(orderToDelete.id);
-      } catch (error) {
-        console.error('Error deleting purchase order:', error);
-        alert(t('purchaseOrders.bulkDelete.deleteError'));
-      }
+      void cleanupInventoryAfterOrderDeletion(
+        [orderToDelete.id],
+        inventory,
+        updateInventoryItem,
+        purchaseOrders
+      );
+      deletePurchaseOrder(orderToDelete.id);
       setOrderToDelete(null);
     }
     setDeleteConfirmOpen(false);
@@ -3768,13 +3763,13 @@ export default function PurchaseOrders() {
 
             setBulkDeleteBusy(true);
             try {
+              await deletePurchaseOrdersBulk(deletedOrderIds);
               await cleanupInventoryAfterOrderDeletion(
                 deletedOrderIds,
                 inventory,
                 updateInventoryItem,
                 ordersSnapshot
               );
-              await deletePurchaseOrdersBulk(deletedOrderIds);
             } catch (error) {
               console.error('Bulk delete failed:', error);
               alert(t('purchaseOrders.bulkDelete.deleteError'));
