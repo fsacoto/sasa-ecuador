@@ -1,6 +1,8 @@
 {
   "projects": {
-    "default": "sasa-ecuador-dev"
+    "default": "sasa-ecuador-dev",
+    "dev": "sasa-ecuador-dev",
+    "prod": "sasa-ecuador"
   },
   "targets": {},
   "etags": {}
