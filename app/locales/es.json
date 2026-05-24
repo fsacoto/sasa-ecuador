@@ -1594,6 +1594,8 @@
     "signingIn": "Iniciando sesión...",
     "login": "Iniciar Sesión",
     "loginError": "Correo electrónico o contraseña inválidos",
+    "wrongPassword": "Contraseña incorrecta",
+    "emailNotRegistered": "Correo electrónico no registrado",
     "loginRequired": "Debe iniciar sesión",
     "forgotPassword": "¿Olvidó su contraseña?",
     "sendingReset": "Enviando…",

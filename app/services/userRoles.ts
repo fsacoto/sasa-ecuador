@@ -2,7 +2,20 @@ import { doc, getDoc, setDoc, type DocumentSnapshot } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 
 /** Firebase Auth UIDs that should always have admin role (Firestore `users/{uid}` is updated on login). */
-const ADMIN_USER_IDS = new Set<string>(['gqDGyqvjHoT9Rtx238A2xPGcVa73']);
+const ADMIN_USER_IDS = new Set<string>([
+  'gqDGyqvjHoT9Rtx238A2xPGcVa73',
+  '1XxuHojZ7aN4dcvfss8qEhq5rXD2', // melinasacoto@gmail.com — Melina Sacoto
+  'QxIlSZxCwvcWEEFiqeUJuc6OxM83', // santanderacosta@yahoo.com — Yesenia Santander
+]);
+
+/** Known users by email (lowercase). Applied on login when creating/updating Firestore `users/{uid}`. */
+const KNOWN_USERS: Record<string, { name: string; role: UserRole }> = {
+  'fernandosacoto@gmail.com': { name: 'Fernando Sacoto', role: 'admin' },
+  'sacoto49@gmail.com': { name: 'Fernando Sacoto', role: 'admin' },
+  'melinasacoto@gmail.com': { name: 'Melina Sacoto', role: 'admin' },
+  'santanderacosta@yahoo.com': { name: 'Yesenia Santander', role: 'admin' },
+  'josesacoto1@gmail.com': { name: 'Jose Sacoto', role: 'marketing' },
+};
 
 export type UserRole = 'admin' | 'marketing' | 'sales';
 
@@ -134,28 +147,21 @@ export async function createUserDocument(userId: string, email: string, displayN
     const userDoc = await getDoc(doc(db, 'users', userId));
     
     const emailLower = email.toLowerCase();
-    
-    // Check for specific users
+    const knownUser = KNOWN_USERS[emailLower];
+
     const isAdminByUid = ADMIN_USER_IDS.has(userId);
-    const isAdminUser = emailLower === 'fernandosacoto@gmail.com' || (emailLower.includes('sacoto') && emailLower !== 'josesacoto1@gmail.com');
-    const isJoseSacoto = emailLower === 'josesacoto1@gmail.com';
-    
+
     let userName: string;
     let userRole: UserRole;
-    
-    if (isAdminByUid) {
+
+    if (knownUser) {
+      userName = knownUser.name;
+      userRole = knownUser.role;
+    } else if (isAdminByUid) {
       userName = displayName || email.split('@')[0];
       userRole = 'admin';
-    } else if (isAdminUser) {
-      userName = 'Fernando Sacoto';
-      userRole = 'admin';
-    } else if (isJoseSacoto) {
-      userName = 'Jose Sacoto';
-      userRole = 'marketing';
     } else {
       userName = displayName || email.split('@')[0];
-      // Default to marketing role for new users
-      // Admins can manually promote users if needed
       userRole = 'marketing';
     }
     
@@ -181,9 +187,8 @@ export async function createUserDocument(userId: string, email: string, displayN
       // User exists, update name and role if needed to ensure they match
       const existingData = userDoc.data();
       const needsUpdate =
-        (isAdminByUid && existingData.role !== 'admin') ||
-        (isAdminUser && (existingData.name !== 'Fernando Sacoto' || existingData.role !== 'admin')) ||
-        (isJoseSacoto && (existingData.name !== 'Jose Sacoto' || existingData.role !== 'marketing'));
+        existingData.name !== userName ||
+        normalizeUserRole(existingData.role) !== userRole;
       
       if (needsUpdate) {
         try {

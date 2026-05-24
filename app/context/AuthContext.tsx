@@ -6,6 +6,7 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
   sendPasswordResetEmail,
+  fetchSignInMethodsForEmail,
   User as FirebaseUser
 } from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
@@ -26,9 +27,12 @@ export interface User {
 /** Result of requesting a password reset email. */
 export type ResetPasswordOutcome = 'sent' | 'not-found' | 'failed';
 
+/** Result of email/password sign-in. */
+export type LoginOutcome = 'success' | 'wrong-password' | 'email-not-found' | 'failed';
+
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<LoginOutcome>;
   resetPassword: (email: string) => Promise<ResetPasswordOutcome>;
   logout: () => void;
   isLoading: boolean;
@@ -92,54 +96,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
-    setIsLoading(true);
-    
+  const resolveCredentialFailure = async (trimmedEmail: string): Promise<LoginOutcome> => {
     try {
-      // Trim email to avoid whitespace issues
+      const methods = await fetchSignInMethodsForEmail(auth, trimmedEmail);
+      return methods.length === 0 ? 'email-not-found' : 'wrong-password';
+    } catch {
+      return 'failed';
+    }
+  };
+
+  const login = async (email: string, password: string): Promise<LoginOutcome> => {
+    try {
       const trimmedEmail = email.trim();
-      
+
       if (!trimmedEmail || !password) {
-        setIsLoading(false);
-        return false;
+        return 'failed';
       }
-      
+
       await signInWithEmailAndPassword(auth, trimmedEmail, password);
-      setIsLoading(false);
-      return true;
+      return 'success';
     } catch (error) {
-      setIsLoading(false);
-      
       // Handle Firebase Auth errors
       if (error instanceof FirebaseError) {
         const errorCode = error.code;
         console.error('Login error:', errorCode, error.message);
         
-        // Handle specific error codes
         switch (errorCode) {
+          case 'auth/user-not-found':
+            return 'email-not-found';
+          case 'auth/wrong-password':
+            return 'wrong-password';
+          case 'auth/invalid-credential':
+            return await resolveCredentialFailure(email.trim());
           case 'auth/invalid-email':
           case 'auth/user-disabled':
-          case 'auth/user-not-found':
-          case 'auth/wrong-password':
-          case 'auth/invalid-credential':
-            // For security, we don't reveal which specific error occurred
-            // All these errors result in the same user-facing message
-            return false;
+            return 'failed';
           case 'auth/too-many-requests':
             console.error('Too many login attempts. Please try again later.');
-            return false;
+            return 'failed';
           case 'auth/network-request-failed':
             console.error('Network error. Please check your connection.');
-            return false;
+            return 'failed';
           default:
             console.error('Unexpected authentication error:', errorCode);
-            return false;
+            return 'failed';
         }
       }
       
       // Handle non-FirebaseError errors
       console.error('Login error:', error);
-      return false;
+      return 'failed';
     }
   };
 

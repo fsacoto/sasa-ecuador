@@ -11,16 +11,26 @@ export default function LoginForm() {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [resetSending, setResetSending] = useState(false);
-  const { login, resetPassword, isLoading } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { login, resetPassword } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccessMessage('');
 
-    const success = await login(email, password);
-    if (!success) {
-      setError(t('login.loginError'));
+    setIsSubmitting(true);
+    try {
+      const outcome = await login(email, password);
+      if (outcome === 'wrong-password') {
+        setError(t('login.wrongPassword'));
+      } else if (outcome === 'email-not-found') {
+        setError(t('login.emailNotRegistered'));
+      } else if (outcome === 'failed') {
+        setError(t('login.loginError'));
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -108,10 +118,10 @@ export default function LoginForm() {
 
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isSubmitting}
               className="w-full rounded-lg bg-black py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isLoading ? (
+              {isSubmitting ? (
                 <span className="inline-flex items-center justify-center gap-2">
                   <svg
                     className="h-4 w-4 animate-spin text-white"
