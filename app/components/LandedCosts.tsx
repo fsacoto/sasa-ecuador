@@ -894,7 +894,6 @@ export default function LandedCosts({ darkMode = false }: LandedCostsProps) {
         description={t('landedCosts.deleteConfirm')}
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
-        confirmVariant="danger"
         onConfirm={confirmDelete}
         onCancel={() => {
           setDeleteConfirmOpen(false);

@@ -369,7 +369,6 @@ export default function BulkDeleteModal({
           description={deleteConfirmDescription}
           confirmText={t('common.delete')}
           cancelText={t('common.cancel')}
-          confirmVariant="default"
           onConfirm={async () => {
             const invoices = [...pendingInvoices];
             setDeleteConfirmOpen(false);

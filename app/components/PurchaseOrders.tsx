@@ -4143,7 +4143,6 @@ export default function PurchaseOrders() {
         description={t('purchaseOrders.deleteConfirm')}
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
-        confirmVariant="danger"
         onConfirm={handleDeleteConfirm}
         onCancel={() => {
           setDeleteConfirmOpen(false);

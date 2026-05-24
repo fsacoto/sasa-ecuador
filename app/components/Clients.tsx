@@ -643,7 +643,6 @@ export default function Clients() {
         description={clientToDelete ? `${t('clients.deleteConfirm')} ${clientToDelete.name}?` : ''}
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
-        confirmVariant="danger"
         onConfirm={confirmDelete}
         onCancel={() => {
           setDeleteConfirmOpen(false);

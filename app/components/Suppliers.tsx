@@ -485,7 +485,6 @@ export default function Suppliers() {
         description={supplierToDelete ? t('suppliers.deleteConfirm') : ''}
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
-        confirmVariant="danger"
         onConfirm={() => {
           if (supplierToDelete) {
             deleteSupplier(supplierToDelete.id);

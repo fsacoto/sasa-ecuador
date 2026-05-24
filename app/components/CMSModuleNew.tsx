@@ -2204,7 +2204,6 @@ export default function CMSModuleNew() {
             description={contentToDelete ? `Are you sure you want to delete "${contentToDelete.title}"? This action cannot be undone.` : ''}
             confirmText={t('common.delete')}
             cancelText={t('common.cancel')}
-            confirmVariant="danger"
             onConfirm={async () => {
               if (contentToDelete) {
                 try {
@@ -2253,7 +2252,6 @@ export default function CMSModuleNew() {
             description={contentToDelete ? `Are you sure you want to permanently delete "${contentToDelete.title}"? This action cannot be undone.` : ''}
             confirmText={t('common.delete')}
             cancelText={t('common.cancel')}
-            confirmVariant="danger"
             onConfirm={async () => {
               if (contentToDelete) {
                 try {
@@ -2913,7 +2911,6 @@ function ContentDetailModal({
         description={contentToDelete ? `Are you sure you want to delete "${contentToDelete.title}"? This action cannot be undone.` : ''}
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
-        confirmVariant="danger"
         onConfirm={async () => {
           if (contentToDelete) {
             try {
@@ -2966,7 +2963,6 @@ function ContentDetailModal({
         description={contentToDelete ? `Are you sure you want to permanently delete "${contentToDelete.title}"? This action cannot be undone.` : ''}
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
-        confirmVariant="danger"
         onConfirm={async () => {
           if (contentToDelete) {
             try {
@@ -3241,7 +3237,6 @@ function VideoPlayerModal({
           description="Are you sure you want to permanently delete this video? This action cannot be undone. The file will be removed from Firebase Storage."
           confirmText="Delete"
           cancelText="Cancel"
-          confirmVariant="danger"
           onConfirm={async () => {
             try {
               if (onDelete) {
@@ -5751,7 +5746,6 @@ function ContentView({
               description="Are you sure you want to permanently delete this media file? This action cannot be undone. The file will be removed from Firebase Storage."
               confirmText="Delete Permanently"
               cancelText="Cancel"
-              confirmVariant="danger"
               onConfirm={handleConfirmMediaDelete}
               onCancel={handleCancelMediaDelete}
             />
@@ -6325,7 +6319,6 @@ function ContentView({
         description={t('cms.deleteDraftConfirm')}
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
-        confirmVariant="danger"
         onConfirm={async () => {
           if (contentToDelete) {
             try {
@@ -6376,7 +6369,6 @@ function ContentView({
         description={t('cms.deletePublishedConfirm')}
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
-        confirmVariant="danger"
         onConfirm={() => {
           if (contentToDelete) {
             deleteContent(contentToDelete.id);

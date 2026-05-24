@@ -2455,7 +2455,6 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
         description={t('inventory.deleteConfirm')}
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
-        confirmVariant="danger"
         onConfirm={() => {
           if (itemToDelete) {
             deleteInventoryItem(itemToDelete.id);
@@ -2475,7 +2474,6 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
         description="Are you sure you want to permanently delete this media file? This action cannot be undone. The file will be removed from Firebase Storage."
         confirmText="Delete Permanently"
         cancelText="Cancel"
-        confirmVariant="danger"
         onConfirm={handleConfirmMediaDelete}
         onCancel={handleCancelMediaDelete}
       />

@@ -10,7 +10,6 @@ interface ConfirmDialogProps {
   description?: string;
   confirmText?: string;
   cancelText?: string;
-  confirmVariant?: 'default' | 'danger';
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -21,7 +20,6 @@ export default function ConfirmDialog({
   description,
   confirmText,
   cancelText,
-  confirmVariant = 'default',
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -35,10 +33,7 @@ export default function ConfirmDialog({
   const resolvedCancel = cancelText ?? t('common.cancel');
   const resolvedConfirm = confirmText ?? t('common.accept');
 
-  const confirmClass =
-    confirmVariant === 'danger'
-      ? 'rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700'
-      : 'sasa-btn-primary rounded-xl px-4 py-2 text-sm font-medium transition-colors';
+  const confirmClass = 'sasa-btn-primary rounded-xl px-4 py-2 text-sm font-medium transition-colors';
 
   const cancelClass = darkMode
     ? 'rounded-xl border border-white/20 bg-transparent px-4 py-2 text-sm font-medium text-gray-200 transition-colors hover:bg-white/10'
