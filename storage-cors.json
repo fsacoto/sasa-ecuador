@@ -3,7 +3,7 @@
     "origin": [
       "http://localhost:3000",
       "http://127.0.0.1:3000",
-      "https://your-production-domain.com"
+      "https://sasa-ecuador.vercel.app"
     ],
     "method": ["GET", "HEAD", "PUT", "POST", "DELETE", "OPTIONS"],
     "responseHeader": [
