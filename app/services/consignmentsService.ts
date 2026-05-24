@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { Consignment } from '../types';
+import { cleanupConsignmentAssets } from './firebaseDeleteAssets';
 
 const CONSIGNMENTS_COLLECTION = 'consignments';
 
@@ -185,9 +186,10 @@ export async function updateConsignment(consignmentId: string, updates: Partial<
   }
 }
 
-// Delete a consignment
+// Delete a consignment and its Storage assets (return evidence photos, etc.)
 export async function deleteConsignment(consignmentId: string): Promise<void> {
   try {
+    await cleanupConsignmentAssets(consignmentId);
     const docRef = doc(db, CONSIGNMENTS_COLLECTION, consignmentId);
     await deleteDoc(docRef);
   } catch (error) {
