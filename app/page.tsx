@@ -10,6 +10,7 @@ import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 
 import { auth } from './utils/firebase';
 import { uploadImage, downloadStorageImageAsDataUrl } from './services/storageService';
 import LoginForm from './components/LoginForm';
+import LoginTransition from './components/LoginTransition';
 import Dashboard from './components/Dashboard';
 import Suppliers from './components/Suppliers';
 import PurchaseOrders from './components/PurchaseOrders';
@@ -209,9 +210,15 @@ const SALES_TABS: Tab[] = [
 /** Ocultar el CMS en la barra lateral y el contenido. El módulo sigue en el proyecto; poner `true` para mostrarlo de nuevo. */
 const SHOW_CMS_IN_NAVIGATION = false;
 
+/** Duration of welcome screen after a fresh sign-in (ms). */
+const LOGIN_WELCOME_MS = 1600;
+
 function AppContent() {
   const { user, logout, hasPermission, isLoading } = useAuth();
   const { t } = useTranslation();
+  const [showLoginWelcome, setShowLoginWelcome] = useState(false);
+  const [appFadeIn, setAppFadeIn] = useState(false);
+  const authSessionRef = useRef<'pending' | 'guest' | 'user'>('pending');
   const [activeTab, setActiveTab] = useState<Tab>(
     user?.role === 'marketing' && SHOW_CMS_IN_NAVIGATION ? 'cms' : 'dashboard'
   );
@@ -371,6 +378,37 @@ function AppContent() {
     window.dispatchEvent(new CustomEvent('sasa-dark-mode-change'));
   }, [darkModeOn]);
 
+  useEffect(() => {
+    if (isLoading) return;
+
+    if (authSessionRef.current === 'pending') {
+      authSessionRef.current = user ? 'user' : 'guest';
+      if (user) setAppFadeIn(true);
+      return;
+    }
+
+    if (user && authSessionRef.current === 'guest') {
+      authSessionRef.current = 'user';
+      setShowLoginWelcome(true);
+      setAppFadeIn(false);
+      const timer = window.setTimeout(() => setShowLoginWelcome(false), LOGIN_WELCOME_MS);
+      return () => window.clearTimeout(timer);
+    }
+
+    if (!user) {
+      authSessionRef.current = 'guest';
+      setShowLoginWelcome(false);
+      setAppFadeIn(false);
+    }
+  }, [user, isLoading]);
+
+  useEffect(() => {
+    if (!showLoginWelcome && user) {
+      const frame = requestAnimationFrame(() => setAppFadeIn(true));
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [showLoginWelcome, user]);
+
   if (isLoading) {
     return (
       <div
@@ -393,6 +431,10 @@ function AppContent() {
 
   if (!user) {
     return <LoginForm />;
+  }
+
+  if (showLoginWelcome) {
+    return <LoginTransition userName={user.name} />;
   }
 
   const PHOTO_FRAME_SIZE = 260;
@@ -822,7 +864,11 @@ function AppContent() {
   };
 
   return (
-    <div className="flex h-dvh min-h-0 overflow-hidden bg-[#f9f9f9] pt-12">
+    <div
+      className={`flex h-dvh min-h-0 overflow-hidden bg-[#f9f9f9] pt-12 transition-opacity duration-700 ease-out ${
+        appFadeIn ? 'opacity-100' : 'opacity-0'
+      }`}
+    >
       <aside
         className="flex min-h-0 shrink-0 flex-col bg-[#101010] text-[#c5c5c5] transition-[width] duration-200 ease-out"
         style={{ width: sidebarWidth }}

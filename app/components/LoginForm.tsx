@@ -12,6 +12,7 @@ export default function LoginForm() {
   const [successMessage, setSuccessMessage] = useState('');
   const [resetSending, setResetSending] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isEntering, setIsEntering] = useState(false);
   const { login, resetPassword } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -20,8 +21,14 @@ export default function LoginForm() {
     setSuccessMessage('');
 
     setIsSubmitting(true);
+    let entering = false;
     try {
       const outcome = await login(email, password);
+      if (outcome === 'success') {
+        entering = true;
+        setIsEntering(true);
+        return;
+      }
       if (outcome === 'wrong-password') {
         setError(t('login.wrongPassword'));
       } else if (outcome === 'email-not-found') {
@@ -30,7 +37,9 @@ export default function LoginForm() {
         setError(t('login.loginError'));
       }
     } finally {
-      setIsSubmitting(false);
+      if (!entering) {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -54,8 +63,26 @@ export default function LoginForm() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
-      <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 py-12">
+    <div className="relative min-h-screen flex flex-col bg-white">
+      {isEntering && (
+        <div
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/95 backdrop-blur-[2px] transition-opacity duration-500"
+          aria-live="polite"
+        >
+          <div className="flex flex-col items-center text-center">
+            <div className="mb-6 flex h-24 w-24 items-center justify-center">
+              <img src="/sasa.png" alt="" width={96} height={96} className="max-h-24 max-w-24 object-contain" />
+            </div>
+            <p className="text-sm font-medium text-gray-500">{t('login.signingIn')}</p>
+            <div className="mt-6 h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-gray-900" />
+          </div>
+        </div>
+      )}
+      <div
+        className={`flex-1 flex flex-col items-center justify-center px-4 sm:px-6 py-12 transition-opacity duration-500 ${
+          isEntering ? 'pointer-events-none opacity-0' : 'opacity-100'
+        }`}
+      >
         <div className="w-full max-w-md space-y-8">
           <div className="text-center">
             <div className="mx-auto mb-6 flex h-32 w-32 shrink-0 items-center justify-center">
@@ -118,10 +145,10 @@ export default function LoginForm() {
 
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isEntering}
               className="w-full rounded-lg bg-black py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isSubmitting ? (
+              {isSubmitting || isEntering ? (
                 <span className="inline-flex items-center justify-center gap-2">
                   <svg
                     className="h-4 w-4 animate-spin text-white"
