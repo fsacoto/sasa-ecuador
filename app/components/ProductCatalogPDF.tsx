@@ -530,7 +530,7 @@ function CatalogProductTextColumn({
         }}
       >
         {lineLabel ? (
-          <View style={[styles.materialBadge, isPortrait && styles.materialBadgePortrait]}>
+          <View style={[styles.materialBadge, ...(isPortrait ? [styles.materialBadgePortrait] : [])]}>
             <Text style={getBadgeTextStyle(lineLabel, isPortrait)} wrap={false}>
               {lineLabel}
             </Text>
@@ -579,15 +579,15 @@ function CatalogProductTextColumn({
           {skuPdf}
         </Text>
         {hasPrice ? (
-          <View style={[styles.priceBadge, isPortrait && styles.priceBadgePortrait]}>
-            <Text style={[styles.priceText, isPortrait && styles.priceTextPortrait]} wrap={false}>
+          <View style={[styles.priceBadge, ...(isPortrait ? [styles.priceBadgePortrait] : [])]}>
+            <Text style={[styles.priceText, ...(isPortrait ? [styles.priceTextPortrait] : [])]} wrap={false}>
               {priceLabel}
             </Text>
           </View>
         ) : (
-          <View style={[styles.pricePlaceholder, isPortrait && styles.pricePlaceholderPortrait]}>
+          <View style={[styles.pricePlaceholder, ...(isPortrait ? [styles.pricePlaceholderPortrait] : [])]}>
             <Text
-              style={[styles.pricePlaceholderDash, isPortrait && styles.pricePlaceholderDashPortrait]}
+              style={[styles.pricePlaceholderDash, ...(isPortrait ? [styles.pricePlaceholderDashPortrait] : [])]}
               wrap={false}
             >
               —
@@ -810,7 +810,7 @@ export default function ProductCatalogPDF({
   // Handle empty products
   if (!products || products.length === 0) {
     return (
-      <Document hyphenationCallback={catalogNoHyphenation}>
+      <Document>
         <CatalogCoverPage orientation={orientation} logoSrc={logoSrc} />
         <Page size="A4" orientation={orientation} style={catalogPageStyle(layout)}>
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -824,7 +824,7 @@ export default function ProductCatalogPDF({
   const validPages = chunkProducts(products, layout.productsPerPage);
 
   return (
-    <Document hyphenationCallback={catalogNoHyphenation}>
+    <Document>
       <CatalogCoverPage orientation={orientation} logoSrc={logoSrc} />
       {validPages.map((pageProducts, pageIndex) => (
         <Page
