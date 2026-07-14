@@ -4,6 +4,10 @@ import type { ReactNode } from 'react';
 import { PurchaseOrder } from '../types';
 import { useTranslation } from '../context/TranslationContext';
 import { getScanProgress, shouldShowScanStatus } from '../utils/purchaseOrderBarcodeScan';
+import {
+  expectedSaleableQuantity,
+  isPackBased,
+} from '../utils/purchaseOrderPack';
 import { effectivePurchaseOrderStatus } from '../utils/purchaseOrderStatusTheme';
 import PoStatusIcon from './icons/PoStatusIcon';
 import { IconPoAlert, IconPoXCircle } from './icons/PoLineIcons';
@@ -53,6 +57,28 @@ interface PurchaseOrderQuantityCellProps {
   order: PurchaseOrder;
 }
 
+function PackHint({ order }: { order: PurchaseOrder }) {
+  const { t, tf } = useTranslation();
+  if (!isPackBased(order)) return null;
+  const saleable = expectedSaleableQuantity(order);
+  return (
+    <span
+      className="text-[10px] font-medium tabular-nums text-violet-700"
+      title={
+        (t('purchaseOrders.packSetup.forSaleTitle') || '{saleable} unidades vendibles').replace(
+          '{saleable}',
+          String(saleable)
+        )
+      }
+    >
+      × {order.unitsPerPack}
+      {tf('purchaseOrders.packSetup.perSetSuffix', '/set')}
+      {' · '}
+      {saleable} {tf('purchaseOrders.packSetup.forSaleShort', 'venta')}
+    </span>
+  );
+}
+
 export default function PurchaseOrderQuantityCell({ order }: PurchaseOrderQuantityCellProps) {
   const { t } = useTranslation();
   const status = effectivePurchaseOrderStatus(order.status);
@@ -63,6 +89,7 @@ export default function PurchaseOrderQuantityCell({ order }: PurchaseOrderQuanti
     return (
       <div className="flex flex-col items-center gap-1">
         <span className="text-lg font-bold tabular-nums leading-none text-gray-900">{order.quantity}</span>
+        <PackHint order={order} />
         <span className="text-xs font-medium tabular-nums text-sky-600">
           {t('purchaseOrders.scanTableQuantity')
             .replace('{scanned}', String(scanProg.scanned))
@@ -79,6 +106,7 @@ export default function PurchaseOrderQuantityCell({ order }: PurchaseOrderQuanti
     return (
       <div className="flex flex-col items-center gap-1">
         <span className="text-lg font-bold tabular-nums leading-none text-gray-900">{order.quantity}</span>
+        <PackHint order={order} />
         {showBreakdown ? (
           <div className="flex max-w-[11rem] flex-wrap justify-center gap-1">
             {good > 0 && (
@@ -127,6 +155,9 @@ export default function PurchaseOrderQuantityCell({ order }: PurchaseOrderQuanti
   }
 
   return (
-    <span className="text-sm tabular-nums text-gray-700">{order.quantity}</span>
+    <div className="flex flex-col items-center gap-0.5">
+      <span className="text-sm tabular-nums text-gray-700">{order.quantity}</span>
+      <PackHint order={order} />
+    </div>
   );
 }

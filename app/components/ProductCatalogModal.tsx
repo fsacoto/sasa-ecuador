@@ -108,7 +108,7 @@ export default function ProductCatalogModal({
 
   return (
     <div
-      className={`fixed inset-0 ${shellOverlay} backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4 animate-in fade-in duration-300`}
+      className={`sasa-modal-overlay fixed inset-0 z-[100] ${shellOverlay} flex items-center justify-center p-2 backdrop-blur-sm animate-in fade-in duration-300 sm:p-4`}
     >
       <div
         className={`rounded-2xl sm:rounded-3xl w-full max-w-6xl h-[95vh] sm:h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in slide-in-from-bottom duration-500 ${card}`}

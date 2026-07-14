@@ -19,10 +19,12 @@ import BulkImportModal from './BulkImportModal';
 import BulkImportEditPickerModal from './BulkImportEditPickerModal';
 import BulkDeleteModal from './BulkDeleteModal';
 import BulkStatusChangeModal from './BulkStatusChangeModal';
+import InvoicePackSetupModal from './InvoicePackSetupModal';
 import BarcodePrintModal from './BarcodePrintModal';
 import BarcodePrintProgress from './BarcodePrintProgress';
 import ModalPortal from './ui/ModalPortal';
 import {
+  buildBarcodeLabelsDocName,
   downloadBarcodePdfBlob,
   prepareBarcodePrintItemsForPdf,
   type BarcodePrintPdfItem,
@@ -43,6 +45,10 @@ import {
   isLineReadyToConfirm,
   scanProgressClearUpdate,
 } from '../utils/purchaseOrderBarcodeScan';
+import {
+  expectedSaleableQuantity,
+  isPackBased,
+} from '../utils/purchaseOrderPack';
 import { getNextStatus } from '../utils/purchaseOrderStatusFlow';
 import {
   orderMatchesStatusFilter,
@@ -125,6 +131,7 @@ export default function PurchaseOrders() {
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [bulkStatusChangeBusy, setBulkStatusChangeBusy] = useState(false);
   const [isBulkStatusChangeOpen, setIsBulkStatusChangeOpen] = useState(false);
+  const [isPackSetupOpen, setIsPackSetupOpen] = useState(false);
   const [isPOVerificationModalOpen, setIsPOVerificationModalOpen] = useState(false);
   const [isBarcodePrintModalOpen, setIsBarcodePrintModalOpen] = useState(false);
   const [barcodePrintBusy, setBarcodePrintBusy] = useState(false);
@@ -567,8 +574,9 @@ export default function PurchaseOrders() {
     // Total cost = product cost only
     const totalLandedCost = costInUSD;
     
-    // Landed cost per unit = total landed cost / quantity
-    const landedCostPerUnit = formData.quantity > 0 ? totalLandedCost / formData.quantity : 0;
+    // Landed cost per saleable unit (packs dilute over quantity × unitsPerPack when set later)
+    const landedCostPerUnit =
+      formData.quantity > 0 ? totalLandedCost / formData.quantity : 0;
     
     return {
       totalCost,
@@ -871,21 +879,22 @@ export default function PurchaseOrders() {
         previousSku: opts?.previousSku,
         fromScanner: opts?.fromScanner,
       });
+      const saleable = expectedSaleableQuantity(order);
       if (opts?.fromScanner) {
-        setVerificationQuantity(order.quantity.toString());
+        setVerificationQuantity(String(saleable));
         setVerificationQuantityGood(prog.scanned.toString());
         setVerificationQuantityProblem('0');
         setVerificationQuantityNotReceived('0');
       } else if (opts?.isEditing) {
-        setVerificationQuantity(order.quantityReceived?.toString() || order.quantity.toString());
+        setVerificationQuantity(order.quantityReceived?.toString() || String(saleable));
         setVerificationQuantityGood(
-          order.quantityGood?.toString() || order.quantityReceived?.toString() || order.quantity.toString()
+          order.quantityGood?.toString() || order.quantityReceived?.toString() || String(saleable)
         );
         setVerificationQuantityProblem(order.quantityProblem?.toString() || '0');
         setVerificationQuantityNotReceived(order.quantityNotReceived?.toString() || '0');
       } else {
-        setVerificationQuantity(order.quantity.toString());
-        setVerificationQuantityGood(order.quantityGood?.toString() || order.quantity.toString());
+        setVerificationQuantity(String(saleable));
+        setVerificationQuantityGood(order.quantityGood?.toString() || String(saleable));
         setVerificationQuantityProblem(order.quantityProblem?.toString() || '0');
         setVerificationQuantityNotReceived(order.quantityNotReceived?.toString() || '0');
       }
@@ -899,7 +908,7 @@ export default function PurchaseOrders() {
 
   const applyVerificationAllNotReceived = () => {
     if (!verificationData) return;
-    const q = verificationData.order.quantity;
+    const q = expectedSaleableQuantity(verificationData.order);
     setVerificationQuantity('0');
     setVerificationQuantityGood('0');
     setVerificationQuantityProblem('0');
@@ -925,7 +934,7 @@ export default function PurchaseOrders() {
     },
     stockBaselineOrder: PurchaseOrder
   ): Promise<'ok' | 'quantity_mismatch'> => {
-    const expectedQuantity = order.quantity;
+    const expectedQuantity = expectedSaleableQuantity(order);
     const statusUpdate: Partial<PurchaseOrder> = {
       status: 'Verified',
       quantityReceived: payload.actualQuantity,
@@ -1248,7 +1257,7 @@ export default function PurchaseOrders() {
     }
 
     const order = verificationData.order;
-    const expectedQuantity = order.quantity;
+    const expectedQuantity = expectedSaleableQuantity(order);
     
     // Upload media files if any
     let mediaUrls: string[] = [...verificationMediaUrls];
@@ -2039,13 +2048,30 @@ export default function PurchaseOrders() {
             onClick={() => setScannerSession({})}
             className="inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-800 transition-all hover:bg-indigo-100 hover:shadow-md"
           >
-            <svg className="size-4 shrink-0 flex-none text-indigo-800" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 16h4.01M8 16H4.01M8 12H4.01M8 8H4.01M12 8h4.01" />
+            <svg className="size-4 shrink-0 flex-none text-indigo-800" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M3 7V5a2 2 0 012-2h2" />
+              <path d="M17 3h2a2 2 0 012 2v2" />
+              <path d="M21 17v2a2 2 0 01-2 2h-2" />
+              <path d="M7 21H5a2 2 0 01-2-2v-2" />
+              <path d="M7 12h10" />
             </svg>
             <span className="hidden xl:inline">{t('purchaseOrders.scanner.openButton')}</span>
             <span className="xl:hidden">
               {tf('purchaseOrders.scannerOpenShort', 'Escáner')}
             </span>
+          </button>
+
+          <button
+            type="button"
+            title={tf('purchaseOrders.packSetup.title', 'Cajas / sets')}
+            onClick={() => setIsPackSetupOpen(true)}
+            className="inline-flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-800 transition-all hover:bg-violet-100 hover:shadow-md"
+          >
+            <svg className="size-4 shrink-0 flex-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+            </svg>
+            <span className="hidden xl:inline">{tf('purchaseOrders.packSetup.toolbar', 'Cajas/sets')}</span>
+            <span className="xl:hidden">{tf('purchaseOrders.packSetup.toolbarShort', 'Sets')}</span>
           </button>
 
           {/* Print Barcodes Button */}
@@ -2540,7 +2566,7 @@ export default function PurchaseOrders() {
       )}
 
       {isFormOpen && (
-        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 animate-in fade-in duration-200">
+        <div className="sasa-modal-overlay fixed inset-0 z-[100] flex items-end justify-center bg-black/30 p-0 backdrop-blur-sm animate-in fade-in duration-200 sm:items-center sm:p-4">
           <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 duration-300">
             <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">
@@ -3659,6 +3685,7 @@ export default function PurchaseOrders() {
           suppliers={suppliers}
           updatePurchaseOrder={updatePurchaseOrder}
           onClose={() => setPoLineDetailOrder(null)}
+          onEdit={(order) => handleEdit(order)}
         />
       )}
 
@@ -3699,6 +3726,29 @@ export default function PurchaseOrders() {
       )}
 
       {/* Bulk Status Change Modal */}
+      {isPackSetupOpen && (
+        <InvoicePackSetupModal
+          purchaseOrders={purchaseOrders}
+          suppliers={suppliers}
+          onClose={() => setIsPackSetupOpen(false)}
+          onSave={async (updates) => {
+            const { buildPackUnitsOrderUpdates } = await import('../services/purchaseOrdersService');
+            const byId = new Map(purchaseOrders.map((o) => [o.id, o]));
+            const prepared = buildPackUnitsOrderUpdates(updates, byId);
+            if (prepared.length > 0) {
+              await updatePurchaseOrdersBulk(prepared);
+            }
+            setToastMessage(
+              (t('purchaseOrders.packSetup.savedToast') || 'Cajas/sets actualizados ({count})').replace(
+                '{count}',
+                String(prepared.length)
+              )
+            );
+            setTimeout(() => setToastMessage(null), 3000);
+          }}
+        />
+      )}
+
       {isBulkStatusChangeOpen && (
         <BulkStatusChangeModal
           purchaseOrders={purchaseOrders}
@@ -3807,8 +3857,11 @@ export default function PurchaseOrders() {
                 import('./BarcodeLabelPDF'),
               ]);
 
-              const blob = await pdf(<BarcodeLabelPDF items={prepared} />).toBlob();
-              downloadBarcodePdfBlob(blob);
+              const { title, fileBase } = buildBarcodeLabelsDocName(prepared);
+              const blob = await pdf(
+                <BarcodeLabelPDF items={prepared} documentTitle={title} />
+              ).toBlob();
+              downloadBarcodePdfBlob(blob, fileBase);
             } catch (error) {
               console.error('Error generating PDF:', error);
               alert(
@@ -3833,7 +3886,7 @@ export default function PurchaseOrders() {
 
       {/* Quantity Verification Modal */}
       {verificationModalOpen && verificationData && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+        <div className="sasa-modal-overlay fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-md max-h-[min(90vh,calc(100dvh-2rem))] shadow-lg flex flex-col min-h-0 my-auto">
             <div className="px-6 py-5 border-b border-gray-100 shrink-0">
               <div className="flex items-center gap-3 mb-2">
@@ -3859,7 +3912,7 @@ export default function PurchaseOrders() {
                 <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
                   {(t('purchaseOrders.scannerConfirmHint') || '')
                     .replace('{scanned}', String(getScanProgress(verificationData.order).scanned))
-                    .replace('{expected}', String(verificationData.order.quantity))}
+                    .replace('{expected}', String(expectedSaleableQuantity(verificationData.order)))}
                 </div>
               )}
 
@@ -3885,7 +3938,15 @@ export default function PurchaseOrders() {
                   </div>
                   <div>
                     <span className="text-gray-500">{t('purchaseOrders.expectedQuantity') || 'Expected Quantity'}:</span>
-                    <p className="font-medium text-gray-900 mt-1">{verificationData.order.quantity}</p>
+                    <p className="font-medium text-gray-900 mt-1">
+                      {expectedSaleableQuantity(verificationData.order)}
+                      {isPackBased(verificationData.order) && (
+                        <span className="mt-1 block text-xs font-normal text-violet-700">
+                          {verificationData.order.quantity} × {verificationData.order.unitsPerPack}{' '}
+                          {tf('purchaseOrders.packSetup.forSaleShort', 'venta')}
+                        </span>
+                      )}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -3908,11 +3969,17 @@ export default function PurchaseOrders() {
                       }
                     }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent text-lg font-medium"
-                    placeholder={verificationData.order.quantity.toString()}
+                    placeholder={String(expectedSaleableQuantity(verificationData.order))}
                     autoFocus
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    {t('purchaseOrders.enterActualQuantity') || 'Enter the total quantity you physically received and counted'}
+                    {isPackBased(verificationData.order)
+                      ? tf(
+                          'purchaseOrders.packSetup.enterSaleableQuantity',
+                          'Ingresa unidades vendibles contadas (no cajas)'
+                        )
+                      : t('purchaseOrders.enterActualQuantity') ||
+                        'Enter the total quantity you physically received and counted'}
                   </p>
                 </div>
 
@@ -4194,7 +4261,7 @@ export default function PurchaseOrders() {
 
       {bulkDeleteBusy && (
         <div
-          className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[70] flex items-center justify-center p-4 backdrop-blur-sm`}
+          className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm`}
           aria-busy="true"
           aria-live="polite"
           role="status"
@@ -4218,7 +4285,7 @@ export default function PurchaseOrders() {
 
       {bulkStatusChangeBusy && (
         <div
-          className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[70] flex items-center justify-center p-4 backdrop-blur-sm`}
+          className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm`}
           aria-busy="true"
           aria-live="polite"
           role="status"

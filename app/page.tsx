@@ -1039,7 +1039,7 @@ function AppContent() {
       </aside>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="fixed left-0 right-0 top-0 z-[90] flex h-12 min-w-0 shrink-0 items-center gap-2 bg-[#101010] px-3 lg:px-5">
+        <header className="app-top-chrome fixed left-0 right-0 top-0 z-40 flex h-12 min-w-0 shrink-0 items-center gap-2 bg-[#101010] px-3 lg:px-5">
           <div
             className="flex min-w-0 shrink-0 items-center gap-2 overflow-hidden"
             style={{ width: Math.max(SIDEBAR_EXPANDED_PX, 220) }}
@@ -1276,7 +1276,7 @@ function AppContent() {
         />
 
         {profileModalOpen && (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+          <div className="sasa-modal-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
             <div
               className={`max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl p-5 shadow-2xl ${
                 darkModeOn ? 'border border-gray-700 bg-[#101010]' : 'border border-gray-200 bg-white'
@@ -1517,7 +1517,7 @@ function AppContent() {
         )}
 
         {photoCropOpen && (
-          <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4">
+          <div className="sasa-modal-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
             <div
               className={`w-full max-w-md rounded-xl p-5 shadow-2xl ${
                 darkModeOn ? 'border border-gray-700 bg-[#101010]' : 'border border-gray-200 bg-white'

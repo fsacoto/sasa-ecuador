@@ -1,5 +1,6 @@
 import type { PurchaseOrder } from '../types';
 import { scannedCodeMatchesSku } from './barcodeGenerator';
+import { expectedSaleableQuantity } from './purchaseOrderPack';
 import { effectivePurchaseOrderStatus } from './purchaseOrderStatusTheme';
 
 export type ScanProgress = {
@@ -16,7 +17,7 @@ export function getQuantityScanned(order: PurchaseOrder): number {
 }
 
 export function getScanProgress(order: PurchaseOrder): ScanProgress {
-  const expected = Math.max(0, order.quantity ?? 0);
+  const expected = expectedSaleableQuantity(order);
   const scanned = Math.min(getQuantityScanned(order), expected);
   const remaining = Math.max(0, expected - scanned);
   return {

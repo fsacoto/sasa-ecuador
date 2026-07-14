@@ -1,4 +1,8 @@
 import { PurchaseOrder, InventoryItem } from '../types';
+import {
+  boxSetExtraLabelCount,
+  expectedSaleableQuantity,
+} from './purchaseOrderPack';
 
 function normalizeSkuKey(sku: string): string {
   return String(sku ?? '').trim().toLowerCase();
@@ -88,7 +92,8 @@ export function buildInventoryForPdfLabel(row: BarcodePrintRow): InventoryItem {
 }
 
 /**
- * How many labels for "full" mode: on-hand stock if inventory exists, else PO quantities.
+ * How many labels for "full" mode: on-hand stock if inventory exists,
+ * else verified saleables, else expected saleable quantity (packs × unitsPerPack).
  */
 export function labelCountForFullPrint(
   order: PurchaseOrder,
@@ -108,8 +113,15 @@ export function labelCountForFullPrint(
     const rec = Number(order.quantityReceived) || 0;
     if (rec > 0) return rec;
   }
-  const q = Number(order.quantity) || 0;
-  return Math.max(1, q);
+  return Math.max(1, expectedSaleableQuantity(order));
+}
+
+/**
+ * Extra / missing labels for pack (box/set) lines: saleable − ordered pack qty.
+ * Unit lines return 0 (no extras beyond ordered quantity).
+ */
+export function labelCountForExtraPrint(order: PurchaseOrder): number {
+  return boxSetExtraLabelCount(order);
 }
 
 export function buildPrintRowsByInvoice(

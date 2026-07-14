@@ -21,9 +21,21 @@ interface InventoryContextType {
   purchaseOrders: PurchaseOrder[];
   addPurchaseOrder: (order: Omit<PurchaseOrder, 'id' | 'createdAt'>) => Promise<string>;
   addPurchaseOrdersBulk: (orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]) => Promise<PurchaseOrder[]>;
-  updatePurchaseOrder: (id: string, order: Partial<PurchaseOrder>) => Promise<void>;
+  updatePurchaseOrder: (
+    id: string,
+    order: Omit<Partial<PurchaseOrder>, 'unitsPerPack' | 'labelsPrintedCount'> & {
+      unitsPerPack?: number | null;
+      labelsPrintedCount?: number | null;
+    }
+  ) => Promise<void>;
   updatePurchaseOrdersBulk: (
-    updates: Array<{ id: string; orderUpdate: Partial<PurchaseOrder> }>
+    updates: Array<{
+      id: string;
+      orderUpdate: Omit<Partial<PurchaseOrder>, 'unitsPerPack' | 'labelsPrintedCount'> & {
+        unitsPerPack?: number | null;
+        labelsPrintedCount?: number | null;
+      };
+    }>
   ) => Promise<void>;
   deletePurchaseOrder: (id: string) => Promise<void>;
   deletePurchaseOrdersBulk: (ids: string[]) => Promise<void>;
@@ -159,10 +171,30 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const updatePurchaseOrder = async (id: string, orderUpdate: Partial<PurchaseOrder>) => {
+  type PurchaseOrderPatch = Omit<Partial<PurchaseOrder>, 'unitsPerPack' | 'labelsPrintedCount'> & {
+    unitsPerPack?: number | null;
+    labelsPrintedCount?: number | null;
+  };
+
+  const applyLocalPurchaseOrderPatch = (
+    order: PurchaseOrder,
+    patch: PurchaseOrderPatch
+  ): PurchaseOrder => {
+    const next = { ...order, ...patch } as PurchaseOrder & {
+      unitsPerPack?: number | null;
+      labelsPrintedCount?: number | null;
+    };
+    if (patch.unitsPerPack === null) delete next.unitsPerPack;
+    if (patch.labelsPrintedCount === null) delete next.labelsPrintedCount;
+    return next as PurchaseOrder;
+  };
+
+  const updatePurchaseOrder = async (id: string, orderUpdate: PurchaseOrderPatch) => {
     try {
       await purchaseOrdersService.updatePurchaseOrder(id, orderUpdate);
-      setPurchaseOrders(prev => prev.map(o => o.id === id ? { ...o, ...orderUpdate } : o));
+      setPurchaseOrders((prev) =>
+        prev.map((o) => (o.id === id ? applyLocalPurchaseOrderPatch(o, orderUpdate) : o))
+      );
     } catch (error) {
       console.error('Error updating purchase order:', error);
       throw error;
@@ -170,7 +202,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   };
 
   const updatePurchaseOrdersBulk = async (
-    updates: Array<{ id: string; orderUpdate: Partial<PurchaseOrder> }>
+    updates: Array<{ id: string; orderUpdate: PurchaseOrderPatch }>
   ) => {
     const unique = updates.filter((entry) => entry.id && Object.keys(entry.orderUpdate).length > 0);
     if (unique.length === 0) return;
@@ -180,7 +212,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       setPurchaseOrders((prev) =>
         prev.map((order) => {
           const patch = patchById.get(order.id);
-          return patch ? { ...order, ...patch } : order;
+          return patch ? applyLocalPurchaseOrderPatch(order, patch) : order;
         })
       );
     } catch (error) {

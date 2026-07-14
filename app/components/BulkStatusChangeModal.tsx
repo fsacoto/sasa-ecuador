@@ -96,7 +96,7 @@ export default function BulkStatusChangeModal({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/20 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="sasa-modal-overlay fixed inset-0 z-[100] flex items-end justify-center bg-black/30 p-0 backdrop-blur-sm sm:items-center sm:p-4">
         <div className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-2xl">
           <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 px-6 py-4">
             <h3 className="text-lg font-semibold text-gray-900">{t('purchaseOrders.bulkStatusChange')}</h3>

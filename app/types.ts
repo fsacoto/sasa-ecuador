@@ -24,11 +24,19 @@ export interface PurchaseOrder {
   category: string;
   line: string;
   images: string[]; // Array of image URLs or base64 data
+  /** Quantity ordered from supplier (packs/boxes when pack-based; otherwise saleable units). Never rewritten when marking box/set. */
   quantity: number;
-  quantityReceived?: number; // Actual quantity received after verification
-  quantityGood?: number; // Quantity in good condition (goes to inventory)
-  quantityProblem?: number; // Quantity with problems (damaged, needs repair, etc. - doesn't go to inventory)
-  quantityNotReceived?: number; // Quantity never received
+  /**
+   * Saleable units per supplier pack/box. Absent or ≤1 = unit line.
+   * ≥2 = pack-based: labels, verify, stock and cost operate on quantity × unitsPerPack.
+   */
+  unitsPerPack?: number;
+  /** Optional: how many barcode labels already printed (for missing/extra print modes). */
+  labelsPrintedCount?: number;
+  quantityReceived?: number; // Actual quantity received after verification (saleable units)
+  quantityGood?: number; // Quantity in good condition (goes to inventory) — saleable units
+  quantityProblem?: number; // Quantity with problems (damaged, needs repair, etc.) — saleable units
+  quantityNotReceived?: number; // Quantity never received — saleable units
   /** Units registered via barcode scanner while Received (before full verification). */
   quantityScanned?: number;
   lastScannedAt?: Date;

@@ -1,6 +1,15 @@
 import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy, QueryDocumentSnapshot, Timestamp, deleteField } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { PurchaseOrder, PurchaseOrderStatus } from '../types';
+import { landedCostPerSaleableUnit, normalizeUnitsPerPackInput } from '../utils/purchaseOrderPack';
+
+export type PurchaseOrderFieldUpdate = Omit<
+  Partial<PurchaseOrder>,
+  'unitsPerPack' | 'labelsPrintedCount'
+> & {
+  unitsPerPack?: number | null;
+  labelsPrintedCount?: number | null;
+};
 
 const COLLECTION_NAME = 'purchaseOrders';
 
@@ -141,17 +150,25 @@ export async function addPurchaseOrdersBulk(orders: Omit<PurchaseOrder, 'id' | '
   }
 }
 
+/** Fields that may be cleared with `null` → Firestore deleteField(). */
+const NULLABLE_DELETE_FIELDS = new Set(['unitsPerPack', 'labelsPrintedCount']);
+
 // Update a purchase order
-export async function updatePurchaseOrder(id: string, updates: Partial<PurchaseOrder>): Promise<void> {
+export async function updatePurchaseOrder(id: string, updates: PurchaseOrderFieldUpdate): Promise<void> {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
     const { id: _, createdAt: _createdAt, ...updateData } = updates;
     
-    // Filter out undefined values (Firestore doesn't accept undefined)
-    const cleanUpdates: Record<string, any> = {};
-    Object.keys(updateData).forEach(key => {
-      const value = (updateData as any)[key];
-      if (value !== undefined) {
+    // Filter out undefined; null on nullable fields → deleteField (clear pack / printed count)
+    const cleanUpdates: Record<string, unknown> = {};
+    Object.keys(updateData).forEach((key) => {
+      const value = (updateData as Record<string, unknown>)[key];
+      if (value === undefined) return;
+      if (value === null && NULLABLE_DELETE_FIELDS.has(key)) {
+        cleanUpdates[key] = deleteField();
+        return;
+      }
+      if (value !== null) {
         cleanUpdates[key] = value;
       }
     });
@@ -161,6 +178,43 @@ export async function updatePurchaseOrder(id: string, updates: Partial<PurchaseO
     console.error('Error updating purchase order:', error);
     throw error;
   }
+}
+
+export type PackUnitsUpdate = { orderId: string; unitsPerPack: number | null };
+
+/**
+ * Build Firestore patches for box/set (unitsPerPack). null clears the field.
+ * Also refreshes landedCostPerUnit from totalLandedCost ÷ saleable units.
+ * Caller should persist via updatePurchaseOrdersBulk / context.
+ */
+export function buildPackUnitsOrderUpdates(
+  updates: PackUnitsUpdate[],
+  ordersById: Map<string, PurchaseOrder>
+): Array<{ id: string; orderUpdate: PurchaseOrderFieldUpdate }> {
+  const prepared: Array<{ id: string; orderUpdate: PurchaseOrderFieldUpdate }> = [];
+
+  for (const { orderId, unitsPerPack } of updates) {
+    const existing = ordersById.get(orderId);
+    if (!existing) continue;
+
+    const normalized = normalizeUnitsPerPackInput(unitsPerPack);
+    const nextForCost: PurchaseOrder = { ...existing };
+    if (normalized == null) {
+      delete nextForCost.unitsPerPack;
+    } else {
+      nextForCost.unitsPerPack = normalized;
+    }
+
+    prepared.push({
+      id: orderId,
+      orderUpdate: {
+        unitsPerPack: normalized,
+        landedCostPerUnit: landedCostPerSaleableUnit(nextForCost),
+      },
+    });
+  }
+
+  return prepared;
 }
 
 // Delete a purchase order
@@ -176,7 +230,7 @@ export async function deletePurchaseOrder(id: string): Promise<void> {
 
 /** Update many orders in parallel; one UI merge should follow in context. */
 export async function updatePurchaseOrdersBulk(
-  updates: Array<{ id: string; orderUpdate: Partial<PurchaseOrder> }>
+  updates: Array<{ id: string; orderUpdate: PurchaseOrderFieldUpdate }>
 ): Promise<void> {
   const unique = updates.filter((entry) => entry.id && Object.keys(entry.orderUpdate).length > 0);
   if (unique.length === 0) return;

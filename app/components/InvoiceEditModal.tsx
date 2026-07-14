@@ -274,7 +274,7 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
 
   return (
     <>
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+      <div className="sasa-modal-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
         <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
           <h3 className="mb-4 text-xl font-semibold">
             {t('invoiceTracking.editInvoiceTitle')} — {invoice.invoiceNumber}
@@ -472,7 +472,7 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
       </div>
 
       {showReturnWarning && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
+        <div className="sasa-modal-overlay fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="w-full max-w-2xl rounded-xl bg-white p-6">
             <h3 className="mb-4 text-xl font-bold text-orange-600">
               {t('invoiceTracking.inventoryImpactWarning')}

@@ -18,6 +18,7 @@ import {
   type ScanProgress,
 } from '../utils/purchaseOrderBarcodeScan';
 import { effectivePurchaseOrderStatus } from '../utils/purchaseOrderStatusTheme';
+import { expectedSaleableQuantity } from '../utils/purchaseOrderPack';
 import POScanLinePickerModal from './POScanLinePickerModal';
 import PoStatusIcon from './icons/PoStatusIcon';
 
@@ -231,8 +232,9 @@ export default function POScannerVerificationSession({
       totalLines++;
       if (verified) {
         verifiedLines++;
-        total += o.quantity;
-        scanned += o.quantity;
+        const saleable = expectedSaleableQuantity(o);
+        total += saleable;
+        scanned += saleable;
         continue;
       }
       const p = getScanProgress(o);

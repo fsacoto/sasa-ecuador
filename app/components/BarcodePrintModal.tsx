@@ -8,6 +8,7 @@ import {
   buildPrintRowsByInvoice,
   buildAllPrintRows,
   buildInventoryForPdfLabel,
+  labelCountForExtraPrint,
   labelCountForFullPrint,
   type BarcodePrintRow,
 } from '../utils/barcodePrint';
@@ -18,12 +19,12 @@ interface BarcodePrintModalProps {
   onClose: () => void;
   onPrint: (
     items: Array<{ order: PurchaseOrder | null; inventoryItem: InventoryItem; quantity: number }>,
-    printMode: 'full' | 'one-per-item' | 'single'
+    printMode: 'full' | 'one-per-item' | 'single' | 'extra'
   ) => void | Promise<void>;
 }
 
 type GroupingMode = 'invoice' | 'item';
-type PrintMode = 'full' | 'one-per-item' | 'single';
+type PrintMode = 'full' | 'one-per-item' | 'single' | 'extra';
 
 type RadioOption<T extends string> = {
   value: T;
@@ -202,6 +203,11 @@ export default function BarcodePrintModal({
       for (let i = 0; i < n; i++) {
         itemsToPrint.push({ order: relatedOrder, inventoryItem: invPdf, quantity: 1 });
       }
+    } else if (printMode === 'extra') {
+      const n = labelCountForExtraPrint(row.order);
+      for (let i = 0; i < n; i++) {
+        itemsToPrint.push({ order: relatedOrder, inventoryItem: invPdf, quantity: 1 });
+      }
     } else if (printMode === 'one-per-item') {
       itemsToPrint.push({ order: relatedOrder, inventoryItem: invPdf, quantity: 1 });
     } else if (printMode === 'single') {
@@ -296,7 +302,14 @@ export default function BarcodePrintModal({
       label: t('purchaseOrders.printFullInvoice') || 'Print Full Invoice',
       hint:
         t('purchaseOrders.printFullInvoiceDesc') ||
-        'One label per unit (uses on-hand stock if in inventory, otherwise PO quantity)',
+        'One label per saleable unit (packs × unitsPerPack when box/set)',
+    },
+    {
+      value: 'extra',
+      label: t('purchaseOrders.printExtraPack') || 'Missing / extra (box-set)',
+      hint:
+        t('purchaseOrders.printExtraPackDesc') ||
+        'Only saleable − ordered qty (extra labels for pack lines)',
     },
     {
       value: 'one-per-item',

@@ -41,6 +41,17 @@ async function resolveBarcodeForPdf(
   const trimmed = rawUrl.trim();
   const skuOk = Boolean(sku && isValidBarcodeInput(sku));
 
+  // Prefer a fresh bars-only PNG so labels never include under-barcode SKU text.
+  if (skuOk) {
+    try {
+      const png = generateBarcodeFromSKU(sku!);
+      cache.set(key, png);
+      return png;
+    } catch (e) {
+      console.warn('Barcode SKU regenerate failed:', sku, e);
+    }
+  }
+
   if (trimmed && canUseDirectInPdf(trimmed)) {
     cache.set(key, trimmed);
     return trimmed;
@@ -55,16 +66,6 @@ async function resolveBarcodeForPdf(
       }
     } catch (e) {
       console.warn('Barcode convert for PDF:', trimmed.slice(0, 80), e);
-    }
-  }
-
-  if (skuOk) {
-    try {
-      const png = generateBarcodeFromSKU(sku!);
-      cache.set(key, png);
-      return png;
-    } catch (e) {
-      console.warn('Barcode SKU fallback failed:', sku, e);
     }
   }
 
@@ -114,11 +115,74 @@ export async function prepareBarcodePrintItemsForPdf(
   });
 }
 
-export function downloadBarcodePdfBlob(blob: Blob): void {
+function sanitizeDocNamePart(raw: string, max = 48): string {
+  return raw
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/-+/g, '-')
+    .slice(0, max)
+    .trim();
+}
+
+/**
+ * Título / nombre de archivo según el contenido:
+ * - 1 etiqueta → ítem (SKU o descripción)
+ * - 1 factura → nombre de factura
+ * - varias facturas → facturas resumidas
+ */
+export function buildBarcodeLabelsDocName(
+  items: Array<{
+    order: PurchaseOrder | null;
+    inventoryItem: InventoryItem;
+    quantity: number;
+  }>
+): { title: string; fileBase: string } {
+  const expandedCount = items.reduce((n, it) => n + Math.max(1, it.quantity || 1), 0);
+  const invoices = [
+    ...new Set(
+      items
+        .map((it) => (it.order?.invoice || '').trim())
+        .filter(Boolean)
+    ),
+  ];
+  const first = items[0];
+  const sku = (first?.order?.sku || first?.inventoryItem?.sku || '').trim();
+  const name = (
+    first?.order?.description ||
+    first?.inventoryItem?.name ||
+    first?.inventoryItem?.description ||
+    ''
+  ).trim();
+
+  let title: string;
+  if (items.length === 1 && expandedCount === 1) {
+    const itemLabel = sanitizeDocNamePart(sku || name || 'etiqueta', 40);
+    title = `Etiqueta ${itemLabel}`;
+  } else if (invoices.length === 1) {
+    title = `Etiquetas ${sanitizeDocNamePart(invoices[0], 40)}`;
+  } else if (invoices.length > 1) {
+    const head = sanitizeDocNamePart(invoices.slice(0, 2).join('_'), 36);
+    title =
+      invoices.length > 2
+        ? `Etiquetas ${head}+${invoices.length - 2}`
+        : `Etiquetas ${head}`;
+  } else if (sku || name) {
+    title = `Etiquetas ${sanitizeDocNamePart(sku || name, 40)}`;
+  } else {
+    title = 'Etiquetas';
+  }
+
+  const fileBase = sanitizeDocNamePart(title, 80).replace(/\s+/g, '-');
+  return { title, fileBase: fileBase || 'Etiquetas' };
+}
+
+export function downloadBarcodePdfBlob(blob: Blob, fileBase?: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `barcodes-${new Date().toISOString().split('T')[0]}.pdf`;
+  const base = sanitizeDocNamePart(fileBase || 'Etiquetas', 80).replace(/\s+/g, '-') || 'Etiquetas';
+  link.download = `${base}.pdf`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

@@ -91,6 +91,16 @@ assert(prog.scanned === 3 && prog.remaining === 3 && !prog.isComplete, 'partial 
 assert(getScanProgress(baseOrder({ quantity: 6, quantityScanned: 6 })).isComplete, 'complete progress');
 assert(getQuantityScanned({} as PurchaseOrder) === 0, 'missing scanned is 0');
 
+// Pack-based: expected = quantity × unitsPerPack
+const packProg = getScanProgress(
+  baseOrder({ quantity: 2, unitsPerPack: 3, quantityScanned: 4 })
+);
+assert(packProg.expected === 6 && packProg.remaining === 2, 'pack expected saleable 6');
+assert(
+  getScanProgress(baseOrder({ quantity: 2, unitsPerPack: 3, quantityScanned: 6 })).isComplete,
+  'pack complete at saleable count'
+);
+
 // Verified not eligible
 assert(!isLinePendingScanner(baseOrder({ status: 'Verified' })), 'verified not pending');
 assert(!shouldShowScanStatus(baseOrder({ status: 'Verified', quantityScanned: 6 })), 'verified hides scan');

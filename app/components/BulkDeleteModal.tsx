@@ -152,7 +152,7 @@ export default function BulkDeleteModal({
       : t('purchaseOrders.bulkDelete.ordersCount').replace('{count}', String(count));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/20 p-0 backdrop-blur-sm animate-in fade-in duration-200 sm:items-center sm:p-4">
+    <div className="sasa-modal-overlay fixed inset-0 z-[100] flex items-end justify-center bg-black/30 p-0 backdrop-blur-sm animate-in fade-in duration-200 sm:items-center sm:p-4">
       <div className="max-h-[90vh] w-full overflow-hidden rounded-t-3xl bg-white shadow-2xl animate-in slide-in-from-bottom duration-300 sm:max-w-6xl sm:rounded-2xl sm:slide-in-from-bottom-0">
         <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-6 py-4">
           <h3 className="text-lg font-semibold text-gray-900">

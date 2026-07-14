@@ -2,28 +2,46 @@
 
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import { PurchaseOrder, InventoryItem } from '../types';
+import { displayCategory, displayLine } from '../utils/merchandiseLabels';
 
-// 40mm x 20mm thermal label
-// At 72 DPI: 40mm = 113.39pt, 20mm = 56.69pt
-const PAGE_WIDTH = 113.39; // pt (40mm)
-const PAGE_HEIGHT = 56.69; // pt (20mm)
-const LABEL_WIDTH = 113.39; // pt (40mm)
-const LABEL_HEIGHT = 56.69; // pt (20mm)
+/**
+ * Physical thermal label: 40mm × 20mm.
+ * Proportions matched to print reference:
+ *  - top text band ≈ 18% of height
+ *  - barcode ≈ 66% of height, ≈ 80% of width (side margins)
+ *  - bottom description ≈ 12% of height
+ *  - outer quiet zone ≈ 1mm
+ */
+const MM = 72 / 25.4;
+const LABEL_W = 40 * MM;
+const LABEL_H = 20 * MM;
+
+const PAD = 1.0 * MM;
+const CONTENT_W = LABEL_W - PAD * 2;
+const CONTENT_H = LABEL_H - PAD * 2;
+
+// Barcode band +10% vs prior (was ~70% of content → ~77%)
+const TOP_BAND_H = CONTENT_H * 0.155;
+const DESC_BAND_H = CONTENT_H * 0.105;
+const BARCODE_BAND_H = CONTENT_H - TOP_BAND_H - DESC_BAND_H;
+const BARCODE_W = CONTENT_W * 0.8;
+const BARCODE_H = BARCODE_BAND_H * 0.96;
+
+const TOP_TEXT_SIZE = 4.5 * 1.1; // +10%
+const BOTTOM_TEXT_SIZE = 4 * 1.1; // +10%
 
 const styles = StyleSheet.create({
   page: {
     backgroundColor: '#FFFFFF',
     padding: 0,
     fontFamily: 'Helvetica',
-    width: PAGE_WIDTH,
-    height: PAGE_HEIGHT,
+    width: LABEL_W,
+    height: LABEL_H,
   },
   label: {
-    width: LABEL_WIDTH,
-    height: LABEL_HEIGHT,
-    padding: 2,
-    borderWidth: 0.5,
-    borderColor: '#000000',
+    width: LABEL_W,
+    height: LABEL_H,
+    padding: PAD,
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'flex-start',
@@ -31,62 +49,73 @@ const styles = StyleSheet.create({
   topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingHorizontal: 2,
-    marginBottom: 3,
-    minHeight: 6,
+    alignItems: 'center',
+    flexShrink: 0,
+    height: TOP_BAND_H,
+    width: CONTENT_W,
   },
   sku: {
-    fontSize: 3,
+    fontSize: TOP_TEXT_SIZE,
     fontWeight: 'bold',
     color: '#000000',
     fontFamily: 'Helvetica-Bold',
-    flexShrink: 0,
-  },
-  categoryLineContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexShrink: 1,
+    maxWidth: '40%',
   },
   categoryLine: {
-    fontSize: 4,
-    color: '#000000',
+    fontSize: TOP_TEXT_SIZE,
     fontWeight: 'bold',
+    color: '#000000',
+    fontFamily: 'Helvetica-Bold',
+    textAlign: 'right',
+    flexShrink: 1,
+    maxWidth: '58%',
   },
   barcodeContainer: {
+    flexShrink: 0,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 2,
-    marginTop: 1,
+    width: CONTENT_W,
+    height: BARCODE_BAND_H,
+    overflow: 'hidden',
   },
   barcode: {
-    width: 147, // 40% bigger than 105 (105 * 1.4 = 147)
-    height: 39, // 40% bigger than 28 (28 * 1.4 = 39.2, rounded to 39)
-    objectFit: 'contain',
+    width: BARCODE_W,
+    height: BARCODE_H,
+    objectFit: 'fill',
   },
   descriptionContainer: {
-    paddingHorizontal: 3,
-    marginTop: 1,
+    flexShrink: 0,
+    height: DESC_BAND_H,
+    width: CONTENT_W,
     alignItems: 'center',
     justifyContent: 'center',
-    maxHeight: 8,
   },
   description: {
-    fontSize: 5,
+    fontSize: BOTTOM_TEXT_SIZE,
+    fontFamily: 'Helvetica',
+    fontWeight: 'normal',
     color: '#000000',
-    lineHeight: 1.2,
     textAlign: 'center',
-    overflow: 'hidden',
+    lineHeight: 1.05,
   },
 });
 
 interface BarcodeLabelPDFProps {
   items: Array<{ order: PurchaseOrder | null; inventoryItem: InventoryItem; quantity: number }>;
+  documentTitle?: string;
 }
 
-export default function BarcodeLabelPDF({ items }: BarcodeLabelPDFProps) {
-  // Create one page per label (40mm x 20mm)
-  // Expand items based on quantity
+function truncate(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return `${text.substring(0, Math.max(0, max - 1))}…`;
+}
+
+export default function BarcodeLabelPDF({
+  items,
+  documentTitle = 'Etiquetas',
+}: BarcodeLabelPDFProps) {
   const expandedItems: Array<{ order: PurchaseOrder | null; inventoryItem: InventoryItem }> = [];
   items.forEach((item) => {
     for (let i = 0; i < item.quantity; i++) {
@@ -100,7 +129,7 @@ export default function BarcodeLabelPDF({ items }: BarcodeLabelPDFProps) {
   });
 
   return (
-    <Document>
+    <Document title={documentTitle} author="SASA" subject="Etiquetas 40x20mm">
       {printable.map((item, index) => {
         const barcodeSrc = (
           item.inventoryItem?.barcode ||
@@ -110,41 +139,36 @@ export default function BarcodeLabelPDF({ items }: BarcodeLabelPDFProps) {
 
         const { order, inventoryItem } = item;
         const name = order?.description || inventoryItem.name || inventoryItem.description || '';
-        // Truncate name if too long
-        const truncatedName = name.length > 30 ? name.substring(0, 27) + '...' : name;
         const sku = order?.sku || inventoryItem.sku || '';
-        const category = order?.category || inventoryItem.category || '';
-        const line = order?.line || inventoryItem.line || '';
+        const category = displayCategory(order?.category || inventoryItem.category || '');
+        const line = displayLine(order?.line || inventoryItem.line || '');
+        const categoryLineText = [category, line].filter(Boolean).join(' • ');
         const itemId = order?.id || inventoryItem.id || `item-${index}`;
 
         return (
-          <Page key={`${itemId}-${index}`} size={[PAGE_WIDTH, PAGE_HEIGHT]} style={styles.page}>
+          <Page
+            key={`${itemId}-${index}`}
+            size={[LABEL_W, LABEL_H]}
+            style={styles.page}
+          >
             <View style={styles.label}>
-              {/* Top Row: SKU on left, Category/Line on right */}
               <View style={styles.topRow}>
-                {sku && <Text style={styles.sku}>{sku}</Text>}
-                {!sku && <View style={{ width: 1 }} />}
-                {(category || line) && (
-                  <View style={styles.categoryLineContainer}>
-                    {category && <Text style={styles.categoryLine}>{category}</Text>}
-                    {category && line && <Text style={[styles.categoryLine, { marginLeft: 1, marginRight: 1 }]}>•</Text>}
-                    {line && <Text style={styles.categoryLine}>{line}</Text>}
-                  </View>
+                {sku ? (
+                  <Text style={styles.sku}>{truncate(sku, 14)}</Text>
+                ) : (
+                  <View style={{ width: 1 }} />
                 )}
+                {categoryLineText ? (
+                  <Text style={styles.categoryLine}>{truncate(categoryLineText, 24)}</Text>
+                ) : null}
               </View>
 
-              {/* Barcode - bigger and centered */}
               <View style={styles.barcodeContainer}>
-                <Image
-                  src={barcodeSrc}
-                  style={styles.barcode}
-                  cache={false}
-                />
+                <Image src={barcodeSrc} style={styles.barcode} cache={false} />
               </View>
 
-              {/* Description - below barcode, centered, better margins */}
               <View style={styles.descriptionContainer}>
-                <Text style={styles.description}>{truncatedName}</Text>
+                <Text style={styles.description}>{truncate(name, 28)}</Text>
               </View>
             </View>
           </Page>
@@ -153,4 +177,3 @@ export default function BarcodeLabelPDF({ items }: BarcodeLabelPDFProps) {
     </Document>
   );
 }
-

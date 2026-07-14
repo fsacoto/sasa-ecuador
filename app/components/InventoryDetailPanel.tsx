@@ -16,6 +16,8 @@ import {
   isGalleryVideoUrl,
 } from '../utils/inventoryMediaGallery';
 import SupplierDetailPanel from './SupplierDetailPanel';
+import ModalPortal from './ui/ModalPortal';
+import { useDarkMode } from '../hooks/useDarkMode';
 import { formatDateMedium } from '../utils/formatDate';
 import { formatSalePriceDisplay } from '../utils/salePrice';
 
@@ -28,6 +30,7 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
   const { purchaseOrders, inventory, suppliers } = useInventory();
   const { content, refreshCMS } = useCMS();
   const { t } = useTranslation();
+  const darkMode = useDarkMode();
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -148,17 +151,29 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-end sm:items-center justify-end z-50 animate-in fade-in duration-200">
-        <div className="bg-white h-full sm:h-auto sm:max-h-[90vh] w-full sm:w-[500px] sm:rounded-l-2xl shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+      <ModalPortal>
+      <div
+        className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[100] flex items-stretch justify-end backdrop-blur-sm animate-in fade-in duration-200`}
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) onClose();
+        }}
+      >
+        <div
+          className="sasa-modal-panel flex h-full max-h-[100dvh] w-full max-w-md flex-col overflow-hidden rounded-none shadow-2xl animate-in slide-in-from-right duration-300 sm:max-w-[500px] sm:rounded-l-2xl"
+          role="dialog"
+          aria-modal="true"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
           {/* Header */}
-          <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between shrink-0">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">{latestItem.name}</h2>
+          <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-6 py-4">
+            <div className="min-w-0">
+              <h2 className="truncate text-lg font-semibold text-gray-900">{latestItem.name}</h2>
               <p className="text-sm text-gray-500">SKU: {latestItem.sku}</p>
             </div>
             <button
+              type="button"
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="shrink-0 text-gray-400 transition-colors hover:text-gray-600"
               aria-label={t('common.close')}
             >
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -584,11 +599,12 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
           </div>
         </div>
       </div>
+      </ModalPortal>
 
       {/* Fullscreen lightbox */}
       {lightboxOpen && galleryUrls.length > 0 && currentUrl && (
         <div
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/92 p-4 animate-in fade-in duration-200"
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/92 p-4 animate-in fade-in duration-200"
           role="dialog"
           aria-modal="true"
           aria-label={t('inventory.gallery')}

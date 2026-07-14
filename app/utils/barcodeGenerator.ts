@@ -118,20 +118,21 @@ function normalizeSkuForBarcode(sku: string): string {
 }
 
 function barcodeOptions(sku: string, encodedValue: string): BarcodeRenderOptions {
-  const label = sku.length <= 48 ? sku : encodedValue;
+  // Text under bars omitted: labels show SKU + category/line separately (no overlap with bars).
+  void sku;
+  void encodedValue;
   return {
     format: 'CODE128',
-    width: 2,
-    height: 96,
-    displayValue: true,
-    fontSize: 14,
-    margin: 12,
-    marginTop: 8,
-    marginBottom: 8,
+    width: 2.5,
+    height: 165, // ~10% taller bars
+    displayValue: false,
+    margin: 1,
+    marginTop: 0,
+    marginBottom: 0,
+    marginLeft: 1,
+    marginRight: 1,
     background: '#ffffff',
     lineColor: '#000000',
-    text: label,
-    textAlign: 'center',
   };
 }
 

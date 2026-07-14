@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { PurchaseOrder } from '../types';
 import { useTranslation } from '../context/TranslationContext';
+import { expectedSaleableQuantity, isPackBased } from '../utils/purchaseOrderPack';
 
 export type InvoiceVerifyLineInput = {
   orderId: string;
@@ -39,14 +40,17 @@ export default function InvoiceBatchVerificationModal({
 }: InvoiceBatchVerificationModalProps) {
   const { t } = useTranslation();
   const [lines, setLines] = useState<LineState[]>(() =>
-    orders.map((order) => ({
-      order,
-      received: String(order.quantity),
-      good: String(order.quantityGood ?? order.quantity),
-      problem: String(order.quantityProblem ?? 0),
-      notReceived: String(order.quantityNotReceived ?? 0),
-      comment: order.verificationComment ?? '',
-    }))
+    orders.map((order) => {
+      const saleable = expectedSaleableQuantity(order);
+      return {
+        order,
+        received: String(saleable),
+        good: String(order.quantityGood ?? saleable),
+        problem: String(order.quantityProblem ?? 0),
+        notReceived: String(order.quantityNotReceived ?? 0),
+        comment: order.verificationComment ?? '',
+      };
+    })
   );
 
   const missingSkuCount = useMemo(
@@ -90,7 +94,7 @@ export default function InvoiceBatchVerificationModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/20 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <div className="sasa-modal-overlay fixed inset-0 z-[100] flex items-end justify-center bg-black/30 p-0 backdrop-blur-sm sm:items-center sm:p-4">
       <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl">
         <div className="shrink-0 border-b border-gray-100 px-6 py-4">
           <h3 className="text-lg font-semibold text-gray-900">{t('purchaseOrders.verifyInvoiceTitle')}</h3>
@@ -132,7 +136,14 @@ export default function InvoiceBatchVerificationModal({
                     <td className="max-w-[12rem] truncate py-3 pr-3 text-gray-700" title={line.order.description}>
                       {line.order.description}
                     </td>
-                    <td className="py-3 pr-3 text-right text-gray-600">{line.order.quantity}</td>
+                    <td className="py-3 pr-3 text-right text-gray-600">
+                      <span className="tabular-nums">{expectedSaleableQuantity(line.order)}</span>
+                      {isPackBased(line.order) && (
+                        <span className="mt-0.5 block text-[10px] text-violet-700">
+                          {line.order.quantity} × {line.order.unitsPerPack}
+                        </span>
+                      )}
+                    </td>
                     <td className="py-3 pr-2">
                       <input
                         type="number"

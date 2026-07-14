@@ -61,8 +61,12 @@ export default function InvoiceStatusActionsBar({
       )}
       {onOpenScanner && (canMarkReceived || canVerify) && (
         <button type="button" disabled={busy} onClick={onOpenScanner} className={btnClass}>
-          <svg className="h-3.5 w-3.5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 16h4.01M8 16H4.01M8 12H4.01M8 8H4.01M12 8h4.01" />
+          <svg className="h-3.5 w-3.5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M3 7V5a2 2 0 012-2h2" />
+            <path d="M17 3h2a2 2 0 012 2v2" />
+            <path d="M21 17v2a2 2 0 01-2 2h-2" />
+            <path d="M7 21H5a2 2 0 01-2-2v-2" />
+            <path d="M7 12h10" />
           </svg>
           {t('purchaseOrders.scanner.openButton')}
         </button>

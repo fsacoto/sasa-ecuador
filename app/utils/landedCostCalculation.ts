@@ -4,6 +4,7 @@ import type {
   LandedCostCalculation,
   PurchaseOrder,
 } from '../types';
+import { costAllocationUnits } from './purchaseOrderPack';
 
 export function getAdditionalCostsForInvoice(
   invoiceNumber: string,
@@ -27,7 +28,7 @@ export function calculateLandedCostsForInvoice(
   const items = invoiceOrders.map((order) => {
     const proportionalShare = baseItemTotal > 0 ? order.costInUSD / baseItemTotal : 0;
     const additionalCostAllocation = totalAdditionalCosts * proportionalShare;
-    const qty = order.quantity > 0 ? order.quantity : 1;
+    const qty = costAllocationUnits(order);
     const finalCostPerUnit = order.costInUSD / qty + additionalCostAllocation / qty;
     const finalItemTotal = order.costInUSD + additionalCostAllocation;
 
@@ -109,7 +110,7 @@ export function resolveSkuUnitCost(
   for (const po of linkedVerified) {
     const finalCost = finalCostByPoId.get(po.id);
     if (finalCost == null) continue;
-    const qty = po.quantity > 0 ? po.quantity : 1;
+    const qty = costAllocationUnits(po);
     weightedSum += finalCost * qty;
     totalQty += qty;
     counted += 1;

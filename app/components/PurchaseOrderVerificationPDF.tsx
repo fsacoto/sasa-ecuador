@@ -103,7 +103,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   colDescription: {
-    width: '18%',
+    width: '12.6%', // was 18%; −30% → notes
     textAlign: 'left',
     fontSize: 10,
     color: '#333333',
@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
     color: '#333333',
   },
   colNotes: {
-    width: '18%',
+    width: '23.4%', // was 18%; +30% from description
     textAlign: 'left',
     fontSize: 10,
     color: '#999999',

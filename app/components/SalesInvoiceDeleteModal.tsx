@@ -54,7 +54,7 @@ export default function SalesInvoiceDeleteModal({
   return (
     <ModalPortal>
       <div
-        className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[90] flex items-center justify-center p-4 backdrop-blur-sm`}
+        className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm`}
         role="dialog"
         aria-modal="true"
         onClick={onClose}

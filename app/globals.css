@@ -88,6 +88,11 @@ body {
   color: #d1d5db !important;
 }
 
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .text-violet-700,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .text-blue-600 {
+  color: #c4b5fd !important;
+}
+
 .sasa-modal-root.sasa-modal-dark .sasa-modal-panel .text-\[\#515151\] {
   color: #d1d5db !important;
 }
@@ -328,10 +333,19 @@ body {
     0 0 0 1px rgba(255, 255, 255, 0.95) inset !important;
 }
 
+/*
+ * App chrome (top bar) is z-40. Full-viewport overlays use z-50+ / .sasa-modal-overlay
+ * so the blur covers the entire viewport including the header.
+ */
 /* Global modals: blur stays on the overlay; dialog surfaces stay solid (not glass). */
 [class*='fixed'][class*='inset-0'][class*='backdrop-blur'] {
   backdrop-filter: blur(12px) !important;
   -webkit-backdrop-filter: blur(12px) !important;
+}
+
+/* Legacy z-50 full-screen sheets: lift above the top chrome (z-40). */
+[class*='fixed'][class*='inset-0'].z-50 {
+  z-index: 100;
 }
 
 /*

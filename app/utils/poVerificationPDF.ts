@@ -117,12 +117,12 @@ export async function generatePOVerificationPDF({
   };
 
   // Column widths (sums to usableWidth) - CHECK moved to after QTY RECEIVED
-  // Fixed widths for short columns, NOTES gets remaining space
+  // Description at 70% of prior share; that 30% goes to NOTES (remaining space)
   const colWidths = {
     no: usableWidth * 0.04,
     supplierSku: usableWidth * 0.10,
     internalSku: usableWidth * 0.10,
-    description: usableWidth * 0.23,
+    description: usableWidth * 0.161, // was 0.23; −30% → notes
     category: 68,
     line: 95,
     qtyOrdered: 60,
