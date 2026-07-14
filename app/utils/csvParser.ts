@@ -1,7 +1,39 @@
 // CSV/Excel Parser for Bulk Import
 
+import * as XLSX from 'xlsx';
+
 export interface ParsedRow {
   [key: string]: string | number;
+}
+
+export function isExcelFile(fileName: string): boolean {
+  const lower = fileName.toLowerCase();
+  return lower.endsWith('.xlsx') || lower.endsWith('.xls') || lower.endsWith('.xlsm');
+}
+
+/** Parse first sheet of an Excel workbook into rows keyed by header. */
+export function parseExcel(data: ArrayBuffer): ParsedRow[] {
+  const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName) return [];
+
+  const sheet = workbook.Sheets[firstSheetName];
+  const jsonRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+    defval: '',
+    raw: false,
+  });
+
+  return jsonRows
+    .map((row) => {
+      const parsed: ParsedRow = {};
+      for (const [key, value] of Object.entries(row)) {
+        const header = String(key).trim();
+        if (!header) continue;
+        parsed[header] = value == null ? '' : String(value).trim();
+      }
+      return parsed;
+    })
+    .filter((row) => Object.values(row).some((v) => String(v).trim() !== ''));
 }
 
 // Helper function to split CSV line respecting quotes

@@ -1,7 +1,14 @@
 'use client';
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { parseCSV, detectColumnMapping, cleanNumericValue, ParsedRow } from '../utils/csvParser';
+import {
+  parseCSV,
+  parseExcel,
+  isExcelFile,
+  detectColumnMapping,
+  cleanNumericValue,
+  ParsedRow,
+} from '../utils/csvParser';
 import { useInventory } from '../context/InventoryContext';
 import { attachBarcodesToPurchaseOrdersBulk } from '../utils/syncUpdates';
 import { resolveInternalSku, collectUsedSkus, findInternalSkuBySupplierSku } from '../utils/skuGenerator';
@@ -78,8 +85,12 @@ export default function BulkImportModal({
   const [columnMapping, setColumnMapping] = useState<{ [key: string]: string }>({});
   const [defaultSupplier, setDefaultSupplier] = useState<string>('');
   const [defaultCurrency, setDefaultCurrency] = useState<string>('USD');
+  /** Canonical rate: multiply foreign amount by this to get USD (1 COP = rate USD). */
   const [exchangeRate, setExchangeRate] = useState<number>(1);
   const [exchangeRateManuallySet, setExchangeRateManuallySet] = useState<boolean>(false);
+  /** UI direction for entering the rate. Persistence still uses foreign→USD. */
+  const [exchangeRateInputMode, setExchangeRateInputMode] = useState<'toUsd' | 'fromUsd'>('fromUsd');
+  const [exchangeRateInputText, setExchangeRateInputText] = useState('1');
   const [invoicePrefix, setInvoicePrefix] = useState<string>('');
   const [invoiceLink, setInvoiceLink] = useState<string>('');
   const [purchaseDate, setPurchaseDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -172,6 +183,54 @@ export default function BulkImportModal({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultCurrency, exchangeRates, exchangeRateManuallySet]);
+
+  const formatFx = useCallback((n: number) => {
+    if (!Number.isFinite(n) || n <= 0) return '—';
+    if (n >= 100) return n.toFixed(2);
+    if (n >= 1) return n.toFixed(4);
+    return n.toFixed(6);
+  }, []);
+
+  const displayRateForMode = useCallback(
+    (canonicalToUsd: number, mode: 'toUsd' | 'fromUsd') => {
+      if (mode === 'toUsd') return canonicalToUsd;
+      return canonicalToUsd > 0 ? 1 / canonicalToUsd : 0;
+    },
+    []
+  );
+
+  const exchangeRateInputFocusedRef = useRef(false);
+
+  const syncExchangeRateInputText = useCallback(
+    (canonicalToUsd: number, mode: 'toUsd' | 'fromUsd' = exchangeRateInputMode) => {
+      if (defaultCurrency === 'USD') {
+        setExchangeRateInputText('1');
+        return;
+      }
+      setExchangeRateInputText(formatFx(displayRateForMode(canonicalToUsd, mode)));
+    },
+    [defaultCurrency, exchangeRateInputMode, formatFx, displayRateForMode]
+  );
+
+  // Sync visible input when canonical rate changes (skip while typing in the field).
+  useEffect(() => {
+    if (exchangeRateInputFocusedRef.current) return;
+    syncExchangeRateInputText(exchangeRate);
+  }, [exchangeRate, defaultCurrency, syncExchangeRateInputText]);
+
+  const setExchangeRateInputModeAndSync = (mode: 'toUsd' | 'fromUsd') => {
+    setExchangeRateInputMode(mode);
+    syncExchangeRateInputText(exchangeRate, mode);
+  };
+
+  const applyExchangeRateFromInput = (raw: string) => {
+    setExchangeRateInputText(raw);
+    const parsed = parseFloat(raw.replace(',', '.'));
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    const canonical = exchangeRateInputMode === 'toUsd' ? parsed : 1 / parsed;
+    setExchangeRate(canonical);
+    setExchangeRateManuallySet(true);
+  };
 
   useEffect(() => {
     if (!editBulkImportId) return;
@@ -469,79 +528,80 @@ export default function BulkImportModal({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const processSelectedFile = (file: File) => {
-    if (!file) return;
-
-    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-      alert(t('bulkImport.excelExportCsv'));
+  const applyParsedRows = (rows: ParsedRow[], fileName: string) => {
+    if (rows.length === 0) {
+      alert(t('bulkImport.parseError'));
       resetFileInput();
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
+    const fileHeaders = Object.keys(rows[0]);
+    setHeaders(fileHeaders);
+    setParsedData(rows);
 
-      if (text.includes('PK!') || text.includes('<?xml')) {
+    const detectedMapping = detectColumnMapping(fileHeaders);
+    const sanitizedMapping = Object.fromEntries(
+      Object.entries(detectedMapping).filter(([, v]) => v !== 'sku')
+    );
+
+    setColumnMapping(sanitizedMapping);
+    setSessionLabel(fileName);
+
+    const existingDraft = findBulkImportSessionByLabel(fileName);
+    const savedId = upsertBulkImportSession({
+      id: existingDraft?.id ?? activeSessionIdRef.current ?? undefined,
+      label: fileName,
+      headers: fileHeaders,
+      parsedData: rows,
+      columnMapping: sanitizedMapping,
+      invoicePrefix: '',
+      invoiceLink: '',
+      purchaseDate: new Date().toISOString().split('T')[0],
+      defaultSupplier: '',
+      defaultCurrency: 'USD',
+      exchangeRate: 1,
+      exchangeRateManuallySet: false,
+    });
+    if (savedId) {
+      activeSessionIdRef.current = savedId;
+      setActiveSessionId(savedId);
+    } else {
+      activeSessionIdRef.current = null;
+      setActiveSessionId(null);
+    }
+
+    setStep('mapping');
+  };
+
+  const processSelectedFile = async (file: File) => {
+    if (!file) return;
+
+    try {
+      if (isExcelFile(file.name)) {
+        const buffer = await file.arrayBuffer();
+        applyParsedRows(parseExcel(buffer), file.name);
+        return;
+      }
+
+      const text = await file.text();
+
+      if (text.includes('PK') && text.includes('[Content_Types].xml')) {
         alert(t('bulkImport.excelBinary'));
         resetFileInput();
         return;
       }
 
-      const rows = parseCSV(text);
-
-      if (rows.length > 0) {
-        const fileHeaders = Object.keys(rows[0]);
-        setHeaders(fileHeaders);
-        setParsedData(rows);
-
-        const detectedMapping = detectColumnMapping(fileHeaders);
-        const sanitizedMapping = Object.fromEntries(
-          Object.entries(detectedMapping).filter(([, v]) => v !== 'sku')
-        );
-
-        console.log('CSV Headers detected:', fileHeaders);
-        console.log('Auto-detected mapping:', sanitizedMapping);
-
-        setColumnMapping(sanitizedMapping);
-        setSessionLabel(file.name);
-
-        const existingDraft = findBulkImportSessionByLabel(file.name);
-        const savedId = upsertBulkImportSession({
-          id: existingDraft?.id ?? activeSessionIdRef.current ?? undefined,
-          label: file.name,
-          headers: fileHeaders,
-          parsedData: rows,
-          columnMapping: sanitizedMapping,
-          invoicePrefix: '',
-          invoiceLink: '',
-          purchaseDate: new Date().toISOString().split('T')[0],
-          defaultSupplier: '',
-          defaultCurrency: 'USD',
-          exchangeRate: 1,
-          exchangeRateManuallySet: false,
-        });
-        if (savedId) {
-          activeSessionIdRef.current = savedId;
-          setActiveSessionId(savedId);
-        } else {
-          activeSessionIdRef.current = null;
-          setActiveSessionId(null);
-        }
-
-        setStep('mapping');
-      } else {
-        alert(t('bulkImport.parseError'));
-        resetFileInput();
-      }
-    };
-    reader.readAsText(file);
+      applyParsedRows(parseCSV(text), file.name);
+    } catch {
+      alert(t('bulkImport.parseError'));
+      resetFileInput();
+    }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    processSelectedFile(file);
+    void processSelectedFile(file);
   };
 
   const handleDragEnter = (e: React.DragEvent) => {
@@ -573,7 +633,7 @@ export default function BulkImportModal({
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
     if (!file) return;
-    processSelectedFile(file);
+    void processSelectedFile(file);
   };
 
   const executeBulkImport = async () => {
@@ -1143,7 +1203,7 @@ export default function BulkImportModal({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv,text/csv,text/plain"
+                accept=".csv,.xlsx,.xls,.xlsm,text/csv,text/plain,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 onChange={handleFileUpload}
                 className="hidden"
                 id="file-upload"
@@ -1269,20 +1329,51 @@ export default function BulkImportModal({
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1 text-gray-700">
-                        {t('bulkImport.exchangeRate').replace('{from}', defaultCurrency)}{' '}
-                        <span className="text-red-500">*</span>
+                        {t('bulkImport.exchangeRate')} <span className="text-red-500">*</span>
                       </label>
+                      {defaultCurrency !== 'USD' && (
+                        <div className="mb-2 flex gap-1 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setExchangeRateInputModeAndSync('fromUsd')}
+                            className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                              exchangeRateInputMode === 'fromUsd'
+                                ? 'bg-white text-gray-900 shadow-sm'
+                                : 'text-gray-600 hover:text-gray-900'
+                            }`}
+                          >
+                            {t('bulkImport.exchangeRateFromUsd').replace('{to}', defaultCurrency)}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setExchangeRateInputModeAndSync('toUsd')}
+                            className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                              exchangeRateInputMode === 'toUsd'
+                                ? 'bg-white text-gray-900 shadow-sm'
+                                : 'text-gray-600 hover:text-gray-900'
+                            }`}
+                          >
+                            {t('bulkImport.exchangeRateToUsd').replace('{from}', defaultCurrency)}
+                          </button>
+                        </div>
+                      )}
                       <div className="flex items-center gap-2">
                         <input
                           type="number"
-                          step="0.000001"
-                          value={exchangeRate}
-                          onChange={(e) => {
-                            setExchangeRate(parseFloat(e.target.value) || 1);
-                            setExchangeRateManuallySet(true);
+                          step="any"
+                          min="0"
+                          value={exchangeRateInputText}
+                          onChange={(e) => applyExchangeRateFromInput(e.target.value)}
+                          onFocus={() => {
+                            exchangeRateInputFocusedRef.current = true;
                           }}
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151]"
-                          placeholder="1.0"
+                          onBlur={() => {
+                            exchangeRateInputFocusedRef.current = false;
+                            syncExchangeRateInputText(exchangeRate);
+                          }}
+                          disabled={defaultCurrency === 'USD'}
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] disabled:bg-gray-50 disabled:text-gray-500"
+                          placeholder={exchangeRateInputMode === 'fromUsd' ? '4000' : '0.00025'}
                         />
                         {!exchangeRateManuallySet && exchangeRates && defaultCurrency !== 'USD' && (
                           <button
@@ -1291,6 +1382,7 @@ export default function BulkImportModal({
                               const rate = getExchangeRate(defaultCurrency, 'USD', exchangeRates);
                               setExchangeRate(rate);
                               setExchangeRateManuallySet(true);
+                              syncExchangeRateInputText(rate);
                             }}
                             className="rounded-lg border border-gray-300 px-3 py-2 text-xs text-gray-700 transition-colors hover:bg-gray-50"
                             title={t('bulkImport.exchangeRateMarketTitle')}
@@ -1303,8 +1395,12 @@ export default function BulkImportModal({
                         {defaultCurrency === 'USD'
                           ? t('bulkImport.noConversion')
                           : t('bulkImport.conversionLine')
-                              .replace('{currency}', defaultCurrency)
-                              .replace('{rate}', exchangeRate.toFixed(6))}
+                              .replace(/\{currency\}/g, defaultCurrency)
+                              .replace('{rateToUsd}', formatFx(exchangeRate))
+                              .replace(
+                                '{rateFromUsd}',
+                                formatFx(exchangeRate > 0 ? 1 / exchangeRate : 0)
+                              )}
                       </p>
                     </div>
                   </div>
