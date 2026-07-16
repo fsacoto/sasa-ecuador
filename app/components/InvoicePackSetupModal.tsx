@@ -185,7 +185,7 @@ export default function InvoicePackSetupModal({
       maxWidthClass="max-w-4xl"
       onClose={onClose}
     >
-      <div className="max-h-[calc(90vh-11rem)] overflow-y-auto px-6 py-5">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5">
         {step === 'invoice' ? (
           <div className="space-y-4">
             <p className="text-sm text-gray-600">
@@ -360,7 +360,7 @@ export default function InvoicePackSetupModal({
         )}
       </div>
 
-      <div className="flex items-center justify-end gap-3 border-t border-gray-200 px-6 py-4">
+      <div className="flex shrink-0 items-center justify-end gap-3 border-t border-gray-200 px-6 py-4">
         <button
           type="button"
           onClick={onClose}

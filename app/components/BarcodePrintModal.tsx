@@ -340,7 +340,7 @@ export default function BarcodePrintModal({
       maxWidthClass="max-w-3xl"
       onClose={onClose}
     >
-      <div className="max-h-[calc(90vh-11rem)] overflow-y-auto px-6 py-5">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5">
         <div className="grid gap-4 sm:grid-cols-2">
           <RadioOptionGroup
             title={t('purchaseOrders.groupingMode') || 'Grouping Mode'}
@@ -552,7 +552,7 @@ export default function BarcodePrintModal({
         </div>
       </div>
 
-      <div className="flex justify-end gap-3 border-t border-gray-200 px-6 py-4">
+      <div className="flex shrink-0 justify-end gap-3 border-t border-gray-200 px-6 py-4">
         <button
           type="button"
           onClick={onClose}

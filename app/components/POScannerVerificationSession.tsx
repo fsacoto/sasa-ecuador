@@ -359,10 +359,11 @@ export default function POScannerVerificationSession({
       <POModalShell
         title={t('purchaseOrders.scanner.selectInvoiceTitle')}
         titleId="po-scanner-title"
+        panelMaxHeightClass="max-h-[min(85dvh,720px)]"
         closeLabel={t('purchaseOrders.scanner.exit')}
         onClose={onClose}
       >
-        <div className="border-b border-gray-100 px-6 py-4">
+        <div className="border-b border-gray-100 bg-white px-6 py-4">
           <div className="relative">
             <svg
               className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400"
@@ -388,7 +389,7 @@ export default function POScannerVerificationSession({
           </div>
         </div>
 
-        <div className="max-h-[calc(90vh-250px)] overflow-y-auto">
+        <div className="pb-2">
           {filteredInvoices.length === 0 ? (
             <div className="px-6 py-12 text-center text-gray-500">
               {search.trim()
@@ -514,6 +515,7 @@ export default function POScannerVerificationSession({
         title={t('purchaseOrders.scanner.title')}
         titleId="po-scanner-title"
         maxWidthClass="max-w-5xl"
+        panelMaxHeightClass="max-h-[min(92dvh,920px)]"
         closeLabel={t('purchaseOrders.scanner.exit')}
         onClose={onClose}
       >
@@ -575,7 +577,18 @@ export default function POScannerVerificationSession({
               <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${linesPct}%` }} />
             </div>
           </div>
-          <div className={`rounded-xl border p-3 ${ui.stat}`}>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setSidebarTab('ready')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setSidebarTab('ready');
+              }
+            }}
+            className={`cursor-pointer rounded-xl border p-3 text-left transition-colors hover:opacity-90 ${ui.stat}`}
+          >
             <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
               {t('purchaseOrders.scanner.readyCard')}
             </p>
@@ -596,8 +609,10 @@ export default function POScannerVerificationSession({
               <p className="text-xs opacity-80">{t('purchaseOrders.scanner.stepScanDesc')}</p>
             </div>
           </div>
-          <div
-            className={`flex flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+          <button
+            type="button"
+            onClick={() => setSidebarTab('ready')}
+            className={`flex flex-1 items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm ${
               readyToConfirmLines.length > 0 ? ui.stepActive : ui.stepIdle
             }`}
           >
@@ -612,13 +627,11 @@ export default function POScannerVerificationSession({
               <p className="font-semibold">{t('purchaseOrders.scanner.stepConfirm')}</p>
               <p className="text-xs opacity-80">{t('purchaseOrders.scanner.stepConfirmDesc')}</p>
             </div>
-          </div>
+          </button>
         </div>
 
-        <div className="grid max-h-[calc(90vh-320px)] min-h-0 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_300px]">
-          <div
-            className={`flex min-h-0 flex-col gap-4 overflow-y-auto border-b p-6 lg:border-b-0 lg:border-r ${ui.border}`}
-          >
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px]">
+          <div className={`flex flex-col gap-4 border-b p-6 lg:border-b-0 lg:border-r ${ui.border}`}>
             {feedback && (
               <div className={`rounded-xl border px-4 py-3 text-sm font-medium ${feedbackClass}`}>
                 {feedback.text}
@@ -747,8 +760,8 @@ export default function POScannerVerificationSession({
             <p className="text-center text-xs text-gray-500">{t('purchaseOrders.scanner.scanHint')}</p>
           </div>
 
-          <aside className={`flex min-h-0 flex-col overflow-hidden border-t lg:border-t-0 lg:border-l ${ui.border} ${ui.aside}`}>
-            <div className={`flex shrink-0 border-b ${ui.border}`}>
+          <aside className={`border-t lg:border-t-0 lg:border-l ${ui.border} ${ui.aside}`}>
+            <div className={`flex border-b ${ui.border} ${ui.aside}`}>
               {(
                 [
                   ['pending', tf('purchaseOrders.scanner.pendingLines', 'Por escanear'), pendingLines.length],
@@ -777,7 +790,7 @@ export default function POScannerVerificationSession({
               ))}
             </div>
 
-            <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+            <ul className="space-y-2 p-3 pb-8">
               {sidebarTab === 'ready' &&
                 (readyToConfirmLines.length === 0 ? (
                   <li className="py-8 text-center text-sm text-gray-500">
