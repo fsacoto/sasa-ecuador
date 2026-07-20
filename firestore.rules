@@ -33,8 +33,10 @@ service cloud.firestore {
     }
     
     // Inventory collection
+    // Public read: Store API / storefront need catalog without Firebase Auth.
+    // Writes remain authenticated (ops hub only).
     match /inventory/{itemId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
     
@@ -51,8 +53,9 @@ service cloud.firestore {
     }
     
     // CMS Content collection
+    // Public read so Store API can merge published gallery images by SKU.
     match /cmsContent/{contentId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
     

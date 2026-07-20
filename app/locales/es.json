@@ -5,6 +5,7 @@
     "loading": "Cargando...",
     "collapseSidebar": "Contraer barra lateral",
     "expandSidebar": "Expandir barra lateral",
+    "storefrontConfig": "Configuración",
     "searchPlaceholder": "Buscar inventario, pedidos o contactos…",
     "searchNoResults": "No hay destinos que coincidan",
     "searchLocation": "Ubicación",
