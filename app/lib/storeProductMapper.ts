@@ -75,10 +75,10 @@ export function isPublicMediaUrl(url: string): boolean {
 export function isStoreActiveProduct(
   item: InventoryItem & InventoryStoreFields
 ): boolean {
-  // Explicit hide
   if (item.storeActive === false) return false;
-  // Explicit publish, or any catalog item with a store-mappable category
-  // (salePrice optional — missing price is returned as 0 for the store).
+  const stock = Math.floor(Number(item.ecuadorStock ?? 0));
+  // Out of stock stays hidden on the storefront until restocked.
+  if (!Number.isFinite(stock) || stock <= 0) return false;
   return true;
 }
 

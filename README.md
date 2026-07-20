@@ -144,10 +144,11 @@ También acepta valores legados en inglés (`Earring`, `Necklace`, etc.). **Sets
 
 ### Productos “activos”
 
-Un producto aparece en la API si:
+Un producto aparece en la API / tienda si:
 
 1. No tiene `storeActive: false`
 2. Su categoría mapea a Aretes / Cadenas / Anillos / Pulseras
+3. Tiene **stock > 0** (`ecuadorStock`). Sin stock queda oculto hasta reabastecer.
 
 `salePrice` ausente se envía como `price: 0`. Sets y Tobilleras no se exponen.
 
