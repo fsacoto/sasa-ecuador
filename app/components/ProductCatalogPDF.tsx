@@ -636,7 +636,6 @@ function CatalogProductBlock({
           style={{
             width: imageSize,
             height: imageSize,
-            overflow: 'hidden',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

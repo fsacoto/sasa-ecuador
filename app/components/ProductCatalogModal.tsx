@@ -7,6 +7,16 @@ import CatalogDownloadButton from './CatalogDownloadButton';
 import { useTranslation } from '../context/TranslationContext';
 import { displayCategory, displayLine } from '../utils/merchandiseLabels';
 
+type CatalogSort =
+  | 'skuAsc'
+  | 'skuDesc'
+  | 'nameAsc'
+  | 'nameDesc'
+  | 'categoryAsc'
+  | 'lineAsc'
+  | 'priceAsc'
+  | 'priceDesc';
+
 interface ProductCatalogModalProps {
   inventory: InventoryItem[];
   onClose: () => void;
@@ -23,6 +33,7 @@ export default function ProductCatalogModal({
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [catalogTitle, setCatalogTitle] = useState(() => t('inventory.catalog.title'));
   const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape');
+  const [catalogSort, setCatalogSort] = useState<CatalogSort>('skuAsc');
 
   // Filter states
   const [filterCategory, setFilterCategory] = useState<string>('all');
@@ -64,7 +75,44 @@ export default function ProductCatalogModal({
     return true;
   });
 
-  const selectedInventory = filteredInventory.filter(item => selectedItems.includes(item.id));
+  const selectedInventory = filteredInventory
+    .filter(item => selectedItems.includes(item.id))
+    .sort((a, b) => {
+      const bySku = () =>
+        (a.sku || '').localeCompare(b.sku || '', undefined, {
+          numeric: true,
+          sensitivity: 'base',
+        });
+      switch (catalogSort) {
+        case 'skuDesc':
+          return -bySku();
+        case 'nameAsc':
+          return (a.name || '').localeCompare(b.name || '', undefined, {
+            sensitivity: 'base',
+          }) || bySku();
+        case 'nameDesc':
+          return (b.name || '').localeCompare(a.name || '', undefined, {
+            sensitivity: 'base',
+          }) || bySku();
+        case 'categoryAsc':
+          return displayCategory(a.category).localeCompare(displayCategory(b.category), undefined, {
+            sensitivity: 'base',
+          }) || bySku();
+        case 'lineAsc':
+          return displayLine(a.line || '').localeCompare(displayLine(b.line || ''), undefined, {
+            sensitivity: 'base',
+          }) || bySku();
+        case 'priceAsc':
+          return (a.salePrice ?? Number.POSITIVE_INFINITY) -
+            (b.salePrice ?? Number.POSITIVE_INFINITY) || bySku();
+        case 'priceDesc':
+          return (b.salePrice ?? Number.NEGATIVE_INFINITY) -
+            (a.salePrice ?? Number.NEGATIVE_INFINITY) || bySku();
+        case 'skuAsc':
+        default:
+          return bySku();
+      }
+    });
 
   // Get unique categories and lines for filter dropdowns
   const categories = [...new Set(inventory.map(item => displayCategory(item.category)))].sort();
@@ -134,7 +182,7 @@ export default function ProductCatalogModal({
 
         {/* Configuration */}
         <div className={`px-4 sm:px-6 pb-4 pt-0 ${bodyBg}`}>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             {/* Catalog Title */}
             <div className="md:col-span-2">
               <label className={`block text-xs font-medium mb-1 ${fieldLabel}`}>{t('inventory.catalog.catalogTitleLabel')}</label>
@@ -156,6 +204,26 @@ export default function ProductCatalogModal({
               >
                 <option value="landscape">{t('inventory.catalog.landscape')}</option>
                 <option value="portrait">{t('inventory.catalog.portrait')}</option>
+              </select>
+            </div>
+
+            <div>
+              <label className={`block text-xs font-medium mb-1 ${fieldLabel}`}>
+                {t('inventory.catalog.sortLabel')}
+              </label>
+              <select
+                value={catalogSort}
+                onChange={(e) => setCatalogSort(e.target.value as CatalogSort)}
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] text-sm ${fieldInput}`}
+              >
+                <option value="skuAsc">{t('inventory.catalog.sortSkuAsc')}</option>
+                <option value="skuDesc">{t('inventory.catalog.sortSkuDesc')}</option>
+                <option value="nameAsc">{t('inventory.catalog.sortNameAsc')}</option>
+                <option value="nameDesc">{t('inventory.catalog.sortNameDesc')}</option>
+                <option value="categoryAsc">{t('inventory.catalog.sortCategory')}</option>
+                <option value="lineAsc">{t('inventory.catalog.sortLine')}</option>
+                <option value="priceAsc">{t('inventory.catalog.sortPriceAsc')}</option>
+                <option value="priceDesc">{t('inventory.catalog.sortPriceDesc')}</option>
               </select>
             </div>
           </div>
@@ -327,7 +395,7 @@ export default function ProductCatalogModal({
                                 <img
                                   src={item.images[0]}
                                   alt={item.name}
-                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                  className="h-full w-full object-contain p-1"
                                 />
                               ) : (
                                 <div className="w-full h-full flex items-center justify-center">

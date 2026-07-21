@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Keep the proxy available for large source images on Vercel. Because the
+// browser calls this route through window.location.origin, it works unchanged
+// on localhost, the default Vercel URL, and any attached custom domain.
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
+
 function inferContentType(imageUrl: string, blobType: string): string {
   if (blobType && blobType !== 'application/octet-stream') return blobType;
   const urlLower = imageUrl.toLowerCase();

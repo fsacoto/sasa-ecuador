@@ -23,6 +23,9 @@ export default function CatalogDownloadButton({
   const { t } = useTranslation();
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [imageProgress, setImageProgress] = useState<{ completed: number; total: number } | null>(
+    null
+  );
 
   const handleDownload = async () => {
     if (!products || products.length === 0) {
@@ -32,6 +35,7 @@ export default function CatalogDownloadButton({
     try {
       setIsGenerating(true);
       setError(null);
+      setImageProgress({ completed: 0, total: products.length });
 
       await generateCatalogPDF({
         products,
@@ -39,12 +43,14 @@ export default function CatalogDownloadButton({
         includeStock,
         orientation,
         fileName,
+        onImageProgress: (completed, total) => setImageProgress({ completed, total }),
       });
     } catch (err) {
       console.error('Error generating PDF:', err);
       setError(t('inventory.catalog.catalogGenerationFailed'));
     } finally {
       setIsGenerating(false);
+      setImageProgress(null);
     }
   };
 
@@ -89,7 +95,11 @@ export default function CatalogDownloadButton({
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
-          {t('inventory.catalog.generating')}
+          {imageProgress && imageProgress.completed < imageProgress.total
+            ? t('inventory.catalog.preparingImages')
+                .replace('{completed}', String(imageProgress.completed))
+                .replace('{total}', String(imageProgress.total))
+            : t('inventory.catalog.generating')}
         </span>
       ) : (
         <span className="flex items-center justify-center gap-1">

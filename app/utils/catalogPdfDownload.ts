@@ -8,16 +8,17 @@ export interface GenerateCatalogPDFParams {
   includeStock: boolean;
   orientation: 'landscape' | 'portrait';
   fileName: string;
+  onImageProgress?: (completed: number, total: number) => void;
 }
 
 /** Genera y descarga el catálogo PDF (import estático desde el botón; evita fallos de chunk Turbopack). */
 export async function generateCatalogPDF(params: GenerateCatalogPDFParams): Promise<void> {
-  const { products, catalogTitle, includeStock, orientation, fileName } = params;
+  const { products, catalogTitle, includeStock, orientation, fileName, onImageProgress } = params;
 
   let convertedProducts = products;
   try {
     const { prepareInventoryItemsForCatalogPdf } = await import('./catalogPdfImages');
-    convertedProducts = await prepareInventoryItemsForCatalogPdf(products);
+    convertedProducts = await prepareInventoryItemsForCatalogPdf(products, onImageProgress);
   } catch (prepError) {
     console.error('[catalog PDF] image prep failed, continuing without photos:', prepError);
     convertedProducts = products.map((p) => ({ ...p, images: [] }));

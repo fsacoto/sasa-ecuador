@@ -4,8 +4,12 @@
 
 import type { InventoryItem } from '../types';
 
-const MAX_PDF_IMAGE_PX = 520;
-const IMAGE_FETCH_MS = 12_000;
+// ~300 DPI in the largest catalog image panel, while keeping catalogs with
+// hundreds of products within a reasonable browser/PDF memory budget.
+const MAX_PDF_IMAGE_PX = 1200;
+const PDF_JPEG_QUALITY = 0.92;
+const IMAGE_FETCH_MS = 30_000;
+const IMAGE_PREP_CONCURRENCY = 4;
 
 function isFirebaseStorageURL(url: string): boolean {
   return url.includes('firebasestorage.googleapis.com');
@@ -72,7 +76,7 @@ async function rasterizeBlobToJpegDataUrl(blob: Blob): Promise<string | null> {
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(0, 0, w, h);
           ctx.drawImage(img, 0, 0, w, h);
-          resolve(canvas.toDataURL('image/jpeg', 0.88));
+          resolve(canvas.toDataURL('image/jpeg', PDF_JPEG_QUALITY));
         } catch (e) {
           reject(e);
         }
@@ -158,11 +162,15 @@ async function fetchBlobFromFirebaseSdk(downloadUrl: string): Promise<Blob | nul
 }
 
 async function downloadImageBlob(downloadUrl: string): Promise<Blob | null> {
-  const tasks = [
-    () => fetchBlobViaProxy(downloadUrl),
-    () => fetchBlobDirect(downloadUrl),
-    () => fetchBlobFromFirebaseSdk(downloadUrl),
-  ];
+  // The same-origin proxy works on localhost, the default Vercel domain and
+  // every custom domain attached to this deployment without browser CORS.
+  const tasks = isFirebaseStorageURL(downloadUrl)
+    ? [
+        () => fetchBlobViaProxy(downloadUrl),
+        () => fetchBlobFromFirebaseSdk(downloadUrl),
+        () => fetchBlobDirect(downloadUrl),
+      ]
+    : [() => fetchBlobViaProxy(downloadUrl), () => fetchBlobDirect(downloadUrl)];
 
   for (const task of tasks) {
     try {
@@ -206,19 +214,53 @@ export async function convertInventoryMainImageForPdf(
   return rasterizeBlobToJpegDataUrl(blob);
 }
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  const runner = async () => {
+    while (true) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index], index);
+    }
+  };
+
+  const runnerCount = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: runnerCount }, () => runner()));
+  return results;
+}
+
 /** Prepara productos para el PDF; nunca lanza (el PDF debe generarse aunque fallen fotos). */
 export async function prepareInventoryItemsForCatalogPdf(
-  products: InventoryItem[]
+  products: InventoryItem[],
+  onProgress?: (completed: number, total: number) => void
 ): Promise<InventoryItem[]> {
-  const prepared = await Promise.all(
-    products.map(async (product) => {
+  let completed = 0;
+  onProgress?.(0, products.length);
+
+  const prepared = await mapWithConcurrency(
+    products,
+    IMAGE_PREP_CONCURRENCY,
+    async (product) => {
       try {
-        const mainUrl = product.images?.[0];
-        if (!mainUrl?.trim()) {
+        const imageUrls = (product.images ?? []).filter((url) => url?.trim());
+        if (imageUrls.length === 0) {
           return { ...product, images: [] as string[] };
         }
 
-        const pdfImage = await convertInventoryMainImageForPdf(mainUrl);
+        // Prefer the main image, but fall back to another image if its old URL
+        // is broken. This avoids a blank product when later photos are valid.
+        let pdfImage: string | null = null;
+        for (const imageUrl of imageUrls) {
+          pdfImage = await convertInventoryMainImageForPdf(imageUrl);
+          if (pdfImage) break;
+        }
         return {
           ...product,
           images: pdfImage ? [pdfImage] : [],
@@ -226,8 +268,11 @@ export async function prepareInventoryItemsForCatalogPdf(
       } catch (error) {
         console.warn('[catalog PDF] skip image for', product.sku || product.id, error);
         return { ...product, images: [] as string[] };
+      } finally {
+        completed += 1;
+        onProgress?.(completed, products.length);
       }
-    })
+    }
   );
 
   return prepared;
