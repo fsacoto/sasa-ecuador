@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { PurchaseOrder, PurchaseOrderStatus, Supplier } from '../types';
 import ConfirmDialog from './ui/ConfirmDialog';
 import { useTranslation } from '../context/TranslationContext';
-import { PO_STATUS_PIPELINE, statusLabelKey } from '../utils/purchaseOrderStatusFlow';
+import { PO_STATUS_PIPELINE, statusLabelKey, canTransitionTo } from '../utils/purchaseOrderStatusFlow';
 import { effectivePurchaseOrderStatus, orderMatchesStatusFilter } from '../utils/purchaseOrderStatusTheme';
 import PoStatusIcon from './icons/PoStatusIcon';
 
@@ -72,12 +72,26 @@ export default function BulkStatusChangeModal({
     const orders: PurchaseOrder[] = [];
     selectedInvoices.forEach((invoice) => {
       (ordersByInvoice[invoice] ?? []).forEach((order) => {
-        if (effectivePurchaseOrderStatus(order.status) !== newStatus) {
-          orders.push(order);
-        }
+        const currentStatus = effectivePurchaseOrderStatus(order.status);
+        if (currentStatus === newStatus) return;
+        // Only advance orders; never move Received/Verified backwards.
+        if (!canTransitionTo(order.status, newStatus)) return;
+        orders.push(order);
       });
     });
     return orders;
+  }, [selectedInvoices, ordersByInvoice, newStatus]);
+
+  const skippedLockedCount = useMemo(() => {
+    let count = 0;
+    selectedInvoices.forEach((invoice) => {
+      (ordersByInvoice[invoice] ?? []).forEach((order) => {
+        const currentStatus = effectivePurchaseOrderStatus(order.status);
+        if (currentStatus === newStatus) return;
+        if (!canTransitionTo(order.status, newStatus)) count += 1;
+      });
+    });
+    return count;
   }, [selectedInvoices, ordersByInvoice, newStatus]);
 
   const handleConfirm = () => {
@@ -124,6 +138,12 @@ export default function BulkStatusChangeModal({
                 ))}
               </select>
               <p className="mt-2 text-xs text-gray-600">{t('purchaseOrders.bulkStatusChangeDesc')}</p>
+              {skippedLockedCount > 0 && (
+                <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                  {(t('purchaseOrders.bulkStatusLockedSkipped') || '')
+                    .replace('{count}', String(skippedLockedCount))}
+                </p>
+              )}
             </div>
 
             <div className="space-y-3 rounded-lg bg-gray-50 p-4">

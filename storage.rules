@@ -15,11 +15,11 @@ service firebase.storage {
                    request.resource.size < 50 * 1024 * 1024; // 50MB max for CMS
     }
     
-    // Images storage - other images limited to 5MB
+    // Images storage - inventory and other images limited to 30MB
     match /images/{allImages=**} {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated() && 
-                   request.resource.size < 5 * 1024 * 1024; // 5MB max
+                   request.resource.size <= 30 * 1024 * 1024; // 30MB max
     }
     
     // Barcodes storage

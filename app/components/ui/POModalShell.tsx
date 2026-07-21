@@ -58,7 +58,7 @@ export default function POModalShell({
           className={`sasa-modal-panel ${panelMaxHeightClass} flex w-full flex-col overflow-y-auto overscroll-contain rounded-2xl shadow-2xl ${maxWidthClass} ${panelClassName}`}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="sticky top-0 z-[1] flex shrink-0 items-start justify-between border-b border-gray-200 bg-white px-6 py-4">
+          <div className="sasa-modal-header sticky top-0 z-[1] flex shrink-0 items-start justify-between border-b border-gray-200 bg-white px-6 py-4">
             <div className="min-w-0 flex-1 pr-4">
               <h3 id={titleId} className="text-xl font-semibold text-gray-900">
                 {title}

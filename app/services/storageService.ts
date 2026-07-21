@@ -1,3 +1,7 @@
+import {
+  INVENTORY_IMAGE_MAX_SIZE_BYTES,
+  INVENTORY_IMAGE_MAX_SIZE_MB,
+} from '../constants/uploadLimits';
 import { FirebaseError } from 'firebase/app';
 import {
   ref,
@@ -450,17 +454,16 @@ export async function uploadImage(
     throw new Error('File must be an image');
   }
   
-  // Validate file size (max 5MB)
-  const maxSize = 5 * 1024 * 1024;
-  if (file.size > maxSize) {
-    throw new Error('Image must be less than 5MB');
+  // Validate file size
+  if (file.size > INVENTORY_IMAGE_MAX_SIZE_BYTES) {
+    throw new Error(`Image must be ${INVENTORY_IMAGE_MAX_SIZE_MB}MB or smaller`);
   }
   
   return uploadFile(file, path, onProgress);
 }
 
 /**
- * CMS images under `images/cms/` — Storage rules allow up to 50MB on that path; inventory uses {@link uploadImage} (5MB).
+ * CMS images under `images/cms/` — Storage rules allow up to 50MB on that path; inventory uses {@link uploadImage} (30MB).
  */
 export async function uploadCmsImage(
   file: File,
@@ -500,10 +503,11 @@ export async function uploadMultipleImages(
   }
 
   // Validate file sizes
-  const maxSize = 5 * 1024 * 1024;
   for (const file of imageFiles) {
-    if (file.size > maxSize) {
-      throw new Error(`Image ${file.name} must be less than 5MB`);
+    if (file.size > INVENTORY_IMAGE_MAX_SIZE_BYTES) {
+      throw new Error(
+        `Image ${file.name} must be ${INVENTORY_IMAGE_MAX_SIZE_MB}MB or smaller`
+      );
     }
   }
 

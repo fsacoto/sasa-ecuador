@@ -1,6 +1,10 @@
 // Image upload utilities for Firebase Storage
 
 import { uploadMultipleImages } from '../services/storageService';
+import {
+  INVENTORY_IMAGE_MAX_SIZE_BYTES,
+  INVENTORY_IMAGE_MAX_SIZE_MB,
+} from '../constants/uploadLimits';
 
 export function convertImageToBase64(file: File): Promise<string> {
   // Legacy function for backward compatibility with components that still use base64
@@ -48,10 +52,12 @@ export function validateImageFile(file: File): { valid: boolean; error?: string 
     return { valid: false, error: 'File must be an image' };
   }
 
-  // Check file size (max 5MB)
-  const maxSize = 5 * 1024 * 1024; // 5MB
-  if (file.size > maxSize) {
-    return { valid: false, error: 'Image must be less than 5MB' };
+  // Check file size
+  if (file.size > INVENTORY_IMAGE_MAX_SIZE_BYTES) {
+    return {
+      valid: false,
+      error: `Image must be ${INVENTORY_IMAGE_MAX_SIZE_MB}MB or smaller`,
+    };
   }
 
   return { valid: true };

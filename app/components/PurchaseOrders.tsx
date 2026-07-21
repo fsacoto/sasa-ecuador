@@ -49,7 +49,7 @@ import {
   expectedSaleableQuantity,
   isPackBased,
 } from '../utils/purchaseOrderPack';
-import { getNextStatus } from '../utils/purchaseOrderStatusFlow';
+import { getNextStatus, canTransitionTo } from '../utils/purchaseOrderStatusFlow';
 import {
   orderMatchesStatusFilter,
   PO_ACTIVE_STATUSES,
@@ -1116,7 +1116,6 @@ export default function PurchaseOrders() {
         return { ok: false, message: t('purchaseOrders.scanner.scanMoreBeforeConfirm') };
       }
 
-      setScannerSession(null);
       openVerificationModalForOrder(order, { fromScanner: true });
       return {
         ok: true,
@@ -1491,7 +1490,10 @@ export default function PurchaseOrders() {
     const ordersToUpdate = orderIds
       .map((id) => purchaseOrders.find((o) => o.id === id))
       .filter((order): order is PurchaseOrder => !!order)
-      .filter((order) => effectivePurchaseOrderStatus(order.status) !== newStatus);
+      .filter((order) => effectivePurchaseOrderStatus(order.status) !== newStatus)
+      // A bulk change only advances orders; it never moves them backwards.
+      // This keeps already Received and Verified orders from being downgraded.
+      .filter((order) => canTransitionTo(order.status, newStatus));
 
     if (ordersToUpdate.length === 0) return;
 
@@ -3763,6 +3765,7 @@ export default function PurchaseOrders() {
           purchaseOrders={purchaseOrders}
           suppliers={suppliers}
           initialInvoice={scannerSession.initialInvoice ?? null}
+          paused={verificationModalOpen}
           onClose={() => setScannerSession(null)}
           onProcessScan={processScannerCode}
           onRegisterUnit={registerScanUnit}
@@ -3886,7 +3889,7 @@ export default function PurchaseOrders() {
 
       {/* Quantity Verification Modal */}
       {verificationModalOpen && verificationData && (
-        <div className="sasa-modal-overlay fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm">
+        <div className="sasa-modal-overlay fixed inset-0 z-[220] flex items-center justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-md max-h-[min(90vh,calc(100dvh-2rem))] shadow-lg flex flex-col min-h-0 my-auto">
             <div className="px-6 py-5 border-b border-gray-100 shrink-0">
               <div className="flex items-center gap-3 mb-2">

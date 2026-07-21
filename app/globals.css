@@ -177,6 +177,16 @@ body {
   border-color: rgba(255, 255, 255, 0.14) !important;
 }
 
+/* Sticky modal header must stay fully opaque so scrolled content never bleeds
+ * through it. Overrides the translucent `.bg-white` remap used in dark mode. */
+.sasa-modal-panel .sasa-modal-header {
+  background-color: #ffffff !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .sasa-modal-header {
+  background-color: #0b0b0b !important;
+}
+
 .sasa-modal-root.sasa-modal-dark .sasa-import-success-icon {
   background-color: rgba(16, 185, 129, 0.2) !important;
   border: 1px solid rgba(52, 211, 153, 0.45);

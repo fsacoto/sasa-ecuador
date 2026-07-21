@@ -66,6 +66,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
   const [mediaDeleteConfirmOpen, setMediaDeleteConfirmOpen] = useState(false);
   const [mediaToDelete, setMediaToDelete] = useState<{ index: number; url: string } | null>(null);
   const [imageUploading, setImageUploading] = useState(false);
+  const [isImageDragging, setIsImageDragging] = useState(false);
   const [pendingImagePreviews, setPendingImagePreviews] = useState<{ file: File; previewUrl: string }[]>([]);
   
   const userId = user?.id;
@@ -405,6 +406,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
     setEditingItem(null);
     setIsFormOpen(false);
     clearPendingImagePreviews();
+    setIsImageDragging(false);
     setSkuManuallyEdited(false);
     setCategoryMode('select');
     setLineMode('select');
@@ -452,17 +454,13 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    const fileArray = Array.from(files);
-
+  const addPendingImageFiles = (fileArray: File[]) => {
+    if (fileArray.length === 0) return;
     // Validate all files first
     for (const file of fileArray) {
       const validation = validateImageFile(file);
       if (!validation.valid) {
         alert(`${file.name}: ${validation.error}`);
-        e.target.value = '';
         return;
       }
     }
@@ -474,7 +472,45 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
         previewUrl: URL.createObjectURL(file),
       })),
     ]);
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    addPendingImageFiles(Array.from(files));
     e.target.value = '';
+  };
+
+  const handleImageDragEnter = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!imageUploading && e.dataTransfer.types.includes('Files')) {
+      setIsImageDragging(true);
+    }
+  };
+
+  const handleImageDragLeave = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const nextTarget = e.relatedTarget as Node | null;
+    if (nextTarget && e.currentTarget.contains(nextTarget)) return;
+    setIsImageDragging(false);
+  };
+
+  const handleImageDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!imageUploading && e.dataTransfer.types.includes('Files')) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  };
+
+  const handleImageDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsImageDragging(false);
+    if (imageUploading) return;
+    addPendingImageFiles(Array.from(e.dataTransfer.files));
   };
 
   const handleRemoveImage = (index: number) => {
@@ -1821,9 +1857,15 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                 
                 {/* Upload Button */}
                 <label
+                  onDragEnter={handleImageDragEnter}
+                  onDragLeave={handleImageDragLeave}
+                  onDragOver={handleImageDragOver}
+                  onDrop={handleImageDrop}
                   className={`flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed rounded-lg transition-all ${
                     imageUploading
                       ? 'border-gray-300 bg-gray-50 cursor-wait'
+                      : isImageDragging
+                        ? 'border-[#515151] bg-[#515151]/10 cursor-copy'
                       : 'border-gray-300 hover:border-[#515151] hover:bg-gray-50 cursor-pointer'
                   }`}
                 >
@@ -1838,7 +1880,11 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                     </svg>
                   )}
                   {!imageUploading && (
-                    <span className="text-sm text-gray-600">{t('inventory.uploadImages')}</span>
+                    <span className="text-sm text-gray-600">
+                      {isImageDragging
+                        ? t('inventory.dropImagesHere')
+                        : t('inventory.uploadImagesOrDrop')}
+                    </span>
                   )}
                   <input
                     type="file"

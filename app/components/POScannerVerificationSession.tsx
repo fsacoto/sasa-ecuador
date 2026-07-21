@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useCallback, useMemo, useRef, useState, startTransition } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, startTransition } from 'react';
 import POModalShell from './ui/POModalShell';
 import { PurchaseOrder, Supplier } from '../types';
 import { useTranslation } from '../context/TranslationContext';
@@ -35,6 +35,7 @@ interface POScannerVerificationSessionProps {
   purchaseOrders: PurchaseOrder[];
   suppliers: Supplier[];
   initialInvoice?: string | null;
+  paused?: boolean;
   onClose: () => void;
   onProcessScan: (
     invoice: string,
@@ -47,6 +48,15 @@ interface POScannerVerificationSessionProps {
 }
 
 type Feedback = { tone: 'ok' | 'warn' | 'error' | 'confirm'; text: string };
+
+type ScanHistoryEvent = {
+  id: string;
+  orderId: string;
+  description: string;
+  sku: string;
+  action: 'scan' | 'undo';
+  at: Date;
+};
 
 type InvoiceRow = {
   invoice: string;
@@ -107,8 +117,10 @@ const ScannerPendingRow = memo(function ScannerPendingRow({
             type="button"
             disabled={busy}
             onClick={() => onUndo(order.id)}
-            className={`mt-2 text-xs font-medium disabled:opacity-50 ${
-              darkMode ? 'text-red-300 hover:underline' : 'text-red-700 hover:underline'
+            className={`mt-2 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+              darkMode
+                ? 'border-red-500/40 bg-red-500/10 text-red-200 hover:bg-red-500/20'
+                : 'border-red-200 bg-red-50 text-red-800 hover:bg-red-100'
             }`}
           >
             {undoLabel}
@@ -123,6 +135,7 @@ export default function POScannerVerificationSession({
   purchaseOrders,
   suppliers,
   initialInvoice,
+  paused = false,
   onClose,
   onProcessScan,
   onRegisterUnit,
@@ -138,7 +151,9 @@ export default function POScannerVerificationSession({
   const [picker, setPicker] = useState<{ code: string; candidates: PurchaseOrder[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<'pending' | 'scanned' | 'ready'>('pending');
+  const [scanHistory, setScanHistory] = useState<ScanHistoryEvent[]>([]);
   const disambiguationRef = useRef<Map<string, string>>(new Map());
+  const historySequenceRef = useRef(0);
 
   const ordersByInvoice = useMemo(() => {
     const map = new Map<string, PurchaseOrder[]>();
@@ -244,7 +259,35 @@ export default function POScannerVerificationSession({
     return { scanned, total, verifiedLines, totalLines };
   }, [invoiceLines]);
 
+  useEffect(() => {
+    if (!lastOrder) return;
+    const currentOrder = purchaseOrders.find((order) => order.id === lastOrder.id);
+    if (
+      currentOrder &&
+      effectivePurchaseOrderStatus(currentOrder.status) === 'Verified' &&
+      effectivePurchaseOrderStatus(lastOrder.status) !== 'Verified'
+    ) {
+      setLastOrder(currentOrder);
+      setFeedback({
+        tone: 'ok',
+        text: t('purchaseOrders.scanner.verifiedLine'),
+      });
+    }
+  }, [lastOrder, purchaseOrders, t]);
+
   const supplierName = (id: string) => suppliers.find((s) => s.id === id)?.name ?? '—';
+
+  const addHistoryEvent = useCallback((order: PurchaseOrder, action: ScanHistoryEvent['action']) => {
+    const event: ScanHistoryEvent = {
+      id: `${Date.now()}-${++historySequenceRef.current}`,
+      orderId: order.id,
+      description: order.description,
+      sku: order.sku,
+      action,
+      at: new Date(),
+    };
+    setScanHistory((current) => [event, ...current].slice(0, 25));
+  }, []);
 
   const applyResult = useCallback((result: ScannerScanResult) => {
     if (result.order) setLastOrder(result.order);
@@ -262,7 +305,7 @@ export default function POScannerVerificationSession({
 
   const handleScan = useCallback(
     async (code: string, preferredOrderId?: string) => {
-      if (!invoice || busy) return;
+      if (!invoice || busy || paused) return;
       setBusy(true);
       try {
         const result = await onProcessScan(invoice, code, preferredOrderId);
@@ -273,17 +316,18 @@ export default function POScannerVerificationSession({
         }
         if (result.ok && result.order) {
           disambiguationRef.current.set(code.trim().toLowerCase(), result.order.id);
+          addHistoryEvent(result.order, 'scan');
         }
         applyResult(result);
       } finally {
         setBusy(false);
       }
     },
-    [invoice, busy, onProcessScan, applyResult]
+    [invoice, busy, paused, onProcessScan, applyResult, addHistoryEvent]
   );
 
   useBarcodeScanner({
-    enabled: Boolean(invoice) && !picker && !busy,
+    enabled: Boolean(invoice) && !picker && !busy && !paused,
     onScan: (code) => {
       const key = code.trim().toLowerCase();
       const remembered = disambiguationRef.current.get(key);
@@ -299,10 +343,11 @@ export default function POScannerVerificationSession({
   };
 
   const handleManualAdd = async () => {
-    if (!lastOrder || busy) return;
+    if (!lastOrder || busy || paused) return;
     setBusy(true);
     try {
       const result = await onRegisterUnit(lastOrder.id);
+      if (result.ok && result.order) addHistoryEvent(result.order, 'scan');
       applyResult(result);
     } finally {
       setBusy(false);
@@ -310,11 +355,12 @@ export default function POScannerVerificationSession({
   };
 
   const handleUndoScan = async (orderId: string) => {
-    if (busy) return;
+    if (busy || paused) return;
     setBusy(true);
     try {
       const result = await onUndoScanUnit(orderId);
       if (result.order) setLastOrder(result.order);
+      if (result.ok && result.order) addHistoryEvent(result.order, 'undo');
       setFeedback({
         tone: result.ok ? 'warn' : 'error',
         text: result.message,
@@ -325,7 +371,7 @@ export default function POScannerVerificationSession({
   };
 
   const handleConfirmLine = async (orderId: string) => {
-    if (busy) return;
+    if (busy || paused) return;
     setBusy(true);
     try {
       const result = await onConfirmLine(orderId);
@@ -337,6 +383,10 @@ export default function POScannerVerificationSession({
       setBusy(false);
     }
   };
+
+  const handleSessionClose = useCallback(() => {
+    if (!paused) onClose();
+  }, [paused, onClose]);
 
   const feedbackClass = darkMode
     ? feedback?.tone === 'ok'
@@ -361,7 +411,7 @@ export default function POScannerVerificationSession({
         titleId="po-scanner-title"
         panelMaxHeightClass="max-h-[min(85dvh,720px)]"
         closeLabel={t('purchaseOrders.scanner.exit')}
-        onClose={onClose}
+        onClose={handleSessionClose}
       >
         <div className="border-b border-gray-100 bg-white px-6 py-4">
           <div className="relative">
@@ -458,8 +508,19 @@ export default function POScannerVerificationSession({
     );
   }
 
-  const lastProg = lastOrder ? getScanProgress(lastOrder) : null;
-  const lastReady = lastOrder ? isLineReadyToConfirm(lastOrder) : false;
+  const lastVerified =
+    lastOrder != null && effectivePurchaseOrderStatus(lastOrder.status) === 'Verified';
+  const rawLastProg = lastOrder ? getScanProgress(lastOrder) : null;
+  const lastProg =
+    rawLastProg && lastVerified
+      ? {
+          ...rawLastProg,
+          scanned: rawLastProg.expected,
+          remaining: 0,
+          isComplete: true,
+        }
+      : rawLastProg;
+  const lastReady = lastOrder ? !lastVerified && isLineReadyToConfirm(lastOrder) : false;
   const scanTitle = formatPONumber(invoice);
   const unitsRemaining = Math.max(0, globalProgress.total - globalProgress.scanned);
   const unitsPct =
@@ -517,7 +578,7 @@ export default function POScannerVerificationSession({
         maxWidthClass="max-w-5xl"
         panelMaxHeightClass="max-h-[min(92dvh,920px)]"
         closeLabel={t('purchaseOrders.scanner.exit')}
-        onClose={onClose}
+        onClose={handleSessionClose}
       >
         <div className={`border-b ${ui.border} px-6 py-3`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -533,6 +594,7 @@ export default function POScannerVerificationSession({
                 setInvoice(null);
                 setLastOrder(null);
                 setFeedback(null);
+                setScanHistory([]);
                 setSearch('');
               }}
               className="text-sm font-medium text-[#515151] hover:underline"
@@ -657,10 +719,12 @@ export default function POScannerVerificationSession({
                 {lastOrder && (
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                      lastReady ? ui.badgeReady : ui.badgeScan
+                      lastVerified ? ui.badgeDone : lastReady ? ui.badgeReady : ui.badgeScan
                     }`}
                   >
-                    {lastReady
+                    {lastVerified
+                      ? t('purchaseOrders.scanner.statusComplete')
+                      : lastReady
                       ? t('purchaseOrders.scanner.statusReady')
                       : t('purchaseOrders.scanner.statusScanning')}
                   </span>
@@ -679,7 +743,10 @@ export default function POScannerVerificationSession({
                     <div
                       className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-lg border ${ui.borderLight} ${ui.stat}`}
                     >
-                      <PoStatusIcon status={lastReady ? 'Verified' : 'Received'} className="h-8 w-8" />
+                      <PoStatusIcon
+                        status={lastVerified || lastReady ? 'Verified' : 'Received'}
+                        className="h-8 w-8"
+                      />
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
@@ -694,45 +761,76 @@ export default function POScannerVerificationSession({
                     </div>
                     <div className={`mt-2 h-2.5 overflow-hidden rounded-full ${ui.track}`}>
                       <div
-                        className={`h-full rounded-full transition-all ${lastReady ? 'bg-amber-500' : 'bg-indigo-500'}`}
+                        className={`h-full rounded-full transition-all ${
+                          lastVerified
+                            ? 'bg-green-500'
+                            : lastReady
+                              ? 'bg-amber-500'
+                              : 'bg-indigo-500'
+                        }`}
                         style={{ width: `${lastPct}%` }}
                       />
                     </div>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {lastProg.scanned > 0 && (
+                    {lastVerified ? (
+                      <div
+                        className={`mt-4 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${
+                          darkMode
+                            ? 'border-green-500/40 bg-green-500/10 text-green-200'
+                            : 'border-green-200 bg-green-50 text-green-800'
+                        }`}
+                      >
+                        <svg
+                          className="h-4 w-4 shrink-0"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                        {t('purchaseOrders.scanner.verifiedLine')}
+                      </div>
+                    ) : (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {lastProg.scanned > 0 && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void handleUndoScan(lastOrder.id)}
+                            className={`rounded-lg border px-3 py-1.5 text-sm font-medium disabled:opacity-50 ${
+                              darkMode
+                                ? 'border-red-500/40 bg-red-500/10 text-red-200 hover:bg-red-500/20'
+                                : 'border-red-200 bg-red-50 text-red-800 hover:bg-red-100'
+                            }`}
+                          >
+                            {t('purchaseOrders.scanner.undoLastScan')}
+                          </button>
+                        )}
+                        {lastReady ? (
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() => void handleUndoScan(lastOrder.id)}
-                          className={`rounded-lg border px-3 py-1.5 text-sm font-medium disabled:opacity-50 ${
-                            darkMode
-                              ? 'border-red-500/40 bg-red-500/10 text-red-200 hover:bg-red-500/20'
-                              : 'border-red-200 bg-red-50 text-red-800 hover:bg-red-100'
-                          }`}
-                        >
-                          {t('purchaseOrders.scanner.undoLastScan')}
-                        </button>
-                      )}
-                      {lastReady ? (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => void handleConfirmLine(lastOrder.id)}
-                          className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
-                        >
-                          {t('purchaseOrders.scanner.confirmLine')}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => void handleManualAdd()}
-                          className={`rounded-lg border px-3 py-1.5 text-sm font-medium disabled:opacity-50 ${ui.ghostBtn}`}
-                        >
-                          {t('purchaseOrders.scanner.addOneUnit')}
-                        </button>
-                      )}
-                    </div>
+                            onClick={() => void handleConfirmLine(lastOrder.id)}
+                            className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                          >
+                            {t('purchaseOrders.scanner.confirmLine')}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void handleManualAdd()}
+                            className={`rounded-lg border px-3 py-1.5 text-sm font-medium disabled:opacity-50 ${ui.ghostBtn}`}
+                          >
+                            {t('purchaseOrders.scanner.addOneUnit')}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -756,6 +854,42 @@ export default function POScannerVerificationSession({
                 </div>
               )}
             </div>
+
+            {scanHistory.length > 0 && (
+              <details className={`rounded-xl border px-4 py-3 ${ui.surface}`}>
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold text-gray-600">
+                  <span>{t('purchaseOrders.scanner.scanHistory')}</span>
+                  <span className="rounded-full bg-gray-100 px-2 py-0.5 tabular-nums text-gray-500">
+                    {scanHistory.length}
+                  </span>
+                </summary>
+                <ol className={`mt-3 max-h-40 space-y-2 overflow-y-auto border-t pt-3 ${ui.border}`}>
+                  {scanHistory.map((event) => (
+                    <li key={event.id} className="flex items-start justify-between gap-3 text-xs">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-gray-800">{event.description}</p>
+                        <p className="mt-0.5 truncate font-mono text-[11px] text-gray-500">
+                          {event.sku} ·{' '}
+                          {event.action === 'scan'
+                            ? t('purchaseOrders.scanner.historyScanned')
+                            : t('purchaseOrders.scanner.historyUndone')}
+                        </p>
+                      </div>
+                      <time
+                        dateTime={event.at.toISOString()}
+                        className="shrink-0 tabular-nums text-gray-500"
+                      >
+                        {event.at.toLocaleTimeString('es-EC', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
+                        })}
+                      </time>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            )}
 
             <p className="text-center text-xs text-gray-500">{t('purchaseOrders.scanner.scanHint')}</p>
           </div>
@@ -815,8 +949,10 @@ export default function POScannerVerificationSession({
                               type="button"
                               disabled={busy}
                               onClick={() => void handleUndoScan(o.id)}
-                              className={`text-xs font-medium disabled:opacity-50 ${
-                                darkMode ? 'text-red-300 hover:underline' : 'text-red-700 hover:underline'
+                              className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                                darkMode
+                                  ? 'border-red-500/40 bg-red-500/10 text-red-200 hover:bg-red-500/20'
+                                  : 'border-red-200 bg-red-50 text-red-800 hover:bg-red-100'
                               }`}
                             >
                               {t('purchaseOrders.scanner.undoScan')}
@@ -825,8 +961,10 @@ export default function POScannerVerificationSession({
                               type="button"
                               disabled={busy}
                               onClick={() => void handleConfirmLine(o.id)}
-                              className={`text-xs font-semibold disabled:opacity-50 ${
-                                darkMode ? 'text-amber-300 hover:underline' : 'text-amber-700 hover:underline'
+                              className={`rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50 ${
+                                darkMode
+                                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20'
+                                  : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
                               }`}
                             >
                               {t('purchaseOrders.scanner.confirmShort')} →
@@ -882,8 +1020,10 @@ export default function POScannerVerificationSession({
                                 type="button"
                                 disabled={busy}
                                 onClick={() => void handleUndoScan(o.id)}
-                                className={`text-xs font-medium disabled:opacity-50 ${
-                                  darkMode ? 'text-red-300 hover:underline' : 'text-red-700 hover:underline'
+                                className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                                  darkMode
+                                    ? 'border-red-500/40 bg-red-500/10 text-red-200 hover:bg-red-500/20'
+                                    : 'border-red-200 bg-red-50 text-red-800 hover:bg-red-100'
                                 }`}
                               >
                                 {t('purchaseOrders.scanner.undoScan')}
@@ -894,7 +1034,11 @@ export default function POScannerVerificationSession({
                                 type="button"
                                 disabled={busy}
                                 onClick={() => void handleConfirmLine(o.id)}
-                                className={`text-xs font-semibold ${darkMode ? 'text-amber-300' : 'text-amber-700'} hover:underline disabled:opacity-50`}
+                                className={`rounded-md border px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50 ${
+                                  darkMode
+                                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20'
+                                    : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                                }`}
                               >
                                 {t('purchaseOrders.scanner.confirmShort')} →
                               </button>
