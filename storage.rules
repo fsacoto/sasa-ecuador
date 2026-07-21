@@ -8,18 +8,22 @@ service firebase.storage {
       return request.auth != null;
     }
     
-    // Images storage - CMS images can be larger (up to 50MB)
+    // Images storage - CMS images can be larger (up to 50MB).
+    // Size check only applies to uploads (create/update); delete must not require
+    // request.resource (it is null on delete) or admins can't remove files.
     match /images/cms/{allImages=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && 
+      allow create, update: if isAuthenticated() &&
                    request.resource.size < 50 * 1024 * 1024; // 50MB max for CMS
+      allow delete: if isAuthenticated();
     }
     
-    // Images storage - inventory and other images limited to 30MB
+    // Images storage - inventory and other images limited to 30MB.
     match /images/{allImages=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && 
+      allow create, update: if isAuthenticated() &&
                    request.resource.size <= 30 * 1024 * 1024; // 30MB max
+      allow delete: if isAuthenticated();
     }
     
     // Barcodes storage
@@ -31,8 +35,9 @@ service firebase.storage {
     // Videos storage  
     match /videos/{allVideos=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && 
+      allow create, update: if isAuthenticated() &&
                    request.resource.size < 100 * 1024 * 1024; // 100MB max
+      allow delete: if isAuthenticated();
     }
     
     // Documents storage
@@ -44,8 +49,9 @@ service firebase.storage {
     // Purchase order verification media (see PurchaseOrders.tsx → verification/...)
     match /verification/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() &&
+      allow create, update: if isAuthenticated() &&
                    request.resource.size < 100 * 1024 * 1024;
+      allow delete: if isAuthenticated();
     }
 
     // Consignment return evidence (ConsignmentReturnModal → consignment-returns/{consignmentDocId}/…).

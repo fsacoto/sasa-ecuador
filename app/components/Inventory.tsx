@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { InventoryItem } from '../types';
 import InventoryDetailPanel from './InventoryDetailPanel';
 import ProductCatalogModal from './ProductCatalogModal';
+import BulkInventoryImagesModal from './BulkInventoryImagesModal';
 import {
   resolveInternalSku,
   validateAndNormalizeInternalSku,
@@ -60,6 +61,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [verificationIssuesModalItem, setVerificationIssuesModalItem] = useState<InventoryItem | null>(null);
   const [isCatalogModalOpen, setIsCatalogModalOpen] = useState(false);
+  const [isBulkImagesModalOpen, setIsBulkImagesModalOpen] = useState(false);
   const [skuManuallyEdited, setSkuManuallyEdited] = useState(false);
   const [categoryMode, setCategoryMode] = useState<'select' | 'new'>('select');
   const [lineMode, setLineMode] = useState<'select' | 'new'>('select');
@@ -78,7 +80,10 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
     'asc',
     userId
   );
-  const [searchQuery, setSearchQuery] = usePersistedFilterState('inventory', 'searchQuery', '', userId);
+  // La búsqueda de texto NO se persiste a propósito: si se guardara, al recargar
+  // filtraría en silencio (el campo vive en un menú colapsado y no tiene indicador),
+  // dando la impresión de que "faltan" artículos. Empieza siempre vacía.
+  const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = usePersistedFilterState('inventory', 'filterCategory', 'all', userId);
   const [filterLine, setFilterLine] = usePersistedFilterState('inventory', 'filterLine', 'all', userId);
   const [filterSalePrice, setFilterSalePrice] = usePersistedFilterState<'all' | 'with' | 'without'>(
@@ -571,6 +576,27 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
     setMediaToDelete(null);
   };
 
+  // Deleting a whole item must also remove its photos from Firebase Storage,
+  // otherwise the files stay stored forever with nothing showing them.
+  const handleConfirmDeleteItem = async () => {
+    const target = itemToDelete;
+    setDeleteConfirmOpen(false);
+    setItemToDelete(null);
+    if (!target) return;
+
+    // deleteMediaFile skips non-Storage URLs and treats already-gone files as done.
+    const images = target.images ?? [];
+    if (images.length > 0) {
+      await Promise.allSettled(images.map((url) => deleteMediaFile(url)));
+    }
+
+    try {
+      await deleteInventoryItem(target.id);
+    } catch (error) {
+      console.error('Error deleting inventory item:', error);
+    }
+  };
+
   const handleSkuChange = (newSku: string) => {
     setFormData({ ...formData, sku: newSku });
     setSkuManuallyEdited(true);
@@ -1028,12 +1054,26 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold text-gray-900">{t('inventory.title')}</h2>
           <p className="text-sm text-gray-500 mt-1">{t('inventory.subtitle')}</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap justify-end gap-3">
+          {!isReadOnly && (
+            <button
+              type="button"
+              onClick={() => setIsBulkImagesModalOpen(true)}
+              disabled={inventory.length === 0}
+              className="flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm transition-all duration-200 hover:bg-gray-50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <svg className="h-4 w-4 text-[#515151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 16.5V21h18v-4.5M12 3v13.5m0-13.5L7.5 7.5M12 3l4.5 4.5" />
+              </svg>
+              <span className="font-medium text-gray-700">{t('inventory.bulkImages.openButton')}</span>
+            </button>
+          )}
+
           <button
             onClick={() => setIsCatalogModalOpen(true)}
             disabled={inventory.length === 0}
@@ -1404,11 +1444,16 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
               setShowSearchDropdown(!showSearchDropdown);
               setShowGroupByDropdown(false);
             }}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm"
+            className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
+              searchQuery ? 'bg-[#515151] text-white border-[#515151]' : ''
+            }`}
           >
-            <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className={`w-4 h-4 ${searchQuery ? 'text-white' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
+            {searchQuery && (
+              <span className="max-w-[8rem] truncate text-xs font-medium">{searchQuery}</span>
+            )}
           </button>
           
           {showSearchDropdown && (
@@ -2495,19 +2540,22 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
         />
       )}
 
+      {isBulkImagesModalOpen && (
+        <BulkInventoryImagesModal
+          inventory={inventory}
+          canDeleteMedia={user?.role === 'admin' && hasPermission('media.delete')}
+          onUpdateInventoryItem={updateInventoryItem}
+          onClose={() => setIsBulkImagesModalOpen(false)}
+        />
+      )}
+
       <ConfirmDialog
         open={deleteConfirmOpen}
         title={t('common.deleteInventoryItem')}
         description={t('inventory.deleteConfirm')}
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
-        onConfirm={() => {
-          if (itemToDelete) {
-            deleteInventoryItem(itemToDelete.id);
-            setItemToDelete(null);
-          }
-          setDeleteConfirmOpen(false);
-        }}
+        onConfirm={() => void handleConfirmDeleteItem()}
         onCancel={() => {
           setDeleteConfirmOpen(false);
           setItemToDelete(null);

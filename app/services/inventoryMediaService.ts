@@ -150,7 +150,9 @@ export async function deleteInventoryMedia(id: string): Promise<void> {
 }
 
 // Delete a media file from Firebase Storage (admin only)
-// This function deletes the actual file from storage, not just the reference
+// This function deletes the actual file from storage, not just the reference.
+// It is idempotent: if the file no longer exists the goal (nothing left in
+// storage) is already met, so we treat "object-not-found" as success.
 export async function deleteMediaFile(imageUrl: string): Promise<void> {
   try {
     // Only delete if it's a Firebase Storage URL
@@ -169,6 +171,12 @@ export async function deleteMediaFile(imageUrl: string): Promise<void> {
     // Delete the file from storage
     await deleteFile(storagePath);
   } catch (error) {
+    // The file is already gone → deletion goal achieved, not a failure.
+    const code = (error as { code?: string })?.code;
+    if (code === 'storage/object-not-found') {
+      console.info('Media file already removed from storage:', imageUrl);
+      return;
+    }
     console.error('Error deleting media file from storage:', error);
     throw error;
   }

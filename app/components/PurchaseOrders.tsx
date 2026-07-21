@@ -193,7 +193,10 @@ export default function PurchaseOrders() {
     'desc',
     userId
   );
-  const [searchQuery, setSearchQuery] = usePersistedFilterState('purchase-orders', 'searchQuery', '', userId);
+  // La búsqueda de texto NO se persiste a propósito: si se guardara, al recargar
+  // filtraría en silencio (el campo vive en un menú colapsado y no tiene indicador),
+  // dando la impresión de que "faltan" órdenes. Empieza siempre vacía.
+  const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = usePersistedFilterState('purchase-orders', 'filterStatus', 'all', userId);
   const [filterSupplier, setFilterSupplier] = usePersistedFilterState('purchase-orders', 'filterSupplier', 'all', userId);
   const [filterDuplicateSku, setFilterDuplicateSku] = usePersistedFilterState(
@@ -2389,11 +2392,16 @@ export default function PurchaseOrders() {
         <div className="relative">
           <button
             onClick={() => setShowSearchDropdown(!showSearchDropdown)}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm"
+            className={`flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all duration-200 text-sm ${
+              searchQuery ? 'bg-[#515151] text-white border-[#515151]' : ''
+            }`}
           >
-            <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className={`w-4 h-4 ${searchQuery ? 'text-white' : 'text-gray-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
+            {searchQuery && (
+              <span className="max-w-[8rem] truncate text-xs font-medium">{searchQuery}</span>
+            )}
           </button>
           
           {showSearchDropdown && (
