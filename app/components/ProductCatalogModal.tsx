@@ -6,6 +6,7 @@ import { formatSalePriceDisplay } from '../utils/salePrice';
 import CatalogDownloadButton from './CatalogDownloadButton';
 import { useTranslation } from '../context/TranslationContext';
 import { displayCategory, displayLine } from '../utils/merchandiseLabels';
+import { isMaterialCategory } from '../utils/materials';
 
 type CatalogSort =
   | 'skuAsc'
@@ -58,6 +59,9 @@ export default function ProductCatalogModal({
 
   // Filter inventory based on category, line, and stock location filters
   const filteredInventory = inventory.filter(item => {
+    // Materials are not catalog / storefront merch
+    if (isMaterialCategory(item.category)) return false;
+
     if (filterCategory !== 'all') {
       if (displayCategory(item.category) !== displayCategory(filterCategory)) return false;
     }

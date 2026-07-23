@@ -23,17 +23,19 @@ interface InventoryContextType {
   addPurchaseOrdersBulk: (orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]) => Promise<PurchaseOrder[]>;
   updatePurchaseOrder: (
     id: string,
-    order: Omit<Partial<PurchaseOrder>, 'unitsPerPack' | 'labelsPrintedCount'> & {
+    order: Omit<Partial<PurchaseOrder>, 'unitsPerPack' | 'labelsPrintedCount' | 'unitOfMeasure'> & {
       unitsPerPack?: number | null;
       labelsPrintedCount?: number | null;
+      unitOfMeasure?: PurchaseOrder['unitOfMeasure'] | null;
     }
   ) => Promise<void>;
   updatePurchaseOrdersBulk: (
     updates: Array<{
       id: string;
-      orderUpdate: Omit<Partial<PurchaseOrder>, 'unitsPerPack' | 'labelsPrintedCount'> & {
+      orderUpdate: Omit<Partial<PurchaseOrder>, 'unitsPerPack' | 'labelsPrintedCount' | 'unitOfMeasure'> & {
         unitsPerPack?: number | null;
         labelsPrintedCount?: number | null;
+        unitOfMeasure?: PurchaseOrder['unitOfMeasure'] | null;
       };
     }>
   ) => Promise<void>;
@@ -171,9 +173,13 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  type PurchaseOrderPatch = Omit<Partial<PurchaseOrder>, 'unitsPerPack' | 'labelsPrintedCount'> & {
+  type PurchaseOrderPatch = Omit<
+    Partial<PurchaseOrder>,
+    'unitsPerPack' | 'labelsPrintedCount' | 'unitOfMeasure'
+  > & {
     unitsPerPack?: number | null;
     labelsPrintedCount?: number | null;
+    unitOfMeasure?: PurchaseOrder['unitOfMeasure'] | null;
   };
 
   const applyLocalPurchaseOrderPatch = (
@@ -183,9 +189,11 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     const next = { ...order, ...patch } as PurchaseOrder & {
       unitsPerPack?: number | null;
       labelsPrintedCount?: number | null;
+      unitOfMeasure?: PurchaseOrder['unitOfMeasure'] | null;
     };
     if (patch.unitsPerPack === null) delete next.unitsPerPack;
     if (patch.labelsPrintedCount === null) delete next.labelsPrintedCount;
+    if (patch.unitOfMeasure === null) delete next.unitOfMeasure;
     return next as PurchaseOrder;
   };
 

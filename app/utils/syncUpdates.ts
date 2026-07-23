@@ -345,6 +345,9 @@ export async function syncPurchaseOrderToInventory(
     if (updatedOrder.line) {
       updates.line = updatedOrder.line;
     }
+    if (updatedOrder.unitOfMeasure && updatedOrder.unitOfMeasure !== inventoryItem.unitOfMeasure) {
+      updates.unitOfMeasure = updatedOrder.unitOfMeasure;
+    }
     
     // Update description if provided
     if (updatedOrder.description && !inventoryItem.description) {
@@ -429,6 +432,7 @@ export async function syncPurchaseOrderToInventory(
           poSnapshot
         ),
         ...(updatedOrder.barcode ? { barcode: updatedOrder.barcode } : {}),
+        ...(updatedOrder.unitOfMeasure ? { unitOfMeasure: updatedOrder.unitOfMeasure } : {}),
       };
 
       const newItemId = await addInventoryItem(newItem);

@@ -5,10 +5,11 @@ import { landedCostPerSaleableUnit, normalizeUnitsPerPackInput } from '../utils/
 
 export type PurchaseOrderFieldUpdate = Omit<
   Partial<PurchaseOrder>,
-  'unitsPerPack' | 'labelsPrintedCount'
+  'unitsPerPack' | 'labelsPrintedCount' | 'unitOfMeasure'
 > & {
   unitsPerPack?: number | null;
   labelsPrintedCount?: number | null;
+  unitOfMeasure?: PurchaseOrder['unitOfMeasure'] | null;
 };
 
 const COLLECTION_NAME = 'purchaseOrders';
@@ -151,7 +152,7 @@ export async function addPurchaseOrdersBulk(orders: Omit<PurchaseOrder, 'id' | '
 }
 
 /** Fields that may be cleared with `null` → Firestore deleteField(). */
-const NULLABLE_DELETE_FIELDS = new Set(['unitsPerPack', 'labelsPrintedCount']);
+const NULLABLE_DELETE_FIELDS = new Set(['unitsPerPack', 'labelsPrintedCount', 'unitOfMeasure']);
 
 // Update a purchase order
 export async function updatePurchaseOrder(id: string, updates: PurchaseOrderFieldUpdate): Promise<void> {

@@ -73,10 +73,12 @@ import DateInput from './ui/DateInput';
 import {
   PREDEFINED_CATEGORIES_ES,
   PREDEFINED_LINES_ES,
+  MATERIAL_UNITS_ES,
   allKnownCategoryKeys,
   allKnownLineKeys,
 } from '../constants/merchandise';
 import { displayCategory, displayLine } from '../utils/merchandiseLabels';
+import { isMaterialCategory, normalizeMaterialUnit, type MaterialUnit } from '../utils/materials';
 import { formatDateDMY, formatDateTimeShort } from '../utils/formatDate';
 
 /** Row used to validate supplier + internal SKU before verification (inventory sync requires both). */
@@ -366,7 +368,10 @@ export default function PurchaseOrders() {
     exchangeRate: 1,
     purchaseDate: new Date().toISOString().split('T')[0],
     status: 'Ordered' as PurchaseOrderStatus,
+    unitOfMeasure: '' as '' | MaterialUnit,
   });
+
+  const formIsMaterial = isMaterialCategory(formData.category);
 
   /** Orden en contexto + SKU del formulario (para generar código antes de guardar otros campos). */
   const mergedOrderForFormBarcode = useMemo((): PurchaseOrder | null => {
@@ -436,6 +441,7 @@ export default function PurchaseOrders() {
           line: item.line,
           images: item.images || [],
           supplierSKU: editingOrder ? prev.supplierSKU : item.supplierSKU,
+          unitOfMeasure: normalizeMaterialUnit(item.unitOfMeasure) || '',
         }));
         setIsCreatingNewItem(false);
         setSkuManuallyEdited(true); // Prevent auto-regeneration when linked to existing
@@ -451,6 +457,7 @@ export default function PurchaseOrders() {
         line: '',
         images: [],
         supplierSKU: '',
+        unitOfMeasure: '',
       }));
     }
   }, [selectedInventoryId, inventory, editingOrder]);
@@ -649,14 +656,21 @@ export default function PurchaseOrders() {
       statusDates.verifiedDate = editingOrder?.verifiedDate || new Date();
     }
     
-    const orderData = {
-      ...formData,
+    const isMaterial = isMaterialCategory(formData.category);
+    const { unitOfMeasure: _uomForm, ...formWithoutUom } = formData;
+    const orderData: Record<string, unknown> = {
+      ...formWithoutUom,
       sku: normalizedSku,
       supplierId: finalSupplierId,
       ...totals,
       ...statusDates,
       purchaseDate: new Date(formData.purchaseDate),
     };
+    if (isMaterial) {
+      orderData.unitOfMeasure = normalizeMaterialUnit(formData.unitOfMeasure) || 'unidad';
+    } else if (editingOrder) {
+      orderData.unitOfMeasure = null;
+    }
 
     if (editingOrder) {
       // Update the purchase order
@@ -774,6 +788,7 @@ export default function PurchaseOrders() {
       exchangeRate: 1,
       purchaseDate: new Date().toISOString().split('T')[0],
       status: 'Ordered',
+      unitOfMeasure: '',
     });
     setEditingOrder(null);
     setIsFormOpen(false);
@@ -1591,6 +1606,7 @@ export default function PurchaseOrders() {
       exchangeRate: order.exchangeRate,
       purchaseDate: order.purchaseDate.toISOString().split('T')[0],
       status: order.status || 'Ordered',
+      unitOfMeasure: normalizeMaterialUnit(order.unitOfMeasure) || '',
     });
     setIsFormOpen(true);
   };
@@ -2777,9 +2793,17 @@ export default function PurchaseOrders() {
                         onChange={(e) => {
                           if (e.target.value === '__new__') {
                             setCategoryMode('new');
-                            setFormData({ ...formData, category: '' });
+                            setFormData({ ...formData, category: '', unitOfMeasure: '' });
                           } else {
-                            setFormData({ ...formData, category: e.target.value });
+                            const nextCat = e.target.value;
+                            const isMat = isMaterialCategory(nextCat);
+                            setFormData({
+                              ...formData,
+                              category: nextCat,
+                              unitOfMeasure: isMat
+                                ? formData.unitOfMeasure || 'unidad'
+                                : '',
+                            });
                           }
                         }}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
@@ -2846,8 +2870,10 @@ export default function PurchaseOrders() {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                       >
                         <option value="">{t('purchaseOrders.select')}</option>
-                        {[...PREDEFINED_LINES_ES].map(line => (
-                          <option key={line} value={line}>{line}</option>
+                        {[...PREDEFINED_LINES_ES].map((line) => (
+                          <option key={line} value={line}>
+                            {line}
+                          </option>
                         ))}
                         {existingLines.length > 0 && (
                           <>
@@ -2947,16 +2973,45 @@ export default function PurchaseOrders() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.quantityLabel')}</label>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">
+                    {formIsMaterial
+                      ? `${t('purchaseOrders.quantityLabel')} (${t(`inventory.materialUnit.${formData.unitOfMeasure || 'unidad'}`) || formData.unitOfMeasure || 'unidades'})`
+                      : t('purchaseOrders.quantityLabel')}
+                  </label>
                   <input
                     type="number"
                     required
                     min="0"
+                    step={formIsMaterial ? 'any' : '1'}
                     value={formData.quantity}
                     onChange={(e) => setFormData({ ...formData, quantity: parseFloat(e.target.value) || 0 })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                   />
                 </div>
+                {formIsMaterial ? (
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">
+                      {t('inventory.unitOfMeasure') || 'Unidad de medida'} *
+                    </label>
+                    <select
+                      required
+                      value={formData.unitOfMeasure || 'unidad'}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          unitOfMeasure: e.target.value as MaterialUnit,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
+                    >
+                      {MATERIAL_UNITS_ES.map((u) => (
+                        <option key={u} value={u}>
+                          {t(`inventory.materialUnit.${u}`) || u}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
                 <div>
                   <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.currency')}</label>
                   <select
@@ -2983,7 +3038,41 @@ export default function PurchaseOrders() {
                     <option value="CNY">CNY - Chinese Yuan</option>
                   </select>
                 </div>
+                )}
               </div>
+
+              {formIsMaterial && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-gray-700">{t('purchaseOrders.currency')}</label>
+                    <select
+                      value={formData.currency}
+                      onChange={(e) => {
+                        const newCurrency = e.target.value;
+                        if (editingOrder) {
+                          setFormData({ ...formData, currency: newCurrency });
+                        } else {
+                          setFormData({ ...formData, currency: newCurrency });
+                          setExchangeRateManuallySet(false);
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
+                    >
+                      <option value="USD">USD - US Dollar</option>
+                      <option value="COP">COP - Colombian Peso</option>
+                      <option value="BRL">BRL - Brazilian Real</option>
+                      <option value="EUR">EUR - Euro</option>
+                      <option value="CNY">CNY - Chinese Yuan</option>
+                    </select>
+                  </div>
+                  <div className="flex items-end pb-2">
+                    <p className="text-xs text-gray-500">
+                      {t('purchaseOrders.materialCostHint') ||
+                        'El costo unitario es por metro, gramo, par o unidad según la medida elegida.'}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-3 gap-4">
                 <div>

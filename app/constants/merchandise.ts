@@ -6,7 +6,24 @@ export const PREDEFINED_CATEGORIES_ES = [
   'Sets',
   'Tobilleras',
   'Aretes',
+  'Materiales',
 ] as const;
+
+/** Categoría de insumos de construcción (no vendibles / no consignables). */
+export const MATERIAL_CATEGORY_ES = 'Materiales' as const;
+
+/** Tipos de material (línea) sugeridos cuando la categoría es Materiales. */
+export const PREDEFINED_MATERIAL_LINES_ES = [
+  'Cadena',
+  'Broche',
+  'Herraje',
+  'Dije',
+  'Cierre',
+] as const;
+
+/** Unidad de medida para insumos (categoría Materiales). */
+export const MATERIAL_UNITS_ES = ['unidad', 'metro', 'gramo', 'par'] as const;
+export type MaterialUnitEs = (typeof MATERIAL_UNITS_ES)[number];
 
 export const PREDEFINED_LINES_ES = ['Baño en Oro', 'Enchapado en Oro'] as const;
 
@@ -47,6 +64,10 @@ export const CATEGORY_TO_ES: Record<string, string> = {
 for (const c of PREDEFINED_CATEGORIES_ES) {
   CATEGORY_TO_ES[c.toLowerCase()] = c;
 }
+
+CATEGORY_TO_ES['material'] = MATERIAL_CATEGORY_ES;
+CATEGORY_TO_ES['materials'] = MATERIAL_CATEGORY_ES;
+CATEGORY_TO_ES['materiales'] = MATERIAL_CATEGORY_ES;
 
 export const LINE_TO_ES: Record<string, string> = {
   'gold plated': 'Baño en Oro',

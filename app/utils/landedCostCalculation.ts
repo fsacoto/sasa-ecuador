@@ -82,6 +82,7 @@ export type SkuUnitCostResult = {
 /**
  * Costo unitario de desembarque para un SKU: promedio ponderado por cantidad
  * de las OC verificadas vinculadas al producto en inventario.
+ * Productos construidos (BOM) usan `unitCost` guardado en el ítem.
  */
 export function resolveSkuUnitCost(
   sku: string,
@@ -90,7 +91,23 @@ export function resolveSkuUnitCost(
   additionalCosts: AdditionalCost[]
 ): SkuUnitCostResult {
   const product = inventory.find((item) => item.sku === sku);
-  if (!product || product.linkedPurchaseOrders.length === 0) {
+  if (!product) {
+    return { unitCost: null, sourcePoCount: 0 };
+  }
+
+  if (
+    product.billOfMaterials &&
+    product.billOfMaterials.length > 0 &&
+    product.unitCost != null &&
+    Number.isFinite(product.unitCost)
+  ) {
+    return { unitCost: product.unitCost, sourcePoCount: 0 };
+  }
+
+  if (product.linkedPurchaseOrders.length === 0) {
+    if (product.unitCost != null && Number.isFinite(product.unitCost)) {
+      return { unitCost: product.unitCost, sourcePoCount: 0 };
+    }
     return { unitCost: null, sourcePoCount: 0 };
   }
 
@@ -100,6 +117,9 @@ export function resolveSkuUnitCost(
   );
 
   if (linkedVerified.length === 0) {
+    if (product.unitCost != null && Number.isFinite(product.unitCost)) {
+      return { unitCost: product.unitCost, sourcePoCount: 0 };
+    }
     return { unitCost: null, sourcePoCount: 0 };
   }
 
@@ -117,6 +137,9 @@ export function resolveSkuUnitCost(
   }
 
   if (counted === 0 || totalQty === 0) {
+    if (product.unitCost != null && Number.isFinite(product.unitCost)) {
+      return { unitCost: product.unitCost, sourcePoCount: 0 };
+    }
     return { unitCost: null, sourcePoCount: 0 };
   }
 

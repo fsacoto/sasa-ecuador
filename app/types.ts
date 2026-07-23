@@ -69,6 +69,11 @@ export interface PurchaseOrder {
   bulkImportId?: string;
   /** Display label for the bulk import (e.g. CSV filename). */
   bulkImportLabel?: string;
+  /**
+   * Unit of measure when category is Materiales (metro, gramo, par, unidad).
+   * Quantity / costPerUnit are expressed in this unit.
+   */
+  unitOfMeasure?: 'unidad' | 'metro' | 'gramo' | 'par';
 }
 
 /** Problem qty from PO verification (damaged, etc.) — stock still counts units on hand. */
@@ -118,6 +123,28 @@ export interface InventoryItem {
   /** Returns from consignations with reported damage — shown alongside PO verification issues. */
   consignmentReturnIssues?: ConsignmentReturnIssueRef[];
   createdAt: Date;
+  /**
+   * Unit of measure when category is Materiales.
+   * Stock quantities are in this unit (supports decimals for metro/gramo).
+   */
+  unitOfMeasure?: 'unidad' | 'metro' | 'gramo' | 'par';
+  /**
+   * Cached unit cost (USD). For built products: from materials.
+   * For PO-sourced items prefer landed cost from linked POs; this is a fallback / build cache.
+   */
+  unitCost?: number;
+  /** Recipe used to build this sellable item from materials. */
+  billOfMaterials?: BillOfMaterialsLine[];
+  /** Canonical signature of billOfMaterials — same recipe → reuse same SKU. */
+  bomSignature?: string;
+}
+
+/** One material line in a built product recipe (quantities are per finished unit). */
+export interface BillOfMaterialsLine {
+  inventoryId: string;
+  sku: string;
+  quantityPerUnit: number;
+  unitCostAtBuild?: number;
 }
 
 export type AdditionalCostType = 'Shipping' | 'Insurance' | 'Duties' | 'Import Fees' | 'Other';

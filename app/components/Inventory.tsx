@@ -28,10 +28,18 @@ import { deleteMediaFile } from '../services/inventoryMediaService';
 import {
   PREDEFINED_CATEGORIES_ES,
   PREDEFINED_LINES_ES,
+  MATERIAL_UNITS_ES,
   allKnownCategoryKeys,
   allKnownLineKeys,
 } from '../constants/merchandise';
 import { displayCategory, displayLine } from '../utils/merchandiseLabels';
+import {
+  isMaterialCategory,
+  formatMaterialStock,
+  normalizeMaterialUnit,
+  type MaterialUnit,
+} from '../utils/materials';
+import InventoryBuildProductForm from './InventoryBuildProductForm';
 import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 import { HUB_GROUP_STACK_ICON_PATH } from '../constants/businessHubUi';
 import { formatSalePriceDisplay, itemHasSalePrice, parseSalePriceInput } from '../utils/salePrice';
@@ -42,7 +50,7 @@ interface InventoryProps {
 }
 
 export default function Inventory({ darkMode = false }: InventoryProps) {
-  const { inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, purchaseOrders, updatePurchaseOrder } = useInventory();
+  const { inventory, addInventoryItem, updateInventoryItem, deleteInventoryItem, purchaseOrders, updatePurchaseOrder, additionalCosts } = useInventory();
   const { user, hasPermission } = useAuth();
   const { t } = useTranslation();
   
@@ -55,6 +63,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
     ? inventory.filter(item => item.ecuadorStock > 0) 
     : inventory;
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [formTab, setFormTab] = useState<'add' | 'build'>('add');
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
@@ -237,7 +246,10 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
     ecuadorStock: 0,
     salePrice: '',
     images: [] as string[],
+    unitOfMeasure: '' as '' | MaterialUnit,
   });
+
+  const formIsMaterial = isMaterialCategory(formData.category);
 
   const [supplierSkuStable, setSupplierSkuStable] = useState('');
   const supplierDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -332,8 +344,12 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
         );
       }
 
-      const { salePrice: salePriceInput, ...formRest } = formData;
+      const { salePrice: salePriceInput, unitOfMeasure: uomRaw, ...formRest } = formData;
       const parsedSalePrice = parseSalePriceInput(salePriceInput);
+      const isMaterial = isMaterialCategory(formData.category);
+      const unitOfMeasure = isMaterial
+        ? normalizeMaterialUnit(uomRaw) || ('unidad' as MaterialUnit)
+        : undefined;
 
       const skuValidation = validateAndNormalizeInternalSku(
         formData.sku,
@@ -362,7 +378,11 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
         ...formRest,
         sku: skuValidation.sku,
         images: [...formData.images, ...uploadedImages],
-        ...(parsedSalePrice !== undefined ? { salePrice: parsedSalePrice } : {}),
+        ...(isMaterial
+          ? { unitOfMeasure, salePrice: undefined }
+          : {
+              ...(parsedSalePrice !== undefined ? { salePrice: parsedSalePrice } : {}),
+            }),
       };
 
       if (editingItem) {
@@ -373,7 +393,9 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
         const payload = {
           ...savedFormData,
           verificationIssues,
-          salePrice: parsedSalePrice,
+          ...(isMaterial
+            ? { unitOfMeasure, salePrice: undefined as number | undefined }
+            : { salePrice: parsedSalePrice }),
         };
         const updatedItem = { ...editingItem, ...payload };
         await updateInventoryItem(editingItem.id, payload);
@@ -407,9 +429,11 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
       ecuadorStock: 0,
       salePrice: '',
       images: [],
+      unitOfMeasure: '',
     });
     setEditingItem(null);
     setIsFormOpen(false);
+    setFormTab('add');
     clearPendingImagePreviews();
     setIsImageDragging(false);
     setSkuManuallyEdited(false);
@@ -439,8 +463,10 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
       ecuadorStock: item.ecuadorStock,
       salePrice: item.salePrice != null ? String(item.salePrice) : '',
       images: item.images || [],
+      unitOfMeasure: normalizeMaterialUnit(item.unitOfMeasure) || '',
     });
     
+    setFormTab('add');
     setIsFormOpen(true);
   };
 
@@ -978,7 +1004,16 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
           </td>
         )}
         {!hiddenColumns.has('ecuadorStock') && (
-          <td className="whitespace-nowrap px-6 py-4 text-center text-sm text-gray-700">{item.ecuadorStock}</td>
+          <td className="whitespace-nowrap px-6 py-4 text-center text-sm text-gray-700">
+            {isMaterialCategory(item.category)
+              ? formatMaterialStock(item.ecuadorStock, item.unitOfMeasure)
+              : item.ecuadorStock}
+            {isMaterialCategory(item.category) && (
+              <span className="mt-0.5 block text-[10px] font-medium uppercase tracking-wide text-amber-700">
+                {t('inventory.materialBadge') || 'Material'}
+              </span>
+            )}
+          </td>
         )}
         {!hiddenColumns.has('totalStock') && (
           <td className="px-6 py-4 text-center align-middle">
@@ -1592,20 +1627,68 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
       {isFormOpen && (
         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 duration-300">
-            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">
-                {editingItem ? t('inventory.editInventoryItem') : t('inventory.addNewInventoryItem')}
-              </h3>
-              <button
-                type="button"
-                onClick={resetForm}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {editingItem
+                    ? t('inventory.editInventoryItem')
+                    : formTab === 'build'
+                      ? t('inventory.buildNewProduct') || 'Construir producto'
+                      : t('inventory.addNewInventoryItem')}
+                </h3>
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              {!editingItem && (
+                <div className="mt-3 flex gap-1 rounded-lg bg-gray-100 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setFormTab('add')}
+                    className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                      formTab === 'add'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    {t('inventory.tabAddItem') || 'Agregar ítem'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormTab('build')}
+                    className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                      formTab === 'build'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    {t('inventory.tabBuildProduct') || 'Construir producto'}
+                  </button>
+                </div>
+              )}
             </div>
+            {formTab === 'build' && !editingItem ? (
+              <div className="overflow-y-auto max-h-[calc(90vh-8rem)] p-6">
+                <InventoryBuildProductForm
+                  inventory={inventory}
+                  purchaseOrders={purchaseOrders}
+                  additionalCosts={additionalCosts}
+                  existingCategories={existingCategories}
+                  existingLines={existingLines}
+                  onCancel={resetForm}
+                  onBuilt={resetForm}
+                  addInventoryItem={addInventoryItem}
+                  updateInventoryItem={updateInventoryItem}
+                />
+              </div>
+            ) : (
+            <>
             <form onSubmit={handleSubmit} className="overflow-y-auto max-h-[calc(90vh-8rem)] p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1 text-gray-700">{t('inventory.nameRequired')}</label>
@@ -1639,9 +1722,17 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                         onChange={(e) => {
                           if (e.target.value === '__new__') {
                             setCategoryMode('new');
-                            setFormData({ ...formData, category: '' });
+                            setFormData({ ...formData, category: '', unitOfMeasure: '' });
                           } else {
-                            setFormData({ ...formData, category: e.target.value });
+                            const nextCat = e.target.value;
+                            const isMat = isMaterialCategory(nextCat);
+                            setFormData({
+                              ...formData,
+                              category: nextCat,
+                              unitOfMeasure: isMat
+                                ? formData.unitOfMeasure || 'unidad'
+                                : '',
+                            });
                             // Generate SKU after category change (only for new items)
                             setTimeout(() => generateSkuIfNeeded(), 0);
                           }
@@ -1709,8 +1800,10 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                       >
                         <option value="">{t('inventory.selectLine')}</option>
-                        {[...PREDEFINED_LINES_ES].map(line => (
-                          <option key={line} value={line}>{line}</option>
+                        {[...PREDEFINED_LINES_ES].map((line) => (
+                          <option key={line} value={line}>
+                            {line}
+                          </option>
                         ))}
                         {existingLines.length > 0 && (
                           <>
@@ -1796,11 +1889,48 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                   type="text"
                   value={formData.supplierSKU}
                   onChange={(e) => setFormData({ ...formData, supplierSKU: e.target.value })}
-                  placeholder={t('inventory.supplierSkuPlaceholder')}
+                  placeholder={
+                    formIsMaterial
+                      ? t('inventory.materialSupplierSkuPlaceholder') ||
+                        'Código del proveedor (evita duplicar el mismo material)'
+                      : t('inventory.supplierSkuPlaceholder')
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
+                {formIsMaterial && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    {t('inventory.materialSupplierSkuHint') ||
+                      'Igual que en productos: el mismo SKU de proveedor reutiliza el SKU interno.'}
+                  </p>
+                )}
               </div>
 
+              {formIsMaterial && (
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-700">
+                    {t('inventory.unitOfMeasure') || 'Unidad de medida'} *
+                  </label>
+                  <select
+                    required
+                    value={formData.unitOfMeasure || 'unidad'}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        unitOfMeasure: e.target.value as MaterialUnit,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
+                  >
+                    {MATERIAL_UNITS_ES.map((u) => (
+                      <option key={u} value={u}>
+                        {t(`inventory.materialUnit.${u}`) || u}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {!formIsMaterial && (
               <div>
                 <label className="block text-sm font-medium mb-1 text-gray-700">{t('inventory.salePrice')}</label>
                 <div className="relative">
@@ -1818,15 +1948,28 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                 </div>
                 <p className="mt-1 text-xs text-gray-500">{t('inventory.salePriceUnset')}</p>
               </div>
+              )}
 
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-700">{t('inventory.ecuadorStockLabel')} *</label>
+                <label className="block text-sm font-medium mb-1 text-gray-700">
+                  {formIsMaterial
+                    ? `${t('inventory.ecuadorStockLabel')} (${t(`inventory.materialUnit.${formData.unitOfMeasure || 'unidad'}`) || formData.unitOfMeasure || 'unidades'}) *`
+                    : `${t('inventory.ecuadorStockLabel')} *`}
+                </label>
                 <input
                   type="number"
                   required
                   min="0"
+                  step={formIsMaterial ? 'any' : '1'}
                   value={formData.ecuadorStock}
-                  onChange={(e) => setFormData({ ...formData, ecuadorStock: parseInt(e.target.value, 10) || 0 })}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      ecuadorStock: formIsMaterial
+                        ? parseFloat(e.target.value) || 0
+                        : parseInt(e.target.value, 10) || 0,
+                    })
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent"
                 />
               </div>
@@ -1995,6 +2138,8 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                 )}
               </button>
             </div>
+            </>
+            )}
           </div>
         </div>
       )}
@@ -2313,7 +2458,10 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                           <div className="flex gap-2 text-xs">
                             {galleryFields.has('ecuadorStock') && (
                               <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                                EC: {item.ecuadorStock}
+                                EC:{' '}
+                                {isMaterialCategory(item.category)
+                                  ? formatMaterialStock(item.ecuadorStock, item.unitOfMeasure)
+                                  : item.ecuadorStock}
                               </span>
                             )}
                               {galleryFields.has('totalStock') && (

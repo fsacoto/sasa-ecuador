@@ -1,6 +1,7 @@
 import { canonicalCategory, canonicalLine } from '../utils/merchandiseLabels';
 import { normalizeSalePrice } from '../utils/salePrice';
 import { buildMergedGalleryUrls } from '../utils/inventoryMediaGallery';
+import { isMaterialCategory } from '../utils/materials';
 import type { CMSContent, InventoryItem } from '../types';
 import type {
   InventoryStoreFields,
@@ -76,6 +77,7 @@ export function isStoreActiveProduct(
   item: InventoryItem & InventoryStoreFields
 ): boolean {
   if (item.storeActive === false) return false;
+  if (isMaterialCategory(item.category)) return false;
   const stock = Math.floor(Number(item.ecuadorStock ?? 0));
   // Out of stock stays hidden on the storefront until restocked.
   if (!Number.isFinite(stock) || stock <= 0) return false;
