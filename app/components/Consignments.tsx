@@ -47,6 +47,10 @@ export default function Consignments() {
   const [view, setView] = useState<View>('list');
   const [consignments, setConsignments] = useState<Consignment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isCreatingConsignment, setIsCreatingConsignment] = useState(false);
+  const [isRegisteringSales, setIsRegisteringSales] = useState(false);
+  const isCreatingConsignmentRef = useRef(false);
+  const isRegisteringSalesRef = useRef(false);
   const [selectedConsignment, setSelectedConsignment] = useState<Consignment | null>(null);
   const [sortConfig, setSortConfig] = usePersistedFilterState<{ key: string; direction: 'asc' | 'desc' }>(
     'consignments',
@@ -309,6 +313,8 @@ export default function Consignments() {
   };
 
   const handleCreateConsignment = async () => {
+    if (isCreatingConsignmentRef.current) return;
+
     if (!selectedClient) {
       showAlert(t('consignments.pleaseSelectClient'), 'Validation Error');
       return;
@@ -319,16 +325,19 @@ export default function Consignments() {
       return;
     }
 
-    try {
-      // Check if we have enough stock
-      for (const item of consignmentItems) {
-        const inventoryItem = inventory.find(inv => inv.sku === item.sku);
-        if (!inventoryItem || inventoryItem.ecuadorStock < item.quantity) {
-          showAlert(`Insufficient stock for ${item.sku}. Available: ${inventoryItem?.ecuadorStock || 0}`, 'Stock Error');
-          return;
-        }
+    // Check if we have enough stock before locking the submit
+    for (const item of consignmentItems) {
+      const inventoryItem = inventory.find(inv => inv.sku === item.sku);
+      if (!inventoryItem || inventoryItem.ecuadorStock < item.quantity) {
+        showAlert(`Insufficient stock for ${item.sku}. Available: ${inventoryItem?.ecuadorStock || 0}`, 'Stock Error');
+        return;
       }
+    }
 
+    isCreatingConsignmentRef.current = true;
+    setIsCreatingConsignment(true);
+
+    try {
       // Create consignment items
       const consignmentItemsData: ConsignmentItem[] = consignmentItems.map(item => ({
         sku: item.sku,
@@ -383,12 +392,16 @@ export default function Consignments() {
     } catch (error) {
       console.error('Error creating consignment:', error);
       showAlert(t('consignments.errorCreating'), t('common.error'));
+    } finally {
+      isCreatingConsignmentRef.current = false;
+      setIsCreatingConsignment(false);
     }
   };
 
   const roundMoney2 = (n: number) => Math.round(n * 100) / 100;
 
   const handleRegisterSales = async () => {
+    if (isRegisteringSalesRef.current) return;
     if (!selectedConsignment) return;
 
     const hasSales = Object.values(salesQuantities).some(qty => qty > 0);
@@ -396,6 +409,9 @@ export default function Consignments() {
       showAlert(t('consignments.pleaseEnterQuantitiesToSell'), 'Validation Error');
       return;
     }
+
+    isRegisteringSalesRef.current = true;
+    setIsRegisteringSales(true);
 
     try {
       // Validate quantities + unit prices for lines being sold
@@ -561,6 +577,9 @@ export default function Consignments() {
     } catch (error: any) {
       console.error('Error registering sales:', error);
       showAlert(error.message || t('consignments.errorRegisteringSales'), t('common.error'));
+    } finally {
+      isRegisteringSalesRef.current = false;
+      setIsRegisteringSales(false);
     }
   };
 
@@ -1492,10 +1511,22 @@ export default function Consignments() {
             {consignmentItems.length > 0 && (
               <div className="mt-6">
                 <button
+                  type="button"
                   onClick={handleCreateConsignment}
-                  className="w-full px-6 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium"
+                  disabled={isCreatingConsignment}
+                  className="inline-flex w-full items-center justify-center gap-2 px-6 py-3 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors font-medium disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-[#515151]"
                 >
-                  {t('consignments.createConsignment')}
+                  {isCreatingConsignment ? (
+                    <>
+                      <svg className="h-5 w-5 shrink-0 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden>
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      {t('consignments.creatingConsignment')}
+                    </>
+                  ) : (
+                    t('consignments.createConsignment')
+                  )}
                 </button>
               </div>
             )}
@@ -1788,9 +1819,20 @@ export default function Consignments() {
                 <button
                   type="button"
                   onClick={handleRegisterSales}
-                  className="sasa-btn-primary shrink-0 rounded-lg px-5 py-2.5 text-sm font-medium transition-colors"
+                  disabled={isRegisteringSales}
+                  className="sasa-btn-primary inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {t('consignments.registerSalesButton')}
+                  {isRegisteringSales ? (
+                    <>
+                      <svg className="h-4 w-4 shrink-0 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden>
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      {t('consignments.registeringSales')}
+                    </>
+                  ) : (
+                    t('consignments.registerSalesButton')
+                  )}
                 </button>
               </div>
             </div>

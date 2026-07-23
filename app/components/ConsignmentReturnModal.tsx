@@ -52,6 +52,7 @@ export default function ConsignmentReturnModal({
   const [problemQty, setProblemQty] = useState<Record<number, string>>({});
   const [comment, setComment] = useState<Record<number, string>>({});
   const [filesByIndex, setFilesByIndex] = useState<Record<number, File[]>>({});
+  const [expandedIncidents, setExpandedIncidents] = useState<Record<number, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -61,6 +62,7 @@ export default function ConsignmentReturnModal({
       setProblemQty({});
       setComment({});
       setFilesByIndex({});
+      setExpandedIncidents({});
     }
   }, [open, consignment.id]);
 
@@ -302,6 +304,7 @@ export default function ConsignmentReturnModal({
 
                   const r = parseInt(returnQty[index] || '0', 10) || 0;
                   const showProblem = r > 0;
+                  const incidentsOpen = !!expandedIncidents[index];
                   const fileInputId = `return-files-${consignment.id}-${index}`;
 
                   return (
@@ -342,80 +345,127 @@ export default function ConsignmentReturnModal({
                       </div>
 
                       {showProblem && (
-                        <div className="sasa-return-incidents mt-4 space-y-3">
-                          <div>
-                            <p className="sasa-return-incidents-title">
-                              {t('consignments.returnProblemSection')}
-                            </p>
-                            <p className="sasa-return-incidents-hint mt-1">
-                              {t('consignments.returnProblemHint')}
-                            </p>
-                          </div>
+                        <div className="mt-3">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedIncidents((prev) => ({
+                                ...prev,
+                                [index]: !prev[index],
+                              }))
+                            }
+                            className="sasa-return-incidents-toggle group"
+                            aria-expanded={incidentsOpen}
+                          >
+                            <svg
+                              className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${
+                                incidentsOpen ? 'rotate-90' : ''
+                              }`}
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                              aria-hidden
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 5l7 7-7 7"
+                              />
+                            </svg>
+                            <span>{t('consignments.returnProblemSection')}</span>
+                          </button>
 
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <div>
-                              <label
-                                htmlFor={`problem-qty-${index}`}
-                                className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide"
-                              >
-                                {t('consignments.qtyWithProblem')}
-                              </label>
-                              <input
-                                id={`problem-qty-${index}`}
-                                type="number"
-                                min={0}
-                                max={r}
-                                value={problemQty[index] ?? ''}
-                                onChange={(e) =>
-                                  setProblemQty((prev) => ({ ...prev, [index]: e.target.value }))
-                                }
-                                className={qtyInputClass}
-                              />
+                          {incidentsOpen && (
+                            <div className="sasa-return-incidents mt-2 space-y-3">
+                              <p className="sasa-return-incidents-hint">
+                                {t('consignments.returnProblemHint')}
+                              </p>
+
+                              <div className="grid gap-3 sm:grid-cols-2">
+                                <div>
+                                  <label
+                                    htmlFor={`problem-qty-${index}`}
+                                    className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide"
+                                  >
+                                    {t('consignments.qtyWithProblem')}
+                                  </label>
+                                  <input
+                                    id={`problem-qty-${index}`}
+                                    type="number"
+                                    min={0}
+                                    max={r}
+                                    value={problemQty[index] ?? ''}
+                                    onChange={(e) =>
+                                      setProblemQty((prev) => ({
+                                        ...prev,
+                                        [index]: e.target.value,
+                                      }))
+                                    }
+                                    className={qtyInputClass}
+                                  />
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <label
+                                    htmlFor={`problem-comment-${index}`}
+                                    className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide"
+                                  >
+                                    {t('consignments.returnComment')}
+                                  </label>
+                                  <textarea
+                                    id={`problem-comment-${index}`}
+                                    value={comment[index] ?? ''}
+                                    onChange={(e) =>
+                                      setComment((prev) => ({
+                                        ...prev,
+                                        [index]: e.target.value,
+                                      }))
+                                    }
+                                    rows={2}
+                                    className={inputClass}
+                                    placeholder={t('consignments.returnCommentPh')}
+                                  />
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <span className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                    {t('consignments.returnPhotosForLine')}
+                                  </span>
+                                  <input
+                                    id={fileInputId}
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    className="sr-only"
+                                    onChange={(e) => setFileList(index, e.target.files)}
+                                  />
+                                  <label htmlFor={fileInputId} className="sasa-return-file-btn">
+                                    <svg
+                                      className="h-4 w-4 shrink-0"
+                                      fill="none"
+                                      viewBox="0 0 24 24"
+                                      stroke="currentColor"
+                                      aria-hidden
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                                      />
+                                    </svg>
+                                    {t('consignments.returnChooseImages')}
+                                  </label>
+                                  {(filesByIndex[index]?.length ?? 0) > 0 && (
+                                    <p className="mt-2 text-xs text-gray-500">
+                                      {filesByIndex[index]!.length}{' '}
+                                      {filesByIndex[index]!.length === 1 ? 'archivo' : 'archivos'} ·{' '}
+                                      {item.sku}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                            <div className="sm:col-span-2">
-                              <label
-                                htmlFor={`problem-comment-${index}`}
-                                className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide"
-                              >
-                                {t('consignments.returnComment')}
-                              </label>
-                              <textarea
-                                id={`problem-comment-${index}`}
-                                value={comment[index] ?? ''}
-                                onChange={(e) =>
-                                  setComment((prev) => ({ ...prev, [index]: e.target.value }))
-                                }
-                                rows={2}
-                                className={inputClass}
-                                placeholder={t('consignments.returnCommentPh')}
-                              />
-                            </div>
-                            <div className="sm:col-span-2">
-                              <span className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide">
-                                {t('consignments.returnPhotosForLine')}
-                              </span>
-                              <input
-                                id={fileInputId}
-                                type="file"
-                                accept="image/*"
-                                multiple
-                                className="sr-only"
-                                onChange={(e) => setFileList(index, e.target.files)}
-                              />
-                              <label htmlFor={fileInputId} className="sasa-return-file-btn">
-                                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                </svg>
-                                {t('consignments.returnChooseImages')}
-                              </label>
-                              {(filesByIndex[index]?.length ?? 0) > 0 && (
-                                <p className="mt-2 text-xs text-gray-500">
-                                  {filesByIndex[index]!.length}{' '}
-                                  {filesByIndex[index]!.length === 1 ? 'archivo' : 'archivos'} · {item.sku}
-                                </p>
-                              )}
-                            </div>
-                          </div>
+                          )}
                         </div>
                       )}
                     </div>
