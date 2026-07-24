@@ -50,9 +50,9 @@ const TAB_SEARCH_ALIASES: Partial<Record<Tab, string>> = {
   'landed-costs': 'costos destino flete logística importación',
   cms: 'contenido medios marketing catálogo web',
   clients: 'clientes contactos cuentas crm',
-  sales: 'generación notas de venta NOTAV emitir registrar pedidos cobros',
-  'sales-notes': 'historial notas ventas listado NOTAV pdf',
-  'invoice-tracking': 'notas de ventas seguimiento cobranza pagos NOTAV',
+  sales: 'generación notas de pedido NOTAV emitir registrar pedidos cobros',
+  'sales-notes': 'historial notas pedido listado NOTAV pdf',
+  'invoice-tracking': 'notas de pedido seguimiento cobranza pagos NOTAV',
   consignments: 'consignaciones consigna',
   'sales-profitability': 'rentabilidad margen utilidad profit ganancia costos desembarque',
 };

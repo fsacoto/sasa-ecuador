@@ -127,7 +127,7 @@ function extractSalesNoteSequence(invoiceNumber: unknown): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
-// Generate next sequential nota de venta number (NOTAV-001, … continúa la serie respecto a FAC- antiguos)
+// Generate next sequential nota de pedido number (NOTAV-001, … continúa la serie respecto a FAC- antiguos)
 export async function getNextInvoiceNumber(): Promise<string> {
   try {
     const q = query(collection(db, INVOICES_COLLECTION));

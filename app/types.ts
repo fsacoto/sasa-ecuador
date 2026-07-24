@@ -280,7 +280,7 @@ export interface SalesInvoice {
   paymentMethod?: string;
   paymentComment?: string;
   paymentHistory?: PaymentRecord[];
-  /** Set when the nota de venta is created from consignment sales registration. */
+  /** Set when the nota de pedido is created from consignment sales registration. */
   sourceConsignmentId?: string;
   sourceConsignmentFirestoreId?: string;
 }

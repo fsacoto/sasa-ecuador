@@ -3,7 +3,7 @@ import { SalesInvoice } from '../types';
 const statusSelectBase =
   'sasa-invoice-status-select appearance-none rounded-lg border font-medium cursor-pointer shadow-sm transition-colors focus:outline-none focus:ring-1 focus:ring-[#515151]/20';
 
-/** Badge de solo lectura (Notas de ventas, detalle, etc.) */
+/** Badge de solo lectura (Notas de pedido, detalle, etc.) */
 export function paymentStatusBadgeClass(status: SalesInvoice['paymentStatus'] | string): string {
   const base = 'inline-flex items-center justify-center rounded-full px-2.5 py-0.5 text-xs font-medium';
   if (status === 'Paid') return `${base} sasa-invoice-pay-paid bg-green-100 text-green-800`;

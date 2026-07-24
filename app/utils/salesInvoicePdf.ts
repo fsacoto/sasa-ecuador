@@ -2,7 +2,7 @@
 
 import type { SalesInvoice } from '../types';
 
-/** Genera y descarga el PDF de una nota de venta (mismo flujo que Seguimiento de notas de ventas). */
+/** Genera y descarga el PDF de una nota de pedido (mismo flujo que Seguimiento / Entregas y cobros). */
 export async function downloadSalesInvoicePdf(invoice: SalesInvoice): Promise<void> {
   const { convertImageForPDF } = await import('./imageConverter');
   const { normalizePdfLogoSrc } = await import('./pdfRenderHelpers');
@@ -27,7 +27,7 @@ export async function downloadSalesInvoicePdf(invoice: SalesInvoice): Promise<vo
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `nota-venta-${invoice.invoiceNumber}.pdf`;
+  link.download = `nota-pedido-${invoice.invoiceNumber}.pdf`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

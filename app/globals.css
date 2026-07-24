@@ -750,7 +750,7 @@ body {
   border-color: rgba(255, 255, 255, 0.32) !important;
 }
 
-/* Invoice payment / delivery badges & selects (Notas de ventas + Seguimiento) */
+/* Invoice payment / delivery badges & selects (Notas de pedido + Seguimiento) */
 .app-dark-main .sasa-invoice-pay-paid,
 .sasa-modal-root.sasa-modal-dark .sasa-invoice-pay-paid {
   background-color: rgba(34, 197, 94, 0.1) !important;
@@ -837,7 +837,7 @@ body {
   height: 0.625rem;
 }
 
-/* Eliminar nota de venta — opciones neutras (dark mode) */
+/* Eliminar nota de pedido — opciones neutras (dark mode) */
 .sasa-delete-preview {
   background-color: #f9fafb;
   border-color: #e5e7eb;

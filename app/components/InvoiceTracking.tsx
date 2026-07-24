@@ -223,7 +223,7 @@ export default function InvoiceTracking() {
   const highlightFocusTimeoutRef = useRef<number | null>(null);
   const focusScrollTimeoutRef = useRef<number | null>(null);
 
-  /** Fila resaltada al llegar desde Notas de ventas → Ver en seguimiento */
+  /** Fila resaltada al llegar desde Notas de pedido → Ver en seguimiento */
   const [highlightFocusRowId, setHighlightFocusRowId] = useState<string | null>(null);
 
   const MENU_MIN_WIDTH = 192; // matches min-w-[12rem]
@@ -833,7 +833,7 @@ export default function InvoiceTracking() {
     );
   }, [filteredInvoices, searchQuery]);
 
-  /** Abrir fila desde Notas de ventas (misma colección Firestore): scroll + resaltado temporal. */
+  /** Abrir fila desde Notas de pedido (misma colección Firestore): scroll + resaltado temporal. */
   useEffect(() => {
     if (loading || invoicesSearchFiltered.length === 0) return;
     const id = sessionStorage.getItem('sasa_focus_invoice_tracking_id');
