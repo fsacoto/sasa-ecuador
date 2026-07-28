@@ -6,6 +6,7 @@ import { SalesInvoice, type Client } from '../types';
 import { getAllInvoices } from '../services/invoicesService';
 import { getAllClients } from '../services/clientsService';
 import { useAuth } from '../context/AuthContext';
+import { useInventory } from '../context/InventoryContext';
 import { useTranslation } from '../context/TranslationContext';
 import { downloadSalesInvoicePdf } from '../utils/salesInvoicePdf';
 import AlertDialog from './ui/AlertDialog';
@@ -66,6 +67,7 @@ export type SalesNotesHistoryProps = {
 
 export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistoryProps) {
   const { user } = useAuth();
+  const { inventory } = useInventory();
   const { t } = useTranslation();
   const toolbarRef = useRef<HTMLDivElement>(null);
 
@@ -790,7 +792,7 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
               role="menuitem"
               className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
               onClick={() => {
-                void downloadSalesInvoicePdf(invoiceForSalesNotesActionsMenu).catch(() =>
+                void downloadSalesInvoicePdf(invoiceForSalesNotesActionsMenu, inventory).catch(() =>
                   showAlert(t('invoiceTracking.pdfGenerationFailed') || 'PDF error', 'Error')
                 );
                 closeSalesNotesActionsMenu();

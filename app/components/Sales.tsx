@@ -301,7 +301,7 @@ export default function Sales() {
 
       let pdfOk = true;
       try {
-        await downloadSalesInvoicePdf(created);
+        await downloadSalesInvoicePdf(created, inventory);
       } catch (pdfErr) {
         pdfOk = false;
         console.error('PDF download after sale:', pdfErr);

@@ -685,11 +685,16 @@ export default function Consignments() {
   const generatePDF = async (consignment: Consignment) => {
     try {
       const { convertImageForPDF } = await import('../utils/imageConverter');
+      const { buildPdfProductImagesBySku } = await import('../utils/pdfProductImages');
       const { normalizePdfLogoSrc } = await import('../utils/pdfRenderHelpers');
       const logoUrl =
         typeof window !== 'undefined' ? `${window.location.origin}/sasa.png` : '/sasa.png';
       const logoBase64 = await convertImageForPDF(logoUrl);
       const logoSrc = normalizePdfLogoSrc(logoBase64, logoUrl);
+      const productImagesBySku = await buildPdfProductImagesBySku(
+        consignment.items.map((item) => item.sku),
+        inventory
+      );
 
       const React = await import('react');
       const [{ pdf }, { default: ConsignmentPDF }] = await Promise.all([
@@ -700,6 +705,7 @@ export default function Consignments() {
       const pdfDocument = React.createElement(ConsignmentPDF, {
         consignment,
         logoSrc,
+        productImagesBySku,
       });
 
       const blob = await pdf(pdfDocument as any).toBlob();

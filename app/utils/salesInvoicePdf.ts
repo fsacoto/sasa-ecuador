@@ -1,15 +1,23 @@
 'use client';
 
-import type { SalesInvoice } from '../types';
+import type { InventoryItem, SalesInvoice } from '../types';
+import { buildPdfProductImagesBySku } from './pdfProductImages';
 
 /** Genera y descarga el PDF de una nota de pedido (mismo flujo que Seguimiento / Entregas y cobros). */
-export async function downloadSalesInvoicePdf(invoice: SalesInvoice): Promise<void> {
+export async function downloadSalesInvoicePdf(
+  invoice: SalesInvoice,
+  inventory: InventoryItem[] = []
+): Promise<void> {
   const { convertImageForPDF } = await import('./imageConverter');
   const { normalizePdfLogoSrc } = await import('./pdfRenderHelpers');
   const logoUrl =
     typeof window !== 'undefined' ? `${window.location.origin}/sasa.png` : '/sasa.png';
   const logoBase64 = await convertImageForPDF(logoUrl);
   const logoSrc = normalizePdfLogoSrc(logoBase64, logoUrl);
+  const productImagesBySku = await buildPdfProductImagesBySku(
+    invoice.items.map((item) => item.sku),
+    inventory
+  );
 
   const React = await import('react');
   const [{ pdf }, { default: InvoicePDF }] = await Promise.all([
@@ -20,6 +28,7 @@ export async function downloadSalesInvoicePdf(invoice: SalesInvoice): Promise<vo
   const pdfDocument = React.createElement(InvoicePDF, {
     invoice,
     logoSrc,
+    productImagesBySku,
   });
 
   const blob = await pdf(pdfDocument as never).toBlob();

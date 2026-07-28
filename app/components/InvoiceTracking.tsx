@@ -995,7 +995,7 @@ export default function InvoiceTracking() {
   }, [groupByField, groupedInvoiceMap]);
 
   const handleGeneratePDFClick = (invoice: SalesInvoice) => {
-    void downloadSalesInvoicePdf(invoice).catch((error) => {
+    void downloadSalesInvoicePdf(invoice, inventory).catch((error) => {
       console.error('Error generating PDF:', error);
       showAlert(
         t('invoiceTracking.pdfGenerationFailed') || 'Failed to generate PDF. Please try again.',

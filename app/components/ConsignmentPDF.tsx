@@ -1,6 +1,6 @@
 'use client';
 
-import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
+import { Document, Page, Text, View, Image, StyleSheet, Svg, Path, Line } from '@react-pdf/renderer';
 import { Consignment, ConsignmentStatus } from '../types';
 import esMessages from '../locales/es.json';
 import { toPdfDate } from '../utils/pdfRenderHelpers';
@@ -46,11 +46,11 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   consignmentTitle: {
-    fontSize: 24,
+    fontSize: 19,
     fontWeight: 'bold',
     color: '#000000',
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 0.3,
     marginBottom: 8,
   },
   consignmentNumber: {
@@ -101,32 +101,70 @@ const styles = StyleSheet.create({
   },
   tableRow: {
     flexDirection: 'row',
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingHorizontal: 5,
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E0',
+    minHeight: 66,
+    alignItems: 'center',
   },
   colNo: {
-    width: '8%',
+    width: '7%',
     textAlign: 'left',
     fontSize: 10,
     color: '#333333',
   },
-  colSku: {
+  colPhotoHeader: {
     width: '20%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  colPhotoCell: {
+    width: '20%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoBox: {
+    width: 52,
+    height: 52,
+    borderWidth: 1,
+    borderColor: '#D7D7D7',
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    backgroundColor: '#F7F7F7',
+  },
+  photoImage: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'contain',
+  },
+  photoPlaceholderIcon: {
+    width: 24,
+    height: 24,
+  },
+  photoPlaceholderLabel: {
+    marginTop: 3,
+    fontSize: 5.5,
+    color: '#A3A3A3',
+    textAlign: 'center',
+  },
+  colSku: {
+    width: '16%',
     textAlign: 'left',
     fontSize: 10,
     color: '#333333',
   },
   colDescription: {
-    width: '52%',
+    width: '38%',
     textAlign: 'left',
     fontSize: 10,
     color: '#333333',
     paddingLeft: 5,
   },
   colQty: {
-    width: '20%',
+    width: '19%',
     textAlign: 'right',
     fontSize: 10,
     color: '#333333',
@@ -228,6 +266,33 @@ const styles = StyleSheet.create({
 interface ConsignmentPDFProps {
   consignment: Consignment;
   logoSrc?: string;
+  productImagesBySku?: Record<string, string>;
+}
+
+function PhotoPlaceholder() {
+  return (
+    <View>
+      <Svg viewBox="0 0 24 24" style={styles.photoPlaceholderIcon}>
+        <Path
+          d="M4.5 6.5h15a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 16V8A1.5 1.5 0 0 1 4.5 6.5z"
+          stroke="#B8B8B8"
+          strokeWidth={1.2}
+          fill="none"
+        />
+        <Path
+          d="M6.5 15l3.2-3.1 2.2 2.1 2.3-2.2 3.3 3.2"
+          stroke="#B8B8B8"
+          strokeWidth={1.2}
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <Path d="M9 10a1.2 1.2 0 1 1 0-.01" fill="#B8B8B8" />
+        <Line x1="6" y1="18" x2="18" y2="6" stroke="#C6C6C6" strokeWidth={1.1} />
+      </Svg>
+      <Text style={styles.photoPlaceholderLabel}>SIN FOTO</Text>
+    </View>
+  );
 }
 
 function statusLabelEs(status: ConsignmentStatus, tr: (k: string) => string): string {
@@ -243,7 +308,11 @@ function statusLabelEs(status: ConsignmentStatus, tr: (k: string) => string): st
   }
 }
 
-export default function ConsignmentPDF({ consignment, logoSrc = '/sasa.png' }: ConsignmentPDFProps) {
+export default function ConsignmentPDF({
+  consignment,
+  logoSrc = '/sasa.png',
+  productImagesBySku = {},
+}: ConsignmentPDFProps) {
   const t = (key: string) => translate(key);
   const formatDate = (date: unknown) => formatDateLong(toPdfDate(date));
 
@@ -303,6 +372,9 @@ export default function ConsignmentPDF({ consignment, logoSrc = '/sasa.png' }: C
           {/* Table Header */}
           <View style={styles.tableHeader}>
             <Text style={[styles.colNo, styles.headerText]}>{t('pdf.consignment.no')}</Text>
+            <View style={styles.colPhotoHeader}>
+              <Text style={styles.headerText}>FOTO</Text>
+            </View>
             <Text style={[styles.colSku, styles.headerText]}>{t('pdf.consignment.sku')}</Text>
             <Text style={[styles.colDescription, styles.headerText]}>{t('pdf.consignment.description')}</Text>
             <Text style={[styles.colQty, styles.headerText]}>{t('pdf.consignment.qtyDelivered')}</Text>
@@ -312,6 +384,15 @@ export default function ConsignmentPDF({ consignment, logoSrc = '/sasa.png' }: C
           {consignment.items.map((item, index) => (
             <View key={index} style={styles.tableRow}>
               <Text style={styles.colNo}>{index + 1}</Text>
+              <View style={styles.colPhotoCell}>
+                <View style={styles.photoBox}>
+                  {productImagesBySku[item.sku] ? (
+                    <Image src={productImagesBySku[item.sku]} style={styles.photoImage} cache={false} />
+                  ) : (
+                    <PhotoPlaceholder />
+                  )}
+                </View>
+              </View>
               <Text style={styles.colSku}>{item.sku}</Text>
               <Text style={styles.colDescription}>{item.description}</Text>
               <Text style={styles.colQty}>{item.quantityDelivered}</Text>
