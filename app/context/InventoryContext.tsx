@@ -8,6 +8,12 @@ import * as suppliersService from '../services/suppliersService';
 import * as purchaseOrdersService from '../services/purchaseOrdersService';
 import * as inventoryService from '../services/inventoryService';
 import * as additionalCostsService from '../services/additionalCostsService';
+import { getAllInvoices } from '../services/invoicesService';
+import {
+  clampReservedStock,
+  computeReservedBySkuFromInvoices,
+  getReservedStock,
+} from '../utils/stockReservation';
 
 interface InventoryContextType {
   // Suppliers
@@ -80,8 +86,40 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       
       setSuppliers(suppliersData.status === 'fulfilled' ? suppliersData.value : []);
       setPurchaseOrders(ordersData.status === 'fulfilled' ? ordersData.value : []);
-      setInventory(inventoryData.status === 'fulfilled' ? inventoryData.value : []);
+      const loadedInventory = inventoryData.status === 'fulfilled' ? inventoryData.value : [];
+      setInventory(loadedInventory);
       setAdditionalCosts(costsData.status === 'fulfilled' ? costsData.value : []);
+
+      // Backfill / heal reservedStock from open sales notes so storefront availability is correct.
+      if (loadedInventory.length > 0) {
+        try {
+          const invoices = await getAllInvoices();
+          const desiredUpdates: Array<{ id: string; reservedStock: number }> = [];
+          const desired = computeReservedBySkuFromInvoices(invoices);
+          for (const item of loadedInventory) {
+            const sku = item.sku?.trim();
+            if (!sku) continue;
+            const target = clampReservedStock(desired.get(sku) ?? 0);
+            if (getReservedStock(item) === target) continue;
+            desiredUpdates.push({ id: item.id, reservedStock: target });
+          }
+          if (desiredUpdates.length > 0) {
+            await Promise.all(
+              desiredUpdates.map((u) =>
+                inventoryService.updateInventoryItem(u.id, { reservedStock: u.reservedStock })
+              )
+            );
+            setInventory((prev) =>
+              prev.map((item) => {
+                const hit = desiredUpdates.find((u) => u.id === item.id);
+                return hit ? { ...item, reservedStock: hit.reservedStock } : item;
+              })
+            );
+          }
+        } catch (reconcileError) {
+          console.error('Error reconciling reserved stock:', reconcileError);
+        }
+      }
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {

@@ -36,6 +36,7 @@ import ConsignmentReturnModal from './ConsignmentReturnModal';
 import { HUB_GROUP_STACK_ICON_PATH } from '../constants/businessHubUi';
 import { formatDateDMY } from '../utils/formatDate';
 import { filterSellableInventory, hasSellableStock } from '../utils/inventoryStock';
+import { getAvailableStock } from '../utils/stockReservation';
 
 type View = 'list' | 'create' | 'details';
 
@@ -251,7 +252,7 @@ export default function Consignments() {
     const updatedItems = [...consignmentItems];
     const item = updatedItems[index];
     const inventoryItem = inventory.find(inv => inv.sku === item.sku);
-    const maxQuantity = inventoryItem?.ecuadorStock || 0;
+    const maxQuantity = inventoryItem ? getAvailableStock(inventoryItem) : 0;
     
     const validQuantity = Math.min(Math.max(1, quantity), maxQuantity);
     updatedItems[index].quantity = validQuantity;
@@ -328,8 +329,9 @@ export default function Consignments() {
     // Check if we have enough stock before locking the submit
     for (const item of consignmentItems) {
       const inventoryItem = inventory.find(inv => inv.sku === item.sku);
-      if (!inventoryItem || inventoryItem.ecuadorStock < item.quantity) {
-        showAlert(`Insufficient stock for ${item.sku}. Available: ${inventoryItem?.ecuadorStock || 0}`, 'Stock Error');
+      const available = inventoryItem ? getAvailableStock(inventoryItem) : 0;
+      if (!inventoryItem || available < item.quantity) {
+        showAlert(`Insufficient stock for ${item.sku}. Available: ${available}`, 'Stock Error');
         return;
       }
     }
@@ -1446,7 +1448,7 @@ export default function Consignments() {
                     >
                       <div className="font-mono text-sm font-semibold text-[#515151]">{product.sku}</div>
                       <div className="text-sm text-gray-600">{product.name}</div>
-                      <div className="text-xs text-gray-500">{t('consignments.stock')}: {product.ecuadorStock} | {product.category} - {product.line}</div>
+                      <div className="text-xs text-gray-500">{t('consignments.stock')}: {getAvailableStock(product)} | {product.category} - {product.line}</div>
                     </div>
                   ))}
                 </div>
@@ -1467,7 +1469,7 @@ export default function Consignments() {
                   <tbody className="divide-y divide-gray-100 bg-white">
                     {consignmentItems.map((item, index) => {
                       const inventoryItem = inventory.find(inv => inv.sku === item.sku);
-                      const maxQuantity = inventoryItem?.ecuadorStock || 0;
+                      const maxQuantity = inventoryItem ? getAvailableStock(inventoryItem) : 0;
                       return (
                         <tr key={index} className="transition-colors hover:bg-gray-50">
                           <td className="whitespace-nowrap px-6 py-4">

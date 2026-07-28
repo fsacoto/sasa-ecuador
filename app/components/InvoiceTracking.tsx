@@ -9,10 +9,12 @@ import { useAuth } from '../context/AuthContext';
 import { useInventory } from '../context/InventoryContext';
 import { useTranslation } from '../context/TranslationContext';
 import { downloadSalesInvoicePdf } from '../utils/salesInvoicePdf';
+import { downloadSalesPrepLabelPdf } from '../utils/salesPrepLabelPdf';
 import AlertDialog from './ui/AlertDialog';
 import ConfirmDialog from './ui/ConfirmDialog';
 import InvoiceEditModal from './InvoiceEditModal';
 import SalesInvoiceDeleteModal from './SalesInvoiceDeleteModal';
+import SalesInvoiceDetailsModal from './SalesInvoiceDetailsModal';
 import { type InvoiceDeleteReturnItem } from '../utils/salesInvoiceDelete';
 import MonthYearSelectEs from './ui/MonthYearSelectEs';
 import DateInput from './ui/DateInput';
@@ -28,14 +30,16 @@ import {
 } from './ui/tableHeaderClass';
 import { formatDateDMY, formatMonthYearLong } from '../utils/formatDate';
 import {
-  deliveryStatusBadgeClass,
   deliveryStatusSelectClass,
-  paymentStatusBadgeClass,
   paymentStatusSelectClass,
 } from '../utils/invoiceStatusStyles';
 import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 import { useDarkMode } from '../hooks/useDarkMode';
 import ModalPortal from './ui/ModalPortal';
+import {
+  getUndeliveredQty,
+  nextReservedStock,
+} from '../utils/stockReservation';
 
 /** Cantidad ya descontada de inventario Ecuador para esta línea (antes de editar en el modal). */
 function getPreviouslyDeliveredQty(invoice: SalesInvoice, index: number): number {
@@ -497,9 +501,17 @@ export default function InvoiceTracking() {
         if (row.delta === 0) continue;
         const inventoryItem = inventory.find((inv) => inv.sku === row.sku);
         if (inventoryItem) {
-          await updateInventoryItem(inventoryItem.id, {
+          const updates: { ecuadorStock: number; reservedStock?: number } = {
             ecuadorStock: Math.max(0, row.newStock),
-          });
+          };
+          // Convert reservation into a real stock deduction for newly delivered units.
+          if (row.delta > 0) {
+            updates.reservedStock = nextReservedStock(inventoryItem, -row.delta);
+          } else if (row.delta < 0) {
+            // Reducing prior delivery restores ecuador (via newStock) and re-reserves.
+            updates.reservedStock = nextReservedStock(inventoryItem, -row.delta);
+          }
+          await updateInventoryItem(inventoryItem.id, updates);
         }
       }
 
@@ -562,6 +574,16 @@ export default function InvoiceTracking() {
         setShowWarningModal(true);
         return;
       }
+
+      // No delivered units to restore (e.g. Partial with 0 delivered) — still update status / release holds.
+      showConfirm(
+        t('invoiceTracking.changeDeliveryStatusTo').replace('{status}', deliveryStatusLabel(status)),
+        () => {
+          processDeliveryUpdate(invoice, status);
+        },
+        t('invoiceTracking.confirmStatusChange')
+      );
+      return;
     } else if (isMarkingDelivered) {
       // Create warning message with stock information
       const itemsList = invoice.items
@@ -618,6 +640,16 @@ export default function InvoiceTracking() {
         }));
       }
 
+      if (status === 'Canceled' || status === 'Pending') {
+        updateData.deliveryDate = undefined;
+        if (status === 'Canceled') {
+          updateData.items = invoice.items.map((item) => ({
+            ...item,
+            quantityDelivered: 0,
+          }));
+        }
+      }
+
       await updateInvoice(invoice.id, updateData);
 
       if (status === 'Delivered') {
@@ -631,8 +663,22 @@ export default function InvoiceTracking() {
             const newEcuadorStock = Math.max(0, inventoryItem.ecuadorStock - add);
             await updateInventoryItem(inventoryItem.id, {
               ecuadorStock: newEcuadorStock,
+              reservedStock: nextReservedStock(inventoryItem, -add),
             });
           }
+        }
+      }
+
+      // Cancel: release remaining reservation (nothing was deducted from ecuador for undelivered).
+      if (status === 'Canceled' && !invoice.sourceConsignmentFirestoreId) {
+        for (const item of invoice.items) {
+          const releaseQty = getUndeliveredQty(invoice, item);
+          if (releaseQty <= 0) continue;
+          const inventoryItem = inventory.find((inv) => inv.sku === item.sku);
+          if (!inventoryItem) continue;
+          await updateInventoryItem(inventoryItem.id, {
+            reservedStock: nextReservedStock(inventoryItem, -releaseQty),
+          });
         }
       }
 
@@ -644,14 +690,24 @@ export default function InvoiceTracking() {
     }
   };
 
-  const processDeliveryUpdateWithReturns = async (invoice: SalesInvoice, status: string, itemsToReturn: Array<{description: string, sku: string, quantity: number, currentStock: number, newStock: number}>) => {
+  const processDeliveryUpdateWithReturns = async (
+    invoice: SalesInvoice,
+    status: string,
+    itemsToReturn: Array<{
+      description: string;
+      sku: string;
+      quantity: number;
+      currentStock: number;
+      newStock: number;
+    }>
+  ) => {
     try {
-      // Return items to inventory first
+      // Return delivered units to ecuador inventory first
       for (const itemReturn of itemsToReturn) {
-        const inventoryItem = inventory.find(inv => inv.sku === itemReturn.sku);
+        const inventoryItem = inventory.find((inv) => inv.sku === itemReturn.sku);
         if (inventoryItem) {
           await updateInventoryItem(inventoryItem.id, {
-            ecuadorStock: itemReturn.newStock
+            ecuadorStock: itemReturn.newStock,
           });
         }
       }
@@ -659,7 +715,7 @@ export default function InvoiceTracking() {
       const updateData: Partial<SalesInvoice> = {
         deliveryStatus: status as SalesInvoice['deliveryStatus'],
       };
-      
+
       if (status === 'Canceled' || status === 'Pending') {
         updateData.deliveryDate = undefined;
         updateData.items = invoice.items.map((item) => ({
@@ -669,6 +725,30 @@ export default function InvoiceTracking() {
       }
 
       await updateInvoice(invoice.id, updateData);
+
+      if (!invoice.sourceConsignmentFirestoreId) {
+        if (status === 'Canceled') {
+          // Release undelivered holds; delivered portion was already un-reserved on delivery.
+          for (const item of invoice.items) {
+            const releaseQty = getUndeliveredQty(invoice, item);
+            if (releaseQty <= 0) continue;
+            const inventoryItem = inventory.find((inv) => inv.sku === item.sku);
+            if (!inventoryItem) continue;
+            await updateInventoryItem(inventoryItem.id, {
+              reservedStock: nextReservedStock(inventoryItem, -releaseQty),
+            });
+          }
+        } else if (status === 'Pending') {
+          // Revert to Pending: re-reserve the previously delivered units we just restored.
+          for (const itemReturn of itemsToReturn) {
+            const inventoryItem = inventory.find((inv) => inv.sku === itemReturn.sku);
+            if (!inventoryItem) continue;
+            await updateInventoryItem(inventoryItem.id, {
+              reservedStock: nextReservedStock(inventoryItem, itemReturn.quantity),
+            });
+          }
+        }
+      }
 
       showAlert(t('invoiceTracking.deliveryStatusUpdated'), t('common.success'));
       loadInvoices();
@@ -1000,6 +1080,16 @@ export default function InvoiceTracking() {
       showAlert(
         t('invoiceTracking.pdfGenerationFailed') || 'Failed to generate PDF. Please try again.',
         'Error'
+      );
+    });
+  };
+
+  const handlePrintPrepLabelClick = (invoice: SalesInvoice) => {
+    void downloadSalesPrepLabelPdf(invoice).catch((error) => {
+      console.error('Error generating prep label:', error);
+      showAlert(
+        t('invoiceTracking.prepLabelFailed') || 'No se pudo generar la etiqueta de preparación',
+        t('common.error')
       );
     });
   };
@@ -1574,7 +1664,9 @@ export default function InvoiceTracking() {
           <div
             data-invoice-actions-root
             role="menu"
-            className="fixed z-[100] min-w-[12rem] rounded-lg border border-gray-200 bg-white py-1 text-left shadow-lg"
+            className={`sasa-portal-menu fixed z-[100] min-w-[12rem] rounded-lg border border-gray-200 py-1 text-left shadow-lg ${
+              darkMode ? 'sasa-portal-menu-dark' : 'bg-white'
+            }`}
             style={{ top: actionsMenuPos.top, left: actionsMenuPos.left }}
           >
             <button
@@ -1618,6 +1710,24 @@ export default function InvoiceTracking() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
               {t('invoiceTracking.generatePdf')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              onClick={() => {
+                handlePrintPrepLabelClick(invoiceForActionsMenu);
+                closeInvoiceActionsMenu();
+              }}
+            >
+              <svg className="h-4 w-4 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"
+                />
+              </svg>
+              {t('invoiceTracking.printPrepLabel')}
             </button>
             <button
               type="button"
@@ -1885,210 +1995,18 @@ export default function InvoiceTracking() {
         </ModalPortal>
       )}
 
-      {/* Invoice Details Modal */}
-      {showInvoiceDetailsModal && detailsInvoice && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-start mb-6">
-              <h3 className="text-2xl font-bold text-[#515151]">{detailsInvoice.invoiceNumber}</h3>
-              <button
-                onClick={() => {
-                  setShowInvoiceDetailsModal(false);
-                  setDetailsInvoice(null);
-                }}
-                className="text-gray-400 hover:text-gray-600 text-2xl"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="space-y-6">
-              {/* Client Information */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="font-semibold text-gray-900 mb-3">{t('invoiceTracking.clientInformation')}</h4>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <span className="text-gray-600">{t('invoiceTracking.clientName')}:</span>
-                    <span className="ml-2 font-medium">{detailsInvoice.clientName}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">{t('invoiceTracking.address')}:</span>
-                    <span className="ml-2 font-medium">{detailsInvoice.clientAddress}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">{t('invoiceTracking.date')}:</span>
-                    <span className="ml-2 font-medium">{formatDateDMY(detailsInvoice.date)}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">{t('invoiceTracking.currency')}:</span>
-                    <span className="ml-2 font-medium">{detailsInvoice.currency}</span>
-                  </div>
-                  {detailsInvoice.sourceConsignmentId && (
-                    <div className="col-span-2">
-                      <span className="text-gray-600">{t('consignments.sourceConsignmentTag') || 'Consignación'}:</span>
-                      <span className="ml-2 font-medium text-amber-900">
-                        {detailsInvoice.sourceConsignmentId}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Items Table */}
-              <div>
-                <h4 className="font-semibold text-gray-900 mb-3">{t('invoiceTracking.items')}</h4>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.sku')}</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.description')}</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.qty')}</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.unitPrice')}</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('invoiceTracking.total')}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {detailsInvoice.items.map((item, index) => (
-                        <tr key={index} className="transition-colors hover:bg-gray-50">
-                          <td className="px-6 py-3 font-mono text-xs text-gray-900">{item.sku}</td>
-                          <td className="px-6 py-3 text-gray-700">{item.description}</td>
-                          <td className="px-6 py-3 text-center text-gray-700">{item.quantity}</td>
-                          <td className="px-6 py-3 text-right text-gray-700">${item.unitPrice.toFixed(2)}</td>
-                          <td className="px-6 py-3 text-right text-gray-900">${item.totalPrice.toFixed(2)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Totals */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span>{t('invoiceTracking.subtotal')}:</span>
-                    <span className="font-medium">${detailsInvoice.subtotal.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>{t('invoiceTracking.discount')} {detailsInvoice.discountType === 'percentage' ? `(${detailsInvoice.discountValue}%)` : ''}:</span>
-                    <span className="font-medium text-red-600">-${detailsInvoice.discountTotal.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-lg font-bold text-[#515151] pt-2 border-t border-gray-300">
-                    <span>{t('invoiceTracking.grandTotal')}:</span>
-                    <span>${detailsInvoice.grandTotal.toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Payment Information */}
-              <div className="bg-blue-50 rounded-lg p-4">
-                <h4 className="font-semibold text-gray-900 mb-3">{t('invoiceTracking.paymentStatus')}</h4>
-                <div className="grid grid-cols-3 gap-4 mb-4">
-                  <div>
-                    <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.status')}</div>
-                    <span className={paymentStatusBadgeClass(detailsInvoice.paymentStatus)}>
-                      {detailsInvoice.paymentStatus === 'Unpaid' && t('invoiceTracking.unpaid')}
-                      {detailsInvoice.paymentStatus === 'Partially Paid' && t('invoiceTracking.partial')}
-                      {detailsInvoice.paymentStatus === 'Paid' && t('invoiceTracking.paid')}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.amountPaid')}</div>
-                    <div className="font-semibold text-gray-900 tabular-nums">${detailsInvoice.amountPaid.toFixed(2)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.remaining')}</div>
-                    <div className="font-semibold text-gray-900 tabular-nums">${detailsInvoice.remainingBalance.toFixed(2)}</div>
-                  </div>
-                </div>
-
-                {detailsInvoice.paymentHistory && detailsInvoice.paymentHistory.length > 0 && (
-                  <div className="mt-4">
-                    <div className="mb-2 text-xs font-medium uppercase tracking-wider text-gray-500">{t('invoiceTracking.paymentHistory')}</div>
-                    <div className="space-y-2">
-                      {detailsInvoice.paymentHistory.map((payment, index) => (
-                        <div key={index} className="flex justify-between text-sm bg-white p-2 rounded">
-                          <span className="text-gray-600">
-                            {formatDateDMY(payment.date)}
-                            {payment.method && ` (${payment.method})`}
-                          </span>
-                          <span className="font-semibold text-green-600">${payment.amount.toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Delivery Information */}
-              <div className="bg-purple-50 rounded-lg p-4">
-                <h4 className="font-semibold text-gray-900 mb-3">{t('invoiceTracking.deliveryStatus')}</h4>
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.status')}</div>
-                    <span className={deliveryStatusBadgeClass(detailsInvoice.deliveryStatus)}>
-                      {detailsInvoice.deliveryStatus === 'Pending' && t('invoiceTracking.pending')}
-                      {detailsInvoice.deliveryStatus === 'Partially Delivered' && t('invoiceTracking.partiallyDelivered')}
-                      {detailsInvoice.deliveryStatus === 'Delivered' && t('invoiceTracking.delivered')}
-                      {detailsInvoice.deliveryStatus === 'Canceled' && t('invoiceTracking.canceled')}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.deliveryDate')}</div>
-                    <div className="font-medium">
-                      {detailsInvoice.deliveryDate 
-                        ? formatDateDMY(detailsInvoice.deliveryDate)
-                        : t('invoiceTracking.na')}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-600 uppercase">{t('invoiceTracking.salesAgent')}</div>
-                    <div className="font-medium">{detailsInvoice.salesAgent || t('invoiceTracking.na')}</div>
-                  </div>
-                </div>
-                {detailsInvoice.deliveryNotes && (
-                  <div className="mt-4">
-                    <div className="text-xs text-gray-600 uppercase mb-1">{t('invoiceTracking.deliveryNotes')}</div>
-                    <div className="text-sm bg-white p-2 rounded">{detailsInvoice.deliveryNotes}</div>
-                  </div>
-                )}
-              </div>
-
-              {/* Payment Method (if exists) */}
-              {detailsInvoice.paymentMethod && (
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-900 mb-2">{t('invoiceTracking.paymentMethod')}</h4>
-                  <div className="text-sm">
-                    <span className="font-medium">{detailsInvoice.paymentMethod.charAt(0).toUpperCase() + detailsInvoice.paymentMethod.slice(1)}</span>
-                    {detailsInvoice.paymentComment && (
-                      <div className="mt-2 text-gray-600">{detailsInvoice.paymentComment}</div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="flex gap-2 mt-6">
-              <button
-                onClick={() => handleGeneratePDFClick(detailsInvoice)}
-                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-              >
-                {t('invoiceTracking.generatePdf')}
-              </button>
-              <button
-                onClick={() => {
-                  setShowInvoiceDetailsModal(false);
-                  setDetailsInvoice(null);
-                }}
-                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-              >
-                {t('invoiceTracking.close')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {showInvoiceDetailsModal && detailsInvoice ? (
+        <SalesInvoiceDetailsModal
+          invoice={detailsInvoice}
+          inventory={inventory}
+          showTrackingDetails
+          onClose={() => {
+            setShowInvoiceDetailsModal(false);
+            setDetailsInvoice(null);
+          }}
+          onGeneratePdf={handleGeneratePDFClick}
+        />
+      ) : null}
 
       {/* Warning Modal — impacto en inventario al cambiar entrega */}
       {showWarningModal && (

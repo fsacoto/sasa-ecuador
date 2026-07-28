@@ -1,6 +1,10 @@
 import { ConsignmentItem, ConsignmentStatus, InventoryItem, SalesInvoice } from '../types';
 import { getConsignment, updateConsignment } from '../services/consignmentsService';
 import { deleteInvoice } from '../services/invoicesService';
+import {
+  getDeliveredQtyForStock,
+  getUndeliveredQty,
+} from './stockReservation';
 
 export type InvoiceDeleteReturnItem = {
   description: string;
@@ -21,6 +25,7 @@ function consignmentStatusFromItems(items: ConsignmentItem[]): ConsignmentStatus
   return 'Open';
 }
 
+/** Physical stock that can optionally be restored on delete (delivered / consignment). */
 export function buildDeleteReturnItems(
   invoice: SalesInvoice,
   inventory: InventoryItem[]
@@ -44,23 +49,22 @@ export function buildDeleteReturnItems(
     return items;
   }
 
-  const wasDelivered =
-    invoice.deliveryStatus === 'Delivered' || invoice.deliveryStatus === 'Partially Delivered';
-  if (!wasDelivered) return items;
-
   invoice.items.forEach((item) => {
+    const delivered = getDeliveredQtyForStock(invoice, item);
+    if (delivered <= 0) return;
     const inventoryItem = inventory.find((inv) => inv.sku === item.sku);
     if (!inventoryItem) return;
     const currentStock = inventoryItem.ecuadorStock;
     items.push({
       description: item.description,
       sku: item.sku,
-      quantity: item.quantity,
+      quantity: delivered,
       currentStock,
-      newStock: currentStock + item.quantity,
+      newStock: currentStock + delivered,
       kind: 'ecuador',
     });
   });
+
   return items;
 }
 
@@ -71,6 +75,28 @@ export async function deleteSalesInvoiceWithStockRevert(
   inventory: InventoryItem[],
   updateInventoryItem: (id: string, updates: Partial<InventoryItem>) => Promise<void>
 ): Promise<void> {
+  // Always release reservations for undelivered units on non-consignment notes.
+  if (!invoice.sourceConsignmentFirestoreId) {
+    const reservationDeltas = new Map<string, number>();
+    for (const item of invoice.items) {
+      const undelivered = getUndeliveredQty(invoice, item);
+      if (undelivered <= 0) continue;
+      reservationDeltas.set(item.sku, (reservationDeltas.get(item.sku) ?? 0) + undelivered);
+    }
+    const reservedOverrides = new Map<string, number>();
+    for (const [sku, releaseQty] of reservationDeltas) {
+      const inventoryItem = inventory.find((inv) => inv.sku === sku);
+      if (!inventoryItem) continue;
+      const current =
+        reservedOverrides.get(inventoryItem.id) ?? Number(inventoryItem.reservedStock ?? 0);
+      const next = Math.max(0, current - releaseQty);
+      reservedOverrides.set(inventoryItem.id, next);
+      await updateInventoryItem(inventoryItem.id, {
+        reservedStock: next,
+      });
+    }
+  }
+
   if (revertInventory && itemsToReturn.length > 0) {
     const isConsignment = itemsToReturn.some((i) => i.kind === 'consignment');
 

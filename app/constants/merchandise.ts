@@ -70,15 +70,15 @@ CATEGORY_TO_ES['materials'] = MATERIAL_CATEGORY_ES;
 CATEGORY_TO_ES['materiales'] = MATERIAL_CATEGORY_ES;
 
 export const LINE_TO_ES: Record<string, string> = {
-  'gold plated': 'Baño en Oro',
+  'gold filled': 'Baño en Oro',
   'oro laminado': 'Baño en Oro',
-  [LEGACY_LINES_EN[0]]: 'Baño en Oro',
+  'oro relleno': 'Baño en Oro',
+  [LEGACY_LINES_EN[1]]: 'Baño en Oro',
   'baño en oro': 'Baño en Oro',
   'bano en oro': 'Baño en Oro',
   'enchapado en oro': 'Enchapado en Oro',
-  'gold filled': 'Enchapado en Oro',
-  [LEGACY_LINES_EN[1]]: 'Enchapado en Oro',
-  'oro relleno': 'Enchapado en Oro',
+  'gold plated': 'Enchapado en Oro',
+  [LEGACY_LINES_EN[0]]: 'Enchapado en Oro',
   /** Datos antiguos “bañado en oro” → Enchapado en Oro */
   'bañado en oro': 'Enchapado en Oro',
   'banado en oro': 'Enchapado en Oro',

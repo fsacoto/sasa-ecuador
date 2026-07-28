@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { useInventory } from '../context/InventoryContext';
 import { useTranslation } from '../context/TranslationContext';
 import { downloadSalesInvoicePdf } from '../utils/salesInvoicePdf';
+import { downloadSalesPrepLabelPdf } from '../utils/salesPrepLabelPdf';
 import AlertDialog from './ui/AlertDialog';
 import MonthYearSelectEs from './ui/MonthYearSelectEs';
 import DateInput from './ui/DateInput';
@@ -16,6 +17,8 @@ import { isInsideDatePickerPortal } from '../utils/calendarUtils';
 import { usePersistedFilterState, usePersistedStringSetFilter } from '../hooks/usePersistedFilterState';
 import InvoiceEditModal from './InvoiceEditModal';
 import SalesInvoiceDeleteModal from './SalesInvoiceDeleteModal';
+import SalesInvoiceDetailsModal from './SalesInvoiceDetailsModal';
+import { useDarkMode } from '../hooks/useDarkMode';
 import TableSortIcon from './ui/TableSortIcon';
 import {
   tableTheadClass,
@@ -69,6 +72,7 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
   const { user } = useAuth();
   const { inventory } = useInventory();
   const { t } = useTranslation();
+  const darkMode = useDarkMode();
   const toolbarRef = useRef<HTMLDivElement>(null);
 
   const [rows, setRows] = useState<SalesInvoice[]>([]);
@@ -91,6 +95,7 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
   );
   const [sortDir, setSortDir] = usePersistedFilterState<'asc' | 'desc'>('sales-notes', 'sortDir', 'desc', userId);
   const [editingInvoice, setEditingInvoice] = useState<SalesInvoice | null>(null);
+  const [detailsInvoice, setDetailsInvoice] = useState<SalesInvoice | null>(null);
   const [invoiceToDelete, setInvoiceToDelete] = useState<SalesInvoice | null>(null);
   const [hiddenColumns, setHiddenColumns] = usePersistedStringSetFilter('sales-notes', 'hiddenColumns', userId);
 
@@ -388,8 +393,15 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
               {items.map((inv) => (
                 <tr key={inv.id} className="transition-colors hover:bg-gray-50">
                   {!hiddenColumns.has('comprobante') && (
-                    <td className="whitespace-nowrap px-6 py-4 text-center font-mono text-sm font-semibold text-[#515151]">
-                      {inv.invoiceNumber}
+                    <td className="whitespace-nowrap px-6 py-4 text-center">
+                      <button
+                        type="button"
+                        className="font-mono text-sm font-semibold text-[#515151] transition-colors hover:text-black hover:underline"
+                        onClick={() => setDetailsInvoice(inv)}
+                        title={t('invoiceTracking.clickToViewDetails')}
+                      >
+                        {inv.invoiceNumber}
+                      </button>
                     </td>
                   )}
                   {!hiddenColumns.has('client') && (
@@ -784,7 +796,9 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
           <div
             data-sales-notes-actions-root
             role="menu"
-            className="fixed z-[100] min-w-[12rem] rounded-lg border border-gray-200 bg-white py-1 text-left shadow-lg"
+            className={`sasa-portal-menu fixed z-[100] min-w-[12rem] rounded-lg border border-gray-200 py-1 text-left shadow-lg ${
+              darkMode ? 'sasa-portal-menu-dark' : 'bg-white'
+            }`}
             style={{ top: salesNotesActionsMenuPos.top, left: salesNotesActionsMenuPos.left }}
           >
             <button
@@ -806,6 +820,29 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
                 />
               </svg>
               {t('invoiceTracking.generatePdf')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              onClick={() => {
+                void downloadSalesPrepLabelPdf(invoiceForSalesNotesActionsMenu).catch(() =>
+                  showAlert(
+                    t('salesNotes.prepLabelFailed') || t('invoiceTracking.prepLabelFailed'),
+                    t('common.error')
+                  )
+                );
+                closeSalesNotesActionsMenu();
+              }}
+            >
+              <svg className="h-4 w-4 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"
+                />
+              </svg>
+              {t('salesNotes.printPrepLabel') || t('invoiceTracking.printPrepLabel')}
             </button>
             <button
               type="button"
@@ -875,6 +912,20 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
           void load();
         }}
       />
+
+      {detailsInvoice ? (
+        <SalesInvoiceDetailsModal
+          invoice={detailsInvoice}
+          inventory={inventory}
+          showTrackingDetails={false}
+          onClose={() => setDetailsInvoice(null)}
+          onGeneratePdf={(invoice) => {
+            void downloadSalesInvoicePdf(invoice, inventory).catch(() =>
+              showAlert(t('invoiceTracking.pdfGenerationFailed') || 'PDF error', 'Error')
+            );
+          }}
+        />
+      ) : null}
 
       <SalesInvoiceDeleteModal
         open={!!invoiceToDelete}

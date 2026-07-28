@@ -2,6 +2,7 @@ import { canonicalCategory, canonicalLine } from '../utils/merchandiseLabels';
 import { normalizeSalePrice } from '../utils/salePrice';
 import { buildMergedGalleryUrls } from '../utils/inventoryMediaGallery';
 import { isMaterialCategory } from '../utils/materials';
+import { getAvailableStock } from '../utils/stockReservation';
 import type { CMSContent, InventoryItem } from '../types';
 import type {
   InventoryStoreFields,
@@ -15,6 +16,7 @@ const CATEGORY_ES_TO_STORE: Record<string, StoreCategory> = {
   Cadenas: 'necklaces',
   Anillos: 'rings',
   Pulseras: 'bracelets',
+  Tobilleras: 'anklets',
 };
 
 function slugify(value: string): string {
@@ -34,22 +36,22 @@ export function mapInventoryCategoryToStore(category: string): StoreCategory | n
 export function mapInventoryLineToStoreMaterial(line: string): StoreMaterial {
   const canonical = canonicalLine(line);
 
-  if (canonical === 'Enchapado en Oro') return 'gold-filled';
-  if (canonical === 'Baño en Oro') return 'gold-plated';
+  if (canonical === 'Baño en Oro') return 'gold-filled';
+  if (canonical === 'Enchapado en Oro') return 'gold-plated';
   if (canonical === 'Plata esterlina') return 'sterling-silver';
 
   const lower = line.trim().toLowerCase();
-  if (lower.includes('gold filled') || lower.includes('enchapado') || lower.includes('oro relleno')) {
+  if (lower.includes('gold filled') || lower.includes('baño') || lower.includes('bano') || lower.includes('oro laminado') || lower.includes('oro relleno')) {
     return 'gold-filled';
   }
-  if (lower.includes('gold plated') || lower.includes('baño') || lower.includes('bano')) {
+  if (lower.includes('gold plated') || lower.includes('enchapado')) {
     return 'gold-plated';
   }
   if (lower.includes('sterling') || lower.includes('plata')) {
     return 'sterling-silver';
   }
 
-  return 'gold-plated';
+  return 'gold-filled';
 }
 
 export function buildStoreSlug(
@@ -78,7 +80,8 @@ export function isStoreActiveProduct(
 ): boolean {
   if (item.storeActive === false) return false;
   if (isMaterialCategory(item.category)) return false;
-  const stock = Math.floor(Number(item.ecuadorStock ?? 0));
+  // Available = on-hand minus units reserved on open sales notes.
+  const stock = Math.floor(getAvailableStock(item));
   // Out of stock stays hidden on the storefront until restocked.
   if (!Number.isFinite(stock) || stock <= 0) return false;
   return true;
@@ -111,6 +114,7 @@ export function inventoryDocToStoreProduct(
 
   return {
     id: item.id,
+    sku: item.sku?.trim() || '',
     slug: buildStoreSlug(item.name, item.sku, item.slug),
     name: item.name,
     price,
@@ -120,7 +124,7 @@ export function inventoryDocToStoreProduct(
     description: item.description?.trim() || '',
     details: item.details?.trim() || '',
     care: item.care?.trim() || '',
-    stock: Math.max(0, Math.floor(Number(item.ecuadorStock ?? 0))),
+    stock: Math.max(0, Math.floor(getAvailableStock(item))),
     isBestSeller: parseBoolean(item.isBestSeller),
     isNew: parseBoolean(item.isNew),
     variants: parseStringArray(item.variants),

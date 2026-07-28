@@ -1,16 +1,17 @@
 import type { InventoryItem } from '../types';
 import { isMaterialCategory } from './materials';
+import { getAvailableStock } from './stockReservation';
 
 /** True when the item can be sold, consigned, or added to a sales note line. */
 export function hasSellableStock(
-  item: Pick<InventoryItem, 'ecuadorStock' | 'category'>
+  item: Pick<InventoryItem, 'ecuadorStock' | 'reservedStock' | 'category'>
 ): boolean {
   if (isMaterialCategory(item.category)) return false;
-  return (item.ecuadorStock ?? 0) > 0;
+  return getAvailableStock(item) > 0;
 }
 
 export function filterSellableInventory<
-  T extends Pick<InventoryItem, 'ecuadorStock' | 'category'>,
+  T extends Pick<InventoryItem, 'ecuadorStock' | 'reservedStock' | 'category'>,
 >(items: T[]): T[] {
   return items.filter(hasSellableStock);
 }

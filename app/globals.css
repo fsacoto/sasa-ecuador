@@ -177,6 +177,63 @@ body {
   border-color: rgba(255, 255, 255, 0.14) !important;
 }
 
+/* Callouts de pago/entrega dentro de modales portal (detalle NOTAV, etc.) */
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel [class*='bg-blue-50'] {
+  background-color: rgba(59, 130, 246, 0.14) !important;
+  border-color: rgba(96, 165, 250, 0.42) !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel [class*='bg-purple-50'] {
+  background-color: rgba(139, 92, 246, 0.14) !important;
+  border-color: rgba(167, 139, 250, 0.42) !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .text-amber-900,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .text-amber-800 {
+  color: #fcd34d !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .text-red-600 {
+  color: #f87171 !important;
+}
+
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel .text-green-600 {
+  color: #34d399 !important;
+}
+
+/* Menús Acciones portaleados a body (fuera de .app-dark-main) */
+.sasa-portal-menu {
+  background-color: #ffffff;
+  border-color: #e5e7eb;
+}
+
+.sasa-portal-menu.sasa-portal-menu-dark {
+  background-color: #0b0b0b !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: #e5e7eb !important;
+}
+
+.sasa-portal-menu.sasa-portal-menu-dark [role='menuitem'] {
+  color: #e5e7eb !important;
+}
+
+.sasa-portal-menu.sasa-portal-menu-dark [role='menuitem']:hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.sasa-portal-menu.sasa-portal-menu-dark .text-gray-500,
+.sasa-portal-menu.sasa-portal-menu-dark .text-gray-700 {
+  color: #d1d5db !important;
+}
+
+.sasa-portal-menu.sasa-portal-menu-dark .text-red-600 {
+  color: #f87171 !important;
+}
+
+.sasa-portal-menu.sasa-portal-menu-dark button.text-red-600:hover {
+  background-color: rgba(239, 68, 68, 0.14) !important;
+}
+
 /* Sticky modal header must stay fully opaque so scrolled content never bleeds
  * through it. Overrides the translucent `.bg-white` remap used in dark mode. */
 .sasa-modal-panel .sasa-modal-header {

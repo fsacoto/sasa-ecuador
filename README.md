@@ -52,7 +52,7 @@ STORE_API_CORS_ORIGIN=http://localhost:3001
 
 Lista productos activos listos para la tienda.
 
-**Query opcional:** `?category=earrings|necklaces|rings|bracelets`
+**Query opcional:** `?category=earrings|necklaces|rings|bracelets|anklets`
 
 ```bash
 curl -s "http://localhost:3000/api/store/products" \
@@ -71,6 +71,7 @@ curl -s "http://localhost:3000/api/store/products?category=earrings" \
   "products": [
     {
       "id": "abc123",
+      "sku": "ARBA0001",
       "slug": "aretes-luna-arba0001",
       "name": "Aretes Luna",
       "price": 24.5,
@@ -109,6 +110,7 @@ curl -s "http://localhost:3000/api/store/products/aretes-luna-arba0001" \
 | Campo | Tipo | Origen en Firebase |
 |-------|------|-------------------|
 | `id` | string | ID del documento `inventory` |
+| `sku` | string | SKU interno (`sku`, no `supplierSKU`) |
 | `slug` | string | Campo `slug` o generado desde `name` + `sku` |
 | `name` | string | `name` |
 | `price` | number | `salePrice` (USD) |
@@ -131,15 +133,16 @@ curl -s "http://localhost:3000/api/store/products/aretes-luna-arba0001" \
 | Cadenas | `necklaces` |
 | Anillos | `rings` |
 | Pulseras | `bracelets` |
+| Tobilleras | `anklets` |
 
-También acepta valores legados en inglés (`Earring`, `Necklace`, etc.). **Sets** y **Tobilleras** no se exponen en la API de tienda.
+También acepta valores legados en inglés (`Earring`, `Necklace`, etc.). **Sets** no se exponen en la API de tienda.
 
 ### Mapeo de material (`line`)
 
 | Firebase (`line`) | API (`material`) |
 |-------------------|------------------|
-| Baño en Oro | `gold-plated` |
-| Enchapado en Oro | `gold-filled` |
+| Baño en Oro | `gold-filled` |
+| Enchapado en Oro | `gold-plated` |
 | Plata esterlina | `sterling-silver` |
 
 ### Productos “activos”
@@ -147,10 +150,10 @@ También acepta valores legados en inglés (`Earring`, `Necklace`, etc.). **Sets
 Un producto aparece en la API / tienda si:
 
 1. No tiene `storeActive: false`
-2. Su categoría mapea a Aretes / Cadenas / Anillos / Pulseras
+2. Su categoría mapea a Aretes / Cadenas / Anillos / Pulseras / Tobilleras
 3. Tiene **stock > 0** (`ecuadorStock`). Sin stock queda oculto hasta reabastecer.
 
-`salePrice` ausente se envía como `price: 0`. Sets y Tobilleras no se exponen.
+`salePrice` ausente se envía como `price: 0`. Sets no se exponen.
 
 ### Campos recomendados para agregar en Firestore
 

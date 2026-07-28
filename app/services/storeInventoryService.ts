@@ -53,6 +53,8 @@ function normalizeInventoryDoc(
     category: String(raw.category ?? ''),
     line: String(raw.line ?? ''),
     ecuadorStock: ec + legacyUsa,
+    reservedStock:
+      raw.reservedStock !== undefined ? Math.max(0, Number(raw.reservedStock) || 0) : undefined,
     consignmentStock:
       raw.consignmentStock !== undefined ? Number(raw.consignmentStock) : undefined,
     images: Array.isArray(raw.images) ? raw.images.map(String) : [],

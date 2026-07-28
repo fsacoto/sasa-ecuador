@@ -4,13 +4,19 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { SalesInvoiceLine, Client, InventoryItem, SalesInvoice } from '../types';
 import { getAllClients, createClient } from '../services/clientsService';
-import { createInvoice } from '../services/invoicesService';
+import { createInvoice, getAllInvoices } from '../services/invoicesService';
 import { downloadSalesInvoicePdf } from '../utils/salesInvoicePdf';
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../context/TranslationContext';
 import { findInventoryItemByBarcodeScan } from '../utils/barcodeGenerator';
 import { filterSellableInventory, hasSellableStock } from '../utils/inventoryStock';
+import {
+  getAvailableStock,
+  getOpenReservationNotesForSku,
+  getReservedStock,
+  nextReservedStock,
+} from '../utils/stockReservation';
 import AlertDialog from './ui/AlertDialog';
 import DateInput from './ui/DateInput';
 
@@ -23,9 +29,10 @@ interface InvoiceLineWithDetails extends SalesInvoiceLine {
 
 export default function Sales() {
   const { user, hasPermission } = useAuth();
-  const { inventory, purchaseOrders } = useInventory();
+  const { inventory, purchaseOrders, updateInventoryItem } = useInventory();
   const { t } = useTranslation();
   const [clients, setClients] = useState<Client[]>([]);
+  const [openInvoices, setOpenInvoices] = useState<SalesInvoice[]>([]);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [invoiceItems, setInvoiceItems] = useState<InvoiceLineWithDetails[]>([]);
   const [discountType, setDiscountType] = useState<'percentage' | 'flat'>('percentage');
@@ -63,7 +70,23 @@ export default function Sales() {
 
   useEffect(() => {
     loadClients();
+    void loadOpenInvoices();
   }, []);
+
+  const loadOpenInvoices = async () => {
+    try {
+      const all = await getAllInvoices();
+      setOpenInvoices(
+        all.filter(
+          (inv) =>
+            !inv.sourceConsignmentFirestoreId &&
+            (inv.deliveryStatus === 'Pending' || inv.deliveryStatus === 'Partially Delivered')
+        )
+      );
+    } catch (error) {
+      console.error('Error loading open invoices for reservations:', error);
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -101,7 +124,7 @@ export default function Sales() {
         unitPrice = avgLandedCost * 2.5;
       }
     }
-    const availableStock = product.ecuadorStock;
+    const availableStock = getAvailableStock(product);
     return {
       sku: product.sku,
       description: product.description || product.name,
@@ -298,6 +321,30 @@ export default function Sales() {
       }
 
       const created = await createInvoice(newInvoice);
+
+      // Reserve units on open note (do not deduct ecuadorStock until delivery).
+      const reservationById = new Map<string, number>();
+      for (const line of invoiceItems) {
+        const inventoryItem = inventory.find((inv) => inv.sku === line.sku);
+        if (!inventoryItem) continue;
+        const pending = reservationById.get(inventoryItem.id) ?? 0;
+        const available = getAvailableStock(inventoryItem) - pending;
+        if (line.quantity > available) {
+          throw new Error(
+            `Stock insuficiente para reservar ${line.sku}: disponible ${available}, solicitado ${line.quantity}`
+          );
+        }
+        reservationById.set(inventoryItem.id, pending + line.quantity);
+      }
+      for (const [id, qty] of reservationById) {
+        const inventoryItem = inventory.find((inv) => inv.id === id);
+        if (!inventoryItem) continue;
+        await updateInventoryItem(id, {
+          reservedStock: nextReservedStock(inventoryItem, qty),
+        });
+      }
+
+      await loadOpenInvoices();
 
       let pdfOk = true;
       try {
@@ -529,7 +576,14 @@ export default function Sales() {
             
             {showDropdown && filteredInventory.length > 0 && (
               <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                {filteredInventory.map((product) => (
+                {filteredInventory.map((product) => {
+                  const available = getAvailableStock(product);
+                  const reserved = getReservedStock(product);
+                  const notes = getOpenReservationNotesForSku(openInvoices, product.sku);
+                  const noteLabels = notes
+                    .map((n) => `${n.invoiceNumber} (${n.quantity})`)
+                    .join(', ');
+                  return (
                   <div
                     key={product.id}
                     onClick={() => addProductToInvoice(product)}
@@ -537,9 +591,16 @@ export default function Sales() {
                   >
                     <div className="font-mono text-sm font-semibold text-[#515151]">{product.sku}</div>
                     <div className="text-sm text-gray-600">{product.name}</div>
-                    <div className="text-xs text-gray-500">{t('sales.stock')}: {product.ecuadorStock} | {product.category} - {product.line}</div>
+                    <div className="text-xs text-gray-500">
+                      {t('sales.available')}: {available}
+                      {reserved > 0
+                        ? ` · ${t('sales.reserved')}: ${reserved}${noteLabels ? ` — ${noteLabels}` : ''}`
+                        : ''}
+                      {' | '}{product.category} - {product.line}
+                    </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

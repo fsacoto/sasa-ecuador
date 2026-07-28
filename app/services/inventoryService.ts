@@ -57,16 +57,22 @@ const toInventoryItem = (docSnap: QueryDocumentSnapshot | DocumentSnapshot): Inv
   const raw = data as Record<string, unknown>;
   const ec = Number(raw.ecuadorStock ?? 0);
   const legacyUsa = Number(raw.usaStock ?? 0);
-  const { usaStock: _legacyUsa, consignmentReturnIssues: rawCr, ...rest } = raw as Record<string, unknown>;
+  const { usaStock: _legacyUsa, consignmentReturnIssues: rawCr, reservedStock: _rawReserved, ...rest } =
+    raw as Record<string, unknown>;
   const normalizedCr = normalizeConsignmentReturnIssues(rawCr);
   const salePrice = normalizeSalePrice(raw.salePrice);
+  const reservedRaw = Number(raw.reservedStock ?? 0);
+  const reservedStock =
+    Number.isFinite(reservedRaw) && reservedRaw > 0 ? Math.floor(reservedRaw) : undefined;
+
   return {
     ...(rest as Omit<
       InventoryItem,
-      'id' | 'createdAt' | 'ecuadorStock' | 'consignmentReturnIssues' | 'salePrice'
+      'id' | 'createdAt' | 'ecuadorStock' | 'reservedStock' | 'consignmentReturnIssues' | 'salePrice'
     >),
     id: docSnap.id,
     ecuadorStock: ec + legacyUsa,
+    ...(reservedStock !== undefined ? { reservedStock } : {}),
     createdAt: (data.createdAt as Timestamp)?.toDate() || new Date(),
     ...(normalizedCr ? { consignmentReturnIssues: normalizedCr } : {}),
     ...(salePrice !== undefined ? { salePrice } : {}),

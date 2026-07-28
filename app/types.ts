@@ -113,6 +113,11 @@ export interface InventoryItem {
   category: string;
   line: string;
   ecuadorStock: number;
+  /**
+   * Units held by open sales notes (Pending / Partially Delivered, undelivered qty).
+   * Physical on-hand stays in ecuadorStock until delivery; available = ecuadorStock - reservedStock.
+   */
+  reservedStock?: number;
   consignmentStock?: number; // Inventory on consignment
   images: string[]; // Array of image URLs or base64 data
   barcode?: string; // Base64 encoded barcode image

@@ -1,10 +1,17 @@
 /** Product shape consumed by Tienda SASA Ecuador. */
-export type StoreCategory = 'earrings' | 'necklaces' | 'rings' | 'bracelets';
+export type StoreCategory =
+  | 'earrings'
+  | 'necklaces'
+  | 'rings'
+  | 'bracelets'
+  | 'anklets';
 
 export type StoreMaterial = 'gold-filled' | 'gold-plated' | 'sterling-silver';
 
 export interface StoreProduct {
   id: string;
+  /** SKU interno del inventario (no el de proveedor). */
+  sku: string;
   slug: string;
   name: string;
   price: number;
@@ -36,6 +43,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
   'necklaces',
   'rings',
   'bracelets',
+  'anklets',
 ];
 
 export function isStoreCategory(value: string): value is StoreCategory {

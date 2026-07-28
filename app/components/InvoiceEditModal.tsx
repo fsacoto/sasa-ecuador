@@ -7,6 +7,16 @@ import { useInventory } from '../context/InventoryContext';
 import { useTranslation } from '../context/TranslationContext';
 import AlertDialog from './ui/AlertDialog';
 import { filterSellableInventory, hasSellableStock } from '../utils/inventoryStock';
+import {
+  getAvailableStock,
+  getOpenReservationNotesForSku,
+  getReservedStock,
+  getUndeliveredQty,
+  clampReservedStock,
+} from '../utils/stockReservation';
+import { getAllInvoices } from '../services/invoicesService';
+import { useDarkMode } from '../hooks/useDarkMode';
+import ModalPortal from './ui/ModalPortal';
 
 export type InvoiceEditModalProps = {
   invoice: SalesInvoice | null;
@@ -17,6 +27,7 @@ export type InvoiceEditModalProps = {
 export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceEditModalProps) {
   const { inventory, updateInventoryItem, purchaseOrders } = useInventory();
   const { t } = useTranslation();
+  const darkMode = useDarkMode();
   const editDropdownRef = useRef<HTMLDivElement>(null);
 
   const [editItems, setEditItems] = useState<(SalesInvoiceLine & { maxQuantity?: number })[]>([]);
@@ -37,10 +48,28 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
     open: false,
     message: '',
   });
+  const [openInvoices, setOpenInvoices] = useState<SalesInvoice[]>([]);
 
   const showAlert = (message: string, title?: string) => {
     setAlertDialog({ open: true, message, title });
   };
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const all = await getAllInvoices();
+        setOpenInvoices(
+          all.filter(
+            (inv) =>
+              !inv.sourceConsignmentFirestoreId &&
+              (inv.deliveryStatus === 'Pending' || inv.deliveryStatus === 'Partially Delivered')
+          )
+        );
+      } catch (error) {
+        console.error('Error loading open invoices:', error);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     if (!invoice) {
@@ -57,8 +86,10 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
     const enrichedItems = invoice.items.map((item) => {
       const inventoryItem = inventory.find((inv) => inv.sku === item.sku);
       if (inventoryItem) {
-        const currentStock = inventoryItem.ecuadorStock;
-        const maxQuantity = currentStock + item.quantity;
+        const undelivered = getUndeliveredQty(invoice, item);
+        const available = getAvailableStock(inventoryItem);
+        // Current note's undelivered hold can be reassigned on this edit.
+        const maxQuantity = available + undelivered;
         return { ...item, maxQuantity } as SalesInvoiceLine & { maxQuantity?: number };
       }
       return item as SalesInvoiceLine & { maxQuantity?: number };
@@ -104,7 +135,7 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
         unitPrice = avgLandedCost * 2.5;
       }
     }
-    const maxQuantity = product.ecuadorStock;
+    const maxQuantity = getAvailableStock(product);
     const newItem: SalesInvoiceLine & { maxQuantity?: number } = {
       sku: product.sku,
       description: product.description || product.name,
@@ -165,6 +196,52 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
       const inventoryItem = inventory.find((i) => i.sku === itemReturn.sku);
       if (inventoryItem) {
         await updateInventoryItem(inventoryItem.id, { ecuadorStock: itemReturn.newStock });
+      }
+    }
+
+    // Adjust reservations for open notes (Pending / Partial undelivered).
+    if (!inv.sourceConsignmentFirestoreId) {
+      const oldBySku = new Map<string, number>();
+      for (const item of inv.items) {
+        const qty = getUndeliveredQty(inv, item);
+        if (qty <= 0) continue;
+        oldBySku.set(item.sku, (oldBySku.get(item.sku) ?? 0) + qty);
+      }
+
+      const newDeliveryStatus =
+        inv.deliveryStatus === 'Delivered' && editItems.length > inv.items.length
+          ? 'Partially Delivered'
+          : inv.deliveryStatus;
+
+      const newBySku = new Map<string, number>();
+      for (const item of editItems) {
+        const synthetic: SalesInvoice = { ...inv, deliveryStatus: newDeliveryStatus, items: editItems };
+        const qty = getUndeliveredQty(synthetic, item);
+        if (qty <= 0) continue;
+        newBySku.set(item.sku, (newBySku.get(item.sku) ?? 0) + qty);
+      }
+
+      const skus = new Set([...oldBySku.keys(), ...newBySku.keys()]);
+      const reservedOverrides = new Map<string, number>();
+      for (const sku of skus) {
+        const delta = (newBySku.get(sku) ?? 0) - (oldBySku.get(sku) ?? 0);
+        if (delta === 0) continue;
+        const inventoryItem = inventory.find((i) => i.sku === sku);
+        if (!inventoryItem) continue;
+        if (delta > 0 && delta > getAvailableStock(inventoryItem)) {
+          showAlert(
+            `${t('invoiceTracking.cannotExceedStock')} ${getAvailableStock(inventoryItem)}`,
+            'Stock Limit'
+          );
+          return;
+        }
+        const currentReserved =
+          reservedOverrides.get(inventoryItem.id) ?? getReservedStock(inventoryItem);
+        const next = clampReservedStock(currentReserved + delta);
+        reservedOverrides.set(inventoryItem.id, next);
+        await updateInventoryItem(inventoryItem.id, {
+          reservedStock: next,
+        });
       }
     }
 
@@ -274,9 +351,12 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
 
   return (
     <>
-      <div className="sasa-modal-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-        <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
-          <h3 className="mb-4 text-xl font-semibold">
+      <ModalPortal>
+      <div
+        className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm`}
+      >
+        <div className="sasa-modal-panel max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl p-6 shadow-xl">
+          <h3 className="mb-4 text-xl font-semibold text-gray-900">
             {t('invoiceTracking.editInvoiceTitle')} — {invoice.invoiceNumber}
           </h3>
 
@@ -297,7 +377,16 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
             />
             {editShowDropdown && getFilteredEditInventory().length > 0 && (
               <div className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-300 bg-white shadow-lg">
-                {getFilteredEditInventory().map((product) => (
+                {getFilteredEditInventory().map((product) => {
+                  const available = getAvailableStock(product);
+                  const reserved = getReservedStock(product);
+                  const notes = getOpenReservationNotesForSku(openInvoices, product.sku).filter(
+                    (n) => n.invoiceNumber !== invoice.invoiceNumber
+                  );
+                  const noteLabels = notes
+                    .map((n) => `${n.invoiceNumber} (${n.quantity})`)
+                    .join(', ');
+                  return (
                   <button
                     key={product.id}
                     type="button"
@@ -307,10 +396,15 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
                     <div className="font-mono text-sm font-semibold text-[#515151]">{product.sku}</div>
                     <div className="text-sm text-gray-600">{product.name}</div>
                     <div className="text-xs text-gray-500">
-                      {t('invoiceTracking.stock')}: {product.ecuadorStock} | {product.category} - {product.line}
+                      {t('sales.available')}: {available}
+                      {reserved > 0
+                        ? ` · ${t('sales.reserved')}: ${reserved}${noteLabels ? ` — ${noteLabels}` : ''}`
+                        : ''}
+                      {' | '}{product.category} - {product.line}
                     </div>
                   </button>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -470,10 +564,14 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
           </div>
         </div>
       </div>
+      </ModalPortal>
 
       {showReturnWarning && (
-        <div className="sasa-modal-overlay fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-xl bg-white p-6">
+        <ModalPortal>
+        <div
+          className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm`}
+        >
+          <div className="sasa-modal-panel w-full max-w-2xl rounded-xl p-6">
             <h3 className="mb-4 text-xl font-bold text-orange-600">
               {t('invoiceTracking.inventoryImpactWarning')}
             </h3>
@@ -522,6 +620,7 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       <AlertDialog
