@@ -360,6 +360,12 @@
     "builtBadgeShort": "Const.",
     "builtSourceImages": "Fotos de componentes (referencia)",
     "builtSourceImagesHint": "Copiadas de los artículos usados al construir. No son la foto principal del producto.",
+    "builtStockCost": "Costo stock actual",
+    "builtComponentsTitle": "Componentes de la receta",
+    "builtComponentsHint": "Artículos usados por cada unidad terminada.",
+    "builtComponentsMissing": "Este producto está marcado como construido, pero no tiene receta de componentes guardada.",
+    "builtPerFinishedUnit": "ud",
+    "builtRecipeCost": "Costo receta / unidad",
     "materialSupplierSkuPlaceholder": "Código del proveedor (evita duplicar el mismo material)",
     "materialSupplierSkuHint": "Igual que en productos: el mismo SKU de proveedor reutiliza el SKU interno.",
     "materialUnit": {

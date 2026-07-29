@@ -20,6 +20,10 @@ import ModalPortal from './ui/ModalPortal';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { formatDateMedium } from '../utils/formatDate';
 import { formatSalePriceDisplay } from '../utils/salePrice';
+import { isBuiltInventoryItem } from '../utils/productBuild';
+import { formatMaterialStock, isMaterialCategory } from '../utils/materials';
+import { resolveSkuUnitCost } from '../utils/landedCostCalculation';
+import { displayCategory } from '../utils/merchandiseLabels';
 
 interface InventoryDetailPanelProps {
   item: InventoryItem;
@@ -27,7 +31,7 @@ interface InventoryDetailPanelProps {
 }
 
 export default function InventoryDetailPanel({ item, onClose }: InventoryDetailPanelProps) {
-  const { purchaseOrders, inventory, suppliers } = useInventory();
+  const { purchaseOrders, inventory, suppliers, additionalCosts } = useInventory();
   const { content, refreshCMS } = useCMS();
   const { t } = useTranslation();
   const darkMode = useDarkMode();
@@ -139,6 +143,67 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
     purchaseOrders,
     suppliers
   );
+
+  const isBuilt = isBuiltInventoryItem(latestItem);
+
+  const resolvedUnitCost = useMemo(() => {
+    const { unitCost } = resolveSkuUnitCost(
+      latestItem.sku,
+      inventory,
+      purchaseOrders,
+      additionalCosts
+    );
+    if (latestItem.unitCost != null && Number.isFinite(latestItem.unitCost)) {
+      return latestItem.unitCost;
+    }
+    return unitCost;
+  }, [
+    latestItem.sku,
+    latestItem.unitCost,
+    inventory,
+    purchaseOrders,
+    additionalCosts,
+  ]);
+
+  const stockValue =
+    resolvedUnitCost != null
+      ? Math.round(resolvedUnitCost * (latestItem.ecuadorStock ?? 0) * 10000) / 10000
+      : null;
+
+  const bomRows = useMemo(() => {
+    const bom = latestItem.billOfMaterials ?? [];
+    return bom.map((line) => {
+      const component =
+        inventory.find((i) => i.id === line.inventoryId) ||
+        inventory.find((i) => i.sku === line.sku);
+      const unitCost =
+        line.unitCostAtBuild != null && Number.isFinite(line.unitCostAtBuild)
+          ? line.unitCostAtBuild
+          : null;
+      const lineCost =
+        unitCost != null
+          ? Math.round(unitCost * line.quantityPerUnit * 10000) / 10000
+          : null;
+      return {
+        inventoryId: line.inventoryId,
+        sku: line.sku,
+        quantityPerUnit: line.quantityPerUnit,
+        name: component?.name || component?.description || line.sku,
+        category: component?.category,
+        unitOfMeasure: component?.unitOfMeasure,
+        unitCost,
+        lineCost,
+      };
+    });
+  }, [latestItem.billOfMaterials, inventory]);
+
+  const bomRecipeCost = useMemo(() => {
+    if (bomRows.length === 0) return null;
+    if (bomRows.some((r) => r.lineCost == null)) return null;
+    return (
+      Math.round(bomRows.reduce((sum, r) => sum + (r.lineCost ?? 0), 0) * 10000) / 10000
+    );
+  }, [bomRows]);
 
   const avgCost =
     linkedOrders.length > 0
@@ -381,6 +446,24 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
                     {formatSalePriceDisplay(latestItem.salePrice)}
                   </span>
                 </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">
+                    {t('inventory.buildUnitCost') || 'Costo por unidad'}:
+                  </span>
+                  <span className="font-medium tabular-nums text-gray-900">
+                    {resolvedUnitCost != null ? `$${resolvedUnitCost.toFixed(4)}` : '—'}
+                  </span>
+                </div>
+                {stockValue != null && (latestItem.ecuadorStock ?? 0) > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">
+                      {t('inventory.builtStockCost') || 'Costo stock actual'}:
+                    </span>
+                    <span className="font-medium tabular-nums text-gray-900">
+                      ${stockValue.toFixed(4)}
+                    </span>
+                  </div>
+                )}
                 {latestItem.supplierSKU && (
                   <div className="flex justify-between">
                     <span className="text-gray-600">Supplier SKU:</span>
@@ -389,6 +472,75 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
                 )}
               </div>
             </div>
+
+            {isBuilt && bomRows.length > 0 && (
+              <div>
+                <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
+                  {t('inventory.builtComponentsTitle') || 'Componentes de la receta'}
+                </h3>
+                <p className="mb-3 text-xs text-gray-400">
+                  {t('inventory.builtComponentsHint') ||
+                    'Artículos usados por cada unidad terminada.'}
+                </p>
+                <div className="space-y-2">
+                  {bomRows.map((row) => (
+                    <div
+                      key={`${row.inventoryId}-${row.sku}`}
+                      className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="font-mono text-sm font-semibold text-[#515151]">
+                            {row.sku}
+                          </div>
+                          <div className="truncate text-sm text-gray-700">{row.name}</div>
+                          {row.category ? (
+                            <div className="mt-0.5 text-xs text-gray-500">
+                              {displayCategory(row.category)}
+                              {isMaterialCategory(row.category) && row.unitOfMeasure
+                                ? ` · ${t(`inventory.materialUnit.${row.unitOfMeasure}`) || row.unitOfMeasure}`
+                                : ''}
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="shrink-0 text-right text-sm">
+                          <div className="tabular-nums font-medium text-gray-900">
+                            {formatMaterialStock(row.quantityPerUnit, row.unitOfMeasure)}
+                            <span className="ml-1 text-xs font-normal text-gray-500">
+                              / {t('inventory.builtPerFinishedUnit') || 'ud'}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 text-xs tabular-nums text-gray-500">
+                            {row.lineCost != null
+                              ? `$${row.lineCost.toFixed(4)}`
+                              : row.unitCost != null
+                                ? `$${row.unitCost.toFixed(4)} × ${row.quantityPerUnit}`
+                                : '—'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex justify-between rounded-lg bg-gray-100 px-3 py-2 text-sm">
+                  <span className="text-gray-600">
+                    {t('inventory.builtRecipeCost') || 'Costo receta / unidad'}
+                  </span>
+                  <span className="font-semibold tabular-nums text-gray-900">
+                    {(resolvedUnitCost ?? bomRecipeCost) != null
+                      ? `$${(resolvedUnitCost ?? bomRecipeCost)!.toFixed(4)}`
+                      : '—'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {isBuilt && bomRows.length === 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                {t('inventory.builtComponentsMissing') ||
+                  'Este producto está marcado como construido, pero no tiene receta de componentes guardada.'}
+              </div>
+            )}
 
             {/* Stock Information */}
             <div>
