@@ -142,6 +142,11 @@ export interface InventoryItem {
   billOfMaterials?: BillOfMaterialsLine[];
   /** Canonical signature of billOfMaterials — same recipe → reuse same SKU. */
   bomSignature?: string;
+  /**
+   * Photos copied from components used in a build (reference only).
+   * Never used as the principal/display image — that stays in `images` (empty until a product photo is set).
+   */
+  sourceImages?: string[];
 }
 
 /** One material line in a built product recipe (quantities are per finished unit). */

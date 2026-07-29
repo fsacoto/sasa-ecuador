@@ -39,6 +39,7 @@ import {
   normalizeMaterialUnit,
   type MaterialUnit,
 } from '../utils/materials';
+import { isBuiltInventoryItem } from '../utils/productBuild';
 import InventoryBuildProductForm from './InventoryBuildProductForm';
 import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 import { HUB_GROUP_STACK_ICON_PATH } from '../constants/businessHubUi';
@@ -917,11 +918,34 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                 </div>
               )}
               <div className="flex min-w-0 flex-col justify-center gap-1.5">
-                <span className="font-medium leading-snug text-[#515151] hover:underline">{item.name}</span>
+                <span className="inline-flex min-w-0 items-center gap-1.5 font-medium leading-snug text-[#515151] hover:underline">
+                  {isBuiltInventoryItem(item) && (
+                    <span
+                      className="inline-flex shrink-0 text-gray-400"
+                      title={t('inventory.builtBadge') || 'Producto construido'}
+                      aria-label={t('inventory.builtBadge') || 'Producto construido'}
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.75}
+                          d="M11 4H4v7h7V4zm9 0h-7v7h7V4zM11 13H4v7h7v-7zm9 0h-7v7h7v-7z"
+                        />
+                      </svg>
+                    </span>
+                  )}
+                  <span className="truncate">{item.name}</span>
+                </span>
                 <div className="flex flex-wrap items-center gap-2">
                   {needsReview && (
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
                       {t('inventory.needsReview')}
+                    </span>
+                  )}
+                  {isBuiltInventoryItem(item) && (
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-500">
+                      {t('inventory.builtBadge') || 'Construido'}
                     </span>
                   )}
                   {getTotalProblemQty(item) > 0 && (
@@ -2367,6 +2391,22 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                       )}
                       {/* Image Section */}
                       <div className="aspect-square relative overflow-hidden bg-gray-100">
+                        {isBuiltInventoryItem(item) && (
+                          <span
+                            className="absolute bottom-2 left-2 z-20 inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white/90 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-500 shadow-sm"
+                            title={t('inventory.builtBadge') || 'Producto construido'}
+                          >
+                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={1.75}
+                                d="M11 4H4v7h7V4zm9 0h-7v7h7V4zM11 13H4v7h7v-7zm9 0h-7v7h7v-7z"
+                              />
+                            </svg>
+                            {t('inventory.builtBadgeShort') || 'Const.'}
+                          </span>
+                        )}
                         {item.images && item.images.length > 0 && !imageErrors.has(`${item.id}-${item.images[0]}`) ? (
                           <>
                             <img 

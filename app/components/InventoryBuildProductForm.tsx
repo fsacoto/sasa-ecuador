@@ -1,20 +1,29 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AdditionalCost, InventoryItem, PurchaseOrder } from '../types';
 import { useTranslation } from '../context/TranslationContext';
 import {
   PREDEFINED_CATEGORIES_ES,
   PREDEFINED_LINES_ES,
   MATERIAL_CATEGORY_ES,
+  MATERIAL_UNITS_ES,
 } from '../constants/merchandise';
 import { allKnownCategoryKeys, allKnownLineKeys } from '../constants/merchandise';
-import { isMaterialCategory, formatMaterialStock, roundMaterialQty } from '../utils/materials';
+import {
+  isMaterialCategory,
+  formatMaterialStock,
+  normalizeMaterialUnit,
+  roundMaterialQty,
+  type MaterialUnit,
+} from '../utils/materials';
 import {
   buildBomSignature,
   calculateBuildUnitCost,
+  collectComponentSourceImages,
   findInventoryByBomSignature,
-  getMaterialInventory,
+  getBuildableInventory,
+  mergeSourceImages,
   mergeUnitCost,
   toBillOfMaterialsLines,
   validateBuild,
@@ -41,10 +50,23 @@ type Props = {
 type ComponentRow = {
   inventoryId: string;
   quantityPerUnit: string;
+  searchQuery: string;
+  unitOfMeasure: MaterialUnit | '';
 };
+
+const emptyComponentRow = (): ComponentRow => ({
+  inventoryId: '',
+  quantityPerUnit: '',
+  searchQuery: '',
+  unitOfMeasure: '',
+});
 
 const inputClass =
   'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#515151] focus:border-transparent';
+
+function materialDisplayLabel(item: InventoryItem): string {
+  return `${item.sku} · ${item.name || item.description}`;
+}
 
 export default function InventoryBuildProductForm({
   inventory,
@@ -66,14 +88,27 @@ export default function InventoryBuildProductForm({
   const [sku, setSku] = useState('');
   const [skuManuallyEdited, setSkuManuallyEdited] = useState(false);
   const [quantityProduced, setQuantityProduced] = useState('1');
-  const [components, setComponents] = useState<ComponentRow[]>([
-    { inventoryId: '', quantityPerUnit: '' },
-  ]);
+  const [components, setComponents] = useState<ComponentRow[]>([emptyComponentRow()]);
+  const [openSearchIndex, setOpenSearchIndex] = useState<number | null>(null);
   const [matchedExisting, setMatchedExisting] = useState<InventoryItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const materialsSectionRef = useRef<HTMLDivElement>(null);
 
-  const materials = useMemo(() => getMaterialInventory(inventory), [inventory]);
+  const materials = useMemo(() => getBuildableInventory(inventory), [inventory]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        materialsSectionRef.current &&
+        !materialsSectionRef.current.contains(event.target as Node)
+      ) {
+        setOpenSearchIndex(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const sellableCategories = useMemo(
     () =>
@@ -158,11 +193,52 @@ export default function InventoryBuildProductForm({
   }, [category, line, inventory, purchaseOrders, skuManuallyEdited, matchedExisting]);
 
   const addComponentRow = () => {
-    setComponents((prev) => [...prev, { inventoryId: '', quantityPerUnit: '' }]);
+    setComponents((prev) => [...prev, emptyComponentRow()]);
   };
 
   const removeComponentRow = (index: number) => {
     setComponents((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
+    setOpenSearchIndex(null);
+  };
+
+  const selectMaterial = (index: number, material: InventoryItem) => {
+    const uom = isMaterialCategory(material.category)
+      ? normalizeMaterialUnit(material.unitOfMeasure) || 'unidad'
+      : 'unidad';
+    setComponents((prev) => {
+      const next = [...prev];
+      next[index] = {
+        ...next[index],
+        inventoryId: material.id,
+        searchQuery: materialDisplayLabel(material),
+        unitOfMeasure: uom,
+        quantityPerUnit: next[index].quantityPerUnit || '1',
+      };
+      return next;
+    });
+    setOpenSearchIndex(null);
+    setSkuManuallyEdited(false);
+  };
+
+  const filterMaterialsForRow = (row: ComponentRow, index: number) => {
+    const selectedIds = new Set(
+      components.map((c, i) => (i !== index && c.inventoryId ? c.inventoryId : '')).filter(Boolean)
+    );
+    const available = materials.filter((m) => !selectedIds.has(m.id) || m.id === row.inventoryId);
+    const q = row.searchQuery.trim().toLowerCase();
+    if (!q) return available;
+    const selected = inventory.find((i) => i.id === row.inventoryId);
+    // While a material is selected and the input shows its label, keep full list for browsing.
+    if (selected && materialDisplayLabel(selected).toLowerCase() === q) {
+      return available;
+    }
+    return available.filter(
+      (m) =>
+        m.sku.toLowerCase().includes(q) ||
+        (m.name || '').toLowerCase().includes(q) ||
+        (m.description || '').toLowerCase().includes(q) ||
+        (m.line || '').toLowerCase().includes(q)
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -178,18 +254,11 @@ export default function InventoryBuildProductForm({
     );
     if (validation) {
       if (validation.code === 'no_components') {
-        setError(t('inventory.buildNoComponents') || 'Agregue al menos un material.');
+        setError(t('inventory.buildNoComponents') || 'Agregue al menos un componente.');
       } else if (validation.code === 'invalid_qty_produced') {
         setError(t('inventory.buildInvalidQty') || 'Indique cuántas unidades producir.');
       } else if (validation.code === 'missing_category_line') {
         setError(t('inventory.buildNeedCategoryLine') || 'Indique categoría y línea del producto.');
-      } else if (validation.code === 'not_material') {
-        setError(
-          (t('inventory.buildNotMaterial') || 'El SKU {sku} no es un material.').replace(
-            '{sku}',
-            validation.sku
-          )
-        );
       } else if (validation.code === 'insufficient_stock') {
         setError(
           (
@@ -222,17 +291,28 @@ export default function InventoryBuildProductForm({
     try {
       const bomLines = toBillOfMaterialsLines(parsedComponents, costResult.lines);
       const unitCost = costResult.unitCost;
+      const sourceImages = collectComponentSourceImages(parsedComponents, inventory);
       const existing =
         matchedExisting ||
         (bomSignature ? findInventoryByBomSignature(inventory, bomSignature) : undefined);
 
-      // Deduct materials first (same idea as a sale leaving stock)
+      // Deduct every component from inventory (materials, cadenas, aretes, etc.)
       for (const c of parsedComponents) {
         const item = inventory.find((i) => i.id === c.inventoryId);
         if (!item) continue;
         const deduct = roundMaterialQty(c.quantityPerUnit * qtyProducedNum);
         const nextStock = roundMaterialQty((item.ecuadorStock ?? 0) - deduct);
-        await updateInventoryItem(item.id, { ecuadorStock: Math.max(0, nextStock) });
+        const patch: Partial<InventoryItem> = {
+          ecuadorStock: Math.max(0, nextStock),
+        };
+        if (isMaterialCategory(item.category)) {
+          const rowUom = components.find((r) => r.inventoryId === c.inventoryId)?.unitOfMeasure;
+          patch.unitOfMeasure =
+            normalizeMaterialUnit(rowUom) ||
+            normalizeMaterialUnit(item.unitOfMeasure) ||
+            'unidad';
+        }
+        await updateInventoryItem(item.id, patch);
       }
 
       if (existing) {
@@ -243,6 +323,7 @@ export default function InventoryBuildProductForm({
           qtyProducedNum,
           unitCost
         );
+        const mergedSourceImages = mergeSourceImages(existing.sourceImages, sourceImages);
         await updateInventoryItem(existing.id, {
           ecuadorStock: nextStock,
           ...(nextUnitCost != null ? { unitCost: nextUnitCost } : {}),
@@ -252,6 +333,8 @@ export default function InventoryBuildProductForm({
           description: productLabel,
           category,
           line,
+          // Keep principal gallery empty of component photos; only merge reference photos.
+          ...(mergedSourceImages.length > 0 ? { sourceImages: mergedSourceImages } : {}),
         });
       } else {
         const pool = collectUsedSkus(inventory, purchaseOrders);
@@ -267,7 +350,9 @@ export default function InventoryBuildProductForm({
           line,
           ecuadorStock: qtyProducedNum,
           consignmentStock: 0,
+          // New built product: no display photo. Component photos go to sourceImages only.
           images: [],
+          ...(sourceImages.length > 0 ? { sourceImages } : {}),
           ...(unitCost != null ? { unitCost } : {}),
           billOfMaterials: bomLines,
           bomSignature,
@@ -292,7 +377,7 @@ export default function InventoryBuildProductForm({
     <form onSubmit={handleSubmit} className="space-y-4">
       <p className="text-sm text-gray-500">
         {t('inventory.buildIntro') ||
-          'Elija materiales del inventario, la cantidad por unidad terminada y cuántas unidades producir. Se descontarán los materiales y se creará o actualizará el producto.'}
+          'Elija artículos del inventario (materiales, cadenas, aretes, etc.), la cantidad por unidad terminada y cuántas unidades producir. Se descontará el stock de cada componente y se creará o actualizará el producto.'}
       </p>
 
       {matchedExisting && (
@@ -467,60 +552,112 @@ export default function InventoryBuildProductForm({
         </p>
       </div>
 
-      <div className="space-y-3 rounded-xl border border-gray-200 p-4">
+      <div ref={materialsSectionRef} className="space-y-3 rounded-xl border border-gray-200 p-4">
         <div className="flex items-center justify-between gap-2">
           <h4 className="text-sm font-semibold text-gray-900">
-            {t('inventory.buildMaterialsTitle') || 'Materiales por unidad terminada'}
+            {t('inventory.buildMaterialsTitle') || 'Componentes por unidad terminada'}
           </h4>
           <button
             type="button"
             onClick={addComponentRow}
             className="text-sm font-medium text-[#515151] hover:text-black"
           >
-            + {t('inventory.buildAddMaterial') || 'Material'}
+            + {t('inventory.buildAddMaterial') || 'Componente'}
           </button>
         </div>
 
         {materials.length === 0 ? (
           <p className="text-sm text-amber-700">
             {t('inventory.buildNoMaterialsInStock') ||
-              'No hay materiales con stock. Verifique órdenes de compra con categoría Materiales.'}
+              'No hay artículos con stock en inventario para usar como componentes.'}
           </p>
         ) : (
           components.map((row, index) => {
             const selected = inventory.find((i) => i.id === row.inventoryId);
+            const selectedIsMaterial = selected ? isMaterialCategory(selected.category) : false;
+            const filtered = filterMaterialsForRow(row, index);
+            const costLine = costResult.lines.find((l) => l.inventoryId === row.inventoryId);
+            const showDropdown = openSearchIndex === index;
+
             return (
               <div key={index} className="grid grid-cols-1 gap-2 sm:grid-cols-12 sm:items-end">
-                <div className="sm:col-span-7">
+                <div className="relative sm:col-span-5">
                   <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">
-                    {t('inventory.buildMaterial') || 'Material'}
+                    {t('inventory.buildMaterial') || 'Artículo'}
                   </label>
-                  <select
-                    value={row.inventoryId}
+                  <input
+                    type="text"
+                    value={row.searchQuery}
+                    placeholder={
+                      t('inventory.buildSearchMaterial') ||
+                      'Escriba SKU o nombre (material, cadena, arete…)'
+                    }
                     onChange={(e) => {
                       const next = [...components];
-                      next[index] = { ...next[index], inventoryId: e.target.value };
+                      next[index] = {
+                        ...next[index],
+                        searchQuery: e.target.value,
+                        inventoryId: '',
+                        unitOfMeasure: '',
+                      };
                       setComponents(next);
+                      setOpenSearchIndex(index);
                       setSkuManuallyEdited(false);
                     }}
+                    onFocus={() => setOpenSearchIndex(index)}
                     className={inputClass}
+                    autoComplete="off"
+                  />
+                  <input
+                    type="text"
+                    value={row.inventoryId}
                     required
-                  >
-                    <option value="">
-                      {t('inventory.buildSelectMaterial') || 'Seleccionar material…'}
-                    </option>
-                    {materials.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.sku} · {m.name || m.description} (
-                        {formatMaterialStock(m.ecuadorStock, m.unitOfMeasure)}) · {m.line}
-                      </option>
-                    ))}
-                  </select>
+                    tabIndex={-1}
+                    aria-hidden
+                    className="pointer-events-none absolute h-0 w-0 opacity-0"
+                    onChange={() => {}}
+                  />
+                  {showDropdown && (
+                    <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-300 bg-white shadow-lg">
+                      {filtered.length === 0 ? (
+                        <div className="px-4 py-3 text-sm text-gray-500">
+                          {t('inventory.buildNoMaterialMatch') || 'Sin resultados'}
+                        </div>
+                      ) : (
+                        filtered.map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => selectMaterial(index, m)}
+                            className="w-full border-b border-gray-100 px-4 py-2 text-left last:border-b-0 hover:bg-gray-100"
+                          >
+                            <div className="font-mono text-sm font-semibold text-[#515151]">
+                              {m.sku}
+                            </div>
+                            <div className="text-sm text-gray-600">
+                              {m.name || m.description}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {t('inventory.ecuadorStockLabel') || 'Stock'}:{' '}
+                              {formatMaterialStock(m.ecuadorStock, m.unitOfMeasure)}
+                              {' · '}
+                              {m.category}
+                              {' · '}
+                              {m.line}
+                              {m.unitOfMeasure && isMaterialCategory(m.category)
+                                ? ` · ${t(`inventory.materialUnit.${m.unitOfMeasure}`) || m.unitOfMeasure}`
+                                : ''}
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="sm:col-span-3">
+
+                <div className="sm:col-span-2">
                   <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">
                     {t('inventory.buildQtyPerUnit') || 'Cant. por unidad'}
-                    {selected?.unitOfMeasure ? ` (${selected.unitOfMeasure})` : ''}
                   </label>
                   <input
                     type="number"
@@ -535,18 +672,81 @@ export default function InventoryBuildProductForm({
                     }}
                     className={inputClass}
                     required
-                    placeholder={selected?.unitOfMeasure === 'metro' ? '0.5' : '1'}
+                    disabled={!row.inventoryId}
+                    placeholder={
+                      row.unitOfMeasure === 'metro' || row.unitOfMeasure === 'gramo' ? '0.5' : '1'
+                    }
                   />
                 </div>
+
                 <div className="sm:col-span-2">
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                    {t('inventory.unitOfMeasure') || 'Unidad de medida'}
+                  </label>
+                  {selectedIsMaterial ? (
+                    <select
+                      value={row.unitOfMeasure || ''}
+                      onChange={(e) => {
+                        const next = [...components];
+                        next[index] = {
+                          ...next[index],
+                          unitOfMeasure: e.target.value as MaterialUnit,
+                        };
+                        setComponents(next);
+                      }}
+                      className={inputClass}
+                      required={!!row.inventoryId}
+                      disabled={!row.inventoryId}
+                    >
+                      <option value="">
+                        {t('inventory.buildSelectUnit') || 'Seleccionar…'}
+                      </option>
+                      {MATERIAL_UNITS_ES.map((u) => (
+                        <option key={u} value={u}>
+                          {t(`inventory.materialUnit.${u}`) || u}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="px-3 py-2 text-sm text-gray-600">
+                      {row.inventoryId
+                        ? t('inventory.materialUnit.unidad') || 'Unidades'
+                        : '—'}
+                    </div>
+                  )}
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                    {t('inventory.buildLineCost') || 'Costo'}
+                  </label>
+                  <div className="px-3 py-2 text-sm tabular-nums text-gray-700">
+                    {costLine?.lineCost != null ? `$${costLine.lineCost.toFixed(4)}` : '—'}
+                  </div>
+                </div>
+
+                <div className="sm:col-span-1">
                   <button
                     type="button"
                     onClick={() => removeComponentRow(index)}
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50"
                   >
-                    {t('common.delete') || 'Quitar'}
+                    {t('common.delete') || 'Eliminar'}
                   </button>
                 </div>
+
+                {selected && (
+                  <p className="sm:col-span-12 -mt-1 text-xs text-gray-500">
+                    {t('inventory.buildMaterialStockHint') || 'Disponible'}:{' '}
+                    {formatMaterialStock(
+                      selected.ecuadorStock,
+                      row.unitOfMeasure || selected.unitOfMeasure
+                    )}
+                    {costLine?.unitCost != null
+                      ? ` · ${t('inventory.buildMaterialUnitCost') || 'Costo unitario'}: $${costLine.unitCost.toFixed(4)}`
+                      : ''}
+                  </p>
+                )}
               </div>
             );
           })

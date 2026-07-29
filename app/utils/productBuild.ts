@@ -31,10 +31,61 @@ export function findInventoryByBomSignature(
   return inventory.find((item) => (item.bomSignature || '').trim() === sig);
 }
 
+/** True when the item was created/updated via Construir producto. */
+export function isBuiltInventoryItem(item: InventoryItem | null | undefined): boolean {
+  if (!item) return false;
+  if (item.billOfMaterials && item.billOfMaterials.length > 0) return true;
+  return Boolean((item.bomSignature || '').trim());
+}
+
+/**
+ * Inventory available as build components: materials, cadenas, aretes, etc. with stock.
+ * Excludes the finished product category restriction — any on-hand SKU can be consumed.
+ */
+export function getBuildableInventory(inventory: InventoryItem[]): InventoryItem[] {
+  return inventory.filter((item) => (item.ecuadorStock ?? 0) > 0);
+}
+
+/** @deprecated Prefer getBuildableInventory — kept for callers that only want Materiales. */
 export function getMaterialInventory(inventory: InventoryItem[]): InventoryItem[] {
   return inventory.filter(
     (item) => isMaterialCategory(item.category) && (item.ecuadorStock ?? 0) > 0
   );
+}
+
+/** Collect component photos for the built record (never used as display `images`). */
+export function collectComponentSourceImages(
+  components: BuildComponentInput[],
+  inventory: InventoryItem[]
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const c of components) {
+    const item = inventory.find((i) => i.id === c.inventoryId || i.sku === c.sku);
+    if (!item) continue;
+    for (const url of item.images ?? []) {
+      const trimmed = (url || '').trim();
+      if (!trimmed || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      out.push(trimmed);
+    }
+  }
+  return out;
+}
+
+export function mergeSourceImages(
+  existing: string[] | undefined,
+  incoming: string[]
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const url of [...(existing ?? []), ...incoming]) {
+    const trimmed = (url || '').trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
 }
 
 export type BuildCostLine = {
@@ -109,7 +160,6 @@ export type BuildValidationError =
   | { code: 'no_components' }
   | { code: 'invalid_qty_produced' }
   | { code: 'insufficient_stock'; sku: string; needed: number; available: number }
-  | { code: 'not_material'; sku: string }
   | { code: 'missing_category_line' };
 
 export function validateBuild(
@@ -130,9 +180,6 @@ export function validateBuild(
     const item = inventory.find((i) => i.id === c.inventoryId);
     if (!item) {
       return { code: 'insufficient_stock', sku: c.sku, needed: c.quantityPerUnit * quantityProduced, available: 0 };
-    }
-    if (!isMaterialCategory(item.category)) {
-      return { code: 'not_material', sku: item.sku };
     }
     const needed = roundMaterialQty(c.quantityPerUnit * quantityProduced);
     const available = roundMaterialQty(item.ecuadorStock ?? 0);

@@ -302,6 +302,32 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
               )}
             </div>
 
+            {(latestItem.sourceImages?.length ?? 0) > 0 && (
+              <div>
+                <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                  {t('inventory.builtSourceImages') || 'Fotos de componentes (referencia)'}
+                  <span className="font-normal text-gray-400 normal-case">
+                    {' '}
+                    — {latestItem.sourceImages!.length}
+                  </span>
+                </h3>
+                <p className="mb-3 text-xs text-gray-400">
+                  {t('inventory.builtSourceImagesHint') ||
+                    'Copiadas de los artículos usados al construir. No son la foto principal del producto.'}
+                </p>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {latestItem.sourceImages!.map((url, index) => (
+                    <div
+                      key={`${url}-${index}`}
+                      className="h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-dashed border-gray-300 bg-gray-50"
+                    >
+                      <img src={url} alt="" className="h-full w-full object-cover opacity-90" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Barcode */}
             {latestItem.barcode && (
               <div>
@@ -329,6 +355,22 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
                   <span className="text-gray-600">Category:</span>
                   <span className="font-medium text-gray-900">{latestItem.category || 'N/A'}</span>
                 </div>
+                {(latestItem.billOfMaterials?.length || latestItem.bomSignature) && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">{t('inventory.builtBadge') || 'Construido'}:</span>
+                    <span className="inline-flex items-center gap-1 font-medium text-gray-500">
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.75}
+                          d="M11 4H4v7h7V4zm9 0h-7v7h7V4zM11 13H4v7h7v-7zm9 0h-7v7h7v-7z"
+                        />
+                      </svg>
+                      {t('inventory.builtBadge') || 'Producto construido'}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-gray-600">Line:</span>
                   <span className="font-medium text-gray-900">{latestItem.line || 'N/A'}</span>
