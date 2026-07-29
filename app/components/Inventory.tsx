@@ -37,10 +37,24 @@ import {
   isMaterialCategory,
   formatMaterialStock,
   normalizeMaterialUnit,
+  roundMaterialQty,
   type MaterialUnit,
 } from '../utils/materials';
-import { isBuiltInventoryItem } from '../utils/productBuild';
 import InventoryBuildProductForm from './InventoryBuildProductForm';
+import InventoryBuiltBarcodePrintModal from './InventoryBuiltBarcodePrintModal';
+import BarcodePrintProgress from './BarcodePrintProgress';
+import {
+  isBuiltInventoryItem,
+  computeBuildStockRestore,
+  formatBuildStockRestoreLines,
+} from '../utils/productBuild';
+import {
+  prepareBarcodePrintItemsForPdf,
+  buildBarcodeLabelsDocName,
+  downloadBarcodePdfBlob,
+  type BarcodePrintPdfItem,
+  type BarcodePrintProgressPhase,
+} from '../utils/barcodePrintPdf';
 import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 import { HUB_GROUP_STACK_ICON_PATH } from '../constants/businessHubUi';
 import { formatSalePriceDisplay, itemHasSalePrice, parseSalePriceInput } from '../utils/salePrice';
@@ -108,6 +122,21 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
     'all',
     userId
   );
+  const [filterBuilt, setFilterBuilt] = usePersistedFilterState<'all' | 'built' | 'notBuilt'>(
+    'inventory',
+    'filterBuilt',
+    'all',
+    userId
+  );
+  const [selectedInventoryIds, setSelectedInventoryIds] = useState<Set<string>>(new Set());
+  const [isBuiltBarcodePrintModalOpen, setIsBuiltBarcodePrintModalOpen] = useState(false);
+  const [barcodePrintBusy, setBarcodePrintBusy] = useState(false);
+  const [barcodePrintProgress, setBarcodePrintProgress] = useState<{
+    phase: BarcodePrintProgressPhase;
+    current: number;
+    total: number;
+  }>({ phase: 'images', current: 0, total: 0 });
+  const barcodePrintLockRef = useRef(false);
   const [showProblemsOnly, setShowProblemsOnly] = usePersistedFilterState('inventory', 'showProblemsOnly', false, userId);
   const [showFilters, setShowFilters] = useState(false);
   const [groupByField, setGroupByField] = usePersistedFilterState('inventory', 'groupByField', '', userId);
@@ -193,9 +222,12 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
   };
 
   // Get count of visible columns (for colSpan calculation)
+  // +1 index column, +1 selection checkbox
   const getVisibleColumnCount = () => {
     return getVisibleColumns().filter(col => !hiddenColumns.has(col.key)).length;
   };
+
+  const getTableColSpan = () => getVisibleColumnCount() + 2;
 
   // Get available fields for gallery view
   const getGalleryFields = () => {
@@ -605,6 +637,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
 
   // Deleting a whole item must also remove its photos from Firebase Storage,
   // otherwise the files stay stored forever with nothing showing them.
+  // Built products restore component stock from the BOM × finished qty on hand.
   const handleConfirmDeleteItem = async () => {
     const target = itemToDelete;
     setDeleteConfirmOpen(false);
@@ -618,9 +651,141 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
     }
 
     try {
+      if (isBuiltInventoryItem(target)) {
+        const restoreLines = computeBuildStockRestore(target, inventory);
+        for (const line of restoreLines) {
+          if (!line.found || !line.inventoryId) {
+            console.warn('Built delete: component not found for restore', line.sku);
+            continue;
+          }
+          const component = inventory.find((i) => i.id === line.inventoryId);
+          if (!component) continue;
+          const nextStock = roundMaterialQty((component.ecuadorStock ?? 0) + line.quantity);
+          await updateInventoryItem(component.id, { ecuadorStock: nextStock });
+        }
+      }
+
       await deleteInventoryItem(target.id);
+      setSelectedInventoryIds((prev) => {
+        if (!prev.has(target.id)) return prev;
+        const next = new Set(prev);
+        next.delete(target.id);
+        return next;
+      });
     } catch (error) {
       console.error('Error deleting inventory item:', error);
+    }
+  };
+
+  const deleteConfirmDescription = useMemo(() => {
+    if (!itemToDelete) return t('inventory.deleteConfirm');
+    if (!isBuiltInventoryItem(itemToDelete)) return t('inventory.deleteConfirm');
+    const lines = computeBuildStockRestore(itemToDelete, inventory);
+    const list = formatBuildStockRestoreLines(lines);
+    const intro =
+      t('inventory.deleteBuiltConfirm') ||
+      'Se eliminará este producto construido. Los componentes usados en la receta volverán al stock:';
+    if (!list) {
+      return `${intro}\n\n${t('inventory.deleteBuiltConfirmNoBom') || 'No hay cantidades de componentes para restaurar (stock 0 o sin receta).'}`;
+    }
+    return `${intro}\n\n${list}`;
+  }, [itemToDelete, inventory, t]);
+
+  const selectedInventoryItems = useMemo(
+    () => inventory.filter((item) => selectedInventoryIds.has(item.id)),
+    [inventory, selectedInventoryIds]
+  );
+
+  const toggleInventorySelection = (id: string) => {
+    setSelectedInventoryIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    const visibleIds = filteredAndSortedInventory.map((i) => i.id);
+    const allSelected =
+      visibleIds.length > 0 && visibleIds.every((id) => selectedInventoryIds.has(id));
+    setSelectedInventoryIds((prev) => {
+      const next = new Set(prev);
+      if (allSelected) {
+        visibleIds.forEach((id) => next.delete(id));
+      } else {
+        visibleIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const ensureBarcodesForItems = async (items: InventoryItem[]): Promise<InventoryItem[]> => {
+    const result: InventoryItem[] = [];
+    for (const item of items) {
+      if (item.barcode?.trim()) {
+        result.push(item);
+        continue;
+      }
+      if (!isValidBarcodeInput(item.sku)) {
+        result.push(item);
+        continue;
+      }
+      try {
+        const barcodeImage = generateBarcodeFromSKU(item.sku);
+        await updateInventoryItem(item.id, { barcode: barcodeImage });
+        result.push({ ...item, barcode: barcodeImage });
+      } catch (error) {
+        console.error('Barcode generation error:', item.sku, error);
+        result.push(item);
+      }
+    }
+    return result;
+  };
+
+  const handleBuiltBarcodePrint = async (
+    printItems: Array<{ order: null; inventoryItem: InventoryItem; quantity: number }>
+  ) => {
+    if (barcodePrintLockRef.current) return;
+    barcodePrintLockRef.current = true;
+    setIsBuiltBarcodePrintModalOpen(false);
+    setBarcodePrintBusy(true);
+    setBarcodePrintProgress({ phase: 'images', current: 0, total: 0 });
+
+    try {
+      const withBarcodes = await ensureBarcodesForItems(printItems.map((p) => p.inventoryItem));
+      const byId = new Map(withBarcodes.map((i) => [i.id, i]));
+      const itemsForPdf: BarcodePrintPdfItem[] = printItems.map((p) => ({
+        order: null,
+        inventoryItem: byId.get(p.inventoryItem.id) ?? p.inventoryItem,
+        quantity: p.quantity,
+      }));
+
+      const prepared = await prepareBarcodePrintItemsForPdf(itemsForPdf, (phase, current, total) => {
+        setBarcodePrintProgress({ phase, current, total });
+      });
+      setBarcodePrintProgress({ phase: 'pdf', current: 0, total: 1 });
+
+      const [{ pdf }, { default: BarcodeLabelPDF }] = await Promise.all([
+        import('@react-pdf/renderer'),
+        import('./BarcodeLabelPDF'),
+      ]);
+
+      const { title, fileBase } = buildBarcodeLabelsDocName(prepared);
+      const blob = await pdf(
+        <BarcodeLabelPDF items={prepared} documentTitle={title} />
+      ).toBlob();
+      downloadBarcodePdfBlob(blob, fileBase);
+      setSelectedInventoryIds(new Set());
+    } catch (error) {
+      console.error('Error generating inventory barcode PDF:', error);
+      alert(
+        t('inventory.printBuiltBarcodesError') ||
+          'No se pudieron generar las etiquetas. Intente de nuevo.'
+      );
+    } finally {
+      setBarcodePrintBusy(false);
+      barcodePrintLockRef.current = false;
     }
   };
 
@@ -780,6 +945,13 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
       if (filterStock === 'outOfStock' && getTotalStock(item) > 0) {
         return false;
       }
+
+      if (filterBuilt === 'built' && !isBuiltInventoryItem(item)) {
+        return false;
+      }
+      if (filterBuilt === 'notBuilt' && isBuiltInventoryItem(item)) {
+        return false;
+      }
       
       return true;
     })
@@ -877,6 +1049,15 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
     const needsReview = item.category.includes('NEEDS REVIEW');
     return (
       <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${needsReview ? 'bg-amber-50/30' : ''}`}>
+        <td className="w-10 px-3 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+          <input
+            type="checkbox"
+            checked={selectedInventoryIds.has(item.id)}
+            onChange={() => toggleInventorySelection(item.id)}
+            className="h-4 w-4 rounded border-gray-300 text-[#515151] focus:ring-[#515151]"
+            aria-label={`${t('inventory.selectItem') || 'Seleccionar'} ${item.sku}`}
+          />
+        </td>
         <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500 font-mono">{index + 1}</td>
         {!hiddenColumns.has('name') && (
           <td className="px-6 py-4">
@@ -1320,7 +1501,8 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
             {(filterCategory !== 'all' ||
               filterLine !== 'all' ||
               filterSalePrice !== 'all' ||
-              filterStock !== 'all') && (
+              filterStock !== 'all' ||
+              filterBuilt !== 'all') && (
               <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
                 {
                   [
@@ -1328,12 +1510,41 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                     filterLine !== 'all',
                     filterSalePrice !== 'all',
                     filterStock !== 'all',
+                    filterBuilt !== 'all',
                   ].filter(Boolean).length
                 }
               </span>
             )}
           </button>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setIsBuiltBarcodePrintModalOpen(true)}
+          disabled={selectedInventoryIds.size === 0 || barcodePrintBusy || isReadOnly}
+          className="flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-all duration-200 hover:bg-gray-50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+          title={
+            t('inventory.printBuiltBarcodesHint') ||
+            'Seleccione artículos (p. ej. filtrando Construidos) e imprima etiquetas 40×20 mm'
+          }
+        >
+          <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"
+            />
+          </svg>
+          <span className="whitespace-nowrap">
+            {t('inventory.printBuiltBarcodes') || 'Imprimir códigos'}
+          </span>
+          {selectedInventoryIds.size > 0 && (
+            <span className="rounded-full bg-[#515151] px-1.5 py-0.5 text-xs font-medium text-white">
+              {selectedInventoryIds.size}
+            </span>
+          )}
+        </button>
 
         <div className="relative">
           <button
@@ -1541,7 +1752,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
       {showFilters && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mt-4">
           <div className="border-t border-gray-200 p-4 bg-gray-50">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
               {/* Category Filter */}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">{t('inventory.category')}</label>
@@ -1605,6 +1816,23 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                   <option value="outOfStock">{t('inventory.filterStockOutOfStock')}</option>
                 </select>
               </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  {t('inventory.filterBuilt') || 'Construidos'}
+                </label>
+                <select
+                  value={filterBuilt}
+                  onChange={(e) =>
+                    setFilterBuilt(e.target.value as 'all' | 'built' | 'notBuilt')
+                  }
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#515151]"
+                >
+                  <option value="all">{t('inventory.filterBuiltAll') || 'Todos'}</option>
+                  <option value="built">{t('inventory.filterBuiltOnly') || 'Solo construidos'}</option>
+                  <option value="notBuilt">{t('inventory.filterBuiltExclude') || 'Sin construidos'}</option>
+                </select>
+              </div>
             </div>
             
             {/* Clear filters button */}
@@ -1613,6 +1841,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
               filterLine !== 'all' ||
               filterSalePrice !== 'all' ||
               filterStock !== 'all' ||
+              filterBuilt !== 'all' ||
               showProblemsOnly) && (
               <div className="mt-3 flex justify-end">
                 <button
@@ -1622,6 +1851,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                     setFilterLine('all');
                     setFilterSalePrice('all');
                     setFilterStock('all');
+                    setFilterBuilt('all');
                     setShowProblemsOnly(false);
                   }}
                   className="text-[#515151] hover:text-[#000000] font-medium text-sm"
@@ -2175,6 +2405,18 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
             <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
+                <th className="w-10 px-3 py-3 text-center">
+                  <input
+                    type="checkbox"
+                    checked={
+                      filteredAndSortedInventory.length > 0 &&
+                      filteredAndSortedInventory.every((i) => selectedInventoryIds.has(i.id))
+                    }
+                    onChange={toggleSelectAllVisible}
+                    className="h-4 w-4 rounded border-gray-300 text-[#515151] focus:ring-[#515151]"
+                    aria-label={t('inventory.selectAllVisible') || 'Seleccionar visibles'}
+                  />
+                </th>
                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
                   #
                 </th>
@@ -2270,7 +2512,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
             <tbody className="divide-y divide-gray-100">
               {filteredAndSortedInventory.length === 0 ? (
                 <tr>
-                  <td colSpan={getVisibleColumnCount() + 1} className="px-6 py-12 text-center text-sm text-gray-500">
+                  <td colSpan={getTableColSpan()} className="px-6 py-12 text-center text-sm text-gray-500">
                     {filteredInventory.length === 0 
                       ? t('inventory.noItemsYet')
                       : t('inventory.noItemsMatchFilters')}
@@ -2292,7 +2534,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                   return (
                     <Fragment key={groupKey}>
                       <tr className="border-t border-gray-200 bg-gray-50">
-                        <td colSpan={getVisibleColumnCount() + 1} className="px-6 py-4">
+                        <td colSpan={getTableColSpan()} className="px-6 py-4">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
                               <button
@@ -2365,7 +2607,19 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                 {filteredAndSortedInventory.map((item) => {
                   const needsReview = item.category.includes('NEEDS REVIEW');
                   return (
-                    <div key={item.id} className={`group relative bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-lg transition-all duration-200 hover:border-[#515151] ${needsReview ? 'ring-2 ring-amber-200' : ''}`}>
+                    <div key={item.id} className={`group relative bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-lg transition-all duration-200 hover:border-[#515151] ${needsReview ? 'ring-2 ring-amber-200' : ''} ${selectedInventoryIds.has(item.id) ? 'ring-2 ring-[#515151]' : ''}`}>
+                      <label
+                        className="absolute top-2 left-2 z-20 flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-gray-200 bg-white/95 shadow-sm"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedInventoryIds.has(item.id)}
+                          onChange={() => toggleInventorySelection(item.id)}
+                          className="h-4 w-4 rounded border-gray-300 text-[#515151] focus:ring-[#515151]"
+                          aria-label={`${t('inventory.selectItem') || 'Seleccionar'} ${item.sku}`}
+                        />
+                      </label>
                       {getTotalProblemQty(item) > 0 && (
                         <button
                           type="button"
@@ -2373,7 +2627,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                             e.stopPropagation();
                             setVerificationIssuesModalItem(item);
                           }}
-                          className="absolute top-2 left-2 z-20 inline-flex items-center gap-1 rounded-full bg-amber-500 text-white px-2 py-1 text-[10px] font-bold shadow-md hover:bg-amber-600 transition-colors max-w-[7.5rem] leading-tight text-left"
+                          className="absolute top-2 left-11 z-20 inline-flex items-center gap-1 rounded-full bg-amber-500 text-white px-2 py-1 text-[10px] font-bold shadow-md hover:bg-amber-600 transition-colors max-w-[7.5rem] leading-tight text-left"
                           title={t('inventory.verificationProblemHint')}
                         >
                           <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
@@ -2739,8 +2993,12 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
 
       <ConfirmDialog
         open={deleteConfirmOpen}
-        title={t('common.deleteInventoryItem')}
-        description={t('inventory.deleteConfirm')}
+        title={
+          itemToDelete && isBuiltInventoryItem(itemToDelete)
+            ? t('inventory.deleteBuiltTitle') || 'Eliminar producto construido'
+            : t('common.deleteInventoryItem')
+        }
+        description={deleteConfirmDescription}
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
         onConfirm={() => void handleConfirmDeleteItem()}
@@ -2749,6 +3007,24 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
           setItemToDelete(null);
         }}
       />
+
+      {isBuiltBarcodePrintModalOpen && !barcodePrintBusy && (
+        <InventoryBuiltBarcodePrintModal
+          items={selectedInventoryItems}
+          onClose={() => setIsBuiltBarcodePrintModalOpen(false)}
+          onPrint={async (items) => {
+            await handleBuiltBarcodePrint(items);
+          }}
+        />
+      )}
+
+      {barcodePrintBusy && (
+        <BarcodePrintProgress
+          phase={barcodePrintProgress.phase}
+          current={barcodePrintProgress.current}
+          total={barcodePrintProgress.total}
+        />
+      )}
 
       <ConfirmDialog
         open={mediaDeleteConfirmOpen}

@@ -167,3 +167,25 @@ export function buildAllPrintRows(
   });
   return flat;
 }
+
+/** Labels for inventory-only print: one per finished unit in stock (min 1). */
+export function labelCountForInventoryFullPrint(item: InventoryItem): number {
+  const n = Math.round(Number(item.ecuadorStock) || 0);
+  return Math.max(1, n);
+}
+
+/**
+ * Build PDF print payloads from selected inventory items (no PO required).
+ * - full: one label × ecuadorStock (at least 1)
+ * - one-per-item: one label per selected SKU
+ */
+export function buildInventoryBarcodePrintItems(
+  items: InventoryItem[],
+  mode: 'full' | 'one-per-item'
+): Array<{ order: null; inventoryItem: InventoryItem; quantity: number }> {
+  return items.map((item) => ({
+    order: null,
+    inventoryItem: item,
+    quantity: mode === 'one-per-item' ? 1 : labelCountForInventoryFullPrint(item),
+  }));
+}

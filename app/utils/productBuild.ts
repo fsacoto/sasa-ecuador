@@ -220,3 +220,56 @@ export function mergeUnitCost(
   if (oldStock <= 0 || oldCost == null) return addUnitCost;
   return roundMoney((oldStock * oldCost + addQty * addUnitCost) / (oldStock + addQty));
 }
+
+/** One component line to restore when deleting a built finished product. */
+export type BuildStockRestoreLine = {
+  inventoryId: string;
+  sku: string;
+  quantity: number;
+  found: boolean;
+};
+
+/**
+ * Quantities to return to component stock when deleting a built item:
+ * quantityPerUnit × finished ecuadorStock for each BOM line.
+ */
+export function computeBuildStockRestore(
+  builtItem: InventoryItem,
+  inventory: InventoryItem[]
+): BuildStockRestoreLine[] {
+  const qtyFinished = roundMaterialQty(Math.max(0, builtItem.ecuadorStock ?? 0));
+  const bom = builtItem.billOfMaterials ?? [];
+  if (!(qtyFinished > 0) || bom.length === 0) return [];
+
+  const merged = new Map<string, BuildStockRestoreLine>();
+  for (const line of bom) {
+    if (!(line.quantityPerUnit > 0)) continue;
+    const restoreQty = roundMaterialQty(line.quantityPerUnit * qtyFinished);
+    if (!(restoreQty > 0)) continue;
+
+    const component =
+      inventory.find((i) => i.id === line.inventoryId) ||
+      inventory.find((i) => i.sku === line.sku);
+    const key = component?.id || line.inventoryId || line.sku;
+    const prev = merged.get(key);
+    if (prev) {
+      prev.quantity = roundMaterialQty(prev.quantity + restoreQty);
+      continue;
+    }
+    merged.set(key, {
+      inventoryId: component?.id || line.inventoryId,
+      sku: component?.sku || line.sku,
+      quantity: restoreQty,
+      found: Boolean(component),
+    });
+  }
+  return [...merged.values()].sort((a, b) => a.sku.localeCompare(b.sku));
+}
+
+/** Human-readable restore list for delete confirmation dialogs. */
+export function formatBuildStockRestoreLines(lines: BuildStockRestoreLine[]): string {
+  if (lines.length === 0) return '';
+  return lines
+    .map((l) => `• ${l.sku}: +${l.quantity}${l.found ? '' : ' (no encontrado)'}`)
+    .join('\n');
+}
