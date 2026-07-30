@@ -221,6 +221,28 @@ const SALES_TABS: Tab[] = [
   'sales-profitability',
 ];
 
+const PERSISTABLE_TABS: Tab[] = [
+  'dashboard',
+  ...INVENTORY_TABS,
+  'cms',
+  ...SALES_TABS,
+];
+
+const ACTIVE_TAB_STORAGE_KEY = 'sasaActiveTab';
+
+function readStoredActiveTab(fallback: Tab): Tab {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+    if (raw && (PERSISTABLE_TABS as string[]).includes(raw)) {
+      return raw as Tab;
+    }
+  } catch {
+    /* ignore */
+  }
+  return fallback;
+}
+
 /** Ocultar el CMS en la barra lateral y el contenido. El módulo sigue en el proyecto; poner `true` para mostrarlo de nuevo. */
 const SHOW_CMS_IN_NAVIGATION = false;
 
@@ -236,6 +258,10 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<Tab>(
     user?.role === 'marketing' && SHOW_CMS_IN_NAVIGATION ? 'cms' : 'dashboard'
   );
+  /** Remount module when the same nav item is clicked again (e.g. consignments → list). */
+  const [moduleRemountKeys, setModuleRemountKeys] = useState<Partial<Record<Tab, number>>>({});
+  /** Avoid writing default tab to storage before restoring the saved one. */
+  const [activeTabReady, setActiveTabReady] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [storefrontConfigOpen, setStorefrontConfigOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(true);
@@ -300,9 +326,36 @@ function AppContent() {
   }, [user?.role, activeTab, hasPermission]);
 
   useEffect(() => {
+    const fallback =
+      user?.role === 'marketing' && SHOW_CMS_IN_NAVIGATION ? 'cms' : 'dashboard';
+    setActiveTab(readStoredActiveTab(fallback));
+    setActiveTabReady(true);
+    // Only restore once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!activeTabReady) return;
+    try {
+      window.localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, activeTab);
+    } catch {
+      /* ignore */
+    }
+  }, [activeTab, activeTabReady]);
+
+  useEffect(() => {
     if (INVENTORY_TABS.includes(activeTab)) setInventoryOpen(true);
     if (SALES_TABS.includes(activeTab)) setSalesOpen(true);
   }, [activeTab]);
+
+  /** Navigate to a module; clicking the current module again remounts it to its home/list view. */
+  const navigateToTab = (tab: Tab) => {
+    if (activeTab === tab) {
+      setModuleRemountKeys((prev) => ({ ...prev, [tab]: (prev[tab] ?? 0) + 1 }));
+      return;
+    }
+    setActiveTab(tab);
+  };
 
   useEffect(() => {
     if (!suiteFlyout) return;
@@ -819,7 +872,7 @@ function AppContent() {
       : Math.min(navSearchHighlight, navSearchResults.length - 1);
 
   const applyNavSearch = (entry: NavSearchEntry) => {
-    setActiveTab(entry.tab);
+    navigateToTab(entry.tab);
     setNavSearchQuery('');
     setNavSearchOpen(false);
     setNavSearchHighlight(0);
@@ -857,7 +910,7 @@ function AppContent() {
             key={item.id}
             type="button"
             onClick={() => {
-              setActiveTab(item.id);
+              navigateToTab(item.id);
               setSuiteFlyout(null);
             }}
             className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs ${
@@ -928,7 +981,7 @@ function AppContent() {
                         <button
                           key={item.id}
                           type="button"
-                          onClick={() => setActiveTab(item.id)}
+                          onClick={() => navigateToTab(item.id)}
                           className={subButtonClass(activeTab === item.id)}
                           style={
                             activeTab === item.id
@@ -984,7 +1037,7 @@ function AppContent() {
                         <button
                           key={item.id}
                           type="button"
-                          onClick={() => setActiveTab(item.id)}
+                          onClick={() => navigateToTab(item.id)}
                           className={subButtonClass(activeTab === item.id)}
                           style={
                             activeTab === item.id
@@ -1026,7 +1079,7 @@ function AppContent() {
                 key={tab.id}
                 type="button"
                 title={sidebarCollapsed ? tab.label : undefined}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => navigateToTab(tab.id)}
                 className={`${navButtonClass(leafActive)} ${sidebarCollapsed ? 'justify-center px-0' : ''}`}
                 style={leafActive ? { boxShadow: `inset 2px 0 0 0 ${SIDEBAR_ACCENT}` } : undefined}
               >
@@ -1661,29 +1714,46 @@ function AppContent() {
           >
             {activeTab === 'dashboard' &&
               (user?.role !== 'marketing' || !SHOW_CMS_IN_NAVIGATION) && (
-              <Dashboard />
+              <Dashboard key={moduleRemountKeys.dashboard ?? 0} />
             )}
-            {activeTab === 'suppliers' && hasPermission('suppliers.view') && <Suppliers />}
-            {activeTab === 'purchase-orders' && hasPermission('purchase.view') && <PurchaseOrders />}
+            {activeTab === 'suppliers' && hasPermission('suppliers.view') && (
+              <Suppliers key={moduleRemountKeys.suppliers ?? 0} />
+            )}
+            {activeTab === 'purchase-orders' && hasPermission('purchase.view') && (
+              <PurchaseOrders key={moduleRemountKeys['purchase-orders'] ?? 0} />
+            )}
             {activeTab === 'inventory' &&
               (hasPermission('inventory.view') || hasPermission('inventory.view.ecuador')) && (
-                <Inventory darkMode={darkModeOn} />
+                <Inventory key={moduleRemountKeys.inventory ?? 0} darkMode={darkModeOn} />
               )}
             {activeTab === 'landed-costs' && hasPermission('costs.view') && (
-              <LandedCosts darkMode={darkModeOn} />
+              <LandedCosts key={moduleRemountKeys['landed-costs'] ?? 0} darkMode={darkModeOn} />
             )}
-            {activeTab === 'cms' && SHOW_CMS_IN_NAVIGATION && hasPermission('cms.view') && <CMSModule />}
+            {activeTab === 'cms' && SHOW_CMS_IN_NAVIGATION && hasPermission('cms.view') && (
+              <CMSModule key={moduleRemountKeys.cms ?? 0} />
+            )}
             {activeTab === 'clients' &&
-              (hasPermission('clients.view') || hasPermission('clients.view.ecuador')) && <Clients />}
-            {activeTab === 'sales' && hasPermission('sales.view') && <Sales />}
-            {activeTab === 'sales-notes' && hasPermission('sales.view') && (
-              <SalesNotesHistory onOpenInTracking={() => setActiveTab('invoice-tracking')} />
+              (hasPermission('clients.view') || hasPermission('clients.view.ecuador')) && (
+                <Clients key={moduleRemountKeys.clients ?? 0} />
+              )}
+            {activeTab === 'sales' && hasPermission('sales.view') && (
+              <Sales key={moduleRemountKeys.sales ?? 0} />
             )}
-            {activeTab === 'invoice-tracking' && hasPermission('sales.view') && <InvoiceTracking />}
+            {activeTab === 'sales-notes' && hasPermission('sales.view') && (
+              <SalesNotesHistory
+                key={moduleRemountKeys['sales-notes'] ?? 0}
+                onOpenInTracking={() => setActiveTab('invoice-tracking')}
+              />
+            )}
+            {activeTab === 'invoice-tracking' && hasPermission('sales.view') && (
+              <InvoiceTracking key={moduleRemountKeys['invoice-tracking'] ?? 0} />
+            )}
             {activeTab === 'consignments' &&
-              (hasPermission('sales.view') || hasPermission('sales.create')) && <Consignments />}
+              (hasPermission('sales.view') || hasPermission('sales.create')) && (
+                <Consignments key={moduleRemountKeys.consignments ?? 0} />
+              )}
             {activeTab === 'sales-profitability' && hasPermission('sales.view') && (
-              <SalesProfitability />
+              <SalesProfitability key={moduleRemountKeys['sales-profitability'] ?? 0} />
             )}
           </div>
         </main>

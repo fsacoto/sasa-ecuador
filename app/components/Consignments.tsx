@@ -141,6 +141,9 @@ export default function Consignments() {
   const [salesQuantities, setSalesQuantities] = useState<{[key: number]: number}>({});
   /** Unit sale price (USD) per consignment line index — used when registering sales */
   const [saleUnitPrices, setSaleUnitPrices] = useState<Record<number, string>>({});
+  /** Editable reference prices for delivered items (persisted on blur) */
+  const [detailUnitPrices, setDetailUnitPrices] = useState<Record<number, string>>({});
+  const [savingDetailPriceIndex, setSavingDetailPriceIndex] = useState<number | null>(null);
   const [salePaymentStatus, setSalePaymentStatus] = useState<'Unpaid' | 'Partially Paid' | 'Paid'>('Unpaid');
   const [saleAmountPaidInput, setSaleAmountPaidInput] = useState('');
   const [salePaymentMethod, setSalePaymentMethod] = useState('');
@@ -272,6 +275,7 @@ export default function Consignments() {
       }
     });
     setSaleUnitPrices(prices);
+    setDetailUnitPrices({ ...prices });
     setSalePaymentStatus('Unpaid');
     setSaleAmountPaidInput('');
     setSalePaymentMethod('');
@@ -484,6 +488,85 @@ export default function Consignments() {
       copy[index] = { ...copy[index], unitPriceInput: raw };
       return copy;
     });
+  };
+
+  const handleDetailUnitPriceChange = (index: number, raw: string) => {
+    setDetailUnitPrices((prev) => ({ ...prev, [index]: raw }));
+  };
+
+  const revertDetailUnitPrice = (index: number, item: ConsignmentItem) => {
+    const p = normalizeSalePrice(item.unitPrice);
+    setDetailUnitPrices((prev) => {
+      const next = { ...prev };
+      if (p !== undefined) next[index] = p.toFixed(2);
+      else next[index] = '';
+      return next;
+    });
+  };
+
+  const handleDetailUnitPriceBlur = async (index: number) => {
+    if (!selectedConsignment || savingDetailPriceIndex !== null) return;
+    const item = selectedConsignment.items[index];
+    if (!item) return;
+
+    const raw = detailUnitPrices[index] ?? '';
+    const trimmed = raw.trim();
+    if (trimmed) {
+      const n = parseFloat(trimmed.replace(',', '.'));
+      if (!Number.isFinite(n) || n < 0) {
+        showAlert(
+          t('consignments.invalidItemPrice') ||
+            'Indique un precio válido (≥ 0) o déjelo vacío.',
+          'Validation Error'
+        );
+        revertDetailUnitPrice(index, item);
+        return;
+      }
+    }
+
+    const parsed = parseSalePriceInput(raw);
+    const current = normalizeSalePrice(item.unitPrice);
+    if (parsed === current) {
+      if (parsed !== undefined) {
+        setDetailUnitPrices((prev) => ({ ...prev, [index]: parsed.toFixed(2) }));
+      } else {
+        setDetailUnitPrices((prev) => ({ ...prev, [index]: '' }));
+      }
+      return;
+    }
+
+    const updatedItems: ConsignmentItem[] = selectedConsignment.items.map((line, i) => {
+      if (i !== index) return line;
+      const { unitPrice: _drop, ...rest } = line;
+      return parsed !== undefined ? { ...rest, unitPrice: parsed } : rest;
+    });
+
+    setSavingDetailPriceIndex(index);
+    try {
+      await updateConsignment(selectedConsignment.id, { items: updatedItems });
+      const updated: Consignment = { ...selectedConsignment, items: updatedItems };
+      setSelectedConsignment(updated);
+      setConsignments((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      setSaleUnitPrices((prev) => {
+        const next = { ...prev };
+        if (parsed !== undefined) next[index] = parsed.toFixed(2);
+        else delete next[index];
+        return next;
+      });
+      setDetailUnitPrices((prev) => ({
+        ...prev,
+        [index]: parsed !== undefined ? parsed.toFixed(2) : '',
+      }));
+    } catch (error) {
+      console.error('Error saving consignment item price:', error);
+      showAlert(
+        t('consignments.errorSavingItemPrice') || 'Error al guardar el precio',
+        t('common.error')
+      );
+      revertDetailUnitPrice(index, item);
+    } finally {
+      setSavingDetailPriceIndex(null);
+    }
   };
 
   const removeItem = (index: number) => {
@@ -2137,8 +2220,33 @@ export default function Consignments() {
                         <td className="px-6 py-4">
                           <div className="text-sm text-gray-900">{item.description}</div>
                         </td>
-                        <td className="whitespace-nowrap px-6 py-4 text-right tabular-nums text-gray-900">
-                          {formatSalePriceDisplay(normalizeSalePrice(item.unitPrice))}
+                        <td className="whitespace-nowrap px-6 py-4 text-right">
+                          <div className="inline-flex flex-col items-end gap-1">
+                            <div className="relative">
+                              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                                $
+                              </span>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={detailUnitPrices[index] ?? ''}
+                                onChange={(e) => handleDetailUnitPriceChange(index, e.target.value)}
+                                onBlur={() => void handleDetailUnitPriceBlur(index)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    (e.target as HTMLInputElement).blur();
+                                  }
+                                }}
+                                disabled={savingDetailPriceIndex === index}
+                                placeholder="—"
+                                className="w-24 rounded border border-gray-300 py-1 pl-5 pr-2 text-right tabular-nums disabled:opacity-60"
+                                aria-label={t('consignments.unitPrice')}
+                              />
+                            </div>
+                            <div className="text-[10px] text-gray-400">
+                              {t('consignments.unitPriceDetailHint')}
+                            </div>
+                          </div>
                         </td>
                         <td className="whitespace-nowrap px-6 py-4 text-center text-gray-900 tabular-nums">
                           {item.quantityDelivered}
