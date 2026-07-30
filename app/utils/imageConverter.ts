@@ -45,26 +45,85 @@ function looksLikeSvg(url: string, mimeHint?: string): boolean {
   );
 }
 
+export type ConvertImageForPdfOptions = {
+  /** Longest side in px (default 1600). Use ~160 for PDF table thumbnails. */
+  maxDimension?: number;
+  /** JPEG quality 0–1 (default 0.92 for data URLs / 0.9 for blobs). */
+  quality?: number;
+  /** Fetch cache mode for remote images (default 'no-store'). */
+  cache?: RequestCache;
+  /**
+   * Pad to a square canvas of maxDimension×maxDimension (letterbox).
+   * Avoids stretch/deform in @react-pdf when objectFit is unreliable.
+   */
+  squarePad?: boolean;
+};
+
+function fitWithinMax(
+  naturalW: number,
+  naturalH: number,
+  maxDimension: number
+): { width: number; height: number } {
+  const nw = Math.max(naturalW || 1, 1);
+  const nh = Math.max(naturalH || 1, 1);
+  const scale = Math.min(1, maxDimension / Math.max(nw, nh));
+  return {
+    width: Math.max(1, Math.round(nw * scale)),
+    height: Math.max(1, Math.round(nh * scale)),
+  };
+}
+
+function drawImageToJpegCanvas(
+  img: HTMLImageElement,
+  options: ConvertImageForPdfOptions
+): string {
+  const quality = options.quality ?? 0.92;
+  const maxDimension = options.maxDimension ?? 1600;
+  const { width: w, height: h } = fitWithinMax(
+    img.naturalWidth || img.width,
+    img.naturalHeight || img.height,
+    maxDimension
+  );
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Could not get canvas context');
+  }
+
+  if (options.squarePad) {
+    const side = maxDimension;
+    canvas.width = side;
+    canvas.height = side;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, side, side);
+    const dx = Math.round((side - w) / 2);
+    const dy = Math.round((side - h) / 2);
+    ctx.drawImage(img, dx, dy, w, h);
+  } else {
+    canvas.width = w;
+    canvas.height = h;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+  }
+
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
 /** Rasteriza cualquier imagen cargable en el navegador a JPEG (react-pdf solo acepta jpg/png en base64). */
-export async function rasterizeDataUrlToJpeg(base64Data: string, quality = 0.92): Promise<string> {
+export async function rasterizeDataUrlToJpeg(
+  base64Data: string,
+  qualityOrOptions: number | ConvertImageForPdfOptions = 0.92
+): Promise<string> {
+  const options: ConvertImageForPdfOptions =
+    typeof qualityOrOptions === 'number' ? { quality: qualityOrOptions } : qualityOrOptions;
+
   return new Promise((resolve, reject) => {
     const img = new window.Image();
     img.onload = () => {
-      const w = Math.min(Math.max(img.naturalWidth || img.width || 1, 1), 1600);
-      const h = Math.min(Math.max(img.naturalHeight || img.height || 1, 1), 1600);
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        reject(new Error('Could not get canvas context'));
-        return;
-      }
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, w, h);
-      ctx.drawImage(img, 0, 0, w, h);
       try {
-        resolve(canvas.toDataURL('image/jpeg', quality));
+        resolve(drawImageToJpegCanvas(img, options));
       } catch (error) {
         reject(error);
       }
@@ -75,28 +134,23 @@ export async function rasterizeDataUrlToJpeg(base64Data: string, quality = 0.92)
 }
 
 /** Carga un Blob vía object URL (sin CORS en canvas) y devuelve JPEG para el PDF. */
-async function rasterizeBlobToJpeg(blob: Blob): Promise<string | null> {
+async function rasterizeBlobToJpeg(
+  blob: Blob,
+  options: ConvertImageForPdfOptions = {}
+): Promise<string | null> {
   if (!blob.size) return null;
   const objectUrl = URL.createObjectURL(blob);
   try {
     const dataUrl = await new Promise<string>((resolve, reject) => {
       const img = new window.Image();
       img.onload = () => {
-        const w = Math.min(Math.max(img.naturalWidth || img.width || 1, 1), 1600);
-        const h = Math.min(Math.max(img.naturalHeight || img.height || 1, 1), 1600);
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Could not get canvas context'));
-          return;
-        }
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
         try {
-          resolve(canvas.toDataURL('image/jpeg', 0.9));
+          resolve(
+            drawImageToJpegCanvas(img, {
+              quality: 0.9,
+              ...options,
+            })
+          );
         } catch (e) {
           reject(e);
         }
@@ -113,13 +167,16 @@ async function rasterizeBlobToJpeg(blob: Blob): Promise<string | null> {
   }
 }
 
-async function fetchImageBlobDirect(url: string): Promise<Blob | null> {
+async function fetchImageBlobDirect(
+  url: string,
+  cache: RequestCache = 'no-store'
+): Promise<Blob | null> {
   try {
     const response = await fetch(url, {
       method: 'GET',
       mode: 'cors',
       credentials: 'omit',
-      cache: 'no-store',
+      cache,
     });
     if (!response.ok) return null;
     const blob = await response.blob();
@@ -161,13 +218,17 @@ async function fetchImageBlobViaProxy(url: string): Promise<Blob | null> {
   }
 }
 
-async function remoteUrlToJpegDataUrl(url: string): Promise<string | null> {
-  let blob = await fetchImageBlobDirect(url);
+async function remoteUrlToJpegDataUrl(
+  url: string,
+  options: ConvertImageForPdfOptions = {}
+): Promise<string | null> {
+  const cache = options.cache ?? 'no-store';
+  let blob = await fetchImageBlobDirect(url, cache);
   if (!blob) {
     blob = await fetchImageBlobViaProxy(url);
   }
   if (!blob) return null;
-  return rasterizeBlobToJpeg(blob);
+  return rasterizeBlobToJpeg(blob, options);
 }
 
 /** @deprecated Use rasterizeDataUrlToJpeg */
@@ -175,11 +236,16 @@ export async function convertWebPToJPEG(base64Data: string): Promise<string> {
   return rasterizeDataUrlToJpeg(base64Data, 0.9);
 }
 
-async function dataUrlForPdfRaster(base64String: string, sourceHint: string, mimeHint?: string): Promise<string | null> {
+async function dataUrlForPdfRaster(
+  base64String: string,
+  sourceHint: string,
+  mimeHint?: string,
+  options: ConvertImageForPdfOptions = {}
+): Promise<string | null> {
   if (looksLikeSvg(sourceHint, mimeHint) || looksLikeSvg(base64String, mimeHint)) {
     try {
       const png = await convertSvgDataUrlToPng(base64String);
-      return rasterizeDataUrlToJpeg(png);
+      return rasterizeDataUrlToJpeg(png, options);
     } catch (error) {
       console.warn('Failed to convert SVG to PNG for PDF:', error);
       return null;
@@ -193,8 +259,17 @@ async function dataUrlForPdfRaster(base64String: string, sourceHint: string, mim
     base64String.startsWith('data:image/jpeg');
 
   if (isJpeg) {
+    // Re-encode when thumbnail sizing is requested; otherwise keep original JPEG.
+    if (options.maxDimension != null && options.maxDimension < 1600) {
+      try {
+        return await rasterizeDataUrlToJpeg(base64String, options);
+      } catch (error) {
+        console.warn('Failed to downscale JPEG for PDF:', error);
+        return base64String.startsWith('data:image/jpeg') ? base64String : null;
+      }
+    }
     try {
-      return await rasterizeDataUrlToJpeg(base64String);
+      return await rasterizeDataUrlToJpeg(base64String, options);
     } catch (error) {
       console.warn('Failed to re-encode JPEG for PDF:', error);
       return base64String.startsWith('data:image/jpeg') ? base64String : null;
@@ -202,7 +277,7 @@ async function dataUrlForPdfRaster(base64String: string, sourceHint: string, mim
   }
 
   try {
-    return await rasterizeDataUrlToJpeg(base64String);
+    return await rasterizeDataUrlToJpeg(base64String, options);
   } catch (error) {
     console.warn('Failed to rasterize image for PDF:', error);
     return null;
@@ -241,17 +316,20 @@ export async function loadTransparentBrandLogoForPdf(
   }
 }
 
-export async function convertImageForPDF(imageUrl: string | undefined): Promise<string | null> {
+export async function convertImageForPDF(
+  imageUrl: string | undefined,
+  options: ConvertImageForPdfOptions = {}
+): Promise<string | null> {
   if (!imageUrl?.trim()) return null;
 
   const trimmed = imageUrl.trim();
 
   if (trimmed.startsWith('data:')) {
-    return dataUrlForPdfRaster(trimmed, trimmed);
+    return dataUrlForPdfRaster(trimmed, trimmed, undefined, options);
   }
 
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    const fromRemote = await remoteUrlToJpegDataUrl(trimmed);
+    const fromRemote = await remoteUrlToJpegDataUrl(trimmed, options);
     if (fromRemote) return fromRemote;
   }
 
@@ -259,7 +337,7 @@ export async function convertImageForPDF(imageUrl: string | undefined): Promise<
     try {
       const res = await fetch(trimmed);
       const blob = await res.blob();
-      return rasterizeBlobToJpeg(blob);
+      return rasterizeBlobToJpeg(blob, options);
     } catch (error) {
       console.warn('Failed to convert blob: URL for PDF:', error);
       return null;

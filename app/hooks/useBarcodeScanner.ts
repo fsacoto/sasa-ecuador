@@ -8,6 +8,8 @@ export type UseBarcodeScannerOptions = {
   maxCharGapMs?: number;
   /** When true, ignore key events from inputs (default: inputs, textarea, select, contenteditable). */
   ignoreFormFields?: boolean;
+  /** Minimum characters required to accept a scan (avoids Enter false positives). Default 1. */
+  minLength?: number;
   /** Extra guard — return true to ignore the event. */
   shouldIgnore?: () => boolean;
 };
@@ -19,6 +21,7 @@ export function useBarcodeScanner({
   onScan,
   maxCharGapMs = DEFAULT_GAP_MS,
   ignoreFormFields = true,
+  minLength = 1,
   shouldIgnore,
 }: UseBarcodeScannerOptions) {
   const bufferRef = useRef('');
@@ -51,7 +54,7 @@ export function useBarcodeScanner({
       if (e.key === 'Enter') {
         const buf = bufferRef.current.trim();
         bufferRef.current = '';
-        if (buf) {
+        if (buf.length >= minLength) {
           e.preventDefault();
           onScanRef.current(buf);
         }
@@ -64,5 +67,5 @@ export function useBarcodeScanner({
 
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [enabled, maxCharGapMs, ignoreFormFields, shouldIgnore]);
+  }, [enabled, maxCharGapMs, ignoreFormFields, minLength, shouldIgnore]);
 }

@@ -305,6 +305,8 @@ export interface ConsignmentItem {
   quantityReturned: number;
   line?: string;
   category?: string;
+  /** Reference unit price (USD) for sellers / PDF — from inventory salePrice, editable. */
+  unitPrice?: number;
 }
 
 export interface Consignment {

@@ -5,6 +5,7 @@ import { Consignment, ConsignmentStatus } from '../types';
 import esMessages from '../locales/es.json';
 import { toPdfDate } from '../utils/pdfRenderHelpers';
 import { formatDateLong } from '../utils/formatDate';
+import { formatSalePriceDisplay, normalizeSalePrice } from '../utils/salePrice';
 
 const translate = (key: string): string => {
   const keys = key.split('.');
@@ -109,24 +110,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   colNo: {
-    width: '7%',
+    width: '6%',
     textAlign: 'left',
     fontSize: 10,
     color: '#333333',
   },
   colPhotoHeader: {
-    width: '20%',
+    width: '16%',
     alignItems: 'center',
     justifyContent: 'center',
   },
   colPhotoCell: {
-    width: '20%',
+    width: '16%',
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   photoBox: {
-    width: 52,
-    height: 52,
+    width: 48,
+    height: 48,
     borderWidth: 1,
     borderColor: '#D7D7D7',
     borderRadius: 6,
@@ -134,37 +136,45 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
     backgroundColor: '#F7F7F7',
+    flexShrink: 0,
   },
+  /** Fixed px — % width/height lets react-pdf use intrinsic image size and break the row. */
   photoImage: {
-    width: '100%',
-    height: '100%',
+    width: 46,
+    height: 46,
     objectFit: 'contain',
   },
   photoPlaceholderIcon: {
-    width: 24,
-    height: 24,
+    width: 22,
+    height: 22,
   },
   photoPlaceholderLabel: {
-    marginTop: 3,
+    marginTop: 2,
     fontSize: 5.5,
     color: '#A3A3A3',
     textAlign: 'center',
   },
   colSku: {
-    width: '16%',
+    width: '14%',
     textAlign: 'left',
     fontSize: 10,
     color: '#333333',
   },
   colDescription: {
-    width: '38%',
+    width: '30%',
     textAlign: 'left',
     fontSize: 10,
     color: '#333333',
     paddingLeft: 5,
   },
   colQty: {
-    width: '19%',
+    width: '16%',
+    textAlign: 'right',
+    fontSize: 10,
+    color: '#333333',
+  },
+  colPrice: {
+    width: '18%',
     textAlign: 'right',
     fontSize: 10,
     color: '#333333',
@@ -373,21 +383,26 @@ export default function ConsignmentPDF({
           <View style={styles.tableHeader}>
             <Text style={[styles.colNo, styles.headerText]}>{t('pdf.consignment.no')}</Text>
             <View style={styles.colPhotoHeader}>
-              <Text style={styles.headerText}>FOTO</Text>
+              <Text style={styles.headerText}>{t('pdf.consignment.photo')}</Text>
             </View>
             <Text style={[styles.colSku, styles.headerText]}>{t('pdf.consignment.sku')}</Text>
             <Text style={[styles.colDescription, styles.headerText]}>{t('pdf.consignment.description')}</Text>
             <Text style={[styles.colQty, styles.headerText]}>{t('pdf.consignment.qtyDelivered')}</Text>
+            <Text style={[styles.colPrice, styles.headerText]}>{t('pdf.consignment.price')}</Text>
           </View>
 
-          {/* Table Rows */}
+          {/* Table Rows — wrap={false} keeps photo + text on the same page */}
           {consignment.items.map((item, index) => (
-            <View key={index} style={styles.tableRow}>
+            <View key={index} style={styles.tableRow} wrap={false}>
               <Text style={styles.colNo}>{index + 1}</Text>
               <View style={styles.colPhotoCell}>
                 <View style={styles.photoBox}>
                   {productImagesBySku[item.sku] ? (
-                    <Image src={productImagesBySku[item.sku]} style={styles.photoImage} cache={false} />
+                    <Image
+                      src={productImagesBySku[item.sku]}
+                      style={styles.photoImage}
+                      cache={false}
+                    />
                   ) : (
                     <PhotoPlaceholder />
                   )}
@@ -396,6 +411,9 @@ export default function ConsignmentPDF({
               <Text style={styles.colSku}>{item.sku}</Text>
               <Text style={styles.colDescription}>{item.description}</Text>
               <Text style={styles.colQty}>{item.quantityDelivered}</Text>
+              <Text style={styles.colPrice}>
+                {formatSalePriceDisplay(normalizeSalePrice(item.unitPrice))}
+              </Text>
             </View>
           ))}
         </View>

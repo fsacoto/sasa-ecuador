@@ -123,6 +123,7 @@ const styles = StyleSheet.create({
     width: '19%',
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   photoBox: {
     width: 52,
@@ -134,10 +135,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
     backgroundColor: '#F7F7F7',
+    flexShrink: 0,
   },
+  /** Fixed px — % width/height lets react-pdf use intrinsic image size and break the row. */
   photoImage: {
-    width: '100%',
-    height: '100%',
+    width: 50,
+    height: 50,
     objectFit: 'contain',
   },
   photoPlaceholderIcon: {
@@ -372,14 +375,18 @@ export default function InvoicePDF({
             <Text style={[styles.colSubtotal, styles.headerText]}>{t('pdf.invoice.subtotal')}</Text>
           </View>
 
-          {/* Table Rows */}
+          {/* Table Rows — wrap={false} keeps photo + text on the same page */}
           {invoice.items.map((item, index) => (
-            <View key={index} style={styles.tableRow}>
+            <View key={index} style={styles.tableRow} wrap={false}>
               <Text style={styles.colNo}>{index + 1}</Text>
               <View style={styles.colPhotoCell}>
                 <View style={styles.photoBox}>
                   {productImagesBySku[item.sku] ? (
-                    <Image src={productImagesBySku[item.sku]} style={styles.photoImage} cache={false} />
+                    <Image
+                      src={productImagesBySku[item.sku]}
+                      style={styles.photoImage}
+                      cache={false}
+                    />
                   ) : (
                     <PhotoPlaceholder />
                   )}

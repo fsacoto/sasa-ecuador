@@ -2,13 +2,15 @@
 
 import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/renderer';
 import type { SalesInvoice } from '../types';
+import type { PrepLabelData } from '../utils/salesPrepLabelPdf';
 import { formatDateDMY } from '../utils/formatDate';
 import { toPdfDate } from '../utils/pdfRenderHelpers';
 
 /**
- * Physical thermal prep label: 40mm × 20mm for notas de pedido.
- * Line 1: Nota de pedido:
- * Line 2: NOTAV-XXX
+ * Physical thermal prep label: 40mm × 20mm.
+ * Used for notas de pedido and consignaciones.
+ * Line 1: document title (e.g. Nota de pedido: / Consignación:)
+ * Line 2: document number
  * Then cliente / fecha / ítems. Logo top-right.
  */
 const MM = 72 / 25.4;
@@ -102,20 +104,39 @@ function totalItemCount(invoice: SalesInvoice): number {
   return (invoice.items || []).reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
 }
 
+function prepLabelDataFromInvoice(invoice: SalesInvoice): PrepLabelData {
+  return {
+    documentTitle: 'Nota de pedido:',
+    documentNumber: (invoice.invoiceNumber || '').trim() || '—',
+    clientName: invoice.clientName || '—',
+    date: invoice.date,
+    itemsCount: totalItemCount(invoice),
+  };
+}
+
 interface SalesPrepLabelPDFProps {
-  invoice: SalesInvoice;
+  /** Preferred: generic prep label data. */
+  data?: PrepLabelData;
+  /** Legacy: sales invoice — mapped to PrepLabelData. */
+  invoice?: SalesInvoice;
   logoSrc?: string;
 }
 
-export default function SalesPrepLabelPDF({ invoice, logoSrc = '' }: SalesPrepLabelPDFProps) {
-  const invoiceNumber = (invoice.invoiceNumber || '').trim() || '—';
-  const clientName = truncate(invoice.clientName || '—', 22);
-  const dateLabel = formatDateDMY(toPdfDate(invoice.date));
-  const itemsCount = totalItemCount(invoice);
+export default function SalesPrepLabelPDF({
+  data,
+  invoice,
+  logoSrc = '',
+}: SalesPrepLabelPDFProps) {
+  const label = data ?? (invoice ? prepLabelDataFromInvoice(invoice) : null);
+  const documentNumber = (label?.documentNumber || '').trim() || '—';
+  const documentTitle = (label?.documentTitle || 'Nota de pedido:').trim() || 'Nota de pedido:';
+  const clientName = truncate(label?.clientName || '—', 22);
+  const dateLabel = formatDateDMY(toPdfDate(label?.date));
+  const itemsCount = label?.itemsCount ?? 0;
 
   return (
     <Document
-      title={`Etiqueta preparación ${invoiceNumber}`}
+      title={`Etiqueta preparación ${documentNumber}`}
       author="SASA"
       subject="Etiqueta de preparación 40x20mm"
     >
@@ -123,8 +144,8 @@ export default function SalesPrepLabelPDF({ invoice, logoSrc = '' }: SalesPrepLa
         <View style={styles.label}>
           {logoSrc ? <Image src={logoSrc} style={styles.logo} cache={false} /> : null}
           <View style={styles.body}>
-            <Text style={styles.title}>Nota de pedido:</Text>
-            <Text style={styles.invoiceNumber}>{invoiceNumber}</Text>
+            <Text style={styles.title}>{documentTitle}</Text>
+            <Text style={styles.invoiceNumber}>{documentNumber}</Text>
             <Text style={styles.line}>{`Cliente: ${clientName}`}</Text>
             <Text style={styles.line}>{`Fecha: ${dateLabel}`}</Text>
             <Text style={styles.lineStrong}>{`N° de ítems: ${itemsCount}`}</Text>

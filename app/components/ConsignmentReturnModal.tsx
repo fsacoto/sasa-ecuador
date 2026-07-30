@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Consignment,
   ConsignmentItem,
@@ -9,6 +9,8 @@ import {
 } from '../types';
 import { useTranslation } from '../context/TranslationContext';
 import { useDarkMode } from '../hooks/useDarkMode';
+import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
+import { findInventoryItemByBarcodeScan } from '../utils/barcodeGenerator';
 import ModalPortal from './ui/ModalPortal';
 
 export interface ConsignmentReturnModalProps {
@@ -38,6 +40,37 @@ function availableOnLine(c: ConsignmentItem): number {
   return c.quantityDelivered - c.quantitySold - c.quantityReturned;
 }
 
+function ReturnProductThumb({ imageUrl, alt }: { imageUrl?: string; alt: string }) {
+  const [broken, setBroken] = useState(false);
+  const showImage = Boolean(imageUrl) && !broken;
+
+  return showImage ? (
+    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
+      <img
+        src={imageUrl}
+        alt={alt}
+        className="h-full w-full object-cover object-center"
+        onError={() => setBroken(true)}
+      />
+    </div>
+  ) : (
+    <div
+      className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-100"
+      title="Sin foto"
+      aria-label="Sin foto"
+    >
+      <svg className="h-7 w-7 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={1.5}
+          d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+        />
+      </svg>
+    </div>
+  );
+}
+
 export default function ConsignmentReturnModal({
   open,
   consignment,
@@ -47,6 +80,7 @@ export default function ConsignmentReturnModal({
 }: ConsignmentReturnModalProps) {
   const { t } = useTranslation();
   const darkMode = useDarkMode();
+  const [entryMode, setEntryMode] = useState<'barcode' | 'manual' | null>(null);
   const [search, setSearch] = useState('');
   const [returnQty, setReturnQty] = useState<Record<number, string>>({});
   const [problemQty, setProblemQty] = useState<Record<number, string>>({});
@@ -54,15 +88,21 @@ export default function ConsignmentReturnModal({
   const [filesByIndex, setFilesByIndex] = useState<Record<number, File[]>>({});
   const [expandedIncidents, setExpandedIncidents] = useState<Record<number, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [lastScannedIndex, setLastScannedIndex] = useState<number | null>(null);
+  const [scanOrder, setScanOrder] = useState<number[]>([]);
+  const lastScannedRowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
+      setEntryMode(null);
       setSearch('');
       setReturnQty({});
       setProblemQty({});
       setComment({});
       setFilesByIndex({});
       setExpandedIncidents({});
+      setLastScannedIndex(null);
+      setScanOrder([]);
     }
   }, [open, consignment.id]);
 
@@ -83,17 +123,118 @@ export default function ConsignmentReturnModal({
       item,
       index,
       available: availableOnLine(item),
+      imageUrl: inventory.find((inv) => inv.sku === item.sku)?.images?.[0],
     }));
-  }, [consignment.items]);
+  }, [consignment.items, inventory]);
+
+  const totalUnitsToReturn = useMemo(() => {
+    return Object.values(returnQty).reduce((sum, raw) => {
+      const n = Math.max(0, parseInt(raw || '0', 10) || 0);
+      return sum + n;
+    }, 0);
+  }, [returnQty]);
+
+  const linesWithReturns = useMemo(() => {
+    return Object.entries(returnQty).filter(([, raw]) => (parseInt(raw || '0', 10) || 0) > 0)
+      .length;
+  }, [returnQty]);
+
+  /** Display order: unscanned lines keep consignment order; scanned lines follow scan order (last at end). */
+  const displayRows = useMemo(() => {
+    const byIndex = new Map(rows.map((r) => [r.index, r]));
+    const scannedSet = new Set(scanOrder);
+    const unscanned = rows.filter((r) => !scannedSet.has(r.index));
+    const scanned = scanOrder
+      .map((idx) => byIndex.get(idx))
+      .filter((r): r is (typeof rows)[number] => Boolean(r));
+    return [...unscanned, ...scanned];
+  }, [rows, scanOrder]);
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
+    if (!q || entryMode === 'barcode') return displayRows;
+    return displayRows.filter(
       ({ item }) =>
         item.sku.toLowerCase().includes(q) || item.description.toLowerCase().includes(q)
     );
-  }, [rows, search]);
+  }, [displayRows, search, entryMode]);
+
+  useEffect(() => {
+    if (lastScannedIndex == null) return;
+    lastScannedRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [lastScannedIndex, returnQty]);
+
+  const showValidation = (message: string) => {
+    if (typeof window !== 'undefined') window.alert(message);
+  };
+
+  const processBarcodeScan = useCallback(
+    (raw: string) => {
+      const code = raw.trim();
+      if (!code) return;
+
+      const matched = findInventoryItemByBarcodeScan(inventory, code);
+      const sku = (matched?.sku || code).trim();
+      const skuLower = sku.toLowerCase();
+
+      const onConsignment = rows.filter(
+        (r) => r.item.sku.trim().toLowerCase() === skuLower
+      );
+      if (onConsignment.length === 0) {
+        showValidation(
+          t('consignments.returnBarcodeNotOnConsignment') ||
+            'Ese código no corresponde a un artículo de esta consignación.'
+        );
+        return;
+      }
+
+      const withStock = onConsignment.filter((r) => r.available > 0);
+      if (withStock.length === 0) {
+        showValidation(
+          t('consignments.returnBarcodeNothingLeft') ||
+            'Ese SKU ya no tiene unidades disponibles para devolver en esta consignación.'
+        );
+        return;
+      }
+
+      // Prefer a line that still has room under the current return qty
+      setReturnQty((prev) => {
+        const target =
+          withStock.find((r) => {
+            const current = Math.max(0, parseInt(prev[r.index] || '0', 10) || 0);
+            return current < r.available;
+          }) || withStock[0];
+
+        const current = Math.max(0, parseInt(prev[target.index] || '0', 10) || 0);
+        if (current + 1 > target.available) {
+          queueMicrotask(() =>
+            showValidation(
+              t('consignments.returnExceedsAvailable') ||
+                'La cantidad a devolver no puede superar lo disponible en esa línea.'
+            )
+          );
+          return prev;
+        }
+        queueMicrotask(() => {
+          setLastScannedIndex(target.index);
+          setScanOrder((order) => {
+            const without = order.filter((i) => i !== target.index);
+            return [...without, target.index];
+          });
+        });
+        return { ...prev, [target.index]: String(current + 1) };
+      });
+    },
+    [inventory, rows, t]
+  );
+
+  useBarcodeScanner({
+    enabled: open && entryMode === 'barcode' && !submitting,
+    onScan: processBarcodeScan,
+    ignoreFormFields: true,
+    minLength: 3,
+    shouldIgnore: () => !open || entryMode !== 'barcode' || submitting,
+  });
 
   const setFileList = (index: number, list: FileList | null) => {
     if (!list?.length) {
@@ -221,15 +362,19 @@ export default function ConsignmentReturnModal({
     }
   };
 
-  const showValidation = (message: string) => {
-    if (typeof window !== 'undefined') window.alert(message);
-  };
-
   if (!open) return null;
 
   const cancelBtnClass = darkMode
     ? 'rounded-lg border border-white/20 bg-transparent px-4 py-2 text-sm font-medium text-gray-200 transition-colors hover:bg-white/10 disabled:opacity-50'
     : 'rounded-lg border border-gray-300 bg-transparent px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50';
+
+  const formatTemplate = (template: string, vars: Record<string, string>) => {
+    let result = template;
+    for (const [key, value] of Object.entries(vars)) {
+      result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+    }
+    return result;
+  };
 
   return (
     <ModalPortal>
@@ -269,35 +414,129 @@ export default function ConsignmentReturnModal({
                 </svg>
               </button>
             </div>
+
+            {/* Modo de entrada */}
             <div className="mt-4">
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={t('consignments.returnModalSearch')}
-                className={inputClass}
-              />
+              <p className="mb-2 text-sm font-medium text-gray-700">
+                {t('consignments.entryModeLabel')}
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => {
+                    setEntryMode('barcode');
+                    setSearch('');
+                  }}
+                  className={`rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50 ${
+                    entryMode === 'barcode'
+                      ? 'border-[#515151] bg-[#515151]/5 ring-1 ring-[#515151]/25'
+                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="text-sm font-semibold text-gray-900">
+                    {t('consignments.entryModeBarcode')}
+                  </div>
+                  <div className="mt-0.5 text-xs text-gray-500">
+                    {t('consignments.returnEntryModeBarcodeDesc')}
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => setEntryMode('manual')}
+                  className={`rounded-lg border px-4 py-3 text-left transition-colors disabled:opacity-50 ${
+                    entryMode === 'manual'
+                      ? 'border-[#515151] bg-[#515151]/5 ring-1 ring-[#515151]/25'
+                      : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="text-sm font-semibold text-gray-900">
+                    {t('consignments.entryModeManual')}
+                  </div>
+                  <div className="mt-0.5 text-xs text-gray-500">
+                    {t('consignments.returnEntryModeManualDesc')}
+                  </div>
+                </button>
+              </div>
             </div>
+
+            {entryMode === 'barcode' && (
+              <div className="mt-4 rounded-lg border border-dashed border-[#515151]/30 bg-[#515151]/[0.04] px-4 py-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
+                  <span
+                    className="inline-block h-2 w-2 shrink-0 rounded-full bg-emerald-500"
+                    aria-hidden
+                  />
+                  {t('consignments.scannerActive')}
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  {t('consignments.returnScannerActiveHint')}
+                </p>
+              </div>
+            )}
+
+            {entryMode === 'manual' && (
+              <div className="mt-4">
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t('consignments.returnModalSearch')}
+                  className={inputClass}
+                />
+              </div>
+            )}
+
+            {entryMode && totalUnitsToReturn > 0 && (
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5">
+                <span className="text-sm text-gray-600">
+                  {t('consignments.returnUnitsScanned')}
+                </span>
+                <span className="text-sm font-semibold tabular-nums text-gray-900">
+                  {formatTemplate(t('consignments.unitsScannedCount'), {
+                    count: String(totalUnitsToReturn),
+                  })}
+                  <span className="ml-2 font-normal text-gray-500">
+                    ({linesWithReturns}{' '}
+                    {linesWithReturns === 1
+                      ? t('consignments.skuSingular')
+                      : t('consignments.skuPlural')}
+                    )
+                  </span>
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Líneas */}
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-            <div className="space-y-3">
-              {filteredRows.length === 0 ? (
-                <p className="py-12 text-center text-sm text-gray-500">
-                  {t('consignments.returnModalNoMatch')}
-                </p>
-              ) : (
-                filteredRows.map(({ item, index, available }) => {
+            {!entryMode ? (
+              <p className="py-12 text-center text-sm text-gray-500">
+                {t('consignments.entryModeChooseFirst')}
+              </p>
+            ) : filteredRows.length === 0 ? (
+              <p className="py-12 text-center text-sm text-gray-500">
+                {t('consignments.returnModalNoMatch')}
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {filteredRows.map(({ item, index, available, imageUrl }) => {
                   if (available <= 0) {
                     return (
-                      <div key={index} className="sasa-return-line-muted px-4 py-3 text-sm text-gray-500">
-                        <span className="font-mono font-medium text-gray-700">{item.sku}</span>
-                        <span className="mx-2 text-gray-400">—</span>
-                        {item.description}
-                        <span className="mt-1 block text-xs text-amber-600 dark:text-amber-400">
-                          {t('consignments.nothingToReturn')}
-                        </span>
+                      <div
+                        key={index}
+                        className="sasa-return-line-muted flex items-center gap-3 px-4 py-3 text-sm text-gray-500"
+                      >
+                        <ReturnProductThumb imageUrl={imageUrl} alt={item.description || item.sku} />
+                        <div className="min-w-0">
+                          <span className="font-mono font-medium text-gray-700">{item.sku}</span>
+                          <span className="mx-2 text-gray-400">—</span>
+                          {item.description}
+                          <span className="mt-1 block text-xs text-amber-600 dark:text-amber-400">
+                            {t('consignments.nothingToReturn')}
+                          </span>
+                        </div>
                       </div>
                     );
                   }
@@ -306,22 +545,46 @@ export default function ConsignmentReturnModal({
                   const showProblem = r > 0;
                   const incidentsOpen = !!expandedIncidents[index];
                   const fileInputId = `return-files-${consignment.id}-${index}`;
+                  const isLastScanned = lastScannedIndex === index;
 
                   return (
-                    <div key={index} className="sasa-return-line-card p-4 sm:p-5">
+                    <div
+                      key={index}
+                      ref={isLastScanned ? lastScannedRowRef : undefined}
+                      className={`sasa-return-line-card p-4 sm:p-5 transition-colors ${
+                        isLastScanned
+                          ? 'ring-1 ring-inset ring-[#515151]/25 bg-[#515151]/[0.04]'
+                          : ''
+                      }`}
+                    >
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="min-w-0 flex-1">
-                          <div className="font-mono text-sm font-semibold text-[#515151]">{item.sku}</div>
-                          <div className="mt-0.5 text-sm text-gray-800">{item.description}</div>
-                          <span
-                            className={`mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                              darkMode
-                                ? 'border border-white/15 bg-white/10 text-gray-300'
-                                : 'border border-gray-200 bg-gray-50 text-gray-600'
-                            }`}
-                          >
-                            {t('consignments.available')}: {available}
-                          </span>
+                        <div className="flex min-w-0 flex-1 gap-3">
+                          <ReturnProductThumb
+                            imageUrl={imageUrl}
+                            alt={item.description || item.sku}
+                          />
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="font-mono text-sm font-semibold text-[#515151]">
+                                {item.sku}
+                              </div>
+                              {isLastScanned && (
+                                <span className="rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[#515151]/80 bg-[#515151]/10">
+                                  {t('consignments.lastAdded')}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 text-sm text-gray-800">{item.description}</div>
+                            <span
+                              className={`mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                                darkMode
+                                  ? 'border border-white/15 bg-white/10 text-gray-300'
+                                  : 'border border-gray-200 bg-gray-50 text-gray-600'
+                              }`}
+                            >
+                              {t('consignments.available')}: {available}
+                            </span>
+                          </div>
                         </div>
                         <div className="shrink-0 sm:text-right">
                           <label
@@ -470,9 +733,9 @@ export default function ConsignmentReturnModal({
                       )}
                     </div>
                   );
-                })
-              )}
-            </div>
+                })}
+              </div>
+            )}
           </div>
 
           {/* Pie */}
@@ -483,7 +746,7 @@ export default function ConsignmentReturnModal({
             <button
               type="button"
               onClick={() => void handleConfirm()}
-              disabled={submitting}
+              disabled={submitting || !entryMode || totalUnitsToReturn === 0}
               className="sasa-btn-primary rounded-lg px-5 py-2 text-sm font-medium transition-colors disabled:opacity-50"
             >
               {submitting ? t('consignments.returnModalSubmitting') : t('consignments.registerReturnsButton')}

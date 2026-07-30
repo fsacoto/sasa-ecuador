@@ -13,6 +13,7 @@ import { findInventoryItemByBarcodeScan } from '../utils/barcodeGenerator';
 import { filterSellableInventory, hasSellableStock } from '../utils/inventoryStock';
 import {
   getAvailableStock,
+  getConsignmentStock,
   getOpenReservationNotesForSku,
   getReservedStock,
   nextReservedStock,
@@ -579,6 +580,7 @@ export default function Sales() {
                 {filteredInventory.map((product) => {
                   const available = getAvailableStock(product);
                   const reserved = getReservedStock(product);
+                  const onConsignment = getConsignmentStock(product);
                   const notes = getOpenReservationNotesForSku(openInvoices, product.sku);
                   const noteLabels = notes
                     .map((n) => `${n.invoiceNumber} (${n.quantity})`)
@@ -595,6 +597,9 @@ export default function Sales() {
                       {t('sales.available')}: {available}
                       {reserved > 0
                         ? ` · ${t('sales.reserved')}: ${reserved}${noteLabels ? ` — ${noteLabels}` : ''}`
+                        : ''}
+                      {onConsignment > 0
+                        ? ` · ${t('sales.onConsignment')}: ${onConsignment}`
                         : ''}
                       {' | '}{product.category} - {product.line}
                     </div>

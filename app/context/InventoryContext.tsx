@@ -9,10 +9,14 @@ import * as purchaseOrdersService from '../services/purchaseOrdersService';
 import * as inventoryService from '../services/inventoryService';
 import * as additionalCostsService from '../services/additionalCostsService';
 import { getAllInvoices } from '../services/invoicesService';
+import { getAllConsignments } from '../services/consignmentsService';
 import {
   clampReservedStock,
   computeReservedBySkuFromInvoices,
+  getConsignmentStock,
   getReservedStock,
+  computeConsignmentRemainingBySku,
+  clampNonNegativeStock,
 } from '../utils/stockReservation';
 
 interface InventoryContextType {
@@ -91,33 +95,95 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       setAdditionalCosts(costsData.status === 'fulfilled' ? costsData.value : []);
 
       // Backfill / heal reservedStock from open sales notes so storefront availability is correct.
+      // Also heal consignmentStock from units still out on consignments (and move ecuador if needed).
       if (loadedInventory.length > 0) {
         try {
-          const invoices = await getAllInvoices();
-          const desiredUpdates: Array<{ id: string; reservedStock: number }> = [];
-          const desired = computeReservedBySkuFromInvoices(invoices);
+          const [invoices, consignments] = await Promise.all([
+            getAllInvoices(),
+            getAllConsignments(),
+          ]);
+          const desiredUpdates: Array<{
+            id: string;
+            reservedStock?: number;
+            ecuadorStock?: number;
+            consignmentStock?: number;
+          }> = [];
+
+          const desiredReserved = computeReservedBySkuFromInvoices(invoices);
+          const desiredConsignment = computeConsignmentRemainingBySku(consignments);
+
           for (const item of loadedInventory) {
             const sku = item.sku?.trim();
             if (!sku) continue;
-            const target = clampReservedStock(desired.get(sku) ?? 0);
-            if (getReservedStock(item) === target) continue;
-            desiredUpdates.push({ id: item.id, reservedStock: target });
+
+            const patch: {
+              id: string;
+              reservedStock?: number;
+              ecuadorStock?: number;
+              consignmentStock?: number;
+            } = { id: item.id };
+
+            const reservedTarget = clampReservedStock(desiredReserved.get(sku) ?? 0);
+            if (getReservedStock(item) !== reservedTarget) {
+              patch.reservedStock = reservedTarget;
+            }
+
+            const consignmentTarget = clampNonNegativeStock(desiredConsignment.get(sku) ?? 0);
+            const consignmentCurrent = getConsignmentStock(item);
+            if (consignmentCurrent !== consignmentTarget) {
+              const delta = consignmentTarget - consignmentCurrent;
+              const reserved = patch.reservedStock ?? getReservedStock(item);
+              const ecuador = Number(item.ecuadorStock ?? 0);
+              if (delta > 0) {
+                const available = Math.max(0, ecuador - reserved);
+                const move = Math.min(delta, available);
+                if (move > 0) {
+                  patch.ecuadorStock = Math.max(reserved, ecuador - move);
+                  patch.consignmentStock = consignmentCurrent + move;
+                }
+              } else {
+                patch.ecuadorStock = ecuador + -delta;
+                patch.consignmentStock = consignmentTarget;
+              }
+            }
+
+            if (
+              patch.reservedStock !== undefined ||
+              patch.ecuadorStock !== undefined ||
+              patch.consignmentStock !== undefined
+            ) {
+              desiredUpdates.push(patch);
+            }
           }
+
           if (desiredUpdates.length > 0) {
             await Promise.all(
-              desiredUpdates.map((u) =>
-                inventoryService.updateInventoryItem(u.id, { reservedStock: u.reservedStock })
-              )
+              desiredUpdates.map((u) => {
+                const { id, ...updates } = u;
+                return inventoryService.updateInventoryItem(id, updates);
+              })
             );
             setInventory((prev) =>
               prev.map((item) => {
                 const hit = desiredUpdates.find((u) => u.id === item.id);
-                return hit ? { ...item, reservedStock: hit.reservedStock } : item;
+                if (!hit) return item;
+                return {
+                  ...item,
+                  ...(hit.reservedStock !== undefined
+                    ? { reservedStock: hit.reservedStock }
+                    : {}),
+                  ...(hit.ecuadorStock !== undefined
+                    ? { ecuadorStock: hit.ecuadorStock }
+                    : {}),
+                  ...(hit.consignmentStock !== undefined
+                    ? { consignmentStock: hit.consignmentStock }
+                    : {}),
+                };
               })
             );
           }
         } catch (reconcileError) {
-          console.error('Error reconciling reserved stock:', reconcileError);
+          console.error('Error reconciling reserved/consignment stock:', reconcileError);
         }
       }
     } catch (error) {
