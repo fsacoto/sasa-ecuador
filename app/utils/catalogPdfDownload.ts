@@ -8,6 +8,7 @@ export interface GenerateCatalogPDFParams {
   includeStock: boolean;
   includePrice?: boolean;
   orientation: 'landscape' | 'portrait';
+  categorySeparators?: boolean;
   fileName: string;
   onImageProgress?: (completed: number, total: number) => void;
 }
@@ -20,6 +21,7 @@ export async function generateCatalogPDF(params: GenerateCatalogPDFParams): Prom
     includeStock,
     includePrice = true,
     orientation,
+    categorySeparators = false,
     fileName,
     onImageProgress,
   } = params;
@@ -61,6 +63,7 @@ export async function generateCatalogPDF(params: GenerateCatalogPDFParams): Prom
     includeStock,
     includePrice,
     orientation,
+    categorySeparators,
     logoSrc,
   });
 

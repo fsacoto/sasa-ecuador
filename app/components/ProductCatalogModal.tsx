@@ -36,11 +36,13 @@ export default function ProductCatalogModal({
   const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape');
   const [includePrice, setIncludePrice] = useState(true);
   const [catalogSort, setCatalogSort] = useState<CatalogSort>('skuAsc');
+  const [categorySeparators, setCategorySeparators] = useState(false);
 
   // Filter states
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterLine, setFilterLine] = useState<string>('all');
   const [filterEcuadorStock, setFilterEcuadorStock] = useState(false);
+  const [filterWithPhotos, setFilterWithPhotos] = useState(false);
 
   const toggleItem = (itemId: string) => {
     setSelectedItems(prev =>
@@ -58,7 +60,10 @@ export default function ProductCatalogModal({
     }
   };
 
-  // Filter inventory based on category, line, and stock location filters
+  const hasActiveFilters =
+    filterCategory !== 'all' || filterLine !== 'all' || filterEcuadorStock || filterWithPhotos;
+
+  // Filter inventory based on category, line, stock, and photo filters
   const filteredInventory = inventory.filter(item => {
     // Materials are not catalog / storefront merch
     if (isMaterialCategory(item.category)) return false;
@@ -76,47 +81,79 @@ export default function ProductCatalogModal({
     if (filterEcuadorStock && item.ecuadorStock <= 0) {
       return false;
     }
+
+    if (filterWithPhotos && !(item.images && item.images.length > 0)) {
+      return false;
+    }
     
     return true;
   });
 
+  const bySku = (a: InventoryItem, b: InventoryItem) =>
+    (a.sku || '').localeCompare(b.sku || '', undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    });
+
+  /** Orden dentro de un grupo (sin primaria por categoría). */
+  const compareWithinGroup = (a: InventoryItem, b: InventoryItem): number => {
+    switch (catalogSort) {
+      case 'skuDesc':
+        return -bySku(a, b);
+      case 'nameAsc':
+        return (
+          (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }) ||
+          bySku(a, b)
+        );
+      case 'nameDesc':
+        return (
+          (b.name || '').localeCompare(a.name || '', undefined, { sensitivity: 'base' }) ||
+          bySku(a, b)
+        );
+      case 'lineAsc':
+        return (
+          displayLine(a.line || '').localeCompare(displayLine(b.line || ''), undefined, {
+            sensitivity: 'base',
+          }) || bySku(a, b)
+        );
+      case 'priceAsc':
+        return (
+          (a.salePrice ?? Number.POSITIVE_INFINITY) - (b.salePrice ?? Number.POSITIVE_INFINITY) ||
+          bySku(a, b)
+        );
+      case 'priceDesc':
+        return (
+          (b.salePrice ?? Number.NEGATIVE_INFINITY) - (a.salePrice ?? Number.NEGATIVE_INFINITY) ||
+          bySku(a, b)
+        );
+      case 'categoryAsc':
+      case 'skuAsc':
+      default:
+        return bySku(a, b);
+    }
+  };
+
   const selectedInventory = filteredInventory
     .filter(item => selectedItems.includes(item.id))
     .sort((a, b) => {
-      const bySku = () =>
-        (a.sku || '').localeCompare(b.sku || '', undefined, {
-          numeric: true,
-          sensitivity: 'base',
-        });
-      switch (catalogSort) {
-        case 'skuDesc':
-          return -bySku();
-        case 'nameAsc':
-          return (a.name || '').localeCompare(b.name || '', undefined, {
-            sensitivity: 'base',
-          }) || bySku();
-        case 'nameDesc':
-          return (b.name || '').localeCompare(a.name || '', undefined, {
-            sensitivity: 'base',
-          }) || bySku();
-        case 'categoryAsc':
-          return displayCategory(a.category).localeCompare(displayCategory(b.category), undefined, {
-            sensitivity: 'base',
-          }) || bySku();
-        case 'lineAsc':
-          return displayLine(a.line || '').localeCompare(displayLine(b.line || ''), undefined, {
-            sensitivity: 'base',
-          }) || bySku();
-        case 'priceAsc':
-          return (a.salePrice ?? Number.POSITIVE_INFINITY) -
-            (b.salePrice ?? Number.POSITIVE_INFINITY) || bySku();
-        case 'priceDesc':
-          return (b.salePrice ?? Number.NEGATIVE_INFINITY) -
-            (a.salePrice ?? Number.NEGATIVE_INFINITY) || bySku();
-        case 'skuAsc':
-        default:
-          return bySku();
+      // Separadores o “Categoría y SKU”: agrupa por categoría primero
+      if (categorySeparators || catalogSort === 'categoryAsc') {
+        const byCategory = displayCategory(a.category).localeCompare(
+          displayCategory(b.category),
+          undefined,
+          { sensitivity: 'base' }
+        );
+        if (byCategory !== 0) return byCategory;
+        return compareWithinGroup(a, b);
       }
+      if (catalogSort === 'lineAsc') {
+        return (
+          displayLine(a.line || '').localeCompare(displayLine(b.line || ''), undefined, {
+            sensitivity: 'base',
+          }) || bySku(a, b)
+        );
+      }
+      return compareWithinGroup(a, b);
     });
 
   // Get unique categories and lines for filter dropdowns
@@ -246,6 +283,31 @@ export default function ProductCatalogModal({
               </select>
             </div>
           </div>
+
+          <div className="mt-3">
+            <label className={`flex items-start gap-2 cursor-pointer px-2 py-1.5 rounded-md transition-colors w-fit ${filterStockChip}`}>
+              <input
+                type="checkbox"
+                checked={categorySeparators}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setCategorySeparators(on);
+                  if (on && catalogSort !== 'categoryAsc') {
+                    setCatalogSort('categoryAsc');
+                  }
+                }}
+                className="mt-0.5 w-3 h-3 rounded border-gray-300 text-[#515151] focus:ring-[#515151]"
+              />
+              <span>
+                <span className={`block text-xs font-medium ${fieldLabel}`}>
+                  {t('inventory.catalog.categorySeparatorsLabel')}
+                </span>
+                <span className={`block text-[11px] ${subtle}`}>
+                  {t('inventory.catalog.categorySeparatorsHint')}
+                </span>
+              </span>
+            </label>
+          </div>
         </div>
 
         {/* Filters */}
@@ -257,12 +319,13 @@ export default function ProductCatalogModal({
               </svg>
               <h4 className={`text-sm font-semibold ${filterHead}`}>{t('inventory.catalog.filtersLabel')}</h4>
             </div>
-            {(filterCategory !== 'all' || filterLine !== 'all' || filterEcuadorStock) && (
+            {hasActiveFilters && (
               <button
                 onClick={() => {
                   setFilterCategory('all');
                   setFilterLine('all');
                   setFilterEcuadorStock(false);
+                  setFilterWithPhotos(false);
                 }}
                 className={`text-xs font-medium ${d ? 'text-gray-300 hover:text-white' : 'text-[#515151] hover:text-[#000000]'}`}
               >
@@ -271,7 +334,7 @@ export default function ProductCatalogModal({
             )}
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {/* Category Filter */}
             <div>
               <label className={`block text-xs font-medium mb-1 ${fieldLabel}`}>{t('inventory.catalog.categoryFilterLabel')}</label>
@@ -314,6 +377,19 @@ export default function ProductCatalogModal({
                 <span className={`text-xs font-medium ${fieldLabel}`}>{t('inventory.catalog.inStockFilter') || 'In stock'}</span>
               </label>
             </div>
+
+            {/* With photos */}
+            <div className="flex items-end">
+              <label className={`flex items-center gap-2 cursor-pointer px-2 py-1.5 rounded-md transition-colors w-full ${filterStockChip}`}>
+                <input
+                  type="checkbox"
+                  checked={filterWithPhotos}
+                  onChange={(e) => setFilterWithPhotos(e.target.checked)}
+                  className="w-3 h-3 rounded border-gray-300 text-[#515151] focus:ring-[#515151]"
+                />
+                <span className={`text-xs font-medium ${fieldLabel}`}>{t('inventory.catalog.withPhotosFilter')}</span>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -338,7 +414,7 @@ export default function ProductCatalogModal({
                 <span className={subtle}>{t('inventory.catalog.selectedCountOf')}</span>
                 <span className={`font-semibold ${d ? 'text-gray-200' : 'text-gray-800'}`}>{filteredInventory.length}</span>
                 <span className={subtle}>{t('inventory.catalog.productsSelectedSuffix')}</span>
-                {(filterCategory !== 'all' || filterLine !== 'all' || filterEcuadorStock) && (
+                {hasActiveFilters && (
                   <span className={`text-xs px-1.5 py-0.5 rounded-full ml-1 ${badgeMuted}`}>
                     {t('inventory.catalog.filteredBadge')}
                   </span>
@@ -473,6 +549,7 @@ export default function ProductCatalogModal({
                 includeStock={false}
                 includePrice={includePrice}
                 orientation={orientation}
+                categorySeparators={categorySeparators}
                 fileName={`${catalogTitle.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`}
               />
             ) : (

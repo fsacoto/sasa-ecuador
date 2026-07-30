@@ -4,6 +4,7 @@ import { Document, Page, Text, View, Image, StyleSheet } from '@react-pdf/render
 import { InventoryItem } from '../types';
 import esMessages from '../locales/es.json';
 import { formatCatalogSalePrice } from '../utils/salePrice';
+import { displayCategory } from '../utils/merchandiseLabels';
 
 // Traducciones solo en español (PDF)
 const translate = (key: string): string => {
@@ -431,6 +432,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: '100%',
     height: '100%',
+    paddingHorizontal: 48,
   },
   coverLogoLandscape: {
     width: 300,
@@ -439,6 +441,43 @@ const styles = StyleSheet.create({
   coverLogoPortrait: {
     width: 240,
     objectFit: 'contain',
+  },
+  coverTitle: {
+    marginTop: 28,
+    fontSize: 18,
+    fontFamily: 'Helvetica',
+    color: CATALOG_LINE_PILL_TEXT,
+    textAlign: 'center',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    maxWidth: '80%',
+  },
+  coverTitlePortrait: {
+    fontSize: 16,
+    marginTop: 24,
+  },
+  sectionSeparatorPage: {
+    backgroundColor: CATALOG_LINE_PILL_BG,
+    padding: 0,
+  },
+  sectionSeparatorInner: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+    height: '100%',
+    paddingHorizontal: 48,
+  },
+  sectionSeparatorTitle: {
+    fontSize: 36,
+    fontFamily: 'Helvetica-Bold',
+    color: CATALOG_LINE_PILL_TEXT,
+    textAlign: 'center',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+  },
+  sectionSeparatorTitlePortrait: {
+    fontSize: 32,
   },
 });
 
@@ -784,20 +823,101 @@ function CatalogProductPage({
 function CatalogCoverPage({
   orientation,
   logoSrc,
+  catalogTitle,
 }: {
   orientation: 'landscape' | 'portrait';
   logoSrc: string;
+  catalogTitle?: string;
 }) {
   const logoStyle =
     orientation === 'portrait' ? styles.coverLogoPortrait : styles.coverLogoLandscape;
+  const title = (catalogTitle || '').trim();
+  const isPortrait = orientation === 'portrait';
 
   return (
     <Page size="A4" orientation={orientation} style={styles.coverPage} wrap={false}>
       <View style={styles.coverInner}>
         {logoSrc ? <Image src={logoSrc} style={logoStyle} cache={false} /> : null}
+        {title ? (
+          <Text
+            style={[styles.coverTitle, ...(isPortrait ? [styles.coverTitlePortrait] : [])]}
+            wrap
+          >
+            {title}
+          </Text>
+        ) : null}
       </View>
     </Page>
   );
+}
+
+function CatalogCategorySeparatorPage({
+  orientation,
+  categoryName,
+}: {
+  orientation: 'landscape' | 'portrait';
+  categoryName: string;
+}) {
+  const isPortrait = orientation === 'portrait';
+  const label = (categoryName || '').trim().toUpperCase() || '—';
+
+  return (
+    <Page size="A4" orientation={orientation} style={styles.sectionSeparatorPage} wrap={false}>
+      <View style={styles.sectionSeparatorInner}>
+        <Text
+          style={[
+            styles.sectionSeparatorTitle,
+            ...(isPortrait ? [styles.sectionSeparatorTitlePortrait] : []),
+          ]}
+          wrap
+        >
+          {label}
+        </Text>
+      </View>
+    </Page>
+  );
+}
+
+type CatalogDocPage =
+  | { kind: 'separator'; category: string }
+  | { kind: 'products'; products: InventoryItem[] };
+
+function buildCatalogDocPages(
+  products: InventoryItem[],
+  productsPerPage: number,
+  categorySeparators: boolean
+): CatalogDocPage[] {
+  if (!categorySeparators) {
+    return chunkProducts(products, productsPerPage).map((pageProducts) => ({
+      kind: 'products' as const,
+      products: pageProducts,
+    }));
+  }
+
+  const pages: CatalogDocPage[] = [];
+  let currentCategory: string | null = null;
+  let buffer: InventoryItem[] = [];
+
+  const flushBuffer = () => {
+    if (buffer.length === 0) return;
+    for (const chunk of chunkProducts(buffer, productsPerPage)) {
+      pages.push({ kind: 'products', products: chunk });
+    }
+    buffer = [];
+  };
+
+  for (const product of products) {
+    const category = displayCategory(product.category) || 'Sin categoría';
+    if (category !== currentCategory) {
+      flushBuffer();
+      currentCategory = category;
+      pages.push({ kind: 'separator', category });
+    }
+    buffer.push(product);
+  }
+  flushBuffer();
+
+  return pages;
 }
 
 interface ProductCatalogPDFProps {
@@ -806,6 +926,7 @@ interface ProductCatalogPDFProps {
   includeStock: boolean;
   includePrice?: boolean;
   orientation: 'landscape' | 'portrait';
+  categorySeparators?: boolean;
   logoSrc?: string;
 }
 
@@ -815,9 +936,9 @@ export default function ProductCatalogPDF({
   includeStock = false,
   includePrice = true,
   orientation = 'landscape',
+  categorySeparators = false,
   logoSrc = '',
 }: ProductCatalogPDFProps) {
-  void catalogTitle;
   void includeStock;
   const t = (key: string) => translate(key);
   const layout = getCatalogLayout(orientation);
@@ -827,7 +948,11 @@ export default function ProductCatalogPDF({
   if (!products || products.length === 0) {
     return (
       <Document>
-        <CatalogCoverPage orientation={orientation} logoSrc={logoSrc} />
+        <CatalogCoverPage
+          orientation={orientation}
+          logoSrc={logoSrc}
+          catalogTitle={catalogTitle}
+        />
         <Page size="A4" orientation={orientation} style={catalogPageStyle(layout)}>
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
             <Text style={{ fontSize: 14, color: '#666' }}>{t('inventory.catalog.noProductsAvailable')}</Text>
@@ -837,33 +962,58 @@ export default function ProductCatalogPDF({
     );
   }
 
-  const validPages = chunkProducts(products, layout.productsPerPage);
+  const docPages = buildCatalogDocPages(products, layout.productsPerPage, categorySeparators);
+  const productPageTotal = docPages.filter((p) => p.kind === 'products').length;
+  let runningProductPage = 0;
+  const numberedPages = docPages.map((docPage) => {
+    if (docPage.kind === 'separator') {
+      return { docPage, productPageNumber: null as number | null };
+    }
+    runningProductPage += 1;
+    return { docPage, productPageNumber: runningProductPage };
+  });
 
   return (
     <Document>
-      <CatalogCoverPage orientation={orientation} logoSrc={logoSrc} />
-      {validPages.map((pageProducts, pageIndex) => (
-        <Page
-          key={pageIndex}
-          size="A4"
-          orientation={orientation}
-          style={catalogPageStyle(layout)}
-          wrap={false}
-        >
-          <CatalogProductPage
-            pageProducts={pageProducts}
-            layout={layout}
-            noImageLabel={noImageLabel}
-            includePrice={includePrice}
-          />
+      <CatalogCoverPage
+        orientation={orientation}
+        logoSrc={logoSrc}
+        catalogTitle={catalogTitle}
+      />
+      {numberedPages.map(({ docPage, productPageNumber }, pageIndex) => {
+        if (docPage.kind === 'separator') {
+          return (
+            <CatalogCategorySeparatorPage
+              key={`sep-${docPage.category}-${pageIndex}`}
+              orientation={orientation}
+              categoryName={docPage.category}
+            />
+          );
+        }
 
-          <View style={styles.footer}>
-            <Text style={styles.pageNumber}>
-              {pageIndex + 1} / {validPages.length}
-            </Text>
-          </View>
-        </Page>
-      ))}
+        return (
+          <Page
+            key={`prod-${pageIndex}`}
+            size="A4"
+            orientation={orientation}
+            style={catalogPageStyle(layout)}
+            wrap={false}
+          >
+            <CatalogProductPage
+              pageProducts={docPage.products}
+              layout={layout}
+              noImageLabel={noImageLabel}
+              includePrice={includePrice}
+            />
+
+            <View style={styles.footer}>
+              <Text style={styles.pageNumber}>
+                {productPageNumber} / {productPageTotal}
+              </Text>
+            </View>
+          </Page>
+        );
+      })}
     </Document>
   );
 }

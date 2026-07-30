@@ -11,6 +11,7 @@ interface CatalogDownloadButtonProps {
   includeStock: boolean;
   includePrice?: boolean;
   orientation: 'landscape' | 'portrait';
+  categorySeparators?: boolean;
   fileName: string;
 }
 
@@ -20,6 +21,7 @@ export default function CatalogDownloadButton({
   includeStock,
   includePrice = true,
   orientation,
+  categorySeparators = false,
   fileName,
 }: CatalogDownloadButtonProps) {
   const { t } = useTranslation();
@@ -45,6 +47,7 @@ export default function CatalogDownloadButton({
         includeStock,
         includePrice,
         orientation,
+        categorySeparators,
         fileName,
         onImageProgress: (completed, total) => setImageProgress({ completed, total }),
       });
