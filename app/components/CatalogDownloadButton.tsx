@@ -9,6 +9,7 @@ interface CatalogDownloadButtonProps {
   products: InventoryItem[];
   catalogTitle: string;
   includeStock: boolean;
+  includePrice?: boolean;
   orientation: 'landscape' | 'portrait';
   fileName: string;
 }
@@ -17,6 +18,7 @@ export default function CatalogDownloadButton({
   products,
   catalogTitle,
   includeStock,
+  includePrice = true,
   orientation,
   fileName,
 }: CatalogDownloadButtonProps) {
@@ -41,6 +43,7 @@ export default function CatalogDownloadButton({
         products,
         catalogTitle,
         includeStock,
+        includePrice,
         orientation,
         fileName,
         onImageProgress: (completed, total) => setImageProgress({ completed, total }),

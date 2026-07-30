@@ -6,6 +6,7 @@ export interface GenerateCatalogPDFParams {
   products: InventoryItem[];
   catalogTitle?: string;
   includeStock: boolean;
+  includePrice?: boolean;
   orientation: 'landscape' | 'portrait';
   fileName: string;
   onImageProgress?: (completed: number, total: number) => void;
@@ -13,7 +14,15 @@ export interface GenerateCatalogPDFParams {
 
 /** Genera y descarga el catálogo PDF (import estático desde el botón; evita fallos de chunk Turbopack). */
 export async function generateCatalogPDF(params: GenerateCatalogPDFParams): Promise<void> {
-  const { products, catalogTitle, includeStock, orientation, fileName, onImageProgress } = params;
+  const {
+    products,
+    catalogTitle,
+    includeStock,
+    includePrice = true,
+    orientation,
+    fileName,
+    onImageProgress,
+  } = params;
 
   let convertedProducts = products;
   try {
@@ -50,6 +59,7 @@ export async function generateCatalogPDF(params: GenerateCatalogPDFParams): Prom
     products: convertedProducts,
     catalogTitle,
     includeStock,
+    includePrice,
     orientation,
     logoSrc,
   });

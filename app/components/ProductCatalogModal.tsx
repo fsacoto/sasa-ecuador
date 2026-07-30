@@ -34,6 +34,7 @@ export default function ProductCatalogModal({
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [catalogTitle, setCatalogTitle] = useState(() => t('inventory.catalog.title'));
   const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape');
+  const [includePrice, setIncludePrice] = useState(true);
   const [catalogSort, setCatalogSort] = useState<CatalogSort>('skuAsc');
 
   // Filter states
@@ -186,7 +187,7 @@ export default function ProductCatalogModal({
 
         {/* Configuration */}
         <div className={`px-4 sm:px-6 pb-4 pt-0 ${bodyBg}`}>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
             {/* Catalog Title */}
             <div className="md:col-span-2">
               <label className={`block text-xs font-medium mb-1 ${fieldLabel}`}>{t('inventory.catalog.catalogTitleLabel')}</label>
@@ -208,6 +209,20 @@ export default function ProductCatalogModal({
               >
                 <option value="landscape">{t('inventory.catalog.landscape')}</option>
                 <option value="portrait">{t('inventory.catalog.portrait')}</option>
+              </select>
+            </div>
+
+            <div>
+              <label className={`block text-xs font-medium mb-1 ${fieldLabel}`}>
+                {t('inventory.catalog.priceDisplayLabel')}
+              </label>
+              <select
+                value={includePrice ? 'with' : 'without'}
+                onChange={(e) => setIncludePrice(e.target.value === 'with')}
+                className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] text-sm ${fieldInput}`}
+              >
+                <option value="with">{t('inventory.catalog.withPrice')}</option>
+                <option value="without">{t('inventory.catalog.withoutPrice')}</option>
               </select>
             </div>
 
@@ -456,6 +471,7 @@ export default function ProductCatalogModal({
                 products={selectedInventory}
                 catalogTitle={catalogTitle}
                 includeStock={false}
+                includePrice={includePrice}
                 orientation={orientation}
                 fileName={`${catalogTitle.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`}
               />

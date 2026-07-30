@@ -479,9 +479,11 @@ const getBadgeTextStyle = (text: string, isPortrait: boolean) => {
 function CatalogProductTextColumn({
   product,
   layout,
+  includePrice = true,
 }: {
   product: InventoryItem;
   layout: CatalogLayout;
+  includePrice?: boolean;
 }) {
   const t = (key: string) => translate(key);
   const skuDisplay = product.sku || t('inventory.catalog.noSku');
@@ -578,22 +580,24 @@ function CatalogProductTextColumn({
         <Text style={skuTextStyles} wrap={false}>
           {skuPdf}
         </Text>
-        {hasPrice ? (
-          <View style={[styles.priceBadge, ...(isPortrait ? [styles.priceBadgePortrait] : [])]}>
-            <Text style={[styles.priceText, ...(isPortrait ? [styles.priceTextPortrait] : [])]} wrap={false}>
-              {priceLabel}
-            </Text>
-          </View>
-        ) : (
-          <View style={[styles.pricePlaceholder, ...(isPortrait ? [styles.pricePlaceholderPortrait] : [])]}>
-            <Text
-              style={[styles.pricePlaceholderDash, ...(isPortrait ? [styles.pricePlaceholderDashPortrait] : [])]}
-              wrap={false}
-            >
-              —
-            </Text>
-          </View>
-        )}
+        {includePrice ? (
+          hasPrice ? (
+            <View style={[styles.priceBadge, ...(isPortrait ? [styles.priceBadgePortrait] : [])]}>
+              <Text style={[styles.priceText, ...(isPortrait ? [styles.priceTextPortrait] : [])]} wrap={false}>
+                {priceLabel}
+              </Text>
+            </View>
+          ) : (
+            <View style={[styles.pricePlaceholder, ...(isPortrait ? [styles.pricePlaceholderPortrait] : [])]}>
+              <Text
+                style={[styles.pricePlaceholderDash, ...(isPortrait ? [styles.pricePlaceholderDashPortrait] : [])]}
+                wrap={false}
+              >
+                —
+              </Text>
+            </View>
+          )
+        ) : null}
       </View>
     </View>
   );
@@ -603,10 +607,12 @@ function CatalogProductBlock({
   product,
   layout,
   noImageLabel,
+  includePrice = true,
 }: {
   product: InventoryItem;
   layout: CatalogLayout;
   noImageLabel: string;
+  includePrice?: boolean;
 }) {
   const hasImage =
     product.images?.[0]?.startsWith('data:image/jpeg') ||
@@ -659,7 +665,7 @@ function CatalogProductBlock({
         </View>
       </View>
 
-      <CatalogProductTextColumn product={product} layout={layout} />
+      <CatalogProductTextColumn product={product} layout={layout} includePrice={includePrice} />
     </View>
   );
 }
@@ -679,10 +685,12 @@ function CatalogProductPage({
   pageProducts,
   layout,
   noImageLabel,
+  includePrice = true,
 }: {
   pageProducts: InventoryItem[];
   layout: CatalogLayout;
   noImageLabel: string;
+  includePrice?: boolean;
 }) {
   if (layout.columnsPerRow === 1) {
     const singleProductPage = pageProducts.length === 1;
@@ -707,7 +715,12 @@ function CatalogProductPage({
               justifyContent: 'flex-start',
             }}
           >
-            <CatalogProductBlock product={product} layout={layout} noImageLabel={noImageLabel} />
+            <CatalogProductBlock
+              product={product}
+              layout={layout}
+              noImageLabel={noImageLabel}
+              includePrice={includePrice}
+            />
           </View>
         ))}
       </View>
@@ -738,6 +751,7 @@ function CatalogProductPage({
               product={product}
               layout={layout}
               noImageLabel={noImageLabel}
+              includePrice={includePrice}
             />
           ))}
         </View>
@@ -758,6 +772,7 @@ function CatalogProductPage({
               product={product}
               layout={layout}
               noImageLabel={noImageLabel}
+              includePrice={includePrice}
             />
           ))}
         </View>
@@ -789,6 +804,7 @@ interface ProductCatalogPDFProps {
   products: InventoryItem[];
   catalogTitle?: string;
   includeStock: boolean;
+  includePrice?: boolean;
   orientation: 'landscape' | 'portrait';
   logoSrc?: string;
 }
@@ -797,6 +813,7 @@ export default function ProductCatalogPDF({
   products = [],
   catalogTitle,
   includeStock = false,
+  includePrice = true,
   orientation = 'landscape',
   logoSrc = '',
 }: ProductCatalogPDFProps) {
@@ -837,6 +854,7 @@ export default function ProductCatalogPDF({
             pageProducts={pageProducts}
             layout={layout}
             noImageLabel={noImageLabel}
+            includePrice={includePrice}
           />
 
           <View style={styles.footer}>
