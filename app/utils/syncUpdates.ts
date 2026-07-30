@@ -8,6 +8,11 @@ export function getConsignmentReturnProblemQty(item: InventoryItem): number {
   return (item.consignmentReturnIssues ?? []).reduce((s, r) => s + r.quantityProblem, 0);
 }
 
+/** Problem units flagged when reversing delivered sales-note qty back to stock. */
+export function getSalesReturnProblemQty(item: InventoryItem): number {
+  return (item.salesReturnIssues ?? []).reduce((s, r) => s + r.quantityProblem, 0);
+}
+
 /** Treat as verified regardless of Firestore / legacy string casing. */
 export function isVerifiedPurchaseOrder(order: Pick<PurchaseOrder, 'status'>): boolean {
   return String(order.status ?? '').trim().toLowerCase() === 'verified';

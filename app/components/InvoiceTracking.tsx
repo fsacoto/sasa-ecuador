@@ -4,7 +4,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { createPortal } from 'react-dom';
 import { SalesInvoice, Client, PaymentRecord } from '../types';
 import { getAllInvoices, updateInvoice } from '../services/invoicesService';
-import { getAllClients } from '../services/clientsService';
+import { getAllClients, ensureClientDocumentLinks } from '../services/clientsService';
 import { useAuth } from '../context/AuthContext';
 import { useInventory } from '../context/InventoryContext';
 import { useTranslation } from '../context/TranslationContext';
@@ -263,6 +263,14 @@ export default function InvoiceTracking() {
 
   useEffect(() => {
     loadInvoices();
+  }, []);
+
+  useEffect(() => {
+    void ensureClientDocumentLinks().then((result) => {
+      if (result && (result.linkedOrRepaired > 0 || result.refreshed > 0)) {
+        loadInvoices();
+      }
+    });
   }, []);
 
   useEffect(() => {

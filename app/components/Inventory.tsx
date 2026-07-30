@@ -18,6 +18,7 @@ import {
   syncInventoryToOrders,
   reconcileVerificationIssuesForItem,
   getConsignmentReturnProblemQty,
+  getSalesReturnProblemQty,
 } from '../utils/syncUpdates';
 import { handleMultipleImageUpload, validateImageFile } from '../utils/imageUpload';
 import { generateBarcodeFromSKU, isValidBarcodeInput } from '../utils/barcodeGenerator';
@@ -835,7 +836,8 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
 
   const getTotalProblemQty = (item: InventoryItem) =>
     getLiveVerificationIssues(item).reduce((sum, v) => sum + v.quantityProblem, 0) +
-    getConsignmentReturnProblemQty(item);
+    getConsignmentReturnProblemQty(item) +
+    getSalesReturnProblemQty(item);
 
   const inventoryWithProblemsCount = filteredInventory.filter(
     (item) => getTotalProblemQty(item) > 0
@@ -2958,6 +2960,32 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                       ))}
                     </div>
                   )}
+                </div>
+              ))}
+              {(verificationIssuesModalItem.salesReturnIssues ?? []).map((issue, idx) => (
+                <div
+                  key={`sale-${issue.invoiceId}-${issue.sku}-${idx}-${issue.recordedAt?.toString?.() ?? idx}`}
+                  className="border border-amber-200 bg-amber-50/80 rounded-lg p-4 space-y-2"
+                >
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-sm font-semibold text-amber-950">
+                      {t('inventory.salesReturnBadge') || 'Devolución nota de pedido'} ·{' '}
+                      {issue.invoiceNumber}
+                    </span>
+                  </div>
+                  <p className="text-sm font-bold text-amber-900">
+                    {t('inventory.problemQtyLabel')}: {issue.quantityProblem}
+                    {issue.quantityGoodInReturn != null && issue.quantityGoodInReturn > 0 && (
+                      <span className="font-normal text-gray-700">
+                        {' '}
+                        · {t('inventory.goodReturnQty') || 'Buenas en esta devolución'}:{' '}
+                        {issue.quantityGoodInReturn}
+                      </span>
+                    )}
+                  </p>
+                  {issue.comment ? (
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap">{issue.comment}</p>
+                  ) : null}
                 </div>
               ))}
             </div>

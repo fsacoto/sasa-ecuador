@@ -1,6 +1,6 @@
 import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, query, where, orderBy, limit, QueryDocumentSnapshot, DocumentSnapshot, Timestamp, deleteField } from 'firebase/firestore';
 import { db } from '../utils/firebase';
-import { ConsignmentReturnIssueRef, InventoryItem } from '../types';
+import { ConsignmentReturnIssueRef, InventoryItem, SalesReturnIssueRef } from '../types';
 import { normalizeSalePrice } from '../utils/salePrice';
 
 const COLLECTION_NAME = 'inventory';
@@ -23,19 +23,18 @@ function stripUndefinedDeep(value: unknown): unknown {
   return out;
 }
 
+function normalizeRecordedAt(ra: unknown): Date {
+  if (ra && typeof (ra as Timestamp).toDate === 'function') {
+    return (ra as Timestamp).toDate();
+  }
+  if (ra instanceof Date) return ra;
+  return new Date(String(ra ?? Date.now()));
+}
+
 function normalizeConsignmentReturnIssues(raw: unknown): ConsignmentReturnIssueRef[] | undefined {
   if (!Array.isArray(raw) || raw.length === 0) return undefined;
   return raw.map((entry) => {
     const o = entry as Record<string, unknown>;
-    const ra = o.recordedAt;
-    let recordedAt: Date;
-    if (ra && typeof (ra as Timestamp).toDate === 'function') {
-      recordedAt = (ra as Timestamp).toDate();
-    } else if (ra instanceof Date) {
-      recordedAt = ra;
-    } else {
-      recordedAt = new Date(String(ra ?? Date.now()));
-    }
     return {
       consignmentFirestoreId: String(o.consignmentFirestoreId ?? ''),
       consignmentNumber: String(o.consignmentNumber ?? ''),
@@ -46,7 +45,25 @@ function normalizeConsignmentReturnIssues(raw: unknown): ConsignmentReturnIssueR
         o.quantityGoodInReturn !== undefined ? Number(o.quantityGoodInReturn) : undefined,
       comment: o.comment !== undefined ? String(o.comment) : undefined,
       mediaUrls: Array.isArray(o.mediaUrls) ? o.mediaUrls.map(String) : undefined,
-      recordedAt,
+      recordedAt: normalizeRecordedAt(o.recordedAt),
+    };
+  });
+}
+
+function normalizeSalesReturnIssues(raw: unknown): SalesReturnIssueRef[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  return raw.map((entry) => {
+    const o = entry as Record<string, unknown>;
+    return {
+      invoiceId: String(o.invoiceId ?? ''),
+      invoiceNumber: String(o.invoiceNumber ?? ''),
+      sku: String(o.sku ?? ''),
+      quantityProblem: Number(o.quantityProblem ?? 0),
+      quantityGoodInReturn:
+        o.quantityGoodInReturn !== undefined ? Number(o.quantityGoodInReturn) : undefined,
+      comment: o.comment !== undefined ? String(o.comment) : undefined,
+      mediaUrls: Array.isArray(o.mediaUrls) ? o.mediaUrls.map(String) : undefined,
+      recordedAt: normalizeRecordedAt(o.recordedAt),
     };
   });
 }
@@ -57,9 +74,15 @@ const toInventoryItem = (docSnap: QueryDocumentSnapshot | DocumentSnapshot): Inv
   const raw = data as Record<string, unknown>;
   const ec = Number(raw.ecuadorStock ?? 0);
   const legacyUsa = Number(raw.usaStock ?? 0);
-  const { usaStock: _legacyUsa, consignmentReturnIssues: rawCr, reservedStock: _rawReserved, ...rest } =
-    raw as Record<string, unknown>;
+  const {
+    usaStock: _legacyUsa,
+    consignmentReturnIssues: rawCr,
+    salesReturnIssues: rawSr,
+    reservedStock: _rawReserved,
+    ...rest
+  } = raw as Record<string, unknown>;
   const normalizedCr = normalizeConsignmentReturnIssues(rawCr);
+  const normalizedSr = normalizeSalesReturnIssues(rawSr);
   const salePrice = normalizeSalePrice(raw.salePrice);
   const reservedRaw = Number(raw.reservedStock ?? 0);
   const reservedStock =
@@ -68,13 +91,20 @@ const toInventoryItem = (docSnap: QueryDocumentSnapshot | DocumentSnapshot): Inv
   return {
     ...(rest as Omit<
       InventoryItem,
-      'id' | 'createdAt' | 'ecuadorStock' | 'reservedStock' | 'consignmentReturnIssues' | 'salePrice'
+      | 'id'
+      | 'createdAt'
+      | 'ecuadorStock'
+      | 'reservedStock'
+      | 'consignmentReturnIssues'
+      | 'salesReturnIssues'
+      | 'salePrice'
     >),
     id: docSnap.id,
     ecuadorStock: ec + legacyUsa,
     ...(reservedStock !== undefined ? { reservedStock } : {}),
     createdAt: (data.createdAt as Timestamp)?.toDate() || new Date(),
     ...(normalizedCr ? { consignmentReturnIssues: normalizedCr } : {}),
+    ...(normalizedSr ? { salesReturnIssues: normalizedSr } : {}),
     ...(salePrice !== undefined ? { salePrice } : {}),
   };
 };

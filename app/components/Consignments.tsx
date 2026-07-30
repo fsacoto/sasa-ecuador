@@ -13,7 +13,7 @@ import {
   SalesInvoiceLine,
 } from '../types';
 import { getAllConsignments, createConsignment, updateConsignment, deleteConsignment } from '../services/consignmentsService';
-import { getAllClients } from '../services/clientsService';
+import { formatClientAddress, getAllClients, getClient, ensureClientDocumentLinks } from '../services/clientsService';
 import { createInvoice, getAllInvoices } from '../services/invoicesService';
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
@@ -253,6 +253,11 @@ export default function Consignments() {
       loadConsignments();
       loadClients();
       void loadOpenInvoices();
+      void ensureClientDocumentLinks().then((result) => {
+        if (result && (result.linkedOrRepaired > 0 || result.refreshed > 0)) {
+          loadConsignments();
+        }
+      });
     }
   }, [userIdString]); // Always a string, array always has 1 element
 
@@ -589,10 +594,7 @@ export default function Consignments() {
         };
       });
 
-      // Get client address
-      const clientAddress = selectedClient.address 
-        ? `${selectedClient.address}, ${selectedClient.city}, ${selectedClient.country}`
-        : '';
+      const clientAddress = formatClientAddress(selectedClient);
 
       // Create consignment
       const newConsignment = await createConsignment({
@@ -795,11 +797,22 @@ export default function Consignments() {
       }
 
       if (salesItems.length > 0) {
+        // Prefer live client data so the nota reflects current name/address
+        const liveClient =
+          clients.find((c) => c.id === selectedConsignment.clientId) ||
+          (selectedConsignment.clientId
+            ? await getClient(selectedConsignment.clientId)
+            : null);
+        const clientName = liveClient?.name ?? selectedConsignment.clientName;
+        const clientAddress = liveClient
+          ? formatClientAddress(liveClient)
+          : selectedConsignment.clientAddress || '';
+
         await createInvoice({
           invoiceNumber: 'TEMP',
           clientId: selectedConsignment.clientId,
-          clientName: selectedConsignment.clientName,
-          clientAddress: selectedConsignment.clientAddress || '',
+          clientName,
+          clientAddress,
           items: salesItems,
           subtotal,
           discountType: 'percentage',

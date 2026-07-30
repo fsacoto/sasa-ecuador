@@ -6,7 +6,8 @@ import {
   getAllClients, 
   createClient, 
   updateClient, 
-  deleteClient 
+  deleteClient,
+  ensureClientDocumentLinks,
 } from '../services/clientsService';
 import { useAuth } from '../context/AuthContext';
 import { usePersistedFilterState } from '../hooks/usePersistedFilterState';
@@ -52,6 +53,11 @@ export default function Clients() {
 
   useEffect(() => {
     loadClients();
+  }, []);
+
+  // Link historical notas/consignaciones to clients (by id or name) once per tab
+  useEffect(() => {
+    void ensureClientDocumentLinks();
   }, []);
 
   const loadClients = async () => {
@@ -129,7 +135,9 @@ export default function Clients() {
           alert(t('clients.onlyEditEcuador'));
           return;
         }
-        await updateClient(selectedClient.id, formData);
+        await updateClient(selectedClient.id, formData, {
+          previousName: selectedClient.name,
+        });
       } else {
         // Sales role can only create Ecuador clients
         if (user?.role === 'sales' && formData.country !== 'Ecuador') {

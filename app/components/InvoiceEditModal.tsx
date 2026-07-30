@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { SalesInvoice, SalesInvoiceLine, InventoryItem } from '../types';
+import { SalesInvoice, SalesInvoiceLine, InventoryItem, SalesReturnIssueRef } from '../types';
 import { updateInvoice } from '../services/invoicesService';
 import { useInventory } from '../context/InventoryContext';
 import { useTranslation } from '../context/TranslationContext';
@@ -9,6 +9,7 @@ import AlertDialog from './ui/AlertDialog';
 import { filterSellableInventory, hasSellableStock } from '../utils/inventoryStock';
 import {
   getAvailableStock,
+  getDeliveredQtyForStock,
   getOpenReservationNotesForSku,
   getReservedStock,
   getUndeliveredQty,
@@ -22,6 +23,22 @@ export type InvoiceEditModalProps = {
   invoice: SalesInvoice | null;
   onClose: () => void;
   onSaved?: () => void;
+};
+
+type StockImpactRow = {
+  description: string;
+  sku: string;
+  /** Units physically restored to ecuadorStock (were delivered). */
+  physicalQty: number;
+  /** Units released from reservedStock (were undelivered holds). */
+  reservedReleaseQty: number;
+  currentStock: number;
+  newStock: number;
+  currentReserved: number;
+  newReserved: number;
+  problemQty: number;
+  problemComment: string;
+  showProblem: boolean;
 };
 
 export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceEditModalProps) {
@@ -39,10 +56,8 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
   const [editShowDropdown, setEditShowDropdown] = useState(false);
 
   const [showReturnWarning, setShowReturnWarning] = useState(false);
-  const [returnWarningItems, setReturnWarningItems] = useState<
-    Array<{ description: string; sku: string; quantity: number; currentStock: number; newStock: number }>
-  >([]);
-  const [returnWarningCallback, setReturnWarningCallback] = useState<(() => void) | null>(null);
+  const [returnWarningItems, setReturnWarningItems] = useState<StockImpactRow[]>([]);
+  const [previousGrandTotal, setPreviousGrandTotal] = useState(0);
 
   const [alertDialog, setAlertDialog] = useState<{ open: boolean; title?: string; message: string }>({
     open: false,
@@ -188,18 +203,138 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
 
   const calculateEditGrandTotal = () => calculateEditSubtotal() - calculateEditDiscount();
 
+  /** Clamp quantityDelivered so it never exceeds the new line quantity after edits. */
+  const clampEditItemsDelivered = (inv: SalesInvoice): SalesInvoiceLine[] => {
+    const oldDeliveredBySku = new Map<string, number>();
+    for (const item of inv.items) {
+      const d = getDeliveredQtyForStock(inv, item);
+      oldDeliveredBySku.set(item.sku, (oldDeliveredBySku.get(item.sku) ?? 0) + d);
+    }
+
+    const remainingDelivered = new Map(oldDeliveredBySku);
+    return editItems.map((item) => {
+      const pool = remainingDelivered.get(item.sku) ?? 0;
+      const keepDelivered = Math.min(item.quantity, pool);
+      remainingDelivered.set(item.sku, Math.max(0, pool - keepDelivered));
+      const { maxQuantity: _mq, ...line } = item as SalesInvoiceLine & { maxQuantity?: number };
+      return {
+        ...line,
+        quantityDelivered: keepDelivered,
+      };
+    });
+  };
+
+  const buildStockImpactRows = (inv: SalesInvoice): StockImpactRow[] => {
+    if (inv.sourceConsignmentFirestoreId) return [];
+
+    type Agg = { description: string; qty: number; delivered: number; undelivered: number };
+    const oldBySku = new Map<string, Agg>();
+    for (const item of inv.items) {
+      const prev = oldBySku.get(item.sku) || {
+        description: item.description,
+        qty: 0,
+        delivered: 0,
+        undelivered: 0,
+      };
+      prev.qty += item.quantity;
+      prev.delivered += getDeliveredQtyForStock(inv, item);
+      prev.undelivered += getUndeliveredQty(inv, item);
+      oldBySku.set(item.sku, prev);
+    }
+
+    const newBySku = new Map<string, number>();
+    for (const item of editItems) {
+      newBySku.set(item.sku, (newBySku.get(item.sku) ?? 0) + item.quantity);
+    }
+
+    const rows: StockImpactRow[] = [];
+    const stockOverrides = new Map<string, number>();
+    const reservedOverrides = new Map<string, number>();
+
+    for (const [sku, old] of oldBySku) {
+      const newQty = newBySku.get(sku) ?? 0;
+      const reduction = old.qty - newQty;
+      if (reduction <= 0) continue;
+
+      const physicalQty = Math.max(0, old.delivered - newQty);
+      const reservedReleaseQty = reduction - physicalQty;
+      if (physicalQty <= 0 && reservedReleaseQty <= 0) continue;
+
+      const inventoryItem = inventory.find((i) => i.sku === sku);
+      if (!inventoryItem) continue;
+
+      const currentStock =
+        stockOverrides.get(inventoryItem.id) ?? inventoryItem.ecuadorStock;
+      const newStock = currentStock + physicalQty;
+      stockOverrides.set(inventoryItem.id, newStock);
+
+      const currentReserved =
+        reservedOverrides.get(inventoryItem.id) ?? getReservedStock(inventoryItem);
+      const newReserved = clampReservedStock(currentReserved - reservedReleaseQty);
+      reservedOverrides.set(inventoryItem.id, newReserved);
+
+      rows.push({
+        description: old.description,
+        sku,
+        physicalQty,
+        reservedReleaseQty,
+        currentStock,
+        newStock,
+        currentReserved,
+        newReserved,
+        problemQty: 0,
+        problemComment: '',
+        showProblem: false,
+      });
+    }
+
+    return rows;
+  };
+
   const processInvoiceEditWithReturns = async (
     inv: SalesInvoice,
-    itemsToReturn: Array<{ description: string; sku: string; quantity: number; currentStock: number; newStock: number }>
+    impactRows: StockImpactRow[]
   ) => {
-    for (const itemReturn of itemsToReturn) {
-      const inventoryItem = inventory.find((i) => i.sku === itemReturn.sku);
-      if (inventoryItem) {
-        await updateInventoryItem(inventoryItem.id, { ecuadorStock: itemReturn.newStock });
+    for (const row of impactRows) {
+      const inventoryItem = inventory.find((i) => i.sku === row.sku);
+      if (!inventoryItem) continue;
+
+      const updates: Partial<InventoryItem> = {};
+      if (row.physicalQty > 0) {
+        updates.ecuadorStock = row.newStock;
+      }
+      if (row.reservedReleaseQty > 0 && !inv.sourceConsignmentFirestoreId) {
+        updates.reservedStock = row.newReserved;
+      }
+
+      const problemQty = Math.max(
+        0,
+        Math.min(row.problemQty, row.physicalQty)
+      );
+      if (problemQty > 0 && row.physicalQty > 0) {
+        const ref: SalesReturnIssueRef = {
+          invoiceId: inv.id,
+          invoiceNumber: inv.invoiceNumber,
+          sku: row.sku,
+          quantityProblem: problemQty,
+          recordedAt: new Date(),
+        };
+        const good = row.physicalQty - problemQty;
+        if (good > 0) ref.quantityGoodInReturn = good;
+        const cmt = row.problemComment.trim();
+        if (cmt) ref.comment = cmt;
+        updates.salesReturnIssues = [
+          ...(inventoryItem.salesReturnIssues ?? []),
+          ref,
+        ];
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await updateInventoryItem(inventoryItem.id, updates);
       }
     }
 
-    // Adjust reservations for open notes (Pending / Partial undelivered).
+    // Adjust reservations for lines that gained undelivered qty (adds / increases).
     if (!inv.sourceConsignmentFirestoreId) {
       const oldBySku = new Map<string, number>();
       for (const item of inv.items) {
@@ -208,29 +343,48 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
         oldBySku.set(item.sku, (oldBySku.get(item.sku) ?? 0) + qty);
       }
 
+      const clampedItems = clampEditItemsDelivered(inv);
       const newDeliveryStatus =
         inv.deliveryStatus === 'Delivered' && editItems.length > inv.items.length
           ? 'Partially Delivered'
           : inv.deliveryStatus;
 
       const newBySku = new Map<string, number>();
-      for (const item of editItems) {
-        const synthetic: SalesInvoice = { ...inv, deliveryStatus: newDeliveryStatus, items: editItems };
+      for (const item of clampedItems) {
+        const synthetic: SalesInvoice = {
+          ...inv,
+          deliveryStatus: newDeliveryStatus,
+          items: clampedItems,
+        };
         const qty = getUndeliveredQty(synthetic, item);
         if (qty <= 0) continue;
         newBySku.set(item.sku, (newBySku.get(item.sku) ?? 0) + qty);
       }
 
-      const skus = new Set([...oldBySku.keys(), ...newBySku.keys()]);
+      // Releases already applied from impactRows; only apply positive deltas (extra holds).
+      const releasedSkus = new Set(
+        impactRows.filter((r) => r.reservedReleaseQty > 0).map((r) => r.sku)
+      );
       const reservedOverrides = new Map<string, number>();
+      for (const row of impactRows) {
+        if (row.reservedReleaseQty <= 0) continue;
+        const inventoryItem = inventory.find((i) => i.sku === row.sku);
+        if (inventoryItem) {
+          reservedOverrides.set(inventoryItem.id, row.newReserved);
+        }
+      }
+
+      const skus = new Set([...oldBySku.keys(), ...newBySku.keys()]);
       for (const sku of skus) {
+        if (releasedSkus.has(sku)) continue; // already handled
         const delta = (newBySku.get(sku) ?? 0) - (oldBySku.get(sku) ?? 0);
-        if (delta === 0) continue;
+        if (delta <= 0) continue;
         const inventoryItem = inventory.find((i) => i.sku === sku);
         if (!inventoryItem) continue;
-        if (delta > 0 && delta > getAvailableStock(inventoryItem)) {
+        const available = getAvailableStock(inventoryItem);
+        if (delta > available) {
           showAlert(
-            `${t('invoiceTracking.cannotExceedStock')} ${getAvailableStock(inventoryItem)}`,
+            `${t('invoiceTracking.cannotExceedStock')} ${available}`,
             'Stock Limit'
           );
           return;
@@ -239,12 +393,11 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
           reservedOverrides.get(inventoryItem.id) ?? getReservedStock(inventoryItem);
         const next = clampReservedStock(currentReserved + delta);
         reservedOverrides.set(inventoryItem.id, next);
-        await updateInventoryItem(inventoryItem.id, {
-          reservedStock: next,
-        });
+        await updateInventoryItem(inventoryItem.id, { reservedStock: next });
       }
     }
 
+    const clampedItems = clampEditItemsDelivered(inv);
     const newGrandTotal = calculateEditGrandTotal();
     const currentAmountPaid = inv.amountPaid || 0;
     const newRemainingBalance = Math.max(0, newGrandTotal - currentAmountPaid);
@@ -262,10 +415,29 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
     if (inv.deliveryStatus === 'Delivered' && editItems.length > inv.items.length) {
       newDeliveryStatus = 'Partially Delivered';
     }
+    // If all remaining lines have zero delivered, keep status consistent
+    const anyDelivered = clampedItems.some(
+      (item) => (item.quantityDelivered ?? 0) > 0
+    );
+    if (
+      (inv.deliveryStatus === 'Delivered' || inv.deliveryStatus === 'Partially Delivered') &&
+      !anyDelivered &&
+      clampedItems.length > 0
+    ) {
+      newDeliveryStatus = 'Pending';
+    } else if (
+      inv.deliveryStatus === 'Delivered' &&
+      anyDelivered &&
+      clampedItems.some(
+        (item) => (item.quantityDelivered ?? 0) < item.quantity
+      )
+    ) {
+      newDeliveryStatus = 'Partially Delivered';
+    }
 
     try {
       const updatedInvoice: Partial<SalesInvoice> = {
-        items: editItems,
+        items: clampedItems,
         subtotal: calculateEditSubtotal(),
         discountType: editDiscountType,
         discountValue: editDiscountValue,
@@ -280,6 +452,8 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
 
       await updateInvoice(inv.id, updatedInvoice);
       showAlert(t('invoiceTracking.invoiceUpdated'), 'Success');
+      setShowReturnWarning(false);
+      setReturnWarningItems([]);
       onClose();
       onSaved?.();
     } catch (error) {
@@ -295,56 +469,23 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
       return;
     }
 
-    const wasDelivered =
-      invoice.deliveryStatus === 'Delivered' || invoice.deliveryStatus === 'Partially Delivered';
-
-    const itemsToReturn: Array<{
-      description: string;
-      sku: string;
-      quantity: number;
-      currentStock: number;
-      newStock: number;
-    }> = [];
-
-    if (wasDelivered) {
-      const newItemsMap = new Map<string, number>();
-      editItems.forEach((item) => {
-        newItemsMap.set(item.sku, (newItemsMap.get(item.sku) || 0) + item.quantity);
-      });
-
-      invoice.items.forEach((originalItem) => {
-        const newQuantity = newItemsMap.get(originalItem.sku) || 0;
-        const originalQuantity = originalItem.quantity;
-        if (newQuantity < originalQuantity) {
-          const quantityToReturn = originalQuantity - newQuantity;
-          const inventoryItem = inventory.find((inv) => inv.sku === originalItem.sku);
-          if (inventoryItem) {
-            const currentStock = inventoryItem.ecuadorStock;
-            const newStock = currentStock + quantityToReturn;
-            itemsToReturn.push({
-              description: originalItem.description,
-              sku: originalItem.sku,
-              quantity: quantityToReturn,
-              currentStock,
-              newStock,
-            });
-          }
-        }
-        newItemsMap.delete(originalItem.sku);
-      });
-    }
-
-    if (itemsToReturn.length > 0) {
-      setReturnWarningItems(itemsToReturn);
-      setReturnWarningCallback(() => async () => {
-        setShowReturnWarning(false);
-        await processInvoiceEditWithReturns(invoice, itemsToReturn);
-      });
+    const impactRows = buildStockImpactRows(invoice);
+    if (impactRows.length > 0) {
+      setPreviousGrandTotal(invoice.grandTotal || 0);
+      setReturnWarningItems(impactRows);
       setShowReturnWarning(true);
       return;
     }
 
     await processInvoiceEditWithReturns(invoice, []);
+  };
+
+  const updateImpactRow = (index: number, patch: Partial<StockImpactRow>) => {
+    setReturnWarningItems((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], ...patch };
+      return next;
+    });
   };
 
   if (!invoice) return null;
@@ -571,29 +712,128 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
         <div
           className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm`}
         >
-          <div className="sasa-modal-panel w-full max-w-2xl rounded-xl p-6">
-            <h3 className="mb-4 text-xl font-bold text-orange-600">
+          <div className="sasa-modal-panel max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl p-6">
+            <h3 className="mb-2 text-xl font-bold text-orange-600">
               {t('invoiceTracking.inventoryImpactWarning')}
             </h3>
-            <p className="mb-4 text-gray-700">{t('invoiceTracking.itemsRemovedMessage')}</p>
-            <div className="mb-4 rounded-lg bg-green-50 p-4">
-              <h4 className="mb-3 font-semibold text-gray-900">{t('invoiceTracking.itemsReturningToStock')}</h4>
-              <div className="space-y-2">
-                {returnWarningItems.map((item, index) => (
-                  <div key={index} className="flex items-center justify-between rounded bg-white p-2">
-                    <div>
+            <p className="mb-4 text-sm text-gray-700">
+              {t('invoiceTracking.itemsRemovedMessage')}
+            </p>
+
+            <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span className="text-gray-600">{t('invoiceTracking.totalsAdjustLabel')}</span>
+                <span className="font-semibold tabular-nums text-gray-900">
+                  ${previousGrandTotal.toFixed(2)} → ${calculateEditGrandTotal().toFixed(2)}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-gray-500">
+                {t('invoiceTracking.totalsAdjustHint')}
+              </p>
+            </div>
+
+            <div className="mb-4 space-y-3">
+              {returnWarningItems.map((item, index) => (
+                <div
+                  key={`${item.sku}-${index}`}
+                  className="rounded-lg border border-gray-200 bg-white p-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
                       <div className="font-medium text-gray-900">{item.description}</div>
-                      <div className="text-sm text-gray-600">
-                        {t('invoiceTracking.quantityReturning')}: {item.quantity}
-                      </div>
-                    </div>
-                    <div className="text-right text-sm font-semibold text-green-600">
-                      {item.currentStock} → {item.newStock}
+                      <div className="font-mono text-xs text-gray-500">{item.sku}</div>
                     </div>
                   </div>
-                ))}
-              </div>
+
+                  <div className="mt-2 space-y-1.5 text-sm">
+                    {item.physicalQty > 0 && (
+                      <div className="flex items-center justify-between rounded bg-green-50 px-2.5 py-1.5 text-green-800">
+                        <span>
+                          {t('invoiceTracking.physicalReturnLabel')}: {item.physicalQty}
+                        </span>
+                        <span className="font-semibold tabular-nums">
+                          {item.currentStock} → {item.newStock}
+                        </span>
+                      </div>
+                    )}
+                    {item.reservedReleaseQty > 0 && (
+                      <div className="flex items-center justify-between rounded bg-blue-50 px-2.5 py-1.5 text-blue-800">
+                        <span>
+                          {t('invoiceTracking.reservationReleaseLabel')}:{' '}
+                          {item.reservedReleaseQty}
+                        </span>
+                        <span className="font-semibold tabular-nums">
+                          {t('invoiceTracking.reservedShort')} {item.currentReserved} →{' '}
+                          {item.newReserved}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {item.physicalQty > 0 && (
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateImpactRow(index, { showProblem: !item.showProblem })
+                        }
+                        className="text-xs font-medium text-gray-500 underline-offset-2 hover:text-gray-800 hover:underline"
+                      >
+                        {item.showProblem
+                          ? t('invoiceTracking.hideProblemOption')
+                          : t('invoiceTracking.reportProblemOption')}
+                      </button>
+                      {item.showProblem && (
+                        <div className="mt-2 space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                          <p className="text-xs text-amber-900/80">
+                            {t('invoiceTracking.reportProblemHint')}
+                          </p>
+                          <div className="flex flex-wrap items-end gap-3">
+                            <div>
+                              <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-amber-900/70">
+                                {t('invoiceTracking.problemQty')}
+                              </label>
+                              <input
+                                type="number"
+                                min={0}
+                                max={item.physicalQty}
+                                value={item.problemQty || ''}
+                                onChange={(e) =>
+                                  updateImpactRow(index, {
+                                    problemQty: Math.min(
+                                      item.physicalQty,
+                                      Math.max(0, parseInt(e.target.value, 10) || 0)
+                                    ),
+                                  })
+                                }
+                                className="w-20 rounded border border-amber-200 bg-white px-2 py-1 text-center text-sm tabular-nums"
+                              />
+                            </div>
+                            <div className="min-w-[12rem] flex-1">
+                              <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-amber-900/70">
+                                {t('invoiceTracking.problemComment')}
+                              </label>
+                              <input
+                                type="text"
+                                value={item.problemComment}
+                                onChange={(e) =>
+                                  updateImpactRow(index, {
+                                    problemComment: e.target.value,
+                                  })
+                                }
+                                placeholder={t('invoiceTracking.problemCommentPh')}
+                                className="w-full rounded border border-amber-200 bg-white px-2 py-1 text-sm"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
+
             <div className="flex gap-3">
               <button
                 type="button"
@@ -601,7 +841,6 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
                 onClick={() => {
                   setShowReturnWarning(false);
                   setReturnWarningItems([]);
-                  setReturnWarningCallback(null);
                 }}
               >
                 {t('invoiceTracking.cancel')}
@@ -610,9 +849,8 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
                 type="button"
                 className="flex-1 rounded-lg bg-orange-600 px-4 py-2 font-medium text-white hover:bg-orange-700"
                 onClick={() => {
-                  void returnWarningCallback?.();
-                  setReturnWarningItems([]);
-                  setReturnWarningCallback(null);
+                  if (!invoice) return;
+                  void processInvoiceEditWithReturns(invoice, returnWarningItems);
                 }}
               >
                 {t('invoiceTracking.confirmAndUpdate')}

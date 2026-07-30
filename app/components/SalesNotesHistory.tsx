@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect, useCallback, useRef, useLayoutEffect } fr
 import { createPortal } from 'react-dom';
 import { SalesInvoice, type Client } from '../types';
 import { getAllInvoices } from '../services/invoicesService';
-import { getAllClients } from '../services/clientsService';
+import { getAllClients, ensureClientDocumentLinks } from '../services/clientsService';
 import { useAuth } from '../context/AuthContext';
 import { useInventory } from '../context/InventoryContext';
 import { useTranslation } from '../context/TranslationContext';
@@ -151,6 +151,14 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  useEffect(() => {
+    void ensureClientDocumentLinks().then((result) => {
+      if (result && (result.linkedOrRepaired > 0 || result.refreshed > 0)) {
+        void load();
+      }
+    });
   }, [load]);
 
   useEffect(() => {

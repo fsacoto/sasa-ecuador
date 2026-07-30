@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { SalesInvoiceLine, Client, InventoryItem, SalesInvoice } from '../types';
-import { getAllClients, createClient } from '../services/clientsService';
+import { getAllClients, createClient, formatClientAddress } from '../services/clientsService';
 import { createInvoice, getAllInvoices } from '../services/invoicesService';
 import { downloadSalesInvoicePdf } from '../utils/salesInvoicePdf';
 import { useInventory } from '../context/InventoryContext';
@@ -18,6 +18,7 @@ import {
   getReservedStock,
   nextReservedStock,
 } from '../utils/stockReservation';
+import { normalizeSalePrice } from '../utils/salePrice';
 import AlertDialog from './ui/AlertDialog';
 import DateInput from './ui/DateInput';
 
@@ -26,6 +27,38 @@ interface InvoiceLineWithDetails extends SalesInvoiceLine {
   category?: string;
   maxQuantity: number;
   availableStock: number;
+  imageUrl?: string;
+}
+
+function SalesProductThumb({ imageUrl, alt }: { imageUrl?: string; alt: string }) {
+  const [broken, setBroken] = useState(false);
+  const showImage = Boolean(imageUrl) && !broken;
+
+  return showImage ? (
+    <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
+      <img
+        src={imageUrl}
+        alt={alt}
+        className="h-full w-full object-cover object-center"
+        onError={() => setBroken(true)}
+      />
+    </div>
+  ) : (
+    <div
+      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-100"
+      title="Sin foto"
+      aria-label="Sin foto"
+    >
+      <svg className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={1.5}
+          d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+        />
+      </svg>
+    </div>
+  );
 }
 
 export default function Sales() {
@@ -53,8 +86,11 @@ export default function Sales() {
   });
   const [searchTerm, setSearchTerm] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
+  const [itemEntryMode, setItemEntryMode] = useState<'barcode' | 'manual' | null>(null);
+  const [lastAddedSku, setLastAddedSku] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const lastAddedRowRef = useRef<HTMLTableRowElement>(null);
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash' | 'transfer' | ''>('');
   const [paymentComment, setPaymentComment] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
@@ -114,8 +150,9 @@ export default function Sales() {
   const getAvailableInventory = () => filterSellableInventory(inventory);
 
   const buildLineFromProduct = (product: InventoryItem): InvoiceLineWithDetails => {
-    let unitPrice = 25;
-    if (product.linkedPurchaseOrders.length > 0) {
+    const salePrice = normalizeSalePrice(product.salePrice);
+    let unitPrice = salePrice ?? 25;
+    if (salePrice == null && product.linkedPurchaseOrders.length > 0) {
       const linkedOrders = purchaseOrders.filter(
         po => product.linkedPurchaseOrders.includes(po.id) && po.status === 'Verified'
       );
@@ -135,7 +172,8 @@ export default function Sales() {
       unitPrice,
       totalPrice: unitPrice,
       maxQuantity: availableStock,
-      availableStock
+      availableStock,
+      imageUrl: product.images?.[0],
     };
   };
 
@@ -150,36 +188,53 @@ export default function Sales() {
     ).slice(0, 10); // Limit to 10 results
   };
 
-  const addProductToInvoice = (product: InventoryItem) => {
-    if (!hasSellableStock(product)) {
-      showAlert(t('inventory.noSellableStock'), t('sales.barcodeScanTitle'));
-      return;
-    }
-    const newLine = buildLineFromProduct(product);
-    setInvoiceItems(prev => {
-      const idx = prev.findIndex(i => i.sku === product.sku);
-      if (idx >= 0) {
-        const row = prev[idx];
-        const nextQty = row.quantity + 1;
-        if (nextQty > row.maxQuantity) {
-          queueMicrotask(() =>
-            showAlert(`${t('sales.cannotExceedStock')} ${row.maxQuantity}`, t('sales.barcodeScanTitle'))
-          );
-          return prev;
-        }
-        const copy = [...prev];
-        copy[idx] = {
-          ...row,
-          quantity: nextQty,
-          totalPrice: row.unitPrice * nextQty
-        };
-        return copy;
+  const addProductToInvoice = useCallback(
+    (product: InventoryItem) => {
+      if (!hasSellableStock(product)) {
+        showAlert(t('inventory.noSellableStock'), t('sales.barcodeScanTitle'));
+        return;
       }
-      return [...prev, newLine];
-    });
-    setSearchTerm('');
-    setShowDropdown(false);
-  };
+      const newLine = buildLineFromProduct(product);
+      let accepted = false;
+      setInvoiceItems((prev) => {
+        const idx = prev.findIndex((i) => i.sku === product.sku);
+        if (idx >= 0) {
+          const row = prev[idx];
+          const nextQty = row.quantity + 1;
+          if (nextQty > row.maxQuantity) {
+            queueMicrotask(() =>
+              showAlert(
+                `${t('sales.cannotExceedStock')} ${row.maxQuantity}`,
+                t('sales.barcodeScanTitle')
+              )
+            );
+            return prev;
+          }
+          accepted = true;
+          const without = prev.filter((_, i) => i !== idx);
+          return [
+            ...without,
+            {
+              ...row,
+              quantity: nextQty,
+              totalPrice: row.unitPrice * nextQty,
+              imageUrl: row.imageUrl || product.images?.[0],
+            },
+          ];
+        }
+        accepted = true;
+        return [...prev, newLine];
+      });
+      if (accepted) {
+        setLastAddedSku(product.sku);
+      }
+      setSearchTerm('');
+      setShowDropdown(false);
+    },
+    // buildLineFromProduct closes over purchaseOrders/inventory via latest render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [t, purchaseOrders, inventory]
+  );
 
   const processBarcodeScan = useCallback(
     (raw: string) => {
@@ -192,44 +247,47 @@ export default function Sales() {
         return;
       }
 
-      const pool = getAvailableInventory();
-      const product = pool.find(p => p.sku === matched.sku);
+      const product = filterSellableInventory(inventory).find((p) => p.sku === matched.sku);
       if (!product) {
         showAlert(t('sales.barcodeNoStock'), t('sales.barcodeScanTitle'));
         return;
       }
 
-      const newLine = buildLineFromProduct(product);
-      setInvoiceItems(prev => {
-        const idx = prev.findIndex(i => i.sku === product.sku);
-        if (idx >= 0) {
-          const row = prev[idx];
-          const nextQty = row.quantity + 1;
-          if (nextQty > row.maxQuantity) {
-            queueMicrotask(() =>
-              showAlert(`${t('sales.cannotExceedStock')} ${row.maxQuantity}`, t('sales.barcodeScanTitle'))
-            );
-            return prev;
-          }
-          const copy = [...prev];
-          copy[idx] = {
-            ...row,
-            quantity: nextQty,
-            totalPrice: row.unitPrice * nextQty
-          };
-          return copy;
-        }
-        return [...prev, newLine];
-      });
+      addProductToInvoice(product);
     },
-    [inventory, purchaseOrders, user?.role, t]
+    [inventory, t, addProductToInvoice]
   );
 
   useBarcodeScanner({
-    enabled: !showClientModal && !alertDialog.open,
+    enabled:
+      itemEntryMode === 'barcode' &&
+      !showClientModal &&
+      !alertDialog.open &&
+      !isSubmitting,
     onScan: processBarcodeScan,
-    shouldIgnore: () => showClientModal || alertDialog.open,
+    ignoreFormFields: true,
+    minLength: 3,
+    shouldIgnore: () =>
+      showClientModal || alertDialog.open || itemEntryMode !== 'barcode' || isSubmitting,
   });
+
+  useEffect(() => {
+    if (!lastAddedSku) return;
+    lastAddedRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [lastAddedSku, invoiceItems]);
+
+  const totalUnitsScanned = useMemo(
+    () => invoiceItems.reduce((sum, item) => sum + item.quantity, 0),
+    [invoiceItems]
+  );
+
+  const formatTemplate = (template: string, vars: Record<string, string>) => {
+    let result = template;
+    for (const [key, value] of Object.entries(vars)) {
+      result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+    }
+    return result;
+  };
 
   const handleQuantityChange = (index: number, quantity: number) => {
     const updatedItems = [...invoiceItems];
@@ -256,7 +314,11 @@ export default function Sales() {
   };
 
   const removeItem = (index: number) => {
+    const removed = invoiceItems[index];
     setInvoiceItems(invoiceItems.filter((_, i) => i !== index));
+    if (removed && lastAddedSku === removed.sku) {
+      setLastAddedSku(null);
+    }
   };
 
   const calculateSubtotal = () => {
@@ -296,7 +358,7 @@ export default function Sales() {
         invoiceNumber: 'TEMP', // Will be replaced with sequential number in createInvoice
         clientId: selectedClient.id,
         clientName: selectedClient.name,
-        clientAddress: `${selectedClient.address}, ${selectedClient.city}, ${selectedClient.country}`,
+        clientAddress: formatClientAddress(selectedClient),
         items: invoiceItems,
         subtotal: calculateSubtotal(),
         discountType: discountType,
@@ -365,6 +427,8 @@ export default function Sales() {
       setPaymentMethod('');
       setPaymentComment('');
       setInvoiceDate(new Date().toISOString().split('T')[0]);
+      setItemEntryMode(null);
+      setLastAddedSku(null);
     } catch (error) {
       console.error('Error submitting invoice:', error);
       showAlert(t('sales.errorSubmitting'), 'Error');
@@ -560,6 +624,67 @@ export default function Sales() {
       <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('sales.invoiceItems')}</h3>
 
+          <div className="mb-5">
+            <p className="mb-2 text-sm font-medium text-gray-700">
+              {t('sales.entryModeLabel')}
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setItemEntryMode('barcode');
+                  setSearchTerm('');
+                  setShowDropdown(false);
+                  searchInputRef.current?.blur();
+                }}
+                className={`rounded-lg border px-4 py-3 text-left transition-colors ${
+                  itemEntryMode === 'barcode'
+                    ? 'border-[#515151] bg-[#515151]/5 ring-1 ring-[#515151]/25'
+                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                <div className="text-sm font-semibold text-gray-900">
+                  {t('sales.entryModeBarcode')}
+                </div>
+                <div className="mt-0.5 text-xs text-gray-500">
+                  {t('sales.entryModeBarcodeDesc')}
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setItemEntryMode('manual')}
+                className={`rounded-lg border px-4 py-3 text-left transition-colors ${
+                  itemEntryMode === 'manual'
+                    ? 'border-[#515151] bg-[#515151]/5 ring-1 ring-[#515151]/25'
+                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                <div className="text-sm font-semibold text-gray-900">
+                  {t('sales.entryModeManual')}
+                </div>
+                <div className="mt-0.5 text-xs text-gray-500">
+                  {t('sales.entryModeManualDesc')}
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {itemEntryMode === 'barcode' && (
+            <div className="mb-4 rounded-lg border border-dashed border-[#515151]/30 bg-[#515151]/[0.04] px-4 py-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
+                <span
+                  className="inline-block h-2 w-2 shrink-0 rounded-full bg-emerald-500"
+                  aria-hidden
+                />
+                {t('sales.scannerActive')}
+              </div>
+              <p className="mt-1 text-xs text-gray-500">
+                {t('sales.scannerActiveHint')}
+              </p>
+            </div>
+          )}
+
+          {itemEntryMode === 'manual' && (
           <div className="mb-4 relative" ref={dropdownRef}>
             <label className="block text-sm font-medium text-gray-700 mb-2">{t('sales.searchSku')}</label>
             <input
@@ -573,6 +698,7 @@ export default function Sales() {
               }}
               onFocus={() => setShowDropdown(true)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
+              autoComplete="off"
             />
             
             {showDropdown && filteredInventory.length > 0 && (
@@ -591,17 +717,25 @@ export default function Sales() {
                     onClick={() => addProductToInvoice(product)}
                     className="px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
                   >
-                    <div className="font-mono text-sm font-semibold text-[#515151]">{product.sku}</div>
-                    <div className="text-sm text-gray-600">{product.name}</div>
-                    <div className="text-xs text-gray-500">
-                      {t('sales.available')}: {available}
-                      {reserved > 0
-                        ? ` · ${t('sales.reserved')}: ${reserved}${noteLabels ? ` — ${noteLabels}` : ''}`
-                        : ''}
-                      {onConsignment > 0
-                        ? ` · ${t('sales.onConsignment')}: ${onConsignment}`
-                        : ''}
-                      {' | '}{product.category} - {product.line}
+                    <div className="flex items-center gap-3">
+                      <SalesProductThumb
+                        imageUrl={product.images?.[0]}
+                        alt={product.name || product.sku}
+                      />
+                      <div className="min-w-0">
+                        <div className="font-mono text-sm font-semibold text-[#515151]">{product.sku}</div>
+                        <div className="text-sm text-gray-600">{product.name}</div>
+                        <div className="text-xs text-gray-500">
+                          {t('sales.available')}: {available}
+                          {reserved > 0
+                            ? ` · ${t('sales.reserved')}: ${reserved}${noteLabels ? ` — ${noteLabels}` : ''}`
+                            : ''}
+                          {onConsignment > 0
+                            ? ` · ${t('sales.onConsignment')}: ${onConsignment}`
+                            : ''}
+                          {' | '}{product.category} - {product.line}
+                        </div>
+                      </div>
                     </div>
                   </div>
                   );
@@ -609,38 +743,85 @@ export default function Sales() {
               </div>
             )}
           </div>
+          )}
 
-          {invoiceItems.length > 0 ? (
+          {!itemEntryMode && (
+            <div className="mb-4 rounded-lg border border-gray-100 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+              {t('sales.entryModeChooseFirst')}
+            </div>
+          )}
+
+          {itemEntryMode &&
+            (invoiceItems.length > 0 ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5">
+                <span className="text-sm text-gray-600">{t('sales.unitsScanned')}</span>
+                <span className="text-sm font-semibold tabular-nums text-gray-900">
+                  {formatTemplate(t('sales.unitsScannedCount'), {
+                    count: String(totalUnitsScanned),
+                  })}
+                  <span className="ml-2 font-normal text-gray-500">
+                    ({invoiceItems.length}{' '}
+                    {invoiceItems.length === 1 ? t('sales.skuSingular') : t('sales.skuPlural')})
+                  </span>
+                </span>
+              </div>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.sku')}</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.description')}</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.line')}</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.category')}</th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.quantity')}</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.unitPrice')}</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.totalPrice')}</th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.actions')}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.photo')}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.sku')}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.description')}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.line')}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.category')}</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.quantity')}</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.unitPrice')}</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.totalPrice')}</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{t('sales.actions')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
-                  {invoiceItems.map((item, index) => (
-                    <tr key={index} className="transition-colors hover:bg-gray-50">
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <div className="font-mono text-sm font-medium text-gray-900">{item.sku}</div>
+                  {invoiceItems.map((item, index) => {
+                    const inventoryItem = inventory.find((inv) => inv.sku === item.sku);
+                    const imageUrl = item.imageUrl || inventoryItem?.images?.[0];
+                    const isLastAdded = lastAddedSku === item.sku;
+                    return (
+                    <tr
+                      key={item.sku}
+                      ref={isLastAdded ? lastAddedRowRef : undefined}
+                      className={`transition-colors ${
+                        isLastAdded
+                          ? 'bg-[#515151]/[0.06] ring-1 ring-inset ring-[#515151]/20'
+                          : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <td className="whitespace-nowrap px-4 py-3">
+                        <SalesProductThumb
+                          imageUrl={imageUrl}
+                          alt={item.description || item.sku}
+                        />
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="whitespace-nowrap px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="font-mono text-sm font-medium text-gray-900">{item.sku}</div>
+                          {isLastAdded && (
+                            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[#515151]/80 bg-[#515151]/10">
+                              {t('sales.lastAdded')}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
                         <div className="text-sm text-gray-900">{item.description}</div>
                       </td>
-                      <td className="whitespace-nowrap px-6 py-4">
+                      <td className="whitespace-nowrap px-4 py-3">
                         <div className="text-sm text-gray-900">{item.line || '-'}</div>
                       </td>
-                      <td className="whitespace-nowrap px-6 py-4">
+                      <td className="whitespace-nowrap px-4 py-3">
                         <div className="text-sm text-gray-900">{item.category || '-'}</div>
                       </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-center">
+                      <td className="whitespace-nowrap px-4 py-3 text-center">
                         <div className="flex flex-col items-center gap-1">
                           <input
                             type="number"
@@ -655,7 +836,7 @@ export default function Sales() {
                           </div>
                         </div>
                       </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-right">
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
                         <input
                           type="number"
                           min="0"
@@ -665,11 +846,12 @@ export default function Sales() {
                           className="w-24 px-2 py-1 border border-gray-300 rounded text-right"
                         />
                       </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-right">
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
                         <div className="text-sm font-semibold text-gray-900">${item.totalPrice.toFixed(2)}</div>
                       </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-center">
+                      <td className="whitespace-nowrap px-4 py-3 text-center">
                         <button
+                          type="button"
                           onClick={() => removeItem(index)}
                           className="text-red-600 hover:text-red-700 text-sm font-medium"
                         >
@@ -677,15 +859,19 @@ export default function Sales() {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
+            </div>
           ) : (
             <div className="text-center py-12 text-gray-500">
-              {t('sales.noItemsAdded')}
+              {itemEntryMode === 'barcode'
+                ? t('sales.noItemsScannedYet')
+                : t('sales.noItemsAdded')}
             </div>
-          )}
+          ))}
         </div>
 
       {/* Totals */}

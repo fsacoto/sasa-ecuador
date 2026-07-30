@@ -103,6 +103,18 @@ export interface ConsignmentReturnIssueRef {
   recordedAt: Date;
 }
 
+/** Units flagged as problem when reversing a delivered sales-note quantity back to stock. */
+export interface SalesReturnIssueRef {
+  invoiceId: string;
+  invoiceNumber: string;
+  sku: string;
+  quantityProblem: number;
+  quantityGoodInReturn?: number;
+  comment?: string;
+  mediaUrls?: string[];
+  recordedAt: Date;
+}
+
 export interface InventoryItem {
   id: string;
   name: string;
@@ -127,6 +139,8 @@ export interface InventoryItem {
   verificationIssues?: VerificationIssueRef[];
   /** Returns from consignations with reported damage — shown alongside PO verification issues. */
   consignmentReturnIssues?: ConsignmentReturnIssueRef[];
+  /** Delivered sales units returned to stock with a reported problem. */
+  salesReturnIssues?: SalesReturnIssueRef[];
   createdAt: Date;
   /**
    * Unit of measure when category is Materiales.
