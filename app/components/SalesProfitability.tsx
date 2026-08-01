@@ -1,11 +1,13 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import type { SalesInvoice } from '../types';
+import type { AutoconsumoNote, SalesInvoice } from '../types';
 import { getAllInvoices } from '../services/invoicesService';
+import { getAllAutoconsumoNotes } from '../services/autoconsumoService';
 import { useInventory } from '../context/InventoryContext';
 import { useTranslation } from '../context/TranslationContext';
 import { computeSalesProfit, type ProfitByInvoice, type ProfitBySku } from '../utils/salesProfit';
+import { computeAutoconsumoExpense } from '../utils/autoconsumoExpense';
 import TableSortIcon from './ui/TableSortIcon';
 import {
   tableTheadClass,
@@ -29,6 +31,7 @@ import {
 
 type PeriodPreset = 'last30' | 'thisMonth' | 'custom';
 type ViewTab = 'bySku' | 'byInvoice';
+type AutoconsumoViewTab = 'byNote' | 'bySku';
 
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -56,6 +59,7 @@ export default function SalesProfitability() {
   const { inventory, purchaseOrders, additionalCosts, isLoading: inventoryLoading } = useInventory();
 
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
+  const [autoconsumoNotes, setAutoconsumoNotes] = useState<AutoconsumoNote[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(true);
   const [period, setPeriod] = usePersistedFilterState<PeriodPreset>(
     'sales-profitability',
@@ -66,6 +70,7 @@ export default function SalesProfitability() {
   const [customFrom, setCustomFrom] = usePersistedFilterState('sales-profitability', 'customFrom', '', userId);
   const [customTo, setCustomTo] = usePersistedFilterState('sales-profitability', 'customTo', '', userId);
   const [viewTab, setViewTab] = useState<ViewTab>('bySku');
+  const [autoconsumoViewTab, setAutoconsumoViewTab] = useState<AutoconsumoViewTab>('byNote');
   const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
 
   const [skuSort, setSkuSort] = useState<{ key: SkuSortKey; direction: 'asc' | 'desc' }>({
@@ -80,8 +85,15 @@ export default function SalesProfitability() {
   const loadInvoices = useCallback(async () => {
     setLoadingInvoices(true);
     try {
-      const data = await getAllInvoices();
-      setInvoices(data);
+      const [invData, autoData] = await Promise.all([
+        getAllInvoices(),
+        getAllAutoconsumoNotes().catch((err) => {
+          console.error('SalesProfitability autoconsumo:', err);
+          return [] as AutoconsumoNote[];
+        }),
+      ]);
+      setInvoices(invData);
+      setAutoconsumoNotes(autoData);
     } catch (err) {
       console.error('SalesProfitability:', err);
     } finally {
@@ -138,6 +150,25 @@ export default function SalesProfitability() {
       { from: periodBounds.from, to: periodBounds.to }
     );
   }, [invoices, inventory, purchaseOrders, additionalCosts, periodBounds]);
+
+  const autoconsumoExpense = useMemo(() => {
+    if (!periodBounds.valid) {
+      return {
+        summary: { totalExpense: 0, noteCount: 0, unitCount: 0, linesWithMissingCost: 0 },
+        byNote: [],
+        bySku: [],
+      };
+    }
+    return computeAutoconsumoExpense(
+      autoconsumoNotes,
+      inventory,
+      purchaseOrders,
+      additionalCosts,
+      { from: periodBounds.from, to: periodBounds.to }
+    );
+  }, [autoconsumoNotes, inventory, purchaseOrders, additionalCosts, periodBounds]);
+
+  const netAfterAutoconsumo = profitResult.summary.profit - autoconsumoExpense.summary.totalExpense;
 
   const toggleSkuSort = (key: SkuSortKey) => {
     setSkuSort((prev) =>
@@ -278,6 +309,34 @@ export default function SalesProfitability() {
               '{count}',
               String(profitResult.summary.invoiceCount)
             )}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className={dashboardKpiClass}>
+          <p className={dashboardCardLabelClass}>{t('salesProfitability.kpiAutoconsumoExpense')}</p>
+          <p className={`mt-1 ${dashboardValueLgClass} text-amber-800`}>
+            {formatUsd(autoconsumoExpense.summary.totalExpense)}
+          </p>
+          <p className={`mt-1 ${dashboardHintClass}`}>
+            {t('salesProfitability.kpiAutoconsumoNotes').replace(
+              '{count}',
+              String(autoconsumoExpense.summary.noteCount)
+            )}
+          </p>
+        </div>
+        <div className={`${dashboardKpiClass} sm:col-span-2 lg:col-span-2`}>
+          <p className={dashboardCardLabelClass}>{t('salesProfitability.kpiNetAfterAutoconsumo')}</p>
+          <p
+            className={`mt-1 ${dashboardValueLgClass} ${
+              netAfterAutoconsumo >= 0 ? 'text-emerald-700' : 'text-red-700'
+            }`}
+          >
+            {formatUsd(netAfterAutoconsumo)}
+          </p>
+          <p className={`mt-1 ${dashboardHintClass}`}>
+            {t('salesProfitability.autoconsumoSectionSubtitle')}
           </p>
         </div>
       </div>
@@ -502,6 +561,123 @@ export default function SalesProfitability() {
           </table>
         </div>
       )}
+
+      <div className="border-t border-gray-200 pt-6">
+        <h2 className={dashboardSectionTitleClass}>{t('salesProfitability.autoconsumoSectionTitle')}</h2>
+        <p className={`mt-1 ${dashboardHintClass}`}>{t('salesProfitability.autoconsumoSectionSubtitle')}</p>
+
+        <div className="mt-4 flex gap-2 border-b border-gray-200 pb-1">
+          <button
+            type="button"
+            className={tabButtonClass(autoconsumoViewTab === 'byNote')}
+            onClick={() => setAutoconsumoViewTab('byNote')}
+          >
+            {t('salesProfitability.autoconsumoTabByNote')}
+          </button>
+          <button
+            type="button"
+            className={tabButtonClass(autoconsumoViewTab === 'bySku')}
+            onClick={() => setAutoconsumoViewTab('bySku')}
+          >
+            {t('salesProfitability.autoconsumoTabBySku')}
+          </button>
+        </div>
+
+        {!loading && (
+          <div className={`${dashboardPanelClass} mt-4 overflow-x-auto`}>
+            {autoconsumoViewTab === 'byNote' ? (
+              <table className="min-w-full text-sm">
+                <thead className={tableTheadClass}>
+                  <tr>
+                    <th className={`${tableThBaseClass} ${tableThAlignClass('left')}`}>
+                      {t('salesProfitability.colInvoice')}
+                    </th>
+                    <th className={`${tableThBaseClass} ${tableThAlignClass('left')}`}>
+                      {t('salesProfitability.autoconsumoColRecipient')}
+                    </th>
+                    <th className={`${tableThBaseClass} ${tableThAlignClass('left')}`}>
+                      {t('salesProfitability.colDate')}
+                    </th>
+                    <th className={`${tableThBaseClass} ${tableThAlignClass('left')}`}>
+                      {t('salesProfitability.colQty')}
+                    </th>
+                    <th className={`${tableThBaseClass} ${tableThAlignClass('left')}`}>
+                      {t('salesProfitability.autoconsumoColExpense')}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {autoconsumoExpense.byNote.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-gray-500">
+                        {t('salesProfitability.autoconsumoNoData')}
+                      </td>
+                    </tr>
+                  ) : (
+                    autoconsumoExpense.byNote.map((row) => (
+                      <tr key={row.noteId} className="border-t border-gray-100 hover:bg-gray-50/80">
+                        <td className="px-3 py-2.5 font-medium">{row.noteNumber}</td>
+                        <td className="px-3 py-2.5">{row.recipient}</td>
+                        <td className="px-3 py-2.5">{formatDateDMY(row.date)}</td>
+                        <td className="px-3 py-2.5 tabular-nums">{row.itemCount}</td>
+                        <td className="px-3 py-2.5 font-medium tabular-nums text-amber-800">
+                          {formatUsd(row.totalCost)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            ) : (
+              <table className="min-w-full text-sm">
+                <thead className={tableTheadClass}>
+                  <tr>
+                    <th className={`${tableThBaseClass} ${tableThAlignClass('left')}`}>
+                      {t('salesProfitability.colSku')}
+                    </th>
+                    <th className={`${tableThBaseClass} ${tableThAlignClass('left')}`}>
+                      {t('salesProfitability.colQty')}
+                    </th>
+                    <th className={`${tableThBaseClass} ${tableThAlignClass('left')}`}>
+                      {t('salesProfitability.colUnitCost')}
+                    </th>
+                    <th className={`${tableThBaseClass} ${tableThAlignClass('left')}`}>
+                      {t('salesProfitability.autoconsumoColExpense')}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {autoconsumoExpense.bySku.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-8 text-center text-gray-500">
+                        {t('salesProfitability.autoconsumoNoData')}
+                      </td>
+                    </tr>
+                  ) : (
+                    autoconsumoExpense.bySku.map((row) => (
+                      <tr key={row.sku} className="border-t border-gray-100 hover:bg-gray-50/80">
+                        <td className="px-3 py-2.5">
+                          <div className="font-medium text-gray-900">{row.sku}</div>
+                          <div className="max-w-[200px] truncate text-xs text-gray-500">
+                            {row.description}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 tabular-nums">{row.quantity}</td>
+                        <td className="px-3 py-2.5 tabular-nums">
+                          {row.unitCost != null ? formatUsd(row.unitCost) : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 font-medium tabular-nums text-amber-800">
+                          {formatUsd(row.totalCost)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

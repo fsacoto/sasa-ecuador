@@ -76,5 +76,11 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated();
     }
+
+    // Autoconsumo (regalos / consumo personal — no es venta)
+    match /autoconsumo/{noteId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
   }
 }

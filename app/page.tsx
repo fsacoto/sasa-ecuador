@@ -23,6 +23,8 @@ import SalesNotesHistory from './components/SalesNotesHistory';
 import InvoiceTracking from './components/InvoiceTracking';
 import Consignments from './components/Consignments';
 import SalesProfitability from './components/SalesProfitability';
+import Autoconsumo from './components/Autoconsumo';
+import AutoconsumoHistory from './components/AutoconsumoHistory';
 import StorefrontConnectionPanel from './components/StorefrontConnectionPanel';
 
 type Tab =
@@ -39,7 +41,10 @@ type Tab =
   | 'sales-notes'
   | 'invoice-tracking'
   | 'consignments'
-  | 'sales-profitability';
+  | 'sales-profitability'
+  | 'interno-suite'
+  | 'autoconsumo'
+  | 'autoconsumo-notes';
 
 /** Palabras clave extra para búsqueda en navegación */
 const TAB_SEARCH_ALIASES: Partial<Record<Tab, string>> = {
@@ -55,6 +60,8 @@ const TAB_SEARCH_ALIASES: Partial<Record<Tab, string>> = {
   'invoice-tracking': 'notas de pedido seguimiento cobranza pagos NOTAV',
   consignments: 'consignaciones consigna',
   'sales-profitability': 'rentabilidad margen utilidad profit ganancia costos desembarque',
+  autoconsumo: 'autoconsumo regalo familiar consumo personal interno AUTO',
+  'autoconsumo-notes': 'notas autoconsumo historial regalos consumo interno AUTO',
 };
 
 type NavSearchEntry = { tab: Tab; title: string; path: string; haystack: string };
@@ -162,6 +169,31 @@ function IconArchive({ className = 'w-5 h-5 shrink-0' }: { className?: string })
   );
 }
 
+/** Gift / personal use — Interno suite */
+function IconGift({ className = 'w-5 h-5 shrink-0' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M21 11.25v8.25a1.5 1.5 0 01-1.5 1.5H4.5a1.5 1.5 0 01-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 109.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1114.625 7.5H12m0 0V21m-8.625-9.75h18.75"
+      />
+    </svg>
+  );
+}
+
+function IconBuilding({ className = 'w-5 h-5 shrink-0' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"
+      />
+    </svg>
+  );
+}
+
 function IconChevronLeft({ className = 'w-5 h-5 shrink-0' }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
@@ -220,12 +252,14 @@ const SALES_TABS: Tab[] = [
   'consignments',
   'sales-profitability',
 ];
+const INTERNO_TABS: Tab[] = ['autoconsumo', 'autoconsumo-notes'];
 
 const PERSISTABLE_TABS: Tab[] = [
   'dashboard',
   ...INVENTORY_TABS,
   'cms',
   ...SALES_TABS,
+  ...INTERNO_TABS,
 ];
 
 const ACTIVE_TAB_STORAGE_KEY = 'sasaActiveTab';
@@ -266,7 +300,8 @@ function AppContent() {
   const [storefrontConfigOpen, setStorefrontConfigOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(true);
   const [salesOpen, setSalesOpen] = useState(true);
-  const [suiteFlyout, setSuiteFlyout] = useState<'inventory-suite' | 'sales-suite' | null>(null);
+  const [internoOpen, setInternoOpen] = useState(true);
+  const [suiteFlyout, setSuiteFlyout] = useState<'inventory-suite' | 'sales-suite' | 'interno-suite' | null>(null);
   const [flyoutTop, setFlyoutTop] = useState(0);
   const flyoutRef = useRef<HTMLDivElement>(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -346,6 +381,7 @@ function AppContent() {
   useEffect(() => {
     if (INVENTORY_TABS.includes(activeTab)) setInventoryOpen(true);
     if (SALES_TABS.includes(activeTab)) setSalesOpen(true);
+    if (INTERNO_TABS.includes(activeTab)) setInternoOpen(true);
   }, [activeTab]);
 
   /** Navigate to a module; clicking the current module again remounts it to its home/list view. */
@@ -766,6 +802,13 @@ function AppContent() {
           permission: 'sales.view',
         });
       }
+      if (hasPermission('autoconsumo.view') || hasPermission('autoconsumo.create')) {
+        baseTabs.push({
+          id: 'interno-suite',
+          label: t('navigation.internoSuite'),
+          permission: 'autoconsumo.view',
+        });
+      }
     }
 
     return baseTabs.filter((tab) => hasPermission(tab.permission));
@@ -775,6 +818,7 @@ function AppContent() {
 
   const isInventoryActive = INVENTORY_TABS.includes(activeTab);
   const isSalesActive = SALES_TABS.includes(activeTab);
+  const isInternoActive = INTERNO_TABS.includes(activeTab);
 
   type SubNavItem = { id: Tab; label: string; IconEl: typeof IconTruck; visible: boolean };
 
@@ -834,8 +878,24 @@ function AppContent() {
     },
   ].filter((item) => item.visible);
 
+  const internoSubItems: SubNavItem[] = [
+    {
+      id: 'autoconsumo' as Tab,
+      label: t('navigation.autoconsumo'),
+      IconEl: IconGift,
+      visible: hasPermission('autoconsumo.create') || hasPermission('autoconsumo.view'),
+    },
+    {
+      id: 'autoconsumo-notes' as Tab,
+      label: t('navigation.autoconsumoNotes'),
+      IconEl: IconClipboard,
+      visible: hasPermission('autoconsumo.view'),
+    },
+  ].filter((item) => item.visible);
+
   const invSuiteLabel = t('navigation.inventorySuite');
   const salesSuiteLabel = t('navigation.salesSuite');
+  const internoSuiteLabel = t('navigation.internoSuite');
 
   const navSearchEntries: NavSearchEntry[] = (() => {
     const out: NavSearchEntry[] = [];
@@ -852,6 +912,10 @@ function AppContent() {
       } else if (tab.id === 'sales-suite') {
         for (const item of salesSubItems) {
           pushEntry(item.id, item.label, `${salesSuiteLabel} › ${item.label}`);
+        }
+      } else if (tab.id === 'interno-suite') {
+        for (const item of internoSubItems) {
+          pushEntry(item.id, item.label, `${internoSuiteLabel} › ${item.label}`);
         }
       } else {
         pushEntry(tab.id, tab.label, tab.label);
@@ -893,7 +957,7 @@ function AppContent() {
   const sidebarWidth = sidebarCollapsed ? 72 : SIDEBAR_EXPANDED_PX;
 
   const renderFlyout = (
-    suite: 'inventory-suite' | 'sales-suite',
+    suite: 'inventory-suite' | 'sales-suite' | 'interno-suite',
     items: { id: Tab; label: string; IconEl: typeof IconTruck }[]
   ) => {
     if (!sidebarCollapsed || suiteFlyout !== suite) return null;
@@ -1055,6 +1119,62 @@ function AppContent() {
                 </div>
               );
             }
+            if (tab.id === 'interno-suite') {
+              return (
+                <div key={tab.id} className="relative">
+                  <button
+                    type="button"
+                    title={sidebarCollapsed ? tab.label : undefined}
+                    onClick={(e) => {
+                      if (sidebarCollapsed) {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setFlyoutTop(rect.top);
+                        setSuiteFlyout((s) => (s === 'interno-suite' ? null : 'interno-suite'));
+                      } else {
+                        setInternoOpen((o) => !o);
+                      }
+                    }}
+                    className={`${navButtonClass(isInternoActive)} ${sidebarCollapsed ? 'justify-center px-0' : ''}`}
+                    style={
+                      isInternoActive
+                        ? { boxShadow: `inset 2px 0 0 0 ${SIDEBAR_ACCENT}` }
+                        : undefined
+                    }
+                  >
+                    <IconBuilding className="h-4 w-4 shrink-0 text-[#c5c5c5]" />
+                    {!sidebarCollapsed && (
+                      <>
+                        <span className="min-w-0 flex-1 truncate text-left">{tab.label}</span>
+                        <IconChevronDown
+                          className={`h-3.5 w-3.5 shrink-0 text-[#c5c5c5] transition-transform ${internoOpen ? 'rotate-180' : ''}`}
+                        />
+                      </>
+                    )}
+                  </button>
+                  {!sidebarCollapsed && internoOpen && (
+                    <div className="mt-0.5 space-y-1 border-l border-gray-200 pl-1.5 ml-2.5">
+                      {internoSubItems.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => navigateToTab(item.id)}
+                          className={subButtonClass(activeTab === item.id)}
+                          style={
+                            activeTab === item.id
+                              ? { boxShadow: `inset 2px 0 0 0 ${SIDEBAR_ACCENT}` }
+                              : undefined
+                          }
+                        >
+                          <item.IconEl className="h-3.5 w-3.5 shrink-0 text-[#c5c5c5]" />
+                          <span className="min-w-0 truncate">{item.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {renderFlyout('interno-suite', internoSubItems)}
+                </div>
+              );
+            }
 
             const leafActive = activeTab === tab.id;
             const LeafIcon =
@@ -1072,7 +1192,11 @@ function AppContent() {
                           ? IconClipboard
                           : tab.id === 'invoice-tracking'
                             ? IconDocument
-                            : IconDashboard;
+                            : tab.id === 'autoconsumo'
+                              ? IconGift
+                              : tab.id === 'autoconsumo-notes'
+                                ? IconClipboard
+                                : IconDashboard;
 
             return (
               <button
@@ -1754,6 +1878,13 @@ function AppContent() {
               )}
             {activeTab === 'sales-profitability' && hasPermission('sales.view') && (
               <SalesProfitability key={moduleRemountKeys['sales-profitability'] ?? 0} />
+            )}
+            {activeTab === 'autoconsumo' &&
+              (hasPermission('autoconsumo.create') || hasPermission('autoconsumo.view')) && (
+                <Autoconsumo key={moduleRemountKeys.autoconsumo ?? 0} />
+              )}
+            {activeTab === 'autoconsumo-notes' && hasPermission('autoconsumo.view') && (
+              <AutoconsumoHistory key={moduleRemountKeys['autoconsumo-notes'] ?? 0} />
             )}
           </div>
         </main>

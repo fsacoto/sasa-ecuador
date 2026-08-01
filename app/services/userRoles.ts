@@ -51,6 +51,9 @@ export const PERMISSIONS = {
     'sales.view',
     'sales.create',
     'sales.invoice.create',
+    'autoconsumo.view',
+    'autoconsumo.create',
+    'autoconsumo.delete',
     'media.delete',
     'settings.view',
     'settings.profile.edit'

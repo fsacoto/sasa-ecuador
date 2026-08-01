@@ -344,3 +344,33 @@ export interface InventoryMedia {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/** Línea de nota de autoconsumo (regalo / consumo personal). No es venta. */
+export interface AutoconsumoLine {
+  sku: string;
+  description: string;
+  quantity: number;
+  /** Costo unitario al momento de crear (desembarque / unitCost). */
+  unitCost: number | null;
+  /** quantity * unitCost (0 si no hay costo). */
+  lineCost: number;
+  line?: string;
+  category?: string;
+}
+
+/**
+ * Nota de autoconsumo — aparte de notas de pedido.
+ * Descuenta ecuadorStock al crear; el costo se reporta como gasto, no como venta.
+ */
+export interface AutoconsumoNote {
+  id: string;
+  noteNumber: string; // AUTO-001
+  /** Beneficiario o motivo corto (familiar, consumo personal, etc.). */
+  recipient: string;
+  items: AutoconsumoLine[];
+  totalCost: number;
+  date: Date;
+  notes?: string;
+  createdAt: Date;
+  createdBy?: string;
+}

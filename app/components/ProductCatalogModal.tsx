@@ -42,7 +42,7 @@ export default function ProductCatalogModal({
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterLine, setFilterLine] = useState<string>('all');
   const [filterEcuadorStock, setFilterEcuadorStock] = useState(false);
-  const [filterWithPhotos, setFilterWithPhotos] = useState(false);
+  const [filterPhotos, setFilterPhotos] = useState<'all' | 'with' | 'without'>('all');
 
   const toggleItem = (itemId: string) => {
     setSelectedItems(prev =>
@@ -61,7 +61,7 @@ export default function ProductCatalogModal({
   };
 
   const hasActiveFilters =
-    filterCategory !== 'all' || filterLine !== 'all' || filterEcuadorStock || filterWithPhotos;
+    filterCategory !== 'all' || filterLine !== 'all' || filterEcuadorStock || filterPhotos !== 'all';
 
   // Filter inventory based on category, line, stock, and photo filters
   const filteredInventory = inventory.filter(item => {
@@ -82,7 +82,11 @@ export default function ProductCatalogModal({
       return false;
     }
 
-    if (filterWithPhotos && !(item.images && item.images.length > 0)) {
+    const hasPhotos = !!(item.images && item.images.length > 0);
+    if (filterPhotos === 'with' && !hasPhotos) {
+      return false;
+    }
+    if (filterPhotos === 'without' && hasPhotos) {
       return false;
     }
     
@@ -325,7 +329,7 @@ export default function ProductCatalogModal({
                   setFilterCategory('all');
                   setFilterLine('all');
                   setFilterEcuadorStock(false);
-                  setFilterWithPhotos(false);
+                  setFilterPhotos('all');
                 }}
                 className={`text-xs font-medium ${d ? 'text-gray-300 hover:text-white' : 'text-[#515151] hover:text-[#000000]'}`}
               >
@@ -378,17 +382,20 @@ export default function ProductCatalogModal({
               </label>
             </div>
 
-            {/* With photos */}
-            <div className="flex items-end">
-              <label className={`flex items-center gap-2 cursor-pointer px-2 py-1.5 rounded-md transition-colors w-full ${filterStockChip}`}>
-                <input
-                  type="checkbox"
-                  checked={filterWithPhotos}
-                  onChange={(e) => setFilterWithPhotos(e.target.checked)}
-                  className="w-3 h-3 rounded border-gray-300 text-[#515151] focus:ring-[#515151]"
-                />
-                <span className={`text-xs font-medium ${fieldLabel}`}>{t('inventory.catalog.withPhotosFilter')}</span>
+            {/* Photos filter */}
+            <div>
+              <label className={`block text-xs font-medium mb-1 ${fieldLabel}`}>
+                {t('inventory.filterPhotos') || 'Fotos'}
               </label>
+              <select
+                value={filterPhotos}
+                onChange={(e) => setFilterPhotos(e.target.value as 'all' | 'with' | 'without')}
+                className={`w-full px-2 py-1.5 border rounded-md focus:outline-none focus:ring-1 focus:ring-[#515151] focus:border-[#515151] text-xs ${fieldInput}`}
+              >
+                <option value="all">{t('inventory.filterPhotosAll') || 'Todos'}</option>
+                <option value="with">{t('inventory.filterPhotosWith') || 'Con fotos'}</option>
+                <option value="without">{t('inventory.filterPhotosWithout') || 'Sin fotos'}</option>
+              </select>
             </div>
           </div>
         </div>

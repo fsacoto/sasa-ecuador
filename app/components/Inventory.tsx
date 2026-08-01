@@ -129,6 +129,12 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
     'all',
     userId
   );
+  const [filterPhotos, setFilterPhotos] = usePersistedFilterState<'all' | 'with' | 'without'>(
+    'inventory',
+    'filterPhotos',
+    'all',
+    userId
+  );
   const [selectedInventoryIds, setSelectedInventoryIds] = useState<Set<string>>(new Set());
   const [isBuiltBarcodePrintModalOpen, setIsBuiltBarcodePrintModalOpen] = useState(false);
   const [barcodePrintBusy, setBarcodePrintBusy] = useState(false);
@@ -954,6 +960,14 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
       if (filterBuilt === 'notBuilt' && isBuiltInventoryItem(item)) {
         return false;
       }
+
+      const hasPhotos = !!(item.images && item.images.length > 0);
+      if (filterPhotos === 'with' && !hasPhotos) {
+        return false;
+      }
+      if (filterPhotos === 'without' && hasPhotos) {
+        return false;
+      }
       
       return true;
     })
@@ -1504,7 +1518,8 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
               filterLine !== 'all' ||
               filterSalePrice !== 'all' ||
               filterStock !== 'all' ||
-              filterBuilt !== 'all') && (
+              filterBuilt !== 'all' ||
+              filterPhotos !== 'all') && (
               <span className="bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded-full font-medium">
                 {
                   [
@@ -1513,6 +1528,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                     filterSalePrice !== 'all',
                     filterStock !== 'all',
                     filterBuilt !== 'all',
+                    filterPhotos !== 'all',
                   ].filter(Boolean).length
                 }
               </span>
@@ -1754,7 +1770,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
       {showFilters && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mt-4">
           <div className="border-t border-gray-200 p-4 bg-gray-50">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               {/* Category Filter */}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">{t('inventory.category')}</label>
@@ -1835,6 +1851,23 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                   <option value="notBuilt">{t('inventory.filterBuiltExclude') || 'Sin construidos'}</option>
                 </select>
               </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  {t('inventory.filterPhotos') || 'Fotos'}
+                </label>
+                <select
+                  value={filterPhotos}
+                  onChange={(e) =>
+                    setFilterPhotos(e.target.value as 'all' | 'with' | 'without')
+                  }
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#515151]"
+                >
+                  <option value="all">{t('inventory.filterPhotosAll') || 'Todos'}</option>
+                  <option value="with">{t('inventory.filterPhotosWith') || 'Con fotos'}</option>
+                  <option value="without">{t('inventory.filterPhotosWithout') || 'Sin fotos'}</option>
+                </select>
+              </div>
             </div>
             
             {/* Clear filters button */}
@@ -1844,6 +1877,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
               filterSalePrice !== 'all' ||
               filterStock !== 'all' ||
               filterBuilt !== 'all' ||
+              filterPhotos !== 'all' ||
               showProblemsOnly) && (
               <div className="mt-3 flex justify-end">
                 <button
@@ -1854,6 +1888,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                     setFilterSalePrice('all');
                     setFilterStock('all');
                     setFilterBuilt('all');
+                    setFilterPhotos('all');
                     setShowProblemsOnly(false);
                   }}
                   className="text-[#515151] hover:text-[#000000] font-medium text-sm"
