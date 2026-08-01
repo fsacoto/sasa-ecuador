@@ -1480,6 +1480,7 @@
     "addItemToConsignmentHint": "Busque un SKU para agregarlo (1 unidad). Si ya está en la consignación, suma 1 a la cantidad entregada.",
     "alreadyOnConsignment": "Ya en esta consignación (sumará 1)",
     "addingItem": "Agregando artículo…",
+    "addItemNoMatch": "Sin coincidencias con stock disponible. Pruebe otro SKU o nombre.",
     "errorAddingItem": "Error al agregar el artículo a la consignación",
     "qtyDelivered": "Cant Entregada",
     "qtyDeliveredDetailHint": "Editable; se guarda al salir del campo",

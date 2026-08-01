@@ -154,6 +154,8 @@ export default function Consignments() {
   const isAddingDetailItemRef = useRef(false);
   const detailAddDropdownRef = useRef<HTMLDivElement>(null);
   const detailAddSearchInputRef = useRef<HTMLInputElement>(null);
+  const [lastAddedDetailSku, setLastAddedDetailSku] = useState<string | null>(null);
+  const lastAddedDetailRowRef = useRef<HTMLTableRowElement>(null);
   const [salePaymentStatus, setSalePaymentStatus] = useState<'Unpaid' | 'Partially Paid' | 'Paid'>('Unpaid');
   const [saleAmountPaidInput, setSaleAmountPaidInput] = useState('');
   const [salePaymentMethod, setSalePaymentMethod] = useState('');
@@ -293,6 +295,7 @@ export default function Consignments() {
     setDetailDeliveredQtys(qtys);
     setDetailAddSearchTerm('');
     setDetailAddShowDropdown(false);
+    setLastAddedDetailSku(null);
     setSalePaymentStatus('Unpaid');
     setSaleAmountPaidInput('');
     setSalePaymentMethod('');
@@ -315,20 +318,17 @@ export default function Consignments() {
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
       if (
         dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node) &&
+        !dropdownRef.current.contains(target) &&
         searchInputRef.current &&
-        !searchInputRef.current.contains(event.target as Node)
+        !searchInputRef.current.contains(target)
       ) {
         setShowDropdown(false);
       }
-      if (
-        detailAddDropdownRef.current &&
-        !detailAddDropdownRef.current.contains(event.target as Node) &&
-        detailAddSearchInputRef.current &&
-        !detailAddSearchInputRef.current.contains(event.target as Node)
-      ) {
+      // Input lives inside detailAddDropdownRef — only need one contains check
+      if (detailAddDropdownRef.current && !detailAddDropdownRef.current.contains(target)) {
         setDetailAddShowDropdown(false);
       }
     };
@@ -385,8 +385,8 @@ export default function Consignments() {
     if (!term.trim()) return [];
     const searchLower = term.toLowerCase();
     return getAvailableInventory().filter(item =>
-      item.sku.toLowerCase().includes(searchLower) ||
-      item.name.toLowerCase().includes(searchLower) ||
+      item.sku?.toLowerCase().includes(searchLower) ||
+      item.name?.toLowerCase().includes(searchLower) ||
       item.description?.toLowerCase().includes(searchLower)
     ).slice(0, 10);
   };
@@ -491,6 +491,11 @@ export default function Consignments() {
     if (!lastAddedSku) return;
     lastAddedRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [lastAddedSku, consignmentItems]);
+
+  useEffect(() => {
+    if (!lastAddedDetailSku || view !== 'details') return;
+    lastAddedDetailRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [lastAddedDetailSku, selectedConsignment?.items, view]);
 
   const handleQuantityChange = (index: number, quantity: number) => {
     const updatedItems = [...consignmentItems];
@@ -849,6 +854,7 @@ export default function Consignments() {
       setSelectedConsignment(updated);
       setConsignments((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
       syncDetailItemEditors(updatedItems);
+      setLastAddedDetailSku(product.sku);
       setDetailAddSearchTerm('');
       setDetailAddShowDropdown(false);
     } catch (error) {
@@ -2479,8 +2485,8 @@ export default function Consignments() {
           </div>
 
           {/* Artículos entregados */}
-          <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="border-b border-gray-200 px-6 py-4">
+          <section className="bg-white rounded-xl border border-gray-200">
+            <div className="rounded-t-xl border-b border-gray-200 px-6 py-4">
               <h3 className="text-lg font-semibold text-gray-900">{t('consignments.itemsDelivered')}</h3>
               <p className="mt-1 text-sm text-gray-500">{t('consignments.itemsDeliveredEditHint')}</p>
             </div>
@@ -2502,8 +2508,17 @@ export default function Consignments() {
                   {detailItems.map((item, index) => {
                     const remaining = item.quantityDelivered - item.quantitySold - item.quantityReturned;
                     const inventoryItem = inventory.find((inv) => inv.sku === item.sku);
+                    const isLastAdded = lastAddedDetailSku === item.sku;
                     return (
-                      <tr key={index} className="transition-colors hover:bg-gray-50">
+                      <tr
+                        key={`${item.sku}-${index}`}
+                        ref={isLastAdded ? lastAddedDetailRowRef : undefined}
+                        className={`transition-colors ${
+                          isLastAdded
+                            ? 'bg-[#515151]/[0.06] ring-1 ring-inset ring-[#515151]/20'
+                            : 'hover:bg-gray-50'
+                        }`}
+                      >
                         <td className="whitespace-nowrap px-4 py-3">
                           <ConsignmentProductThumb
                             imageUrl={inventoryItem?.images?.[0]}
@@ -2511,7 +2526,14 @@ export default function Consignments() {
                           />
                         </td>
                         <td className="whitespace-nowrap px-6 py-4">
-                          <div className="font-mono text-sm font-medium text-gray-900">{item.sku}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="font-mono text-sm font-medium text-gray-900">{item.sku}</div>
+                            {isLastAdded && (
+                              <span className="rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[#515151]/80 bg-[#515151]/10">
+                                {t('consignments.lastAdded')}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-sm text-gray-900">{item.description}</div>
@@ -2583,14 +2605,14 @@ export default function Consignments() {
                 </tbody>
               </table>
             </div>
-            <div className="border-t border-gray-200 px-6 py-4">
+            <div className="rounded-b-xl border-t border-gray-200 px-6 py-4">
               <label className="mb-2 block text-sm font-medium text-gray-700">
                 {t('consignments.addItemToConsignment')}
               </label>
               <p className="mb-3 text-xs text-gray-500">
                 {t('consignments.addItemToConsignmentHint')}
               </p>
-              <div className="relative max-w-xl" ref={detailAddDropdownRef}>
+              <div className="relative z-30 max-w-xl" ref={detailAddDropdownRef}>
                 <input
                   ref={detailAddSearchInputRef}
                   type="text"
@@ -2605,8 +2627,8 @@ export default function Consignments() {
                   className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-transparent focus:ring-2 focus:ring-[#515151] disabled:opacity-60"
                   autoComplete="off"
                 />
-                {detailAddShowDropdown && detailFilteredInventory.length > 0 && (
-                  <div className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-300 bg-white shadow-lg">
+                {detailAddShowDropdown && detailAddSearchTerm.trim() && detailFilteredInventory.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-60 overflow-y-auto rounded-lg border border-gray-300 bg-white shadow-lg">
                     {detailFilteredInventory.map((product) => {
                       const available = getAvailableStock(product);
                       const alreadyOn = detailItems.some(
@@ -2617,6 +2639,10 @@ export default function Consignments() {
                           key={product.id}
                           type="button"
                           disabled={isAddingDetailItem || available < 1}
+                          onMouseDown={(e) => {
+                            // Prevent input blur / outside-click from eating the selection
+                            e.preventDefault();
+                          }}
                           onClick={() => void handleAddProductToExistingConsignment(product)}
                           className="w-full border-b border-gray-100 px-4 py-2 text-left last:border-b-0 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
                         >
@@ -2635,6 +2661,13 @@ export default function Consignments() {
                     })}
                   </div>
                 )}
+                {detailAddShowDropdown &&
+                  detailAddSearchTerm.trim() &&
+                  detailFilteredInventory.length === 0 && (
+                    <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-gray-500 shadow-lg">
+                      {t('consignments.addItemNoMatch')}
+                    </div>
+                  )}
               </div>
               {isAddingDetailItem ? (
                 <p className="mt-2 text-xs text-gray-500">
