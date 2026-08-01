@@ -9,9 +9,44 @@ import {
   where
 } from 'firebase/firestore';
 import { db } from '../utils/firebase';
-import { SalesInvoice, PaymentRecord } from '../types';
+import { SalesInvoice, SalesInvoiceLine, PaymentRecord } from '../types';
 
 const INVOICES_COLLECTION = 'invoices';
+
+/** Strip UI-only / undefined fields so Firestore accepts the write. */
+export function toFirestoreInvoiceLine(
+  item: SalesInvoiceLine & Record<string, unknown>
+): SalesInvoiceLine {
+  const line: SalesInvoiceLine = {
+    sku: String(item.sku || ''),
+    description: String(item.description || ''),
+    quantity: Number(item.quantity) || 0,
+    unitPrice: Number(item.unitPrice) || 0,
+    totalPrice: Number(item.totalPrice) || 0,
+  };
+  const delivered = item.quantityDelivered;
+  if (typeof delivered === 'number' && Number.isFinite(delivered)) {
+    line.quantityDelivered = delivered;
+  }
+  if (typeof item.line === 'string' && item.line.trim()) {
+    line.line = item.line;
+  }
+  if (typeof item.category === 'string' && item.category.trim()) {
+    line.category = item.category;
+  }
+  return line;
+}
+
+function stripUndefinedDeep<T extends Record<string, unknown>>(obj: T): T {
+  const out = { ...obj };
+  Object.keys(out).forEach((key) => {
+    const value = out[key];
+    if (value === undefined) {
+      delete out[key];
+    }
+  });
+  return out;
+}
 
 // Get all invoices
 export async function getAllInvoices(filters?: {
@@ -163,20 +198,17 @@ export async function createInvoice(invoice: Omit<SalesInvoice, 'id' | 'createdA
     if (!invoiceNumber || invoiceNumber === 'TEMP' || !validSeq) {
       invoiceNumber = await getNextInvoiceNumber();
     }
-    
-    // Filter out undefined values
-    const newInvoice: Omit<SalesInvoice, 'id'> = {
-      ...invoice,
-      invoiceNumber: invoiceNumber,
-      createdAt: new Date(),
-    };
 
-    // Remove undefined fields
-    Object.keys(newInvoice).forEach(key => {
-      if ((newInvoice as Record<string, unknown>)[key] === undefined) {
-        delete (newInvoice as Record<string, unknown>)[key];
-      }
-    });
+    const cleanItems = (invoice.items || []).map((item) =>
+      toFirestoreInvoiceLine(item as SalesInvoiceLine & Record<string, unknown>)
+    );
+    
+    const newInvoice = stripUndefinedDeep({
+      ...invoice,
+      items: cleanItems,
+      invoiceNumber,
+      createdAt: new Date(),
+    } as Record<string, unknown>) as Omit<SalesInvoice, 'id'>;
 
     await setDoc(docRef, newInvoice);
 
@@ -194,12 +226,17 @@ export async function createInvoice(invoice: Omit<SalesInvoice, 'id' | 'createdA
 export async function updateInvoice(invoiceId: string, updates: Partial<SalesInvoice>): Promise<void> {
   try {
     const docRef = doc(db, INVOICES_COLLECTION, invoiceId);
-    
-    // Filter out undefined values
-    const cleanUpdates: Partial<SalesInvoice> = { ...updates };
-    Object.keys(cleanUpdates).forEach(key => {
-      if ((cleanUpdates as Record<string, unknown>)[key] === undefined) {
-        delete (cleanUpdates as Record<string, unknown>)[key];
+
+    const cleanUpdates: Record<string, unknown> = { ...updates };
+    if (Array.isArray(updates.items)) {
+      cleanUpdates.items = updates.items.map((item) =>
+        toFirestoreInvoiceLine(item as SalesInvoiceLine & Record<string, unknown>)
+      );
+    }
+
+    Object.keys(cleanUpdates).forEach((key) => {
+      if (cleanUpdates[key] === undefined) {
+        delete cleanUpdates[key];
       }
     });
 

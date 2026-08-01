@@ -25,7 +25,7 @@ function prepLabelDataFromInvoice(invoice: SalesInvoice): PrepLabelData {
   };
 }
 
-function prepLabelDataFromConsignment(consignment: Consignment): PrepLabelData {
+export function prepLabelDataFromConsignment(consignment: Consignment): PrepLabelData {
   const itemsCount = (consignment.items || []).reduce(
     (sum, item) => sum + (Number(item.quantityDelivered) || 0),
     0
@@ -39,10 +39,14 @@ function prepLabelDataFromConsignment(consignment: Consignment): PrepLabelData {
   };
 }
 
-async function downloadPrepLabelPdf(
-  data: PrepLabelData,
+async function downloadPrepLabelsPdf(
+  labels: PrepLabelData[],
   fileNameFallback: string
 ): Promise<void> {
+  if (labels.length === 0) {
+    throw new Error('No prep labels to render');
+  }
+
   const { loadTransparentBrandLogoForPdf } = await import('./imageConverter');
   const { normalizePdfLogoSrc } = await import('./pdfRenderHelpers');
 
@@ -59,16 +63,19 @@ async function downloadPrepLabelPdf(
   ]);
 
   const pdfDocument = React.createElement(SalesPrepLabelPDF, {
-    data,
+    labels,
     logoSrc,
   });
 
   const blob = await pdf(pdfDocument as never).toBlob();
 
-  const safeNumber = (data.documentNumber || fileNameFallback)
-    .trim()
-    .replace(/[\\/:*?"<>|]+/g, '-')
-    .replace(/\s+/g, '-');
+  const safeNumber =
+    labels.length === 1
+      ? (labels[0].documentNumber || fileNameFallback)
+          .trim()
+          .replace(/[\\/:*?"<>|]+/g, '-')
+          .replace(/\s+/g, '-')
+      : `${labels.length}-etiquetas`;
 
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -82,12 +89,20 @@ async function downloadPrepLabelPdf(
 
 /** Genera y descarga la etiqueta de preparación 40×20mm de una nota de pedido. */
 export async function downloadSalesPrepLabelPdf(invoice: SalesInvoice): Promise<void> {
-  await downloadPrepLabelPdf(prepLabelDataFromInvoice(invoice), 'nota');
+  await downloadPrepLabelsPdf([prepLabelDataFromInvoice(invoice)], 'nota');
 }
 
 /** Genera y descarga la etiqueta de preparación 40×20mm de una consignación. */
 export async function downloadConsignmentPrepLabelPdf(
   consignment: Consignment
 ): Promise<void> {
-  await downloadPrepLabelPdf(prepLabelDataFromConsignment(consignment), 'consignacion');
+  await downloadPrepLabelsPdf([prepLabelDataFromConsignment(consignment)], 'consignacion');
+}
+
+/** One PDF with a prep label page per selected consignación. */
+export async function downloadConsignmentsPrepLabelPdf(
+  consignments: Consignment[]
+): Promise<void> {
+  const labels = consignments.map(prepLabelDataFromConsignment);
+  await downloadPrepLabelsPdf(labels, 'consignaciones');
 }

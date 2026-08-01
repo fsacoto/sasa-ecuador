@@ -274,7 +274,10 @@ const styles = StyleSheet.create({
 });
 
 interface ConsignmentPDFProps {
-  consignment: Consignment;
+  /** Single consignment (legacy). */
+  consignment?: Consignment;
+  /** One or more consignments — each starts on a new page. */
+  consignments?: Consignment[];
   logoSrc?: string;
   productImagesBySku?: Record<string, string>;
 }
@@ -318,131 +321,165 @@ function statusLabelEs(status: ConsignmentStatus, tr: (k: string) => string): st
   }
 }
 
+function ConsignmentNotePages({
+  consignment,
+  logoSrc,
+  productImagesBySku,
+  t,
+}: {
+  consignment: Consignment;
+  logoSrc: string;
+  productImagesBySku: Record<string, string>;
+  t: (key: string) => string;
+}) {
+  const formatDate = (date: unknown) => formatDateLong(toPdfDate(date));
+
+  const parseAddress = (address: string): string[] => {
+    if (!address) return [];
+    return address.split(', ');
+  };
+
+  const addressParts = parseAddress(consignment.clientAddress || '');
+  const streetAddress =
+    addressParts.length > 2
+      ? addressParts.slice(0, -2).join(', ')
+      : consignment.clientAddress || '';
+  const city = addressParts.length > 1 ? addressParts[addressParts.length - 2] : '';
+  const country = addressParts.length > 0 ? addressParts[addressParts.length - 1] : '';
+  const totalItemsDelivered = consignment.items.reduce(
+    (sum, item) => sum + item.quantityDelivered,
+    0
+  );
+
+  return (
+    <Page size="A4" style={styles.page}>
+      <View style={styles.header}>
+        <View style={styles.logoSection}>
+          {logoSrc ? (
+            <Image src={logoSrc} style={styles.logo} cache={false} />
+          ) : (
+            <View style={[styles.logo, { backgroundColor: '#f0f0f0' }]} />
+          )}
+        </View>
+
+        <View style={styles.consignmentInfoSection}>
+          <Text style={styles.consignmentTitle} wrap={false}>
+            {t('pdf.consignment.title')}
+          </Text>
+          <Text style={styles.consignmentNumber}>{consignment.consignmentId}</Text>
+          <Text style={styles.consignmentDate}>
+            {t('pdf.consignment.dateIssued')}: {formatDate(consignment.dateCreated)}
+          </Text>
+
+          <View style={styles.customerSection}>
+            <Text style={styles.customerLabel}>{t('pdf.consignment.client')}:</Text>
+            <Text style={styles.customerName}>{consignment.clientName}</Text>
+            {consignment.clientAddress ? (
+              <Text style={styles.customerAddress}>
+                {streetAddress}
+                {city && `\n${city}`}
+                {country && `, ${country}`}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.table}>
+        <View style={styles.tableHeader}>
+          <Text style={[styles.colNo, styles.headerText]}>{t('pdf.consignment.no')}</Text>
+          <View style={styles.colPhotoHeader}>
+            <Text style={styles.headerText}>{t('pdf.consignment.photo')}</Text>
+          </View>
+          <Text style={[styles.colSku, styles.headerText]}>{t('pdf.consignment.sku')}</Text>
+          <Text style={[styles.colDescription, styles.headerText]}>
+            {t('pdf.consignment.description')}
+          </Text>
+          <Text style={[styles.colQty, styles.headerText]}>
+            {t('pdf.consignment.qtyDelivered')}
+          </Text>
+          <Text style={[styles.colPrice, styles.headerText]}>{t('pdf.consignment.price')}</Text>
+        </View>
+
+        {consignment.items.map((item, index) => (
+          <View key={index} style={styles.tableRow} wrap={false}>
+            <Text style={styles.colNo}>{index + 1}</Text>
+            <View style={styles.colPhotoCell}>
+              <View style={styles.photoBox}>
+                {productImagesBySku[item.sku] ? (
+                  <Image
+                    src={productImagesBySku[item.sku]}
+                    style={styles.photoImage}
+                    cache={false}
+                  />
+                ) : (
+                  <PhotoPlaceholder />
+                )}
+              </View>
+            </View>
+            <Text style={styles.colSku}>{item.sku}</Text>
+            <Text style={styles.colDescription}>{item.description}</Text>
+            <Text style={styles.colQty}>{item.quantityDelivered}</Text>
+            <Text style={styles.colPrice}>
+              {formatSalePriceDisplay(normalizeSalePrice(item.unitPrice))}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.summarySection}>
+        <View style={styles.summaryTable}>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>{t('pdf.consignment.totalItemsDelivered')}</Text>
+            <Text style={styles.summaryValue}>{totalItemsDelivered}</Text>
+          </View>
+
+          <View style={styles.statusRow}>
+            <Text style={styles.statusLabel}>{t('pdf.consignment.status')}</Text>
+            <Text style={styles.statusValue}>{statusLabelEs(consignment.status, t)}</Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.footer}>
+        <Text style={styles.footerNote}>{t('pdf.consignment.footerNote')}</Text>
+        <View style={styles.signatureLine} />
+        <Text style={styles.signatureLabel}>{t('pdf.consignment.clientSignature')}</Text>
+      </View>
+    </Page>
+  );
+}
+
 export default function ConsignmentPDF({
   consignment,
+  consignments,
   logoSrc = '/sasa.png',
   productImagesBySku = {},
 }: ConsignmentPDFProps) {
   const t = (key: string) => translate(key);
-  const formatDate = (date: unknown) => formatDateLong(toPdfDate(date));
+  const list =
+    consignments && consignments.length > 0
+      ? consignments
+      : consignment
+        ? [consignment]
+        : [];
 
-  // Parse client address
-  const parseAddress = (address: string): string[] => {
-    if (!address) return [];
-    const parts = address.split(', ');
-    return parts;
-  };
-
-  const addressParts = parseAddress(consignment.clientAddress || '');
-  const streetAddress = addressParts.length > 2 ? addressParts.slice(0, -2).join(', ') : (consignment.clientAddress || '');
-  const city = addressParts.length > 1 ? addressParts[addressParts.length - 2] : '';
-  const country = addressParts.length > 0 ? addressParts[addressParts.length - 1] : '';
-
-  // Calculate totals
-  const totalItemsDelivered = consignment.items.reduce((sum, item) => sum + item.quantityDelivered, 0);
+  const title =
+    list.length === 1
+      ? `Consignación ${list[0].consignmentId}`
+      : `Consignaciones (${list.length})`;
 
   return (
-    <Document>
-      <Page size="A4" style={styles.page}>
-        {/* Header Section */}
-        <View style={styles.header}>
-          {/* Left: SASA Logo */}
-          <View style={styles.logoSection}>
-            {logoSrc ? (
-              <Image src={logoSrc} style={styles.logo} cache={false} />
-            ) : (
-              <View style={[styles.logo, { backgroundColor: '#f0f0f0' }]} />
-            )}
-          </View>
-
-          {/* Right: Consignment Info */}
-          <View style={styles.consignmentInfoSection}>
-            <Text style={styles.consignmentTitle} wrap={false}>
-              {t('pdf.consignment.title')}
-            </Text>
-            <Text style={styles.consignmentNumber}>{consignment.consignmentId}</Text>
-            <Text style={styles.consignmentDate}>{t('pdf.consignment.dateIssued')}: {formatDate(consignment.dateCreated)}</Text>
-            
-            <View style={styles.customerSection}>
-              <Text style={styles.customerLabel}>{t('pdf.consignment.client')}:</Text>
-              <Text style={styles.customerName}>{consignment.clientName}</Text>
-              {consignment.clientAddress && (
-                <Text style={styles.customerAddress}>
-                  {streetAddress}
-                  {city && `\n${city}`}
-                  {country && `, ${country}`}
-                </Text>
-              )}
-            </View>
-          </View>
-        </View>
-
-        {/* Product Table Section */}
-        <View style={styles.table}>
-          {/* Table Header */}
-          <View style={styles.tableHeader}>
-            <Text style={[styles.colNo, styles.headerText]}>{t('pdf.consignment.no')}</Text>
-            <View style={styles.colPhotoHeader}>
-              <Text style={styles.headerText}>{t('pdf.consignment.photo')}</Text>
-            </View>
-            <Text style={[styles.colSku, styles.headerText]}>{t('pdf.consignment.sku')}</Text>
-            <Text style={[styles.colDescription, styles.headerText]}>{t('pdf.consignment.description')}</Text>
-            <Text style={[styles.colQty, styles.headerText]}>{t('pdf.consignment.qtyDelivered')}</Text>
-            <Text style={[styles.colPrice, styles.headerText]}>{t('pdf.consignment.price')}</Text>
-          </View>
-
-          {/* Table Rows — wrap={false} keeps photo + text on the same page */}
-          {consignment.items.map((item, index) => (
-            <View key={index} style={styles.tableRow} wrap={false}>
-              <Text style={styles.colNo}>{index + 1}</Text>
-              <View style={styles.colPhotoCell}>
-                <View style={styles.photoBox}>
-                  {productImagesBySku[item.sku] ? (
-                    <Image
-                      src={productImagesBySku[item.sku]}
-                      style={styles.photoImage}
-                      cache={false}
-                    />
-                  ) : (
-                    <PhotoPlaceholder />
-                  )}
-                </View>
-              </View>
-              <Text style={styles.colSku}>{item.sku}</Text>
-              <Text style={styles.colDescription}>{item.description}</Text>
-              <Text style={styles.colQty}>{item.quantityDelivered}</Text>
-              <Text style={styles.colPrice}>
-                {formatSalePriceDisplay(normalizeSalePrice(item.unitPrice))}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Summary Section */}
-        <View style={styles.summarySection}>
-          <View style={styles.summaryTable}>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>{t('pdf.consignment.totalItemsDelivered')}</Text>
-              <Text style={styles.summaryValue}>{totalItemsDelivered}</Text>
-            </View>
-            
-            <View style={styles.statusRow}>
-              <Text style={styles.statusLabel}>{t('pdf.consignment.status')}</Text>
-              <Text style={styles.statusValue}>{statusLabelEs(consignment.status, t)}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Footer Section */}
-        <View style={styles.footer}>
-          <Text style={styles.footerNote}>
-            {t('pdf.consignment.footerNote')}
-          </Text>
-          <View style={styles.signatureLine} />
-          <Text style={styles.signatureLabel}>{t('pdf.consignment.clientSignature')}</Text>
-          <Text style={styles.pageNumber}>1 / 1</Text>
-        </View>
-      </Page>
+    <Document title={title} author="SASA" subject="Notas de consignación">
+      {list.map((c) => (
+        <ConsignmentNotePages
+          key={c.id || c.consignmentId}
+          consignment={c}
+          logoSrc={logoSrc}
+          productImagesBySku={productImagesBySku}
+          t={t}
+        />
+      ))}
     </Document>
   );
 }

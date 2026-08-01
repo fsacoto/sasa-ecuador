@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { SalesInvoiceLine, Client, InventoryItem, SalesInvoice } from '../types';
 import { getAllClients, createClient, formatClientAddress } from '../services/clientsService';
-import { createInvoice, getAllInvoices } from '../services/invoicesService';
+import { createInvoice, getAllInvoices, toFirestoreInvoiceLine } from '../services/invoicesService';
 import { downloadSalesInvoicePdf } from '../utils/salesInvoicePdf';
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
@@ -93,6 +93,7 @@ export default function Sales() {
   const lastAddedRowRef = useRef<HTMLTableRowElement>(null);
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash' | 'transfer' | ''>('');
   const [paymentComment, setPaymentComment] = useState('');
+  const [invoiceNotes, setInvoiceNotes] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isSubmittingRef = useRef(false);
@@ -354,25 +355,29 @@ export default function Sales() {
 
     try {
       // Invoice number will be auto-generated in createInvoice
+      const cleanItems = invoiceItems.map((item) =>
+        toFirestoreInvoiceLine(item as unknown as SalesInvoiceLine & Record<string, unknown>)
+      );
+      const notesTrimmed = invoiceNotes.trim();
       const newInvoice: Omit<SalesInvoice, 'id' | 'createdAt'> = {
         invoiceNumber: 'TEMP', // Will be replaced with sequential number in createInvoice
         clientId: selectedClient.id,
         clientName: selectedClient.name,
         clientAddress: formatClientAddress(selectedClient),
-        items: invoiceItems,
+        items: cleanItems,
         subtotal: calculateSubtotal(),
         discountType: discountType,
         discountValue: discountValue,
         discountTotal: calculateDiscount(),
         grandTotal: calculateGrandTotal(),
         date: new Date(invoiceDate),
-        notes: '',
         salesAgent: user?.name || user?.email || '',
         currency: 'USD',
         deliveryStatus: 'Pending',
         paymentStatus: 'Unpaid',
         amountPaid: 0,
-        remainingBalance: calculateGrandTotal()
+        remainingBalance: calculateGrandTotal(),
+        ...(notesTrimmed ? { notes: notesTrimmed } : {}),
       };
 
       // Only add optional fields if they have values
@@ -387,7 +392,7 @@ export default function Sales() {
 
       // Reserve units on open note (do not deduct ecuadorStock until delivery).
       const reservationById = new Map<string, number>();
-      for (const line of invoiceItems) {
+      for (const line of cleanItems) {
         const inventoryItem = inventory.find((inv) => inv.sku === line.sku);
         if (!inventoryItem) continue;
         const pending = reservationById.get(inventoryItem.id) ?? 0;
@@ -426,12 +431,17 @@ export default function Sales() {
       setSelectedClient(null);
       setPaymentMethod('');
       setPaymentComment('');
+      setInvoiceNotes('');
       setInvoiceDate(new Date().toISOString().split('T')[0]);
       setItemEntryMode(null);
       setLastAddedSku(null);
     } catch (error) {
       console.error('Error submitting invoice:', error);
-      showAlert(t('sales.errorSubmitting'), 'Error');
+      const detail =
+        error instanceof Error && error.message
+          ? `\n\n${error.message}`
+          : '';
+      showAlert(`${t('sales.errorSubmitting')}${detail}`, 'Error');
     } finally {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
@@ -915,9 +925,22 @@ export default function Sales() {
             </div>
           </div>
 
-          {/* Payment Method Section */}
+          {/* Additional notes + payment */}
           <div className="border-t border-gray-200 pt-4 mt-4">
             <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  {t('sales.additionalNotes')}
+                </label>
+                <textarea
+                  value={invoiceNotes}
+                  onChange={(e) => setInvoiceNotes(e.target.value)}
+                  placeholder={t('sales.additionalNotesPlaceholder')}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
+                />
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   {t('sales.paymentMethodOptional')}

@@ -10,8 +10,11 @@ interface ConfirmDialogProps {
   description?: string;
   confirmText?: string;
   cancelText?: string;
+  /** Optional third action (e.g. discard without saving). Shown between cancel and confirm. */
+  discardText?: string;
   onConfirm: () => void;
   onCancel: () => void;
+  onDiscard?: () => void;
 }
 
 export default function ConfirmDialog({
@@ -20,8 +23,10 @@ export default function ConfirmDialog({
   description,
   confirmText,
   cancelText,
+  discardText,
   onConfirm,
   onCancel,
+  onDiscard,
 }: ConfirmDialogProps) {
   const { t } = useTranslation();
   const darkMode = useDarkMode();
@@ -32,12 +37,17 @@ export default function ConfirmDialog({
   const resolvedDescription = description ?? '';
   const resolvedCancel = cancelText ?? t('common.cancel');
   const resolvedConfirm = confirmText ?? t('common.accept');
+  const showDiscard = Boolean(discardText && onDiscard);
 
   const confirmClass = 'sasa-btn-primary rounded-xl px-4 py-2 text-sm font-medium transition-colors';
 
   const cancelClass = darkMode
     ? 'rounded-xl border border-white/20 bg-transparent px-4 py-2 text-sm font-medium text-gray-200 transition-colors hover:bg-white/10'
     : 'rounded-xl border border-gray-300 bg-transparent px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50';
+
+  const discardClass = darkMode
+    ? 'rounded-xl border border-amber-400/40 bg-transparent px-4 py-2 text-sm font-medium text-amber-200 transition-colors hover:bg-amber-400/10'
+    : 'rounded-xl border border-amber-300 bg-transparent px-4 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-50';
 
   return (
     <ModalPortal>
@@ -66,10 +76,15 @@ export default function ConfirmDialog({
               </p>
             ) : null}
           </div>
-          <div className="flex justify-end gap-3 border-t border-gray-200 px-6 py-4">
+          <div className="flex flex-wrap justify-end gap-3 border-t border-gray-200 px-6 py-4">
             <button type="button" onClick={onCancel} className={cancelClass}>
               {resolvedCancel}
             </button>
+            {showDiscard ? (
+              <button type="button" onClick={onDiscard} className={discardClass}>
+                {discardText}
+              </button>
+            ) : null}
             <button type="button" onClick={onConfirm} className={confirmClass}>
               {resolvedConfirm}
             </button>

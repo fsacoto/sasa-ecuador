@@ -310,6 +310,14 @@ export default function SalesInvoiceDetailsModal({
                       <div className="rounded bg-white p-2 text-sm">{invoice.deliveryNotes}</div>
                     </div>
                   ) : null}
+                  {invoice.notes ? (
+                    <div className="mt-4">
+                      <div className="mb-1 text-xs uppercase text-gray-600">
+                        {t('invoiceTracking.additionalNotes')}
+                      </div>
+                      <div className="rounded bg-white p-2 text-sm whitespace-pre-wrap">{invoice.notes}</div>
+                    </div>
+                  ) : null}
                 </div>
 
                 {invoice.paymentMethod ? (
@@ -327,25 +335,35 @@ export default function SalesInvoiceDetailsModal({
                 ) : null}
               </>
             ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="rounded-lg bg-blue-50 p-3">
-                  <div className="mb-1 text-xs uppercase text-gray-600">{t('invoiceTracking.paymentStatus')}</div>
-                  <span className={paymentStatusBadgeClass(invoice.paymentStatus)}>
-                    {invoice.paymentStatus === 'Unpaid' && t('invoiceTracking.unpaid')}
-                    {invoice.paymentStatus === 'Partially Paid' && t('invoiceTracking.partial')}
-                    {invoice.paymentStatus === 'Paid' && t('invoiceTracking.paid')}
-                  </span>
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg bg-blue-50 p-3">
+                    <div className="mb-1 text-xs uppercase text-gray-600">{t('invoiceTracking.paymentStatus')}</div>
+                    <span className={paymentStatusBadgeClass(invoice.paymentStatus)}>
+                      {invoice.paymentStatus === 'Unpaid' && t('invoiceTracking.unpaid')}
+                      {invoice.paymentStatus === 'Partially Paid' && t('invoiceTracking.partial')}
+                      {invoice.paymentStatus === 'Paid' && t('invoiceTracking.paid')}
+                    </span>
+                  </div>
+                  <div className="rounded-lg bg-purple-50 p-3">
+                    <div className="mb-1 text-xs uppercase text-gray-600">{t('invoiceTracking.deliveryStatus')}</div>
+                    <span className={deliveryStatusBadgeClass(invoice.deliveryStatus)}>
+                      {invoice.deliveryStatus === 'Pending' && t('invoiceTracking.pending')}
+                      {invoice.deliveryStatus === 'Partially Delivered' &&
+                        t('invoiceTracking.partiallyDelivered')}
+                      {invoice.deliveryStatus === 'Delivered' && t('invoiceTracking.delivered')}
+                      {invoice.deliveryStatus === 'Canceled' && t('invoiceTracking.canceled')}
+                    </span>
+                  </div>
                 </div>
-                <div className="rounded-lg bg-purple-50 p-3">
-                  <div className="mb-1 text-xs uppercase text-gray-600">{t('invoiceTracking.deliveryStatus')}</div>
-                  <span className={deliveryStatusBadgeClass(invoice.deliveryStatus)}>
-                    {invoice.deliveryStatus === 'Pending' && t('invoiceTracking.pending')}
-                    {invoice.deliveryStatus === 'Partially Delivered' &&
-                      t('invoiceTracking.partiallyDelivered')}
-                    {invoice.deliveryStatus === 'Delivered' && t('invoiceTracking.delivered')}
-                    {invoice.deliveryStatus === 'Canceled' && t('invoiceTracking.canceled')}
-                  </span>
-                </div>
+                {invoice.notes ? (
+                  <div className="rounded-lg bg-amber-50 p-3">
+                    <div className="mb-1 text-xs uppercase text-gray-600">
+                      {t('invoiceTracking.additionalNotes')}
+                    </div>
+                    <div className="text-sm whitespace-pre-wrap text-gray-800">{invoice.notes}</div>
+                  </div>
+                ) : null}
               </div>
             )}
           </div>

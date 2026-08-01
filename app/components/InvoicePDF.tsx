@@ -250,6 +250,27 @@ const styles = StyleSheet.create({
     borderTopColor: '#E0E0E0',
     paddingTop: 15,
   },
+  additionalNotesBox: {
+    marginTop: 12,
+    marginBottom: 8,
+    padding: 10,
+    backgroundColor: '#F9F9F9',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 4,
+  },
+  additionalNotesLabel: {
+    fontSize: 9,
+    color: '#666666',
+    fontWeight: 'bold',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  additionalNotesText: {
+    fontSize: 10,
+    color: '#333333',
+    lineHeight: 1.4,
+  },
   footerNote: {
     fontSize: 10,
     color: '#666666',
@@ -427,6 +448,12 @@ export default function InvoicePDF({
 
         {/* Footer Section */}
         <View style={styles.footer}>
+          {invoice.notes?.trim() ? (
+            <View style={styles.additionalNotesBox}>
+              <Text style={styles.additionalNotesLabel}>{t('pdf.invoice.notes')}</Text>
+              <Text style={styles.additionalNotesText}>{invoice.notes.trim()}</Text>
+            </View>
+          ) : null}
           <Text style={styles.footerNote}>{t('pdf.invoice.thankYou')}</Text>
           <View style={styles.signatureLine} />
           <Text style={styles.pageNumber}>1 / 1</Text>

@@ -25,6 +25,170 @@ body {
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
+/*
+ * Unified checkboxes & radios — light + dark (main app and modals).
+ * Custom appearance avoids native white squares forced by input bg overrides.
+ */
+input[type='checkbox'],
+input[type='radio'] {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  flex-shrink: 0;
+  vertical-align: middle;
+  cursor: pointer;
+  border: 1.5px solid #9ca3af;
+  background-color: #ffffff !important;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 0.7rem 0.7rem;
+  color: #515151;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+input[type='checkbox'] {
+  border-radius: 0.25rem;
+}
+
+input[type='radio'] {
+  border-radius: 9999px;
+}
+
+input[type='checkbox']:hover,
+input[type='radio']:hover {
+  border-color: #515151;
+}
+
+input[type='checkbox']:focus-visible,
+input[type='radio']:focus-visible {
+  outline: 2px solid rgba(81, 81, 81, 0.45);
+  outline-offset: 2px;
+}
+
+input[type='checkbox']:checked {
+  background-color: #515151 !important;
+  border-color: #515151 !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3.5 8.2l3 3.1 6-6.2' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+input[type='checkbox']:indeterminate {
+  background-color: #515151 !important;
+  border-color: #515151 !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3.5 8h9' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+input[type='radio']:checked {
+  background-color: #515151 !important;
+  border-color: #515151 !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='3.25' fill='%23ffffff'/%3E%3C/svg%3E");
+}
+
+input[type='checkbox']:disabled,
+input[type='radio']:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Dark mode — main content */
+.app-dark-main input[type='checkbox'],
+.app-dark-main input[type='radio'] {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.4) !important;
+}
+
+.app-dark-main input[type='checkbox']:hover,
+.app-dark-main input[type='radio']:hover {
+  border-color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.app-dark-main input[type='checkbox']:focus-visible,
+.app-dark-main input[type='radio']:focus-visible {
+  outline-color: rgba(251, 227, 227, 0.65);
+}
+
+.app-dark-main input[type='checkbox']:checked,
+.app-dark-main input[type='checkbox']:indeterminate {
+  background-color: #fbe3e3 !important;
+  border-color: #fbe3e3 !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3.5 8.2l3 3.1 6-6.2' stroke='%23111111' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.app-dark-main input[type='checkbox']:indeterminate {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3.5 8h9' stroke='%23111111' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+.app-dark-main input[type='radio']:checked {
+  background-color: #fbe3e3 !important;
+  border-color: #fbe3e3 !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='3.25' fill='%23111111'/%3E%3C/svg%3E");
+}
+
+/* Dark mode — portal modals (print, catalog, etc.) */
+.sasa-modal-root.sasa-modal-dark input[type='checkbox'],
+.sasa-modal-root.sasa-modal-dark input[type='radio'] {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.4) !important;
+}
+
+.sasa-modal-root.sasa-modal-dark input[type='checkbox']:hover,
+.sasa-modal-root.sasa-modal-dark input[type='radio']:hover {
+  border-color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.sasa-modal-root.sasa-modal-dark input[type='checkbox']:focus-visible,
+.sasa-modal-root.sasa-modal-dark input[type='radio']:focus-visible {
+  outline-color: rgba(251, 227, 227, 0.65);
+}
+
+.sasa-modal-root.sasa-modal-dark input[type='checkbox']:checked,
+.sasa-modal-root.sasa-modal-dark input[type='checkbox']:indeterminate {
+  background-color: #fbe3e3 !important;
+  border-color: #fbe3e3 !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3.5 8.2l3 3.1 6-6.2' stroke='%23111111' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.sasa-modal-root.sasa-modal-dark input[type='checkbox']:indeterminate {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3.5 8h9' stroke='%23111111' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+.sasa-modal-root.sasa-modal-dark input[type='radio']:checked {
+  background-color: #fbe3e3 !important;
+  border-color: #fbe3e3 !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='3.25' fill='%23111111'/%3E%3C/svg%3E");
+}
+
+/* Light-themed modals keep light checkboxes even when app is in dark mode */
+.sasa-modal-light input[type='checkbox'],
+.sasa-modal-light input[type='radio'],
+.app-dark-main .sasa-modal-light input[type='checkbox'],
+.app-dark-main .sasa-modal-light input[type='radio'] {
+  background-color: #ffffff !important;
+  border-color: #9ca3af !important;
+}
+
+.app-dark-main .sasa-modal-light input[type='checkbox']:checked,
+.app-dark-main .sasa-modal-light input[type='checkbox']:indeterminate {
+  background-color: #515151 !important;
+  border-color: #515151 !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3.5 8.2l3 3.1 6-6.2' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.app-dark-main .sasa-modal-light input[type='checkbox']:indeterminate {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3.5 8h9' stroke='%23ffffff' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+.app-dark-main .sasa-modal-light input[type='radio']:checked {
+  background-color: #515151 !important;
+  border-color: #515151 !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='3.25' fill='%23ffffff'/%3E%3C/svg%3E");
+}
+
 /* Dark mode for main content only (top bar and sidebar stay fixed). */
 .app-dark-main {
   background: #000000;
@@ -48,7 +212,7 @@ body {
   color: #111827 !important;
 }
 
-.sasa-modal-panel input,
+.sasa-modal-panel input:not([type='checkbox']):not([type='radio']),
 .sasa-modal-panel select,
 .sasa-modal-panel textarea {
   background-color: #ffffff !important;
@@ -97,7 +261,7 @@ body {
   color: #d1d5db !important;
 }
 
-.sasa-modal-root.sasa-modal-dark .sasa-modal-panel input,
+.sasa-modal-root.sasa-modal-dark .sasa-modal-panel input:not([type='checkbox']):not([type='radio']),
 .sasa-modal-root.sasa-modal-dark .sasa-modal-panel select,
 .sasa-modal-root.sasa-modal-dark .sasa-modal-panel textarea {
   background-color: rgba(255, 255, 255, 0.06) !important;
@@ -359,7 +523,7 @@ body {
   background-color: rgba(255, 255, 255, 0.08) !important;
 }
 
-.app-dark-main input,
+.app-dark-main input:not([type='checkbox']):not([type='radio']),
 .app-dark-main select,
 .app-dark-main textarea {
   background-color: rgba(255, 255, 255, 0.04) !important;
@@ -504,7 +668,7 @@ body {
   color: #4b5563 !important;
 }
 
-.app-dark-main [class*='fixed'][class*='inset-0'] .sasa-modal-light input,
+.app-dark-main [class*='fixed'][class*='inset-0'] .sasa-modal-light input:not([type='checkbox']):not([type='radio']),
 .app-dark-main [class*='fixed'][class*='inset-0'] .sasa-modal-light select,
 .app-dark-main [class*='fixed'][class*='inset-0'] .sasa-modal-light textarea {
   background-color: #ffffff !important;
@@ -513,7 +677,7 @@ body {
 }
 
 /* Dark solid modals: fields stay opaque (not glassy) */
-.app-dark-main [class*='fixed'][class*='inset-0'] input,
+.app-dark-main [class*='fixed'][class*='inset-0'] input:not([type='checkbox']):not([type='radio']),
 .app-dark-main [class*='fixed'][class*='inset-0'] select,
 .app-dark-main [class*='fixed'][class*='inset-0'] textarea {
   background-color: #1a1a1a !important;

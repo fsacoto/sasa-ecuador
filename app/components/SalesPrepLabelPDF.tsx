@@ -114,9 +114,40 @@ function prepLabelDataFromInvoice(invoice: SalesInvoice): PrepLabelData {
   };
 }
 
+function PrepLabelPage({
+  label,
+  logoSrc,
+}: {
+  label: PrepLabelData;
+  logoSrc: string;
+}) {
+  const documentNumber = (label.documentNumber || '').trim() || '—';
+  const documentTitle = (label.documentTitle || 'Nota de pedido:').trim() || 'Nota de pedido:';
+  const clientName = truncate(label.clientName || '—', 22);
+  const dateLabel = formatDateDMY(toPdfDate(label.date));
+  const itemsCount = label.itemsCount ?? 0;
+
+  return (
+    <Page size={[LABEL_W, LABEL_H]} style={styles.page}>
+      <View style={styles.label}>
+        {logoSrc ? <Image src={logoSrc} style={styles.logo} cache={false} /> : null}
+        <View style={styles.body}>
+          <Text style={styles.title}>{documentTitle}</Text>
+          <Text style={styles.invoiceNumber}>{documentNumber}</Text>
+          <Text style={styles.line}>{`Cliente: ${clientName}`}</Text>
+          <Text style={styles.line}>{`Fecha: ${dateLabel}`}</Text>
+          <Text style={styles.lineStrong}>{`N° de ítems: ${itemsCount}`}</Text>
+        </View>
+      </View>
+    </Page>
+  );
+}
+
 interface SalesPrepLabelPDFProps {
   /** Preferred: generic prep label data. */
   data?: PrepLabelData;
+  /** Multiple labels in one PDF (one page each). */
+  labels?: PrepLabelData[];
   /** Legacy: sales invoice — mapped to PrepLabelData. */
   invoice?: SalesInvoice;
   logoSrc?: string;
@@ -124,34 +155,37 @@ interface SalesPrepLabelPDFProps {
 
 export default function SalesPrepLabelPDF({
   data,
+  labels,
   invoice,
   logoSrc = '',
 }: SalesPrepLabelPDFProps) {
-  const label = data ?? (invoice ? prepLabelDataFromInvoice(invoice) : null);
-  const documentNumber = (label?.documentNumber || '').trim() || '—';
-  const documentTitle = (label?.documentTitle || 'Nota de pedido:').trim() || 'Nota de pedido:';
-  const clientName = truncate(label?.clientName || '—', 22);
-  const dateLabel = formatDateDMY(toPdfDate(label?.date));
-  const itemsCount = label?.itemsCount ?? 0;
+  const list: PrepLabelData[] =
+    labels && labels.length > 0
+      ? labels
+      : data
+        ? [data]
+        : invoice
+          ? [prepLabelDataFromInvoice(invoice)]
+          : [];
+
+  const titleNumber =
+    list.length === 1
+      ? list[0].documentNumber
+      : `${list.length} etiquetas`;
 
   return (
     <Document
-      title={`Etiqueta preparación ${documentNumber}`}
+      title={`Etiqueta preparación ${titleNumber}`}
       author="SASA"
       subject="Etiqueta de preparación 40x20mm"
     >
-      <Page size={[LABEL_W, LABEL_H]} style={styles.page}>
-        <View style={styles.label}>
-          {logoSrc ? <Image src={logoSrc} style={styles.logo} cache={false} /> : null}
-          <View style={styles.body}>
-            <Text style={styles.title}>{documentTitle}</Text>
-            <Text style={styles.invoiceNumber}>{documentNumber}</Text>
-            <Text style={styles.line}>{`Cliente: ${clientName}`}</Text>
-            <Text style={styles.line}>{`Fecha: ${dateLabel}`}</Text>
-            <Text style={styles.lineStrong}>{`N° de ítems: ${itemsCount}`}</Text>
-          </View>
-        </View>
-      </Page>
+      {list.map((label, index) => (
+        <PrepLabelPage
+          key={`${label.documentNumber}-${index}`}
+          label={label}
+          logoSrc={logoSrc}
+        />
+      ))}
     </Document>
   );
 }

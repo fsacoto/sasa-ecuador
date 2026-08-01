@@ -52,6 +52,7 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
   const [editDiscountValue, setEditDiscountValue] = useState(0);
   const [editPaymentMethod, setEditPaymentMethod] = useState('');
   const [editPaymentComment, setEditPaymentComment] = useState('');
+  const [editNotes, setEditNotes] = useState('');
   const [editSearchTerm, setEditSearchTerm] = useState('');
   const [editShowDropdown, setEditShowDropdown] = useState(false);
 
@@ -115,6 +116,7 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
     setEditDiscountValue(invoice.discountValue || 0);
     setEditPaymentMethod(invoice.paymentMethod || '');
     setEditPaymentComment(invoice.paymentComment || '');
+    setEditNotes(invoice.notes || '');
   }, [invoice, inventory]);
 
   const getFilteredEditInventory = () => {
@@ -449,6 +451,7 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
       };
       if (editPaymentMethod) updatedInvoice.paymentMethod = editPaymentMethod;
       if (editPaymentComment) updatedInvoice.paymentComment = editPaymentComment;
+      updatedInvoice.notes = editNotes.trim();
 
       await updateInvoice(inv.id, updatedInvoice);
       showAlert(t('invoiceTracking.invoiceUpdated'), 'Success');
@@ -644,6 +647,17 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
                 className="w-full rounded border border-gray-300 px-3 py-2"
               />
             </div>
+          </div>
+
+          <div className="mb-6">
+            <label className="mb-2 block text-sm font-medium">{t('invoiceTracking.additionalNotes')}</label>
+            <textarea
+              value={editNotes}
+              onChange={(e) => setEditNotes(e.target.value)}
+              placeholder={t('invoiceTracking.additionalNotesPlaceholder')}
+              rows={3}
+              className="w-full rounded border border-gray-300 px-3 py-2"
+            />
           </div>
 
           <div className="mb-6">

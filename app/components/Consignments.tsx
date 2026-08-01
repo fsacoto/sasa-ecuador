@@ -36,6 +36,8 @@ import DateInput from './ui/DateInput';
 import { isInsideDatePickerPortal } from '../utils/calendarUtils';
 import { usePersistedFilterState } from '../hooks/usePersistedFilterState';
 import ConsignmentReturnModal from './ConsignmentReturnModal';
+import ConsignmentPrintModal from './ConsignmentPrintModal';
+import ConsignmentCatalogModal from './ConsignmentCatalogModal';
 import { HUB_GROUP_STACK_ICON_PATH } from '../constants/businessHubUi';
 import { formatDateDMY } from '../utils/formatDate';
 import { filterSellableInventory, hasSellableStock } from '../utils/inventoryStock';
@@ -48,6 +50,7 @@ import {
 } from '../utils/stockReservation';
 import { findInventoryItemByBarcodeScan } from '../utils/barcodeGenerator';
 import { downloadConsignmentPrepLabelPdf } from '../utils/salesPrepLabelPdf';
+import { downloadConsignmentPdf } from '../utils/consignmentPdf';
 import { formatSalePriceDisplay, normalizeSalePrice, parseSalePriceInput } from '../utils/salePrice';
 import { useDarkMode } from '../hooks/useDarkMode';
 
@@ -141,17 +144,19 @@ export default function Consignments() {
   const [salesQuantities, setSalesQuantities] = useState<{[key: number]: number}>({});
   /** Unit sale price (USD) per consignment line index — used when registering sales */
   const [saleUnitPrices, setSaleUnitPrices] = useState<Record<number, string>>({});
-  /** Editable reference prices for delivered items (persisted on blur) */
+  /** Local draft of consignment items — persisted only on Guardar */
+  const [draftItems, setDraftItems] = useState<ConsignmentItem[]>([]);
+  const [detailDirty, setDetailDirty] = useState(false);
+  const [isSavingDetails, setIsSavingDetails] = useState(false);
+  const isSavingDetailsRef = useRef(false);
+  const [unsavedLeaveOpen, setUnsavedLeaveOpen] = useState(false);
+  /** Editable reference prices for draft items */
   const [detailUnitPrices, setDetailUnitPrices] = useState<Record<number, string>>({});
-  const [savingDetailPriceIndex, setSavingDetailPriceIndex] = useState<number | null>(null);
-  /** Editable delivered quantities (persisted on blur) */
+  /** Editable delivered quantities for draft items */
   const [detailDeliveredQtys, setDetailDeliveredQtys] = useState<Record<number, string>>({});
-  const [savingDetailQtyIndex, setSavingDetailQtyIndex] = useState<number | null>(null);
-  /** Add new SKU to an existing consignment (details view) */
+  /** Add new SKU to draft (details view) */
   const [detailAddSearchTerm, setDetailAddSearchTerm] = useState('');
   const [detailAddShowDropdown, setDetailAddShowDropdown] = useState(false);
-  const [isAddingDetailItem, setIsAddingDetailItem] = useState(false);
-  const isAddingDetailItemRef = useRef(false);
   const detailAddDropdownRef = useRef<HTMLDivElement>(null);
   const detailAddSearchInputRef = useRef<HTMLInputElement>(null);
   const [lastAddedDetailSku, setLastAddedDetailSku] = useState<string | null>(null);
@@ -184,6 +189,8 @@ export default function Consignments() {
   const [showSearchPanel, setShowSearchPanel] = useState(false);
   const [groupByField, setGroupByField] = usePersistedFilterState('consignments', 'groupByField', '', userId);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [catalogModalOpen, setCatalogModalOpen] = useState(false);
   const listToolbarRef = useRef<HTMLDivElement>(null);
   const groupByDropdownRef = useRef<HTMLDivElement>(null);
   
@@ -278,24 +285,24 @@ export default function Consignments() {
 
   useEffect(() => {
     if (view !== 'details' || !selectedConsignment) return;
+    const cloned = selectedConsignment.items.map((item) => ({ ...item }));
+    setDraftItems(cloned);
+    setDetailDirty(false);
     setSalesQuantities({});
     const prices: Record<number, string> = {};
-    selectedConsignment.items.forEach((item, index) => {
+    const qtys: Record<number, string> = {};
+    cloned.forEach((item, index) => {
       const p = normalizeSalePrice(item.unitPrice);
-      if (p !== undefined) {
-        prices[index] = p.toFixed(2);
-      }
+      if (p !== undefined) prices[index] = p.toFixed(2);
+      qtys[index] = String(item.quantityDelivered);
     });
     setSaleUnitPrices(prices);
     setDetailUnitPrices({ ...prices });
-    const qtys: Record<number, string> = {};
-    selectedConsignment.items.forEach((item, index) => {
-      qtys[index] = String(item.quantityDelivered);
-    });
     setDetailDeliveredQtys(qtys);
     setDetailAddSearchTerm('');
     setDetailAddShowDropdown(false);
     setLastAddedDetailSku(null);
+    setUnsavedLeaveOpen(false);
     setSalePaymentStatus('Unpaid');
     setSaleAmountPaidInput('');
     setSalePaymentMethod('');
@@ -520,23 +527,105 @@ export default function Consignments() {
     });
   };
 
-  const handleDetailUnitPriceChange = (index: number, raw: string) => {
-    setDetailUnitPrices((prev) => ({ ...prev, [index]: raw }));
-  };
-
-  const revertDetailUnitPrice = (index: number, item: ConsignmentItem) => {
-    const p = normalizeSalePrice(item.unitPrice);
-    setDetailUnitPrices((prev) => {
-      const next = { ...prev };
-      if (p !== undefined) next[index] = p.toFixed(2);
-      else next[index] = '';
+  const syncDetailItemEditors = (items: ConsignmentItem[]) => {
+    const qtys: Record<number, string> = {};
+    const prices: Record<number, string> = {};
+    items.forEach((line, i) => {
+      qtys[i] = String(line.quantityDelivered);
+      const p = normalizeSalePrice(line.unitPrice);
+      if (p !== undefined) prices[i] = p.toFixed(2);
+    });
+    setDetailDeliveredQtys(qtys);
+    setDetailUnitPrices(prices);
+    setSaleUnitPrices((prev) => {
+      // Keep sale prices for indices that still exist; seed from draft unit prices
+      const next: Record<number, string> = {};
+      items.forEach((line, i) => {
+        if (prev[i] !== undefined) next[i] = prev[i];
+        else {
+          const p = normalizeSalePrice(line.unitPrice);
+          if (p !== undefined) next[i] = p.toFixed(2);
+        }
+      });
       return next;
     });
   };
 
-  const handleDetailUnitPriceBlur = async (index: number) => {
-    if (!selectedConsignment || savingDetailPriceIndex !== null) return;
-    const item = selectedConsignment.items[index];
+  const deliveredBySku = (items: ConsignmentItem[], sku: string) => {
+    const target = sku.trim();
+    return items.reduce(
+      (sum, item) => (item.sku.trim() === target ? sum + item.quantityDelivered : sum),
+      0
+    );
+  };
+
+  const computeItemsStatus = (items: ConsignmentItem[]): ConsignmentStatus => {
+    const totalDelivered = items.reduce((sum, row) => sum + row.quantityDelivered, 0);
+    const totalSold = items.reduce((sum, row) => sum + row.quantitySold, 0);
+    const totalReturned = items.reduce((sum, row) => sum + row.quantityReturned, 0);
+    const totalAccounted = totalSold + totalReturned;
+    if (totalAccounted >= totalDelivered && totalDelivered > 0) return 'Closed';
+    if (totalAccounted > 0) return 'Partially Closed';
+    return 'Open';
+  };
+
+  /** Extra units needed from free stock for a proposed draft vs the saved consignment. */
+  const stockNeededForSku = (
+    proposed: ConsignmentItem[],
+    sku: string,
+    savedItems: ConsignmentItem[]
+  ) => {
+    return Math.max(0, deliveredBySku(proposed, sku) - deliveredBySku(savedItems, sku));
+  };
+
+  const validateDraftStock = (
+    proposed: ConsignmentItem[],
+    savedItems: ConsignmentItem[]
+  ): string | null => {
+    const skus = new Set(proposed.map((i) => i.sku.trim()).filter(Boolean));
+    for (const sku of skus) {
+      const needed = stockNeededForSku(proposed, sku, savedItems);
+      if (needed <= 0) continue;
+      const inv = inventory.find((i) => i.sku.trim() === sku);
+      if (!inv) {
+        return formatTemplate(t('consignments.insufficientStock'), {
+          sku,
+          available: '0',
+        });
+      }
+      const available = getAvailableStock(inv);
+      if (needed > available) {
+        return formatTemplate(t('consignments.insufficientStock'), {
+          sku,
+          available: String(available),
+        });
+      }
+      const reserved = getReservedStock(inv);
+      if (inv.ecuadorStock - needed < reserved) {
+        return formatTemplate(t('consignments.insufficientStock'), {
+          sku,
+          available: String(available),
+        });
+      }
+    }
+    return null;
+  };
+
+  const applyDraftItems = (next: ConsignmentItem[], options?: { lastAddedSku?: string | null }) => {
+    setDraftItems(next);
+    setDetailDirty(true);
+    syncDetailItemEditors(next);
+    if (options && 'lastAddedSku' in options) {
+      setLastAddedDetailSku(options.lastAddedSku ?? null);
+    }
+  };
+
+  const handleDetailUnitPriceChange = (index: number, raw: string) => {
+    setDetailUnitPrices((prev) => ({ ...prev, [index]: raw }));
+  };
+
+  const handleDetailUnitPriceBlur = (index: number) => {
+    const item = draftItems[index];
     if (!item) return;
 
     const raw = detailUnitPrices[index] ?? '';
@@ -549,7 +638,11 @@ export default function Consignments() {
             'Indique un precio válido (≥ 0) o déjelo vacío.',
           'Validation Error'
         );
-        revertDetailUnitPrice(index, item);
+        const p = normalizeSalePrice(item.unitPrice);
+        setDetailUnitPrices((prev) => ({
+          ...prev,
+          [index]: p !== undefined ? p.toFixed(2) : '',
+        }));
         return;
       }
     }
@@ -557,62 +650,28 @@ export default function Consignments() {
     const parsed = parseSalePriceInput(raw);
     const current = normalizeSalePrice(item.unitPrice);
     if (parsed === current) {
-      if (parsed !== undefined) {
-        setDetailUnitPrices((prev) => ({ ...prev, [index]: parsed.toFixed(2) }));
-      } else {
-        setDetailUnitPrices((prev) => ({ ...prev, [index]: '' }));
-      }
-      return;
-    }
-
-    const updatedItems: ConsignmentItem[] = selectedConsignment.items.map((line, i) => {
-      if (i !== index) return line;
-      const { unitPrice: _drop, ...rest } = line;
-      return parsed !== undefined ? { ...rest, unitPrice: parsed } : rest;
-    });
-
-    setSavingDetailPriceIndex(index);
-    try {
-      await updateConsignment(selectedConsignment.id, { items: updatedItems });
-      const updated: Consignment = { ...selectedConsignment, items: updatedItems };
-      setSelectedConsignment(updated);
-      setConsignments((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-      setSaleUnitPrices((prev) => {
-        const next = { ...prev };
-        if (parsed !== undefined) next[index] = parsed.toFixed(2);
-        else delete next[index];
-        return next;
-      });
       setDetailUnitPrices((prev) => ({
         ...prev,
         [index]: parsed !== undefined ? parsed.toFixed(2) : '',
       }));
-    } catch (error) {
-      console.error('Error saving consignment item price:', error);
-      showAlert(
-        t('consignments.errorSavingItemPrice') || 'Error al guardar el precio',
-        t('common.error')
-      );
-      revertDetailUnitPrice(index, item);
-    } finally {
-      setSavingDetailPriceIndex(null);
+      return;
     }
-  };
 
-  const revertDetailDeliveredQty = (index: number, item: ConsignmentItem) => {
-    setDetailDeliveredQtys((prev) => ({
-      ...prev,
-      [index]: String(item.quantityDelivered),
-    }));
+    const next = draftItems.map((line, i) => {
+      if (i !== index) return line;
+      const { unitPrice: _drop, ...rest } = line;
+      return parsed !== undefined ? { ...rest, unitPrice: parsed } : rest;
+    });
+    applyDraftItems(next);
   };
 
   const handleDetailDeliveredQtyChange = (index: number, raw: string) => {
     setDetailDeliveredQtys((prev) => ({ ...prev, [index]: raw }));
   };
 
-  const handleDetailDeliveredQtyBlur = async (index: number) => {
-    if (!selectedConsignment || savingDetailQtyIndex !== null) return;
-    const item = selectedConsignment.items[index];
+  const handleDetailDeliveredQtyBlur = (index: number) => {
+    if (!selectedConsignment) return;
+    const item = draftItems[index];
     if (!item) return;
 
     const raw = (detailDeliveredQtys[index] ?? '').trim();
@@ -622,7 +681,10 @@ export default function Consignments() {
           'Indique una cantidad entera válida (≥ 0).',
         'Validation Error'
       );
-      revertDetailDeliveredQty(index, item);
+      setDetailDeliveredQtys((prev) => ({
+        ...prev,
+        [index]: String(item.quantityDelivered),
+      }));
       return;
     }
 
@@ -636,7 +698,10 @@ export default function Consignments() {
         }),
         'Validation Error'
       );
-      revertDetailDeliveredQty(index, item);
+      setDetailDeliveredQtys((prev) => ({
+        ...prev,
+        [index]: String(item.quantityDelivered),
+      }));
       return;
     }
 
@@ -645,228 +710,262 @@ export default function Consignments() {
       return;
     }
 
-    const delta = parsed - item.quantityDelivered;
-    const inventoryItem = inventory.find((inv) => inv.sku === item.sku);
-
-    if (delta > 0) {
-      if (!inventoryItem) {
-        showAlert(
-          formatTemplate(t('consignments.insufficientStock'), {
-            sku: item.sku,
-            available: '0',
-          }),
-          'Stock Error'
-        );
-        revertDetailDeliveredQty(index, item);
-        return;
-      }
-      const available = getAvailableStock(inventoryItem);
-      if (delta > available) {
-        showAlert(
-          formatTemplate(t('consignments.insufficientStock'), {
-            sku: item.sku,
-            available: String(available),
-          }),
-          'Stock Error'
-        );
-        revertDetailDeliveredQty(index, item);
-        return;
-      }
-      const reserved = getReservedStock(inventoryItem);
-      if (inventoryItem.ecuadorStock - delta < reserved) {
-        showAlert(
-          formatTemplate(t('consignments.insufficientStock'), {
-            sku: item.sku,
-            available: String(available),
-          }),
-          'Stock Error'
-        );
-        revertDetailDeliveredQty(index, item);
-        return;
-      }
-    }
-
-    const computeStatus = (items: ConsignmentItem[]): ConsignmentStatus => {
-      const totalDelivered = items.reduce((sum, row) => sum + row.quantityDelivered, 0);
-      const totalSold = items.reduce((sum, row) => sum + row.quantitySold, 0);
-      const totalReturned = items.reduce((sum, row) => sum + row.quantityReturned, 0);
-      const totalAccounted = totalSold + totalReturned;
-      if (totalAccounted >= totalDelivered) return 'Closed';
-      if (totalAccounted > 0) return 'Partially Closed';
-      return 'Open';
-    };
-
-    setSavingDetailQtyIndex(index);
-    try {
-      let updatedItems: ConsignmentItem[];
-      if (parsed === 0 && minQty === 0) {
-        updatedItems = selectedConsignment.items.filter((_, i) => i !== index);
-      } else {
-        updatedItems = selectedConsignment.items.map((line, i) =>
-          i === index ? { ...line, quantityDelivered: parsed } : line
-        );
-      }
-
-      const newStatus = computeStatus(updatedItems);
-
-      if (delta !== 0 && inventoryItem) {
-        if (delta > 0) {
-          await updateInventory(inventoryItem.id, {
-            ecuadorStock: inventoryItem.ecuadorStock - delta,
-            consignmentStock: (inventoryItem.consignmentStock || 0) + delta,
-          });
-        } else {
-          const pullBack = -delta;
-          await updateInventory(inventoryItem.id, {
-            ecuadorStock: inventoryItem.ecuadorStock + pullBack,
-            consignmentStock: Math.max(0, (inventoryItem.consignmentStock || 0) - pullBack),
-          });
-        }
-      }
-
-      await updateConsignment(selectedConsignment.id, {
-        items: updatedItems,
-        status: newStatus,
-      });
-
-      const updated: Consignment = {
-        ...selectedConsignment,
-        items: updatedItems,
-        status: newStatus,
-      };
-      setSelectedConsignment(updated);
-      setConsignments((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-      syncDetailItemEditors(updatedItems);
-    } catch (error) {
-      console.error('Error saving consignment delivered qty:', error);
-      showAlert(
-        t('consignments.errorSavingDeliveredQty') || 'Error al guardar la cantidad',
-        t('common.error')
+    let next: ConsignmentItem[];
+    if (parsed === 0 && minQty === 0) {
+      next = draftItems.filter((_, i) => i !== index);
+    } else {
+      next = draftItems.map((line, i) =>
+        i === index ? { ...line, quantityDelivered: parsed } : line
       );
-      revertDetailDeliveredQty(index, item);
-    } finally {
-      setSavingDetailQtyIndex(null);
     }
+
+    const stockError = validateDraftStock(next, selectedConsignment.items);
+    if (stockError) {
+      showAlert(stockError, 'Stock Error');
+      setDetailDeliveredQtys((prev) => ({
+        ...prev,
+        [index]: String(item.quantityDelivered),
+      }));
+      return;
+    }
+
+    applyDraftItems(next, parsed === 0 && minQty === 0 ? { lastAddedSku: null } : undefined);
   };
 
-  const syncDetailItemEditors = (items: ConsignmentItem[]) => {
-    const qtys: Record<number, string> = {};
-    const prices: Record<number, string> = {};
-    items.forEach((line, i) => {
-      qtys[i] = String(line.quantityDelivered);
-      const p = normalizeSalePrice(line.unitPrice);
-      if (p !== undefined) prices[i] = p.toFixed(2);
-    });
-    setDetailDeliveredQtys(qtys);
-    setDetailUnitPrices(prices);
-    setSaleUnitPrices(prices);
-    setSalesQuantities({});
-  };
-
-  const handleAddProductToExistingConsignment = async (product: InventoryItem) => {
-    if (!selectedConsignment || isAddingDetailItemRef.current) return;
+  const handleAddProductToDraft = (product: InventoryItem) => {
+    if (!selectedConsignment) return;
 
     if (!hasSellableStock(product)) {
       showAlert(t('inventory.noSellableStock'), 'Stock');
       return;
     }
 
-    const available = getAvailableStock(product);
-    if (available < 1) {
-      showAlert(
-        formatTemplate(t('consignments.insufficientStock'), {
-          sku: product.sku,
-          available: String(available),
-        }),
-        'Stock Error'
+    const existingIndex = draftItems.findIndex(
+      (line) => line.sku.trim() === product.sku.trim()
+    );
+
+    let next: ConsignmentItem[];
+    if (existingIndex >= 0) {
+      next = draftItems.map((line, i) =>
+        i === existingIndex
+          ? { ...line, quantityDelivered: line.quantityDelivered + 1 }
+          : line
       );
+    } else {
+      const salePrice = normalizeSalePrice(product.salePrice);
+      const newItem: ConsignmentItem = {
+        sku: product.sku,
+        description: product.description || product.name,
+        quantityDelivered: 1,
+        quantitySold: 0,
+        quantityReturned: 0,
+        line: product.line,
+        category: product.category,
+        ...(salePrice !== undefined ? { unitPrice: salePrice } : {}),
+      };
+      next = [...draftItems, newItem];
+    }
+
+    const stockError = validateDraftStock(next, selectedConsignment.items);
+    if (stockError) {
+      showAlert(stockError, 'Stock Error');
       return;
     }
 
-    const reserved = getReservedStock(product);
-    if (product.ecuadorStock - 1 < reserved) {
+    applyDraftItems(next, { lastAddedSku: product.sku });
+    setDetailAddSearchTerm('');
+    setDetailAddShowDropdown(false);
+  };
+
+  const handleRemoveDraftItem = (index: number) => {
+    const item = draftItems[index];
+    if (!item) return;
+    const accounted = item.quantitySold + item.quantityReturned;
+    if (accounted > 0) {
       showAlert(
-        formatTemplate(t('consignments.insufficientStock'), {
-          sku: product.sku,
-          available: String(available),
+        formatTemplate(t('consignments.cannotRemoveAccountedItem'), {
+          min: String(accounted),
         }),
-        'Stock Error'
+        'Validation Error'
       );
       return;
     }
+    const next = draftItems.filter((_, i) => i !== index);
+    applyDraftItems(next, {
+      lastAddedSku: lastAddedDetailSku === item.sku ? null : lastAddedDetailSku,
+    });
+  };
 
-    isAddingDetailItemRef.current = true;
-    setIsAddingDetailItem(true);
+  const leaveDetailsToList = () => {
+    setUnsavedLeaveOpen(false);
+    setDetailDirty(false);
+    setDraftItems([]);
+    setSelectedConsignment(null);
+    setView('list');
+  };
+
+  const hydrateDetailFromConsignment = (consignment: Consignment) => {
+    const cloned = consignment.items.map((item) => ({ ...item }));
+    setDraftItems(cloned);
+    setDetailDirty(false);
+    syncDetailItemEditors(cloned);
+    setLastAddedDetailSku(null);
+  };
+
+  const handleBackToList = () => {
+    if (detailDirty) {
+      setUnsavedLeaveOpen(true);
+      return;
+    }
+    leaveDetailsToList();
+  };
+
+  const handleDiscardDetailsAndLeave = () => {
+    leaveDetailsToList();
+  };
+
+  const handleSaveConsignmentDetails = async (thenLeave = false): Promise<boolean> => {
+    if (!selectedConsignment || isSavingDetailsRef.current) return false;
+    if (!detailDirty) {
+      if (thenLeave) leaveDetailsToList();
+      return true;
+    }
+
+    // Flush any in-progress qty/price text into draft before save
+    // by treating current editor values as source of truth where valid
+    let itemsToSave = draftItems.map((line) => ({ ...line }));
+
+    for (let i = 0; i < itemsToSave.length; i++) {
+      const qtyRaw = (detailDeliveredQtys[i] ?? '').trim();
+      if (/^\d+$/.test(qtyRaw)) {
+        const parsed = parseInt(qtyRaw, 10);
+        const minQty = itemsToSave[i].quantitySold + itemsToSave[i].quantityReturned;
+        if (parsed >= minQty) {
+          itemsToSave[i] = { ...itemsToSave[i], quantityDelivered: parsed };
+        }
+      }
+      const priceRaw = detailUnitPrices[i] ?? '';
+      const trimmed = priceRaw.trim();
+      if (trimmed === '') {
+        const { unitPrice: _drop, ...rest } = itemsToSave[i];
+        itemsToSave[i] = rest;
+      } else {
+        const parsed = parseSalePriceInput(priceRaw);
+        if (parsed !== undefined) {
+          itemsToSave[i] = { ...itemsToSave[i], unitPrice: parsed };
+        }
+      }
+    }
+
+    // Drop zero-delivered lines with nothing accounted
+    itemsToSave = itemsToSave.filter(
+      (line) =>
+        line.quantityDelivered > 0 ||
+        line.quantitySold > 0 ||
+        line.quantityReturned > 0
+    );
+
+    for (const line of itemsToSave) {
+      const minQty = line.quantitySold + line.quantityReturned;
+      if (line.quantityDelivered < minQty) {
+        showAlert(
+          formatTemplate(t('consignments.deliveredQtyBelowAccounted'), {
+            min: String(minQty),
+          }),
+          'Validation Error'
+        );
+        return false;
+      }
+    }
+
+    const stockError = validateDraftStock(itemsToSave, selectedConsignment.items);
+    if (stockError) {
+      showAlert(stockError, 'Stock Error');
+      return false;
+    }
+
+    isSavingDetailsRef.current = true;
+    setIsSavingDetails(true);
 
     try {
-      const existingIndex = selectedConsignment.items.findIndex(
-        (line) => line.sku.trim() === product.sku.trim()
-      );
+      const savedItems = selectedConsignment.items;
+      const allSkus = new Set<string>();
+      for (const item of savedItems) allSkus.add(item.sku.trim());
+      for (const item of itemsToSave) allSkus.add(item.sku.trim());
 
-      let updatedItems: ConsignmentItem[];
-      if (existingIndex >= 0) {
-        updatedItems = selectedConsignment.items.map((line, i) =>
-          i === existingIndex
-            ? { ...line, quantityDelivered: line.quantityDelivered + 1 }
-            : line
-        );
-      } else {
-        const salePrice = normalizeSalePrice(product.salePrice);
-        const newItem: ConsignmentItem = {
-          sku: product.sku,
-          description: product.description || product.name,
-          quantityDelivered: 1,
-          quantitySold: 0,
-          quantityReturned: 0,
-          line: product.line,
-          category: product.category,
-          ...(salePrice !== undefined ? { unitPrice: salePrice } : {}),
-        };
-        updatedItems = [...selectedConsignment.items, newItem];
+      for (const sku of allSkus) {
+        if (!sku) continue;
+        const delta =
+          deliveredBySku(itemsToSave, sku) - deliveredBySku(savedItems, sku);
+        if (delta === 0) continue;
+        const inv = inventory.find((i) => i.sku.trim() === sku);
+        if (!inv) {
+          if (delta > 0) {
+            throw new Error(
+              formatTemplate(t('consignments.insufficientStock'), {
+                sku,
+                available: '0',
+              })
+            );
+          }
+          continue;
+        }
+        if (delta > 0) {
+          await updateInventory(inv.id, {
+            ecuadorStock: inv.ecuadorStock - delta,
+            consignmentStock: (inv.consignmentStock || 0) + delta,
+          });
+        } else {
+          const pullBack = -delta;
+          await updateInventory(inv.id, {
+            ecuadorStock: inv.ecuadorStock + pullBack,
+            consignmentStock: Math.max(0, (inv.consignmentStock || 0) - pullBack),
+          });
+        }
       }
 
-      const totalDelivered = updatedItems.reduce((sum, row) => sum + row.quantityDelivered, 0);
-      const totalSold = updatedItems.reduce((sum, row) => sum + row.quantitySold, 0);
-      const totalReturned = updatedItems.reduce((sum, row) => sum + row.quantityReturned, 0);
-      const totalAccounted = totalSold + totalReturned;
-      const newStatus: ConsignmentStatus =
-        totalAccounted >= totalDelivered
-          ? 'Closed'
-          : totalAccounted > 0
-            ? 'Partially Closed'
-            : 'Open';
-
-      await updateInventory(product.id, {
-        ecuadorStock: product.ecuadorStock - 1,
-        consignmentStock: (product.consignmentStock || 0) + 1,
-      });
-
+      const newStatus = computeItemsStatus(itemsToSave);
       await updateConsignment(selectedConsignment.id, {
-        items: updatedItems,
+        items: itemsToSave,
         status: newStatus,
       });
 
       const updated: Consignment = {
         ...selectedConsignment,
-        items: updatedItems,
+        items: itemsToSave,
         status: newStatus,
       };
       setSelectedConsignment(updated);
       setConsignments((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-      syncDetailItemEditors(updatedItems);
-      setLastAddedDetailSku(product.sku);
-      setDetailAddSearchTerm('');
-      setDetailAddShowDropdown(false);
+      setDraftItems(itemsToSave.map((item) => ({ ...item })));
+      setDetailDirty(false);
+      syncDetailItemEditors(itemsToSave);
+      setUnsavedLeaveOpen(false);
+
+      if (thenLeave) {
+        leaveDetailsToList();
+      } else {
+        showAlert(
+          t('consignments.detailsSaved') || 'Cambios guardados',
+          t('common.success')
+        );
+      }
+      return true;
     } catch (error) {
-      console.error('Error adding item to consignment:', error);
+      console.error('Error saving consignment details:', error);
       showAlert(
-        t('consignments.errorAddingItem') || 'Error al agregar el artículo',
+        t('consignments.errorSavingDetails') || 'Error al guardar los cambios',
         t('common.error')
       );
+      return false;
     } finally {
-      isAddingDetailItemRef.current = false;
-      setIsAddingDetailItem(false);
+      isSavingDetailsRef.current = false;
+      setIsSavingDetails(false);
     }
+  };
+
+  const handleSaveAndLeave = () => {
+    void handleSaveConsignmentDetails(true);
   };
 
   const removeItem = (index: number) => {
@@ -1046,6 +1145,15 @@ export default function Consignments() {
   const handleRegisterSales = async () => {
     if (isRegisteringSalesRef.current) return;
     if (!selectedConsignment) return;
+
+    if (detailDirty) {
+      showAlert(
+        t('consignments.saveBeforeSalesOrReturns') ||
+          'Guarde o descarte los cambios de la consignación antes de registrar ventas.',
+        'Validation Error'
+      );
+      return;
+    }
 
     const hasSales = Object.values(salesQuantities).some(qty => qty > 0);
     if (!hasSales) {
@@ -1227,6 +1335,7 @@ export default function Consignments() {
       const updatedConsignment = updated.find(c => c.id === selectedConsignment.id);
       if (updatedConsignment) {
         setSelectedConsignment(updatedConsignment);
+        hydrateDetailFromConsignment(updatedConsignment);
       }
     } catch (error: any) {
       console.error('Error registering sales:', error);
@@ -1280,7 +1389,10 @@ export default function Consignments() {
     await loadConsignments();
     const updated = await getAllConsignments();
     const refreshed = updated.find((c) => c.id === selectedConsignment.id);
-    if (refreshed) setSelectedConsignment(refreshed);
+    if (refreshed) {
+      setSelectedConsignment(refreshed);
+      hydrateDetailFromConsignment(refreshed);
+    }
   };
 
   const handleViewDetails = (consignment: Consignment) => {
@@ -1353,41 +1465,7 @@ export default function Consignments() {
     setIsGeneratingPdf(true);
 
     try {
-      const { convertImageForPDF } = await import('../utils/imageConverter');
-      const { buildPdfProductImagesBySku } = await import('../utils/pdfProductImages');
-      const { normalizePdfLogoSrc } = await import('../utils/pdfRenderHelpers');
-      const logoUrl =
-        typeof window !== 'undefined' ? `${window.location.origin}/sasa.png` : '/sasa.png';
-
-      const [logoBase64, productImagesBySku, React, pdfBundle] = await Promise.all([
-        convertImageForPDF(logoUrl),
-        buildPdfProductImagesBySku(
-          consignment.items.map((item) => item.sku),
-          inventory
-        ),
-        import('react'),
-        Promise.all([import('@react-pdf/renderer'), import('./ConsignmentPDF')]),
-      ]);
-
-      const logoSrc = normalizePdfLogoSrc(logoBase64, logoUrl);
-      const [{ pdf }, { default: ConsignmentPDF }] = pdfBundle;
-
-      const pdfDocument = React.createElement(ConsignmentPDF, {
-        consignment,
-        logoSrc,
-        productImagesBySku,
-      });
-
-      const blob = await pdf(pdfDocument as never).toBlob();
-
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `consignment-${consignment.consignmentId}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      await downloadConsignmentPdf(consignment, inventory);
     } catch (error) {
       console.error('Error generating PDF:', error);
       showAlert(t('consignments.errorGeneratingPdf'), t('common.error'));
@@ -1589,17 +1667,51 @@ export default function Consignments() {
     return (
       <>
         <div className="space-y-6">
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center gap-3">
           <div>
             <h2 className="text-2xl font-semibold text-gray-900">{t('consignments.title')}</h2>
             <p className="text-sm text-gray-500 mt-1">{t('consignments.subtitle')}</p>
           </div>
-          <button
-            onClick={() => setView('create')}
-            className="px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors"
-          >
-            {t('consignments.createNew')}
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setPrintModalOpen(true)}
+              disabled={consignments.length === 0 || loading}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"
+                />
+              </svg>
+              {t('consignments.printConsignments')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCatalogModalOpen(true)}
+              disabled={consignments.length === 0 || loading}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                />
+              </svg>
+              {t('consignments.generateCatalog')}
+            </button>
+            <button
+              onClick={() => setView('create')}
+              className="px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors"
+            >
+              {t('consignments.createNew')}
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -1995,6 +2107,24 @@ export default function Consignments() {
           </>
         )}
       </div>
+        {printModalOpen ? (
+          <ConsignmentPrintModal
+            consignments={consignments}
+            clients={clients}
+            inventory={inventory}
+            onClose={() => setPrintModalOpen(false)}
+            onError={(message) => showAlert(message, t('common.error'))}
+          />
+        ) : null}
+        {catalogModalOpen ? (
+          <ConsignmentCatalogModal
+            consignments={consignments}
+            clients={clients}
+            inventory={inventory}
+            onClose={() => setCatalogModalOpen(false)}
+            onError={(message) => showAlert(message, t('common.error'))}
+          />
+        ) : null}
         {/* Delete Confirmation Dialog */}
         <ConfirmDialog
           open={deleteConfirmOpen}
@@ -2388,13 +2518,16 @@ export default function Consignments() {
 
   // Details View
   if (view === 'details' && selectedConsignment) {
-    const detailItems = selectedConsignment.items;
+    const detailItems = draftItems;
     const detailDelivered = calculateTotalItems(detailItems);
     const detailSold = calculateTotalSold(detailItems);
     const detailReturned = calculateTotalReturned(detailItems);
     const detailRemaining = calculateTotalRemaining(detailItems);
     const detailFilteredInventory = getFilteredInventory(detailAddSearchTerm);
-    const estimatedSaleTotal = detailItems.reduce((sum, item, index) => {
+    const detailStatus = detailDirty
+      ? computeItemsStatus(detailItems)
+      : selectedConsignment.status;
+    const estimatedSaleTotal = selectedConsignment.items.reduce((sum, item, index) => {
       const qty = salesQuantities[index] || 0;
       const unitRaw = (saleUnitPrices[index] ?? '').trim().replace(',', '.');
       const unit = parseFloat(unitRaw);
@@ -2412,9 +2545,14 @@ export default function Consignments() {
             <div className="min-w-0 space-y-2">
               <div className="flex flex-wrap items-center gap-3">
                 <h2 className="text-2xl font-semibold text-gray-900">{selectedConsignment.consignmentId}</h2>
-                <span className={consignmentStatusBadgeClass(selectedConsignment.status)}>
-                  {consignmentStatusLabel(selectedConsignment.status)}
+                <span className={consignmentStatusBadgeClass(detailStatus)}>
+                  {consignmentStatusLabel(detailStatus)}
                 </span>
+                {detailDirty ? (
+                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
+                    {t('consignments.unsavedChangesBadge')}
+                  </span>
+                ) : null}
               </div>
               <p className="text-sm text-gray-500">
                 {t('consignments.client')}:{' '}
@@ -2430,9 +2568,24 @@ export default function Consignments() {
             <div className="flex flex-wrap gap-2 shrink-0">
               <button
                 type="button"
+                onClick={() => void handleSaveConsignmentDetails(false)}
+                disabled={!detailDirty || isSavingDetails}
+                className="sasa-btn-primary rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSavingDetails
+                  ? t('consignments.savingDetails')
+                  : t('consignments.saveChanges')}
+              </button>
+              <button
+                type="button"
                 onClick={() => handleGeneratePDFClick(selectedConsignment)}
-                disabled={isGeneratingPdf}
+                disabled={isGeneratingPdf || detailDirty}
                 className={`${tableRowActionButtonClass} disabled:cursor-not-allowed disabled:opacity-60`}
+                title={
+                  detailDirty
+                    ? t('consignments.saveBeforePdf') || undefined
+                    : undefined
+                }
               >
                 <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -2444,7 +2597,8 @@ export default function Consignments() {
               <button
                 type="button"
                 onClick={() => handlePrintPrepLabelClick(selectedConsignment)}
-                className={tableRowActionButtonClass}
+                disabled={detailDirty}
+                className={`${tableRowActionButtonClass} disabled:cursor-not-allowed disabled:opacity-60`}
               >
                 <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                   <path
@@ -2458,10 +2612,7 @@ export default function Consignments() {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setView('list');
-                  setSelectedConsignment(null);
-                }}
+                onClick={handleBackToList}
                 className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
               >
                 {t('consignments.backToList')}
@@ -2502,6 +2653,7 @@ export default function Consignments() {
                     <th className={`${tableThBaseClass} text-center`}>{t('consignments.qtySold')}</th>
                     <th className={`${tableThBaseClass} text-center`}>{t('consignments.qtyReturned')}</th>
                     <th className={`${tableThBaseClass} text-center`}>{t('consignments.remaining')}</th>
+                    <th className={`${tableThBaseClass} text-center`}>{t('consignments.actions')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -2549,13 +2701,13 @@ export default function Consignments() {
                                 inputMode="decimal"
                                 value={detailUnitPrices[index] ?? ''}
                                 onChange={(e) => handleDetailUnitPriceChange(index, e.target.value)}
-                                onBlur={() => void handleDetailUnitPriceBlur(index)}
+                                onBlur={() => handleDetailUnitPriceBlur(index)}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
                                     (e.target as HTMLInputElement).blur();
                                   }
                                 }}
-                                disabled={savingDetailPriceIndex === index}
+                                disabled={isSavingDetails}
                                 placeholder="—"
                                 className="w-24 rounded border border-gray-300 py-1 pl-5 pr-2 text-right tabular-nums disabled:opacity-60"
                                 aria-label={t('consignments.unitPrice')}
@@ -2575,13 +2727,13 @@ export default function Consignments() {
                               step={1}
                               value={detailDeliveredQtys[index] ?? ''}
                               onChange={(e) => handleDetailDeliveredQtyChange(index, e.target.value)}
-                              onBlur={() => void handleDetailDeliveredQtyBlur(index)}
+                              onBlur={() => handleDetailDeliveredQtyBlur(index)}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
                                   (e.target as HTMLInputElement).blur();
                                 }
                               }}
-                              disabled={savingDetailQtyIndex === index}
+                              disabled={isSavingDetails}
                               className="w-20 rounded border border-gray-300 px-2 py-1 text-center tabular-nums disabled:opacity-60"
                               aria-label={t('consignments.qtyDelivered')}
                             />
@@ -2598,6 +2750,24 @@ export default function Consignments() {
                         </td>
                         <td className="whitespace-nowrap px-6 py-4 text-center font-medium text-gray-900 tabular-nums">
                           {remaining}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveDraftItem(index)}
+                            disabled={
+                              isSavingDetails ||
+                              item.quantitySold + item.quantityReturned > 0
+                            }
+                            className="text-sm font-medium text-red-600 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-40"
+                            title={
+                              item.quantitySold + item.quantityReturned > 0
+                                ? t('consignments.cannotRemoveAccountedItemShort')
+                                : t('consignments.removeItem')
+                            }
+                          >
+                            {t('consignments.remove')}
+                          </button>
                         </td>
                       </tr>
                     );
@@ -2623,7 +2793,7 @@ export default function Consignments() {
                     setDetailAddShowDropdown(true);
                   }}
                   onFocus={() => setDetailAddShowDropdown(true)}
-                  disabled={isAddingDetailItem}
+                  disabled={isSavingDetails}
                   className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-transparent focus:ring-2 focus:ring-[#515151] disabled:opacity-60"
                   autoComplete="off"
                 />
@@ -2638,12 +2808,11 @@ export default function Consignments() {
                         <button
                           key={product.id}
                           type="button"
-                          disabled={isAddingDetailItem || available < 1}
+                          disabled={isSavingDetails || available < 1}
                           onMouseDown={(e) => {
-                            // Prevent input blur / outside-click from eating the selection
                             e.preventDefault();
                           }}
-                          onClick={() => void handleAddProductToExistingConsignment(product)}
+                          onClick={() => handleAddProductToDraft(product)}
                           className="w-full border-b border-gray-100 px-4 py-2 text-left last:border-b-0 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <div className="font-mono text-sm font-semibold text-[#515151]">
@@ -2669,19 +2838,18 @@ export default function Consignments() {
                     </div>
                   )}
               </div>
-              {isAddingDetailItem ? (
-                <p className="mt-2 text-xs text-gray-500">
-                  {t('consignments.addingItem')}
-                </p>
-              ) : null}
             </div>
           </section>
 
           {/* Registrar ventas */}
-          <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <section className={`bg-white rounded-xl border border-gray-200 overflow-hidden ${detailDirty ? 'opacity-60' : ''}`}>
             <div className="border-b border-gray-200 px-6 py-4">
               <h3 className="text-lg font-semibold text-gray-900">{t('consignments.registerSales')}</h3>
-              <p className="mt-1 text-sm text-gray-500">{t('consignments.registerSalesIntro')}</p>
+              <p className="mt-1 text-sm text-gray-500">
+                {detailDirty
+                  ? t('consignments.saveBeforeSalesOrReturns')
+                  : t('consignments.registerSalesIntro')}
+              </p>
             </div>
             <div className="p-6">
               <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] xl:gap-8">
@@ -2698,7 +2866,7 @@ export default function Consignments() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {detailItems.map((item, index) => {
+                      {selectedConsignment.items.map((item, index) => {
                         const available = item.quantityDelivered - item.quantitySold - item.quantityReturned;
                         const qty = salesQuantities[index] || 0;
                         const unitRaw = (saleUnitPrices[index] ?? '').trim().replace(',', '.');
@@ -2725,7 +2893,7 @@ export default function Consignments() {
                                   })
                                 }
                                 className="w-20 px-2 py-1 border border-gray-300 rounded text-center"
-                                disabled={available === 0}
+                                disabled={detailDirty || available === 0}
                               />
                             </td>
                             <td className="px-6 py-3 text-center">
@@ -2738,7 +2906,7 @@ export default function Consignments() {
                                   setSaleUnitPrices({ ...saleUnitPrices, [index]: e.target.value })
                                 }
                                 className="w-24 px-2 py-1 border border-gray-300 rounded text-center"
-                                disabled={available === 0}
+                                disabled={detailDirty || available === 0}
                               />
                             </td>
                             <td className="px-6 py-3 text-right font-medium text-gray-800 tabular-nums">
@@ -2830,7 +2998,7 @@ export default function Consignments() {
                 <button
                   type="button"
                   onClick={handleRegisterSales}
-                  disabled={isRegisteringSales}
+                  disabled={isRegisteringSales || detailDirty}
                   className="sasa-btn-primary inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isRegisteringSales ? (
@@ -2850,16 +3018,30 @@ export default function Consignments() {
           </section>
 
           {/* Registrar devoluciones */}
-          <section className="bg-white rounded-xl border border-gray-200 p-6">
+          <section className={`bg-white rounded-xl border border-gray-200 p-6 ${detailDirty ? 'opacity-60' : ''}`}>
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <h3 className="text-lg font-semibold text-gray-900">{t('consignments.registerReturns')}</h3>
-                <p className="mt-1 text-sm text-gray-500">{t('consignments.registerReturnsIntro')}</p>
+                <p className="mt-1 text-sm text-gray-500">
+                  {detailDirty
+                    ? t('consignments.saveBeforeSalesOrReturns')
+                    : t('consignments.registerReturnsIntro')}
+                </p>
               </div>
               <button
                 type="button"
-                onClick={() => setReturnModalOpen(true)}
-                className={`${tableRowActionButtonClass} shrink-0`}
+                onClick={() => {
+                  if (detailDirty) {
+                    showAlert(
+                      t('consignments.saveBeforeSalesOrReturns'),
+                      'Validation Error'
+                    );
+                    return;
+                  }
+                  setReturnModalOpen(true);
+                }}
+                disabled={detailDirty}
+                className={`${tableRowActionButtonClass} shrink-0 disabled:cursor-not-allowed disabled:opacity-60`}
               >
                 <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
@@ -2875,6 +3057,17 @@ export default function Consignments() {
           inventory={inventory}
           onClose={() => setReturnModalOpen(false)}
           onSubmit={handleReturnModalSubmit}
+        />
+        <ConfirmDialog
+          open={unsavedLeaveOpen}
+          title={t('consignments.unsavedChangesTitle')}
+          description={t('consignments.unsavedChangesMessage')}
+          confirmText={t('consignments.saveAndLeave')}
+          discardText={t('consignments.discardAndLeave')}
+          cancelText={t('consignments.keepEditing')}
+          onConfirm={handleSaveAndLeave}
+          onDiscard={handleDiscardDetailsAndLeave}
+          onCancel={() => setUnsavedLeaveOpen(false)}
         />
         {/* Alert Dialog */}
         {alertDialogElement}
