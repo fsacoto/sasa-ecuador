@@ -144,6 +144,16 @@ export default function Consignments() {
   /** Editable reference prices for delivered items (persisted on blur) */
   const [detailUnitPrices, setDetailUnitPrices] = useState<Record<number, string>>({});
   const [savingDetailPriceIndex, setSavingDetailPriceIndex] = useState<number | null>(null);
+  /** Editable delivered quantities (persisted on blur) */
+  const [detailDeliveredQtys, setDetailDeliveredQtys] = useState<Record<number, string>>({});
+  const [savingDetailQtyIndex, setSavingDetailQtyIndex] = useState<number | null>(null);
+  /** Add new SKU to an existing consignment (details view) */
+  const [detailAddSearchTerm, setDetailAddSearchTerm] = useState('');
+  const [detailAddShowDropdown, setDetailAddShowDropdown] = useState(false);
+  const [isAddingDetailItem, setIsAddingDetailItem] = useState(false);
+  const isAddingDetailItemRef = useRef(false);
+  const detailAddDropdownRef = useRef<HTMLDivElement>(null);
+  const detailAddSearchInputRef = useRef<HTMLInputElement>(null);
   const [salePaymentStatus, setSalePaymentStatus] = useState<'Unpaid' | 'Partially Paid' | 'Paid'>('Unpaid');
   const [saleAmountPaidInput, setSaleAmountPaidInput] = useState('');
   const [salePaymentMethod, setSalePaymentMethod] = useState('');
@@ -276,6 +286,13 @@ export default function Consignments() {
     });
     setSaleUnitPrices(prices);
     setDetailUnitPrices({ ...prices });
+    const qtys: Record<number, string> = {};
+    selectedConsignment.items.forEach((item, index) => {
+      qtys[index] = String(item.quantityDelivered);
+    });
+    setDetailDeliveredQtys(qtys);
+    setDetailAddSearchTerm('');
+    setDetailAddShowDropdown(false);
     setSalePaymentStatus('Unpaid');
     setSaleAmountPaidInput('');
     setSalePaymentMethod('');
@@ -305,6 +322,14 @@ export default function Consignments() {
         !searchInputRef.current.contains(event.target as Node)
       ) {
         setShowDropdown(false);
+      }
+      if (
+        detailAddDropdownRef.current &&
+        !detailAddDropdownRef.current.contains(event.target as Node) &&
+        detailAddSearchInputRef.current &&
+        !detailAddSearchInputRef.current.contains(event.target as Node)
+      ) {
+        setDetailAddShowDropdown(false);
       }
     };
 
@@ -356,9 +381,9 @@ export default function Consignments() {
   const getAvailableInventory = () => filterSellableInventory(inventory);
 
   // Filter inventory based on search term
-  const getFilteredInventory = () => {
-    if (!searchTerm.trim()) return [];
-    const searchLower = searchTerm.toLowerCase();
+  const getFilteredInventory = (term: string = searchTerm) => {
+    if (!term.trim()) return [];
+    const searchLower = term.toLowerCase();
     return getAvailableInventory().filter(item =>
       item.sku.toLowerCase().includes(searchLower) ||
       item.name.toLowerCase().includes(searchLower) ||
@@ -566,6 +591,275 @@ export default function Consignments() {
       revertDetailUnitPrice(index, item);
     } finally {
       setSavingDetailPriceIndex(null);
+    }
+  };
+
+  const revertDetailDeliveredQty = (index: number, item: ConsignmentItem) => {
+    setDetailDeliveredQtys((prev) => ({
+      ...prev,
+      [index]: String(item.quantityDelivered),
+    }));
+  };
+
+  const handleDetailDeliveredQtyChange = (index: number, raw: string) => {
+    setDetailDeliveredQtys((prev) => ({ ...prev, [index]: raw }));
+  };
+
+  const handleDetailDeliveredQtyBlur = async (index: number) => {
+    if (!selectedConsignment || savingDetailQtyIndex !== null) return;
+    const item = selectedConsignment.items[index];
+    if (!item) return;
+
+    const raw = (detailDeliveredQtys[index] ?? '').trim();
+    if (!/^\d+$/.test(raw)) {
+      showAlert(
+        t('consignments.invalidDeliveredQty') ||
+          'Indique una cantidad entera válida (≥ 0).',
+        'Validation Error'
+      );
+      revertDetailDeliveredQty(index, item);
+      return;
+    }
+
+    const parsed = parseInt(raw, 10);
+    const minQty = item.quantitySold + item.quantityReturned;
+
+    if (parsed < minQty) {
+      showAlert(
+        formatTemplate(t('consignments.deliveredQtyBelowAccounted'), {
+          min: String(minQty),
+        }),
+        'Validation Error'
+      );
+      revertDetailDeliveredQty(index, item);
+      return;
+    }
+
+    if (parsed === item.quantityDelivered) {
+      setDetailDeliveredQtys((prev) => ({ ...prev, [index]: String(parsed) }));
+      return;
+    }
+
+    const delta = parsed - item.quantityDelivered;
+    const inventoryItem = inventory.find((inv) => inv.sku === item.sku);
+
+    if (delta > 0) {
+      if (!inventoryItem) {
+        showAlert(
+          formatTemplate(t('consignments.insufficientStock'), {
+            sku: item.sku,
+            available: '0',
+          }),
+          'Stock Error'
+        );
+        revertDetailDeliveredQty(index, item);
+        return;
+      }
+      const available = getAvailableStock(inventoryItem);
+      if (delta > available) {
+        showAlert(
+          formatTemplate(t('consignments.insufficientStock'), {
+            sku: item.sku,
+            available: String(available),
+          }),
+          'Stock Error'
+        );
+        revertDetailDeliveredQty(index, item);
+        return;
+      }
+      const reserved = getReservedStock(inventoryItem);
+      if (inventoryItem.ecuadorStock - delta < reserved) {
+        showAlert(
+          formatTemplate(t('consignments.insufficientStock'), {
+            sku: item.sku,
+            available: String(available),
+          }),
+          'Stock Error'
+        );
+        revertDetailDeliveredQty(index, item);
+        return;
+      }
+    }
+
+    const computeStatus = (items: ConsignmentItem[]): ConsignmentStatus => {
+      const totalDelivered = items.reduce((sum, row) => sum + row.quantityDelivered, 0);
+      const totalSold = items.reduce((sum, row) => sum + row.quantitySold, 0);
+      const totalReturned = items.reduce((sum, row) => sum + row.quantityReturned, 0);
+      const totalAccounted = totalSold + totalReturned;
+      if (totalAccounted >= totalDelivered) return 'Closed';
+      if (totalAccounted > 0) return 'Partially Closed';
+      return 'Open';
+    };
+
+    setSavingDetailQtyIndex(index);
+    try {
+      let updatedItems: ConsignmentItem[];
+      if (parsed === 0 && minQty === 0) {
+        updatedItems = selectedConsignment.items.filter((_, i) => i !== index);
+      } else {
+        updatedItems = selectedConsignment.items.map((line, i) =>
+          i === index ? { ...line, quantityDelivered: parsed } : line
+        );
+      }
+
+      const newStatus = computeStatus(updatedItems);
+
+      if (delta !== 0 && inventoryItem) {
+        if (delta > 0) {
+          await updateInventory(inventoryItem.id, {
+            ecuadorStock: inventoryItem.ecuadorStock - delta,
+            consignmentStock: (inventoryItem.consignmentStock || 0) + delta,
+          });
+        } else {
+          const pullBack = -delta;
+          await updateInventory(inventoryItem.id, {
+            ecuadorStock: inventoryItem.ecuadorStock + pullBack,
+            consignmentStock: Math.max(0, (inventoryItem.consignmentStock || 0) - pullBack),
+          });
+        }
+      }
+
+      await updateConsignment(selectedConsignment.id, {
+        items: updatedItems,
+        status: newStatus,
+      });
+
+      const updated: Consignment = {
+        ...selectedConsignment,
+        items: updatedItems,
+        status: newStatus,
+      };
+      setSelectedConsignment(updated);
+      setConsignments((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      syncDetailItemEditors(updatedItems);
+    } catch (error) {
+      console.error('Error saving consignment delivered qty:', error);
+      showAlert(
+        t('consignments.errorSavingDeliveredQty') || 'Error al guardar la cantidad',
+        t('common.error')
+      );
+      revertDetailDeliveredQty(index, item);
+    } finally {
+      setSavingDetailQtyIndex(null);
+    }
+  };
+
+  const syncDetailItemEditors = (items: ConsignmentItem[]) => {
+    const qtys: Record<number, string> = {};
+    const prices: Record<number, string> = {};
+    items.forEach((line, i) => {
+      qtys[i] = String(line.quantityDelivered);
+      const p = normalizeSalePrice(line.unitPrice);
+      if (p !== undefined) prices[i] = p.toFixed(2);
+    });
+    setDetailDeliveredQtys(qtys);
+    setDetailUnitPrices(prices);
+    setSaleUnitPrices(prices);
+    setSalesQuantities({});
+  };
+
+  const handleAddProductToExistingConsignment = async (product: InventoryItem) => {
+    if (!selectedConsignment || isAddingDetailItemRef.current) return;
+
+    if (!hasSellableStock(product)) {
+      showAlert(t('inventory.noSellableStock'), 'Stock');
+      return;
+    }
+
+    const available = getAvailableStock(product);
+    if (available < 1) {
+      showAlert(
+        formatTemplate(t('consignments.insufficientStock'), {
+          sku: product.sku,
+          available: String(available),
+        }),
+        'Stock Error'
+      );
+      return;
+    }
+
+    const reserved = getReservedStock(product);
+    if (product.ecuadorStock - 1 < reserved) {
+      showAlert(
+        formatTemplate(t('consignments.insufficientStock'), {
+          sku: product.sku,
+          available: String(available),
+        }),
+        'Stock Error'
+      );
+      return;
+    }
+
+    isAddingDetailItemRef.current = true;
+    setIsAddingDetailItem(true);
+
+    try {
+      const existingIndex = selectedConsignment.items.findIndex(
+        (line) => line.sku.trim() === product.sku.trim()
+      );
+
+      let updatedItems: ConsignmentItem[];
+      if (existingIndex >= 0) {
+        updatedItems = selectedConsignment.items.map((line, i) =>
+          i === existingIndex
+            ? { ...line, quantityDelivered: line.quantityDelivered + 1 }
+            : line
+        );
+      } else {
+        const salePrice = normalizeSalePrice(product.salePrice);
+        const newItem: ConsignmentItem = {
+          sku: product.sku,
+          description: product.description || product.name,
+          quantityDelivered: 1,
+          quantitySold: 0,
+          quantityReturned: 0,
+          line: product.line,
+          category: product.category,
+          ...(salePrice !== undefined ? { unitPrice: salePrice } : {}),
+        };
+        updatedItems = [...selectedConsignment.items, newItem];
+      }
+
+      const totalDelivered = updatedItems.reduce((sum, row) => sum + row.quantityDelivered, 0);
+      const totalSold = updatedItems.reduce((sum, row) => sum + row.quantitySold, 0);
+      const totalReturned = updatedItems.reduce((sum, row) => sum + row.quantityReturned, 0);
+      const totalAccounted = totalSold + totalReturned;
+      const newStatus: ConsignmentStatus =
+        totalAccounted >= totalDelivered
+          ? 'Closed'
+          : totalAccounted > 0
+            ? 'Partially Closed'
+            : 'Open';
+
+      await updateInventory(product.id, {
+        ecuadorStock: product.ecuadorStock - 1,
+        consignmentStock: (product.consignmentStock || 0) + 1,
+      });
+
+      await updateConsignment(selectedConsignment.id, {
+        items: updatedItems,
+        status: newStatus,
+      });
+
+      const updated: Consignment = {
+        ...selectedConsignment,
+        items: updatedItems,
+        status: newStatus,
+      };
+      setSelectedConsignment(updated);
+      setConsignments((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      syncDetailItemEditors(updatedItems);
+      setDetailAddSearchTerm('');
+      setDetailAddShowDropdown(false);
+    } catch (error) {
+      console.error('Error adding item to consignment:', error);
+      showAlert(
+        t('consignments.errorAddingItem') || 'Error al agregar el artículo',
+        t('common.error')
+      );
+    } finally {
+      isAddingDetailItemRef.current = false;
+      setIsAddingDetailItem(false);
     }
   };
 
@@ -2093,6 +2387,7 @@ export default function Consignments() {
     const detailSold = calculateTotalSold(detailItems);
     const detailReturned = calculateTotalReturned(detailItems);
     const detailRemaining = calculateTotalRemaining(detailItems);
+    const detailFilteredInventory = getFilteredInventory(detailAddSearchTerm);
     const estimatedSaleTotal = detailItems.reduce((sum, item, index) => {
       const qty = salesQuantities[index] || 0;
       const unitRaw = (saleUnitPrices[index] ?? '').trim().replace(',', '.');
@@ -2187,6 +2482,7 @@ export default function Consignments() {
           <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="border-b border-gray-200 px-6 py-4">
               <h3 className="text-lg font-semibold text-gray-900">{t('consignments.itemsDelivered')}</h3>
+              <p className="mt-1 text-sm text-gray-500">{t('consignments.itemsDeliveredEditHint')}</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -2248,8 +2544,29 @@ export default function Consignments() {
                             </div>
                           </div>
                         </td>
-                        <td className="whitespace-nowrap px-6 py-4 text-center text-gray-900 tabular-nums">
-                          {item.quantityDelivered}
+                        <td className="whitespace-nowrap px-6 py-4 text-center">
+                          <div className="inline-flex flex-col items-center gap-1">
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              min={item.quantitySold + item.quantityReturned}
+                              step={1}
+                              value={detailDeliveredQtys[index] ?? ''}
+                              onChange={(e) => handleDetailDeliveredQtyChange(index, e.target.value)}
+                              onBlur={() => void handleDetailDeliveredQtyBlur(index)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  (e.target as HTMLInputElement).blur();
+                                }
+                              }}
+                              disabled={savingDetailQtyIndex === index}
+                              className="w-20 rounded border border-gray-300 px-2 py-1 text-center tabular-nums disabled:opacity-60"
+                              aria-label={t('consignments.qtyDelivered')}
+                            />
+                            <div className="text-[10px] text-gray-400">
+                              {t('consignments.qtyDeliveredDetailHint')}
+                            </div>
+                          </div>
                         </td>
                         <td className="whitespace-nowrap px-6 py-4 text-center text-gray-900 tabular-nums">
                           {item.quantitySold}
@@ -2265,6 +2582,65 @@ export default function Consignments() {
                   })}
                 </tbody>
               </table>
+            </div>
+            <div className="border-t border-gray-200 px-6 py-4">
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                {t('consignments.addItemToConsignment')}
+              </label>
+              <p className="mb-3 text-xs text-gray-500">
+                {t('consignments.addItemToConsignmentHint')}
+              </p>
+              <div className="relative max-w-xl" ref={detailAddDropdownRef}>
+                <input
+                  ref={detailAddSearchInputRef}
+                  type="text"
+                  placeholder={t('consignments.searchSkuPlaceholder')}
+                  value={detailAddSearchTerm}
+                  onChange={(e) => {
+                    setDetailAddSearchTerm(e.target.value);
+                    setDetailAddShowDropdown(true);
+                  }}
+                  onFocus={() => setDetailAddShowDropdown(true)}
+                  disabled={isAddingDetailItem}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-transparent focus:ring-2 focus:ring-[#515151] disabled:opacity-60"
+                  autoComplete="off"
+                />
+                {detailAddShowDropdown && detailFilteredInventory.length > 0 && (
+                  <div className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-gray-300 bg-white shadow-lg">
+                    {detailFilteredInventory.map((product) => {
+                      const available = getAvailableStock(product);
+                      const alreadyOn = detailItems.some(
+                        (line) => line.sku.trim() === product.sku.trim()
+                      );
+                      return (
+                        <button
+                          key={product.id}
+                          type="button"
+                          disabled={isAddingDetailItem || available < 1}
+                          onClick={() => void handleAddProductToExistingConsignment(product)}
+                          className="w-full border-b border-gray-100 px-4 py-2 text-left last:border-b-0 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <div className="font-mono text-sm font-semibold text-[#515151]">
+                            {product.sku}
+                          </div>
+                          <div className="text-sm text-gray-600">{product.name}</div>
+                          <div className="text-xs text-gray-500">
+                            {t('consignments.available')}: {available}
+                            {alreadyOn
+                              ? ` · ${t('consignments.alreadyOnConsignment')}`
+                              : ''}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              {isAddingDetailItem ? (
+                <p className="mt-2 text-xs text-gray-500">
+                  {t('consignments.addingItem')}
+                </p>
+              ) : null}
             </div>
           </section>
 
