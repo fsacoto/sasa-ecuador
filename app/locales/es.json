@@ -1421,6 +1421,7 @@
     "catalogModalIntro": "Elija consignaciones completas (no artículos sueltos). Se unen todos sus productos en un catálogo con el mismo formato de inventario.",
     "catalogModalDefaultTitle": "Catálogo de consignación",
     "catalogModalSelectionSummary": "{selected} consignaciones · {products} productos en el catálogo",
+    "catalogModalVisibleCount": "{visible} visibles",
     "catalogModalSkuCount": "{skus} SKUs · {units} unidades",
     "catalogPhotosAllHint": "Incluye todos los artículos, aunque no tengan foto",
     "catalogPhotosWithHint": "Solo artículos que tengan imagen en inventario",

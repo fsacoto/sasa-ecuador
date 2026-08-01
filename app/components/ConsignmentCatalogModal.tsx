@@ -284,7 +284,7 @@ export default function ConsignmentCatalogModal({
       maxWidthClass="max-w-4xl"
       onClose={busy ? () => undefined : onClose}
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
+      <div className="flex flex-col gap-4 p-5">
         <p className="text-sm text-gray-600">{t('consignments.catalogModalIntro')}</p>
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -455,6 +455,14 @@ export default function ConsignmentCatalogModal({
               selected: String(selectedForCatalog.length),
               products: String(previewProducts.length),
             })}
+            {filtered.length > 0 ? (
+              <span className="text-gray-500">
+                {' · '}
+                {formatTemplate(t('consignments.catalogModalVisibleCount'), {
+                  visible: String(filtered.length),
+                })}
+              </span>
+            ) : null}
           </p>
           <div className="flex flex-wrap gap-2">
             <button
@@ -480,11 +488,14 @@ export default function ConsignmentCatalogModal({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-gray-200">
-          <div className="max-h-[min(36vh,320px)] overflow-y-auto">
+        {/* Fixed min-height: flex-1 + min-h-0 was collapsing this list to 0px under tall option panels */}
+        <div className="min-h-[240px] overflow-hidden rounded-xl border border-gray-200">
+          <div className="max-h-[min(42vh,360px)] min-h-[240px] overflow-y-auto">
             {filtered.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-gray-500">
-                {t('consignments.printModalNoMatch')}
+                {consignments.length === 0
+                  ? t('consignments.noConsignments')
+                  : t('consignments.printModalNoMatch')}
               </p>
             ) : (
               <ul className="divide-y divide-gray-100">

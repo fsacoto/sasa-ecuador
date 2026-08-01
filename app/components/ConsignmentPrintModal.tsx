@@ -169,7 +169,7 @@ export default function ConsignmentPrintModal({
       maxWidthClass="max-w-4xl"
       onClose={busy ? () => undefined : onClose}
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
+      <div className="flex flex-col gap-4 p-5">
         <p className="text-sm text-gray-600">{t('consignments.printModalIntro')}</p>
 
         <div className="flex flex-col gap-2 sm:flex-row">
@@ -305,11 +305,13 @@ export default function ConsignmentPrintModal({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-gray-200">
-          <div className="max-h-[min(42vh,360px)] overflow-y-auto">
+        <div className="min-h-[240px] overflow-hidden rounded-xl border border-gray-200">
+          <div className="max-h-[min(42vh,360px)] min-h-[240px] overflow-y-auto">
             {filtered.length === 0 ? (
               <p className="px-4 py-10 text-center text-sm text-gray-500">
-                {t('consignments.printModalNoMatch')}
+                {consignments.length === 0
+                  ? t('consignments.noConsignments')
+                  : t('consignments.printModalNoMatch')}
               </p>
             ) : (
               <ul className="divide-y divide-gray-100">
