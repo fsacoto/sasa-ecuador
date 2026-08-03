@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
       return storeApiJson(
         {
           error:
-            'Invalid category. Use earrings, necklaces, rings, bracelets, or anklets.',
+            'Invalid category. Use earrings, necklaces, rings, bracelets, anklets, or sets.',
         },
         request,
         { status: 400 }
