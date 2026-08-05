@@ -106,7 +106,8 @@ function parseBoolean(value: unknown, fallback = false): boolean {
 
 export function inventoryDocToStoreProduct(
   item: RawInventoryDoc,
-  cmsContent: CMSContent[] = []
+  cmsContent: CMSContent[] = [],
+  inventoryMediaBySku: Map<string, string[]> = new Map()
 ): StoreProduct | null {
   if (!isStoreActiveProduct(item)) return null;
 
@@ -115,7 +116,17 @@ export function inventoryDocToStoreProduct(
 
   const price = normalizeSalePrice(item.salePrice) ?? 0;
 
-  const mergedImages = buildMergedGalleryUrls(item.images, item.sku, cmsContent);
+  const skuKey = item.sku?.trim().toLowerCase() || '';
+  const mediaExtras = skuKey ? inventoryMediaBySku.get(skuKey) || [] : [];
+  // Productos construidos a veces solo tienen fotos en sourceImages.
+  const sourceImages = Array.isArray(item.sourceImages)
+    ? item.sourceImages.filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
+    : [];
+
+  const mergedImages = buildMergedGalleryUrls(item.images, item.sku, cmsContent, {
+    inventoryMediaImages: mediaExtras,
+    purchaseOrderImages: sourceImages,
+  });
   const images = mergedImages.filter(isStorefrontImageUrl);
 
   return {
@@ -139,12 +150,13 @@ export function inventoryDocToStoreProduct(
 
 export function mapInventoryDocsToStoreProducts(
   items: RawInventoryDoc[],
-  cmsContent: CMSContent[] = []
+  cmsContent: CMSContent[] = [],
+  inventoryMediaBySku: Map<string, string[]> = new Map()
 ): StoreProduct[] {
   const products: StoreProduct[] = [];
 
   for (const item of items) {
-    const mapped = inventoryDocToStoreProduct(item, cmsContent);
+    const mapped = inventoryDocToStoreProduct(item, cmsContent, inventoryMediaBySku);
     if (mapped) products.push(mapped);
   }
 

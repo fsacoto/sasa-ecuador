@@ -14,6 +14,7 @@ import {
   findStoreProductBySlug,
   mapInventoryDocsToStoreProducts,
 } from '../lib/storeProductMapper';
+import { getAllMedia } from './inventoryMediaService';
 import type { CMSContent, InventoryItem } from '../types';
 import type { InventoryStoreFields, StoreCategory, StoreProduct } from '../types/storeProduct';
 
@@ -58,6 +59,7 @@ function normalizeInventoryDoc(
     consignmentStock:
       raw.consignmentStock !== undefined ? Number(raw.consignmentStock) : undefined,
     images: Array.isArray(raw.images) ? raw.images.map(String) : [],
+    sourceImages: Array.isArray(raw.sourceImages) ? raw.sourceImages.map(String) : undefined,
     barcode: raw.barcode !== undefined ? String(raw.barcode) : undefined,
     salePrice:
       raw.salePrice === undefined || raw.salePrice === null || raw.salePrice === ''
@@ -161,12 +163,26 @@ async function fetchPublishedCmsContent(): Promise<CMSContent[]> {
 }
 
 export async function getStoreProducts(category?: StoreCategory): Promise<StoreProduct[]> {
-  const [inventoryDocs, cmsContent] = await Promise.all([
+  const [inventoryDocs, cmsContent, mediaRows] = await Promise.all([
     fetchInventoryDocs(),
     fetchPublishedCmsContent(),
+    getAllMedia().catch((error) => {
+      console.warn('[store] inventoryMedia merge skipped:', error);
+      return [];
+    }),
   ]);
 
-  const products = mapInventoryDocsToStoreProducts(inventoryDocs, cmsContent);
+  const mediaBySku = new Map<string, string[]>();
+  for (const row of mediaRows) {
+    const sku = String(row.sku || '').trim().toLowerCase();
+    if (!sku) continue;
+    const imgs = (row.images || []).filter((u): u is string => typeof u === 'string' && u.trim().length > 0);
+    if (imgs.length === 0) continue;
+    const prev = mediaBySku.get(sku) || [];
+    mediaBySku.set(sku, [...prev, ...imgs]);
+  }
+
+  const products = mapInventoryDocsToStoreProducts(inventoryDocs, cmsContent, mediaBySku);
   if (!category) return products;
   return filterStoreProductsByCategory(products, category);
 }
