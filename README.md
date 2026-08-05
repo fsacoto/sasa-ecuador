@@ -142,7 +142,7 @@ También acepta valores legados en inglés (`Earring`, `Necklace`, etc.). **Sets
 | Firebase (`line`) | API (`material`) |
 |-------------------|------------------|
 | Baño en Oro | `gold-filled` |
-| Enchapado en Oro | `gold-plated` |
+| Laminado en Oro (antes Enchapado en Oro) | `gold-plated` |
 | Plata esterlina | `sterling-silver` |
 
 ### Productos “activos”

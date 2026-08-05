@@ -265,12 +265,13 @@
       "english": "Inglés",
       "spanish": "Español",
       "materialNames": {
-        "goldPlated": "BAÑO EN ORO",
-        "goldFilled": "ENCHAPADO EN ORO",
-        "enchapadoEnOro": "ENCHAPADO EN ORO",
+        "goldPlated": "LAMINADO EN ORO",
+        "goldFilled": "BAÑO EN ORO",
+        "laminadoEnOro": "LAMINADO EN ORO",
+        "enchapadoEnOro": "LAMINADO EN ORO",
         "sterlingSilver": "PLATA ESTERLINA",
         "oroLaminado": "BAÑO EN ORO",
-        "oroRelleno": "ENCHAPADO EN ORO",
+        "oroRelleno": "BAÑO EN ORO",
         "plata": "PLATA ESTERLINA"
       }
     },

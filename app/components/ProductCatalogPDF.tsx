@@ -42,19 +42,29 @@ const translateMaterialName = (materialName: string): string => {
     }
     
     // Check for common material name patterns
-    if (materialLower.includes('gold plated') || materialLower.includes('oro laminado')) {
-      return materialTranslations.goldPlated || materialTranslations.oroLaminado || materialName.toUpperCase();
+    if (
+      materialLower.includes('laminado en oro') ||
+      materialLower.includes('enchapado en oro') ||
+      materialLower.includes('gold plated') ||
+      materialLower.includes('bañado en oro') ||
+      materialLower.includes('banado en oro')
+    ) {
+      return (
+        materialTranslations.laminadoEnOro ||
+        materialTranslations.enchapadoEnOro ||
+        materialTranslations.goldPlated ||
+        materialName.toUpperCase()
+      );
     }
     if (
       materialLower.includes('gold filled') ||
       materialLower.includes('oro relleno') ||
-      materialLower.includes('bañado en oro') ||
-      materialLower.includes('banado en oro') ||
-      materialLower.includes('enchapado en oro')
+      materialLower.includes('baño en oro') ||
+      materialLower.includes('oro laminado')
     ) {
       return (
-        materialTranslations.enchapadoEnOro ||
         materialTranslations.goldFilled ||
+        materialTranslations.oroLaminado ||
         materialTranslations.oroRelleno ||
         materialName.toUpperCase()
       );

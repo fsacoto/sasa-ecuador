@@ -10,6 +10,8 @@
     "firebase:deploy:storage": "firebase deploy --only storage",
     "firebase:deploy:prod": "firebase deploy --only firestore:rules,firestore:indexes,storage --project sasa-ecuador",
     "firebase:deploy:dev": "firebase deploy --only firestore:rules,firestore:indexes,storage --project sasa-ecuador-dev",
+    "migrate:enchapado-to-laminado:dry": "node scripts/migrate-enchapado-to-laminado.mjs --project sasa-ecuador",
+    "migrate:enchapado-to-laminado:apply": "node scripts/migrate-enchapado-to-laminado.mjs --project sasa-ecuador --apply --storage",
     "firebase:cors:prod": "gsutil cors set storage-cors.json gs://sasa-ecuador.firebasestorage.app",
     "firebase:cors": "echo \"Apply CORS: gsutil cors set storage-cors.json gs://YOUR_BUCKET_ID\" && echo \"Bucket id = Firebase Console → Storage (same as NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET).\""
   },

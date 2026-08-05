@@ -38,14 +38,14 @@ export function mapInventoryLineToStoreMaterial(line: string): StoreMaterial {
   const canonical = canonicalLine(line);
 
   if (canonical === 'Baño en Oro') return 'gold-filled';
-  if (canonical === 'Enchapado en Oro') return 'gold-plated';
+  if (canonical === 'Laminado en Oro' || canonical === 'Enchapado en Oro') return 'gold-plated';
   if (canonical === 'Plata esterlina') return 'sterling-silver';
 
   const lower = line.trim().toLowerCase();
   if (lower.includes('gold filled') || lower.includes('baño') || lower.includes('bano') || lower.includes('oro laminado') || lower.includes('oro relleno')) {
     return 'gold-filled';
   }
-  if (lower.includes('gold plated') || lower.includes('enchapado')) {
+  if (lower.includes('gold plated') || lower.includes('enchapado') || lower.includes('laminado en oro')) {
     return 'gold-plated';
   }
   if (lower.includes('sterling') || lower.includes('plata')) {

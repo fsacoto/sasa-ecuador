@@ -14,17 +14,18 @@ export function colorAt(index: number): string {
   return CHART_COLORS[index % CHART_COLORS.length];
 }
 
-/** Dorados para líneas de mercancía en barras de inventario (Enchapado = oro premium). */
+/** Dorados para líneas de mercancía en barras de inventario (Laminado = oro premium). */
 const LINE_BAR_GOLD: Record<string, string> = {
+  'laminado en oro': '#E8C547',
   'enchapado en oro': '#E8C547',
-  'oro relleno': '#E8C547',
-  'gold filled': '#E8C547',
+  'gold plated': '#E8C547',
   'bañado en oro': '#E8C547',
   'banado en oro': '#E8C547',
   'baño en oro': '#9A7224',
   'bano en oro': '#9A7224',
   'oro laminado': '#9A7224',
-  'gold plated': '#9A7224',
+  'oro relleno': '#9A7224',
+  'gold filled': '#9A7224',
 };
 
 export function lineBarColor(label: string, index: number): string {

@@ -25,7 +25,7 @@ export const PREDEFINED_MATERIAL_LINES_ES = [
 export const MATERIAL_UNITS_ES = ['unidad', 'metro', 'gramo', 'par'] as const;
 export type MaterialUnitEs = (typeof MATERIAL_UNITS_ES)[number];
 
-export const PREDEFINED_LINES_ES = ['Baño en Oro', 'Enchapado en Oro'] as const;
+export const PREDEFINED_LINES_ES = ['Baño en Oro', 'Laminado en Oro'] as const;
 
 /** Valores en inglés legados (misma jerarquía que las categorías ES). */
 const LEGACY_CATEGORIES_EN = [
@@ -76,12 +76,13 @@ export const LINE_TO_ES: Record<string, string> = {
   [LEGACY_LINES_EN[1]]: 'Baño en Oro',
   'baño en oro': 'Baño en Oro',
   'bano en oro': 'Baño en Oro',
-  'enchapado en oro': 'Enchapado en Oro',
-  'gold plated': 'Enchapado en Oro',
-  [LEGACY_LINES_EN[0]]: 'Enchapado en Oro',
-  /** Datos antiguos “bañado en oro” → Enchapado en Oro */
-  'bañado en oro': 'Enchapado en Oro',
-  'banado en oro': 'Enchapado en Oro',
+  /** Antes «Enchapado en Oro» (SKU …EO…); ahora Laminado en Oro (SKU …LO…) */
+  'enchapado en oro': 'Laminado en Oro',
+  'laminado en oro': 'Laminado en Oro',
+  'gold plated': 'Laminado en Oro',
+  [LEGACY_LINES_EN[0]]: 'Laminado en Oro',
+  'bañado en oro': 'Laminado en Oro',
+  'banado en oro': 'Laminado en Oro',
   /** Plata y otras líneas retiradas del catálogo; se muestran tal cual si ya existen en BD */
   'sterling silver': 'Plata esterlina',
   [LEGACY_LINES_EN[2]]: 'Plata esterlina',
