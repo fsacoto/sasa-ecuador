@@ -8,6 +8,56 @@ import { useTranslation } from '../context/TranslationContext';
 import { displayCategory, displayLine } from '../utils/merchandiseLabels';
 import { isMaterialCategory } from '../utils/materials';
 
+/** Tras EO→LO, prueba la URL alternativa si la principal no carga. */
+function imageUrlFallbacks(url: string): string[] {
+  const variants = new Set<string>([url]);
+  const swap = (input: string, from: 'EO' | 'LO', to: 'EO' | 'LO') =>
+    input.replace(
+      new RegExp(`([A-Za-z]{2})${from}(\\d{4}(?:-\\d+)?)`, 'gi'),
+      (_m, prefix: string, seq: string) => `${prefix.toUpperCase()}${to}${seq}`
+    );
+  for (const base of [...variants]) {
+    const toLo = swap(base, 'EO', 'LO');
+    const toEo = swap(base, 'LO', 'EO');
+    if (toLo !== base) variants.add(toLo);
+    if (toEo !== base) variants.add(toEo);
+  }
+  return [...variants];
+}
+
+function CatalogItemImage({
+  images,
+  alt,
+  placeholderClassName,
+}: {
+  images: string[];
+  alt: string;
+  placeholderClassName: string;
+}) {
+  const candidates = images.flatMap((u) => (u?.trim() ? imageUrlFallbacks(u.trim()) : []));
+  const [index, setIndex] = useState(0);
+  const src = candidates[index];
+
+  if (!src) {
+    return (
+      <div className={`w-full h-full flex items-center justify-center ${placeholderClassName}`}>
+        <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className="h-full w-full object-contain p-1"
+      onError={() => setIndex((i) => i + 1)}
+    />
+  );
+}
+
 type CatalogSort =
   | 'skuAsc'
   | 'skuDesc'
@@ -494,10 +544,10 @@ export default function ProductCatalogModal({
                             {/* Product Image */}
                             <div className={`aspect-square mb-2 rounded-lg overflow-hidden ${imgPlaceholder}`}>
                               {item.images && item.images.length > 0 ? (
-                                <img
-                                  src={item.images[0]}
+                                <CatalogItemImage
+                                  images={item.images}
                                   alt={item.name}
-                                  className="h-full w-full object-contain p-1"
+                                  placeholderClassName={imgPlaceholder}
                                 />
                               ) : (
                                 <div className="w-full h-full flex items-center justify-center">

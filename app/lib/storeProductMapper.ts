@@ -1,6 +1,6 @@
 import { canonicalCategory, canonicalLine } from '../utils/merchandiseLabels';
 import { normalizeSalePrice } from '../utils/salePrice';
-import { buildMergedGalleryUrls } from '../utils/inventoryMediaGallery';
+import { buildMergedGalleryUrls, isGalleryVideoUrl } from '../utils/inventoryMediaGallery';
 import { isMaterialCategory } from '../utils/materials';
 import { getAvailableStock } from '../utils/stockReservation';
 import type { CMSContent, InventoryItem } from '../types';
@@ -76,6 +76,11 @@ export function isPublicMediaUrl(url: string): boolean {
   return trimmed.startsWith('http://') || trimmed.startsWith('https://');
 }
 
+/** Fotos de vitrina: http(s) y no video (el CMS a veces mezcla videos en la galería). */
+export function isStorefrontImageUrl(url: string): boolean {
+  return isPublicMediaUrl(url) && !isGalleryVideoUrl(url);
+}
+
 export function isStoreActiveProduct(
   item: InventoryItem & InventoryStoreFields
 ): boolean {
@@ -111,7 +116,7 @@ export function inventoryDocToStoreProduct(
   const price = normalizeSalePrice(item.salePrice) ?? 0;
 
   const mergedImages = buildMergedGalleryUrls(item.images, item.sku, cmsContent);
-  const images = mergedImages.filter(isPublicMediaUrl);
+  const images = mergedImages.filter(isStorefrontImageUrl);
 
   return {
     id: item.id,
