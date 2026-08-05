@@ -406,6 +406,7 @@
     "enterNewLine": "Ingresar nueva línea",
     "internalSku": "SKU Interno *",
     "regenerateSku": "Regenerar SKU",
+    "regenerateSkuEditHint": "Cambie categoría o línea y pulse regenerar para crear el SKU nuevo (ej. EO → LO). Luego guarde.",
     "supplierSku": "SKU del Proveedor",
     "supplierSkuPlaceholder": "SKU del proveedor",
     "ecuadorStockLabel": "Stock Ecuador",

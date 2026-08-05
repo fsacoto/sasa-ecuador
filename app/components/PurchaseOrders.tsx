@@ -10,7 +10,6 @@ import PurchaseOrderBarcodeCell from './PurchaseOrderBarcodeCell';
 import {
   resolveInternalSku,
   validateAndNormalizeInternalSku,
-  findInternalSkuBySupplierSku,
   collectUsedSkus,
   generateUniqueSKU,
 } from '../utils/skuGenerator';
@@ -632,11 +631,14 @@ export default function PurchaseOrders() {
     );
     if (!skuValidation.ok) {
       if (skuValidation.reason === 'supplier_mismatch') {
-        alert(
-          (t('purchaseOrders.supplierSkuAlreadyLinked') ||
-            'Este SKU de proveedor ya está vinculado al SKU interno {sku}. Se usará ese código.'
-          ).replace('{sku}', skuValidation.sku)
-        );
+        if (!skuManuallyEdited) {
+          alert(
+            (t('purchaseOrders.supplierSkuAlreadyLinked') ||
+              'Este SKU de proveedor ya está vinculado al SKU interno {sku}. Se usará ese código.'
+            ).replace('{sku}', skuValidation.sku)
+          );
+        }
+        // If the user regenerated/edited the SKU on purpose, keep their value.
       } else {
         alert(
           t('purchaseOrders.internalSkuTakenByOtherSupplier') ||
@@ -645,7 +647,13 @@ export default function PurchaseOrders() {
         return;
       }
     }
-    const normalizedSku = skuValidation.sku;
+    const normalizedSku =
+      !skuValidation.ok &&
+      skuValidation.reason === 'supplier_mismatch' &&
+      skuManuallyEdited &&
+      formData.sku.trim()
+        ? formData.sku.trim()
+        : skuValidation.sku;
     
     // Prepare dates based on status
     const statusDates: Partial<PurchaseOrder> = {};
@@ -811,23 +819,14 @@ export default function PurchaseOrders() {
       );
       return;
     }
-    const sup = (formData.supplierSKU || '').trim();
-    if (sup) {
-      const linked = findInternalSkuBySupplierSku(sup, inventory, purchaseOrders, {
-        ignorePurchaseOrderId: editingOrder?.id,
-      });
-      if (linked) {
-        setFormData({ ...formData, sku: linked });
-        setSkuManuallyEdited(false);
-        return;
-      }
-    }
+    // Always build from categoría + línea (ignore supplier link). That is what the
+    // regenerate control is for when renaming Enchapado→Laminado / EO→LO, etc.
     const pool = collectUsedSkus(inventory, purchaseOrders, {
       ignorePurchaseOrderId: editingOrder?.id,
     }).filter((s) => s !== formData.sku);
     const newSku = generateUniqueSKU(formData.category, formData.line, pool);
     setFormData({ ...formData, sku: newSku });
-    setSkuManuallyEdited(false);
+    setSkuManuallyEdited(true);
   };
 
   const handleSkuChange = (newSku: string) => {
