@@ -49,6 +49,19 @@ function formatPct(n: number): string {
   return `${n.toFixed(1)}%`;
 }
 
+/** Indicador sutil: artículo sin costo de desembarque (igual cuenta en utilidad como $0). */
+function NoCostIcon({ label }: { label: string }) {
+  return (
+    <span
+      title={label}
+      aria-label={label}
+      className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border border-gray-300/80 text-[9px] font-medium leading-none text-gray-400"
+    >
+      ?
+    </span>
+  );
+}
+
 type SkuSortKey = 'sku' | 'quantitySold' | 'unitCost' | 'avgSalePrice' | 'revenue' | 'cogs' | 'profit' | 'marginPercent';
 type InvoiceSortKey = 'invoiceNumber' | 'clientName' | 'date' | 'revenue' | 'cogs' | 'profit' | 'marginPercent';
 
@@ -278,14 +291,6 @@ export default function SalesProfitability() {
         <p className="text-sm text-amber-700">{t('salesProfitability.selectDateRange')}</p>
       )}
 
-      {profitResult.summary.linesWithMissingCost > 0 && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {t('salesProfitability.missingCostWarning')
-            .replace('{lines}', String(profitResult.summary.linesWithMissingCost))
-            .replace('{skus}', String(profitResult.summary.skusWithMissingCost))}
-        </div>
-      )}
-
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className={dashboardKpiClass}>
           <p className={dashboardCardLabelClass}>{t('salesProfitability.kpiRevenue')}</p>
@@ -400,15 +405,15 @@ export default function SalesProfitability() {
                       <td className="px-3 py-2.5">
                         <div className="font-medium text-gray-900">{row.sku}</div>
                         <div className="text-xs text-gray-500 truncate max-w-[200px]">{row.description}</div>
-                        {!row.hasCost && (
-                          <span className="mt-1 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
-                            {t('salesProfitability.noCost')}
-                          </span>
-                        )}
                       </td>
                       <td className="px-3 py-2.5 tabular-nums">{row.quantitySold}</td>
                       <td className="px-3 py-2.5 tabular-nums">
-                        {row.unitCost != null ? formatUsd(row.unitCost) : '—'}
+                        <span className="inline-flex items-center gap-1.5">
+                          {row.unitCost != null ? formatUsd(row.unitCost) : '—'}
+                          {!row.hasCost && (
+                            <NoCostIcon label={t('salesProfitability.noCostHint')} />
+                          )}
+                        </span>
                       </td>
                       <td className="px-3 py-2.5 tabular-nums">{formatUsd(row.avgSalePrice)}</td>
                       <td className="px-3 py-2.5 tabular-nums">{formatUsd(row.revenue)}</td>
@@ -502,12 +507,12 @@ export default function SalesProfitability() {
                           {formatUsd(inv.profit)}
                         </td>
                         <td className="px-3 py-2.5 tabular-nums">
-                          {formatPct(inv.marginPercent)}
-                          {inv.linesWithMissingCost > 0 && (
-                            <span className="ml-1 inline-block rounded bg-amber-100 px-1 py-0.5 text-xs text-amber-800">
-                              {t('salesProfitability.partialCost')}
-                            </span>
-                          )}
+                          <span className="inline-flex items-center gap-1.5">
+                            {formatPct(inv.marginPercent)}
+                            {inv.linesWithMissingCost > 0 && (
+                              <NoCostIcon label={t('salesProfitability.partialCostHint')} />
+                            )}
+                          </span>
                         </td>
                       </tr>
                       {expanded && (
@@ -529,7 +534,12 @@ export default function SalesProfitability() {
                                 {inv.lines.map((line, idx) => (
                                   <tr key={`${line.sku}-${idx}`} className="border-t border-gray-200/80">
                                     <td className="py-2 pr-4">
-                                      <span className="font-medium">{line.sku}</span>
+                                      <span className="inline-flex items-center gap-1.5 font-medium">
+                                        {line.sku}
+                                        {!line.hasCost && (
+                                          <NoCostIcon label={t('salesProfitability.noCostHint')} />
+                                        )}
+                                      </span>
                                       <span className="block text-gray-500">{line.description}</span>
                                     </td>
                                     <td className="py-2 pr-4 tabular-nums">{line.quantity}</td>
@@ -537,15 +547,11 @@ export default function SalesProfitability() {
                                       {line.unitCost != null ? formatUsd(line.unitCost) : '—'}
                                     </td>
                                     <td className="py-2 pr-4 tabular-nums">{formatUsd(line.lineNetRevenue)}</td>
-                                    <td className="py-2 pr-4 tabular-nums">
-                                      {line.cogs != null ? formatUsd(line.cogs) : '—'}
-                                    </td>
+                                    <td className="py-2 pr-4 tabular-nums">{formatUsd(line.cogs)}</td>
                                     <td className="py-2 pr-4 tabular-nums text-emerald-700">
-                                      {line.profit != null ? formatUsd(line.profit) : '—'}
+                                      {formatUsd(line.profit)}
                                     </td>
-                                    <td className="py-2 tabular-nums">
-                                      {line.marginPercent != null ? formatPct(line.marginPercent) : '—'}
-                                    </td>
+                                    <td className="py-2 tabular-nums">{formatPct(line.marginPercent)}</td>
                                   </tr>
                                 ))}
                               </tbody>

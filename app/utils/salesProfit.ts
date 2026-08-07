@@ -10,9 +10,10 @@ export type ProfitLine = {
   unitSalePrice: number;
   lineNetRevenue: number;
   unitCost: number | null;
-  cogs: number | null;
-  profit: number | null;
-  marginPercent: number | null;
+  /** Siempre numérico: sin costo conocido se trata como 0 para utilidad/estadísticas. */
+  cogs: number;
+  profit: number;
+  marginPercent: number;
   hasCost: boolean;
 };
 
@@ -96,8 +97,9 @@ function buildProfitLine(
   const netRevenue = lineNetRevenue(line.totalPrice, invoice);
   const qty = line.quantity > 0 ? line.quantity : 1;
   const hasCost = unitCost != null;
-  const cogs = hasCost ? qty * unitCost : null;
-  const profit = hasCost && cogs != null ? netRevenue - cogs : null;
+  // Sin costo conocido: cuenta como $0 en COGS para utilidad y estadísticas
+  const cogs = hasCost ? qty * unitCost : 0;
+  const profit = netRevenue - cogs;
 
   return {
     sku: line.sku,
@@ -108,7 +110,7 @@ function buildProfitLine(
     unitCost,
     cogs,
     profit,
-    marginPercent: profit != null ? marginPercent(profit, netRevenue) : null,
+    marginPercent: marginPercent(profit, netRevenue),
     hasCost,
   };
 }
@@ -160,9 +162,8 @@ export function computeSalesProfit(
       lines.push(profitLine);
       allProfitLines.push(profitLine);
 
-      if (profitLine.hasCost && profitLine.cogs != null) {
-        invCogs += profitLine.cogs;
-      } else {
+      invCogs += profitLine.cogs;
+      if (!profitLine.hasCost) {
         invLinesMissing += 1;
         totalLinesMissingCost += 1;
       }
@@ -201,19 +202,18 @@ export function computeSalesProfit(
 
   for (const pl of allProfitLines) {
     const existing = skuAgg.get(pl.sku);
-    const lineCogs = pl.cogs ?? 0;
     if (existing) {
       existing.quantitySold += pl.quantity;
       existing.revenue += pl.lineNetRevenue;
-      if (pl.hasCost) existing.cogs += lineCogs;
-      else existing.linesWithMissingCost += 1;
+      existing.cogs += pl.cogs;
+      if (!pl.hasCost) existing.linesWithMissingCost += 1;
       if (!existing.description && pl.description) existing.description = pl.description;
     } else {
       skuAgg.set(pl.sku, {
         description: pl.description,
         quantitySold: pl.quantity,
         revenue: pl.lineNetRevenue,
-        cogs: pl.hasCost ? lineCogs : 0,
+        cogs: pl.cogs,
         linesWithMissingCost: pl.hasCost ? 0 : 1,
       });
     }
