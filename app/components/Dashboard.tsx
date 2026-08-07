@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../context/TranslationContext';
 import type { PurchaseOrder } from '../types';
 import { displayCategory, displayLine } from '../utils/merchandiseLabels';
+import { resolveSkuUnitCost } from '../utils/landedCostCalculation';
 import DashboardSalesSection from './dashboard/DashboardSalesSection';
 import DashboardInventoryVisual from './dashboard/DashboardInventoryVisual';
 import DashboardPurchaseOrdersVisual from './dashboard/DashboardPurchaseOrdersVisual';
@@ -175,7 +176,7 @@ const metricCardClass =
   'sasa-dashboard-panel rounded-2xl border border-gray-200/90 bg-white p-6 text-left';
 
 export default function Dashboard() {
-  const { suppliers, purchaseOrders, inventory } = useInventory();
+  const { suppliers, purchaseOrders, inventory, additionalCosts } = useInventory();
   const { hasPermission, user } = useAuth();
   const { t } = useTranslation();
 
@@ -198,34 +199,26 @@ export default function Dashboard() {
     setGreetingLine(tpl.replace('{name}', firstName));
   }, [t, firstName]);
 
-  const getInventoryValueByCountry = () => {
-    let ecuadorValue = 0;
-    
-    inventory.forEach(item => {
-      const hasVerifiedOrder = item.linkedPurchaseOrders.some(orderId => {
-        const order = purchaseOrders.find(o => o.id === orderId);
-        return order && order.status === 'Verified';
-      });
-      const isStandaloneItem = item.linkedPurchaseOrders.length === 0;
-      
-      if (item.linkedPurchaseOrders.length > 0 && !hasVerifiedOrder) return;
-      if (!hasVerifiedOrder && !isStandaloneItem) return;
-      
-      const linkedOrders = purchaseOrders.filter(order => 
-        item.linkedPurchaseOrders.includes(order.id) && order.status === 'Verified'
-      );
-      
-      if (linkedOrders.length > 0) {
-        const avgCost = linkedOrders.reduce((sum, order) => sum + order.costInUSD, 0) / linkedOrders.length;
-        ecuadorValue += avgCost * item.ecuadorStock;
-      }
-    });
-    
-    return { ecuador: ecuadorValue, total: ecuadorValue };
-  };
-
+  /** Suma de (costo unitario × stock Ecuador) por línea; stock 0 no cuenta. Incluye ítems sin PO. */
   const getEcuadorInventoryValue = () => {
-    return getInventoryValueByCountry().ecuador;
+    let total = 0;
+
+    for (const item of inventory) {
+      const stock = item.ecuadorStock ?? 0;
+      if (stock <= 0) continue;
+
+      const { unitCost } = resolveSkuUnitCost(
+        item.sku,
+        inventory,
+        purchaseOrders,
+        additionalCosts
+      );
+      if (unitCost == null || !Number.isFinite(unitCost)) continue;
+
+      total += unitCost * stock;
+    }
+
+    return total;
   };
 
   const getEcuadorStock = () => {
