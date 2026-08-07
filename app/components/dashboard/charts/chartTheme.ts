@@ -26,6 +26,11 @@ const LINE_BAR_GOLD: Record<string, string> = {
   'oro laminado': '#9A7224',
   'oro relleno': '#9A7224',
   'gold filled': '#9A7224',
+  'plata 925': '#C0C7CE',
+  'plata 925- baño en oro': '#D4AF37',
+  'plata 925 - baño en oro': '#D4AF37',
+  'plata esterlina': '#C0C7CE',
+  'sterling silver': '#C0C7CE',
 };
 
 export function lineBarColor(label: string, index: number): string {

@@ -25,7 +25,12 @@ export const PREDEFINED_MATERIAL_LINES_ES = [
 export const MATERIAL_UNITS_ES = ['unidad', 'metro', 'gramo', 'par'] as const;
 export type MaterialUnitEs = (typeof MATERIAL_UNITS_ES)[number];
 
-export const PREDEFINED_LINES_ES = ['Baño en Oro', 'Laminado en Oro'] as const;
+export const PREDEFINED_LINES_ES = [
+  'Baño en Oro',
+  'Laminado en Oro',
+  'Plata 925',
+  'Plata 925- Baño en Oro',
+] as const;
 
 /** Valores en inglés legados (misma jerarquía que las categorías ES). */
 const LEGACY_CATEGORIES_EN = [
@@ -83,7 +88,15 @@ export const LINE_TO_ES: Record<string, string> = {
   [LEGACY_LINES_EN[0]]: 'Laminado en Oro',
   'bañado en oro': 'Laminado en Oro',
   'banado en oro': 'Laminado en Oro',
-  /** Plata y otras líneas retiradas del catálogo; se muestran tal cual si ya existen en BD */
+  /** Plata 925 (catálogo actual) */
+  'plata 925': 'Plata 925',
+  'plata925': 'Plata 925',
+  'plata 925- baño en oro': 'Plata 925- Baño en Oro',
+  'plata 925 - baño en oro': 'Plata 925- Baño en Oro',
+  'plata 925 baño en oro': 'Plata 925- Baño en Oro',
+  'plata 925- bano en oro': 'Plata 925- Baño en Oro',
+  'plata 925 - bano en oro': 'Plata 925- Baño en Oro',
+  /** Plata esterlina y otras líneas retiradas; se muestran tal cual si ya existen en BD */
   'sterling silver': 'Plata esterlina',
   [LEGACY_LINES_EN[2]]: 'Plata esterlina',
   'plata esterlina': 'Plata esterlina',

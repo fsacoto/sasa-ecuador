@@ -170,6 +170,11 @@
     "salePricePlaceholder": "Ej. 25.00",
     "salePriceUnset": "Dejar vacío si aún no tiene precio (en catálogo aparecerá —).",
     "salePriceUpdateFailed": "No se pudo guardar el precio de venta.",
+    "unitCost": "Costo unitario",
+    "unitCostPlaceholder": "Ej. 12.50",
+    "unitCostRequired": "El costo del artículo es obligatorio.",
+    "unitCostHint": "Costo en USD por unidad. Obligatorio al agregar un artículo desde inventario.",
+    "unitCostEditHint": "Costo en USD por unidad. Si el artículo tiene órdenes de compra, el costo de desembarque puede usarse como referencia.",
     "noSellableStock": "Este artículo no tiene stock disponible (agotado, reservado en notas de pedido o en consignación). Permanece en inventario y no puede usarse en ventas, consignaciones ni notas de pedido.",
     "generateBarcode": "Generar Código de Barras",
     "barcode": "Código de Barras",
@@ -195,6 +200,9 @@
     "filterSalePriceAll": "Todos",
     "filterSalePriceWith": "Con precio de venta",
     "filterSalePriceWithout": "Sin precio de venta",
+    "filterCostAll": "Todos",
+    "filterCostWith": "Con costo",
+    "filterCostWithout": "Sin costo",
     "filterStockAll": "Todos",
     "filterStockInStock": "Solo con stock",
     "filterStockOutOfStock": "Sin stock",
@@ -272,7 +280,9 @@
         "sterlingSilver": "PLATA ESTERLINA",
         "oroLaminado": "BAÑO EN ORO",
         "oroRelleno": "BAÑO EN ORO",
-        "plata": "PLATA ESTERLINA"
+        "plata": "PLATA ESTERLINA",
+        "plata925": "PLATA 925",
+        "plata925BanoEnOro": "PLATA 925- BAÑO EN ORO"
       }
     },
     "mustBeLoggedIn": "Debe iniciar sesión para generar códigos de barras. Por favor actualice la página e intente nuevamente.",

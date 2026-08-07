@@ -58,6 +58,7 @@ import {
 import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 import { HUB_GROUP_STACK_ICON_PATH } from '../constants/businessHubUi';
 import { formatSalePriceDisplay, itemHasSalePrice, parseSalePriceInput } from '../utils/salePrice';
+import { resolveSkuUnitCost } from '../utils/landedCostCalculation';
 import { usePersistedFilterState, usePersistedStringSetFilter } from '../hooks/usePersistedFilterState';
 
 interface InventoryProps {
@@ -113,6 +114,12 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
   const [filterSalePrice, setFilterSalePrice] = usePersistedFilterState<'all' | 'with' | 'without'>(
     'inventory',
     'filterSalePrice',
+    'all',
+    userId
+  );
+  const [filterCost, setFilterCost] = usePersistedFilterState<'all' | 'with' | 'without'>(
+    'inventory',
+    'filterCost',
     'all',
     userId
   );
@@ -284,6 +291,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
     line: '',
     ecuadorStock: 0,
     salePrice: '',
+    unitCost: '',
     images: [] as string[],
     unitOfMeasure: '' as '' | MaterialUnit,
   });
@@ -383,12 +391,19 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
         );
       }
 
-      const { salePrice: salePriceInput, unitOfMeasure: uomRaw, ...formRest } = formData;
+      const { salePrice: salePriceInput, unitCost: unitCostInput, unitOfMeasure: uomRaw, ...formRest } =
+        formData;
       const parsedSalePrice = parseSalePriceInput(salePriceInput);
+      const parsedUnitCost = parseSalePriceInput(unitCostInput);
       const isMaterial = isMaterialCategory(formData.category);
       const unitOfMeasure = isMaterial
         ? normalizeMaterialUnit(uomRaw) || ('unidad' as MaterialUnit)
         : undefined;
+
+      if (!editingItem && parsedUnitCost === undefined) {
+        alert(t('inventory.unitCostRequired') || 'El costo del artículo es obligatorio.');
+        return;
+      }
 
       const skuValidation = validateAndNormalizeInternalSku(
         formData.sku,
@@ -438,6 +453,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
         const payload = {
           ...savedFormData,
           verificationIssues,
+          ...(parsedUnitCost !== undefined ? { unitCost: parsedUnitCost } : {}),
           ...(isMaterial
             ? { unitOfMeasure, salePrice: undefined as number | undefined }
             : { salePrice: parsedSalePrice }),
@@ -448,7 +464,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
         // Sync changes to linked purchase orders
         syncInventoryToOrders(updatedItem, purchaseOrders, updatePurchaseOrder);
       } else {
-        await addInventoryItem({ ...savedFormData });
+        await addInventoryItem({ ...savedFormData, unitCost: parsedUnitCost! });
       }
       resetForm();
     } catch (error) {
@@ -473,6 +489,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
       line: '',
       ecuadorStock: 0,
       salePrice: '',
+      unitCost: '',
       images: [],
       unitOfMeasure: '',
     });
@@ -507,6 +524,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
       line: item.line,
       ecuadorStock: item.ecuadorStock,
       salePrice: item.salePrice != null ? String(item.salePrice) : '',
+      unitCost: item.unitCost != null ? String(item.unitCost) : '',
       images: item.images || [],
       unitOfMeasure: normalizeMaterialUnit(item.unitOfMeasure) || '',
     });
@@ -844,6 +862,20 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
     (item) => getTotalProblemQty(item) > 0
   ).length;
 
+  const itemHasCostById = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const item of filteredInventory) {
+      const { unitCost } = resolveSkuUnitCost(
+        item.sku,
+        inventory,
+        purchaseOrders,
+        additionalCosts
+      );
+      map.set(item.id, unitCost != null);
+    }
+    return map;
+  }, [filteredInventory, inventory, purchaseOrders, additionalCosts]);
+
   const getTotalStock = (item: InventoryItem) => item.ecuadorStock;
 
   const handleGenerateBarcode = (item: InventoryItem) => {
@@ -939,6 +971,13 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
         return false;
       }
       if (filterSalePrice === 'without' && itemHasSalePrice(item)) {
+        return false;
+      }
+
+      if (filterCost === 'with' && !itemHasCostById.get(item.id)) {
+        return false;
+      }
+      if (filterCost === 'without' && itemHasCostById.get(item.id)) {
         return false;
       }
 
@@ -1547,6 +1586,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
             {(filterCategory !== 'all' ||
               filterLine !== 'all' ||
               filterSalePrice !== 'all' ||
+              filterCost !== 'all' ||
               filterStock !== 'all' ||
               filterBuilt !== 'all' ||
               filterPhotos !== 'all') && (
@@ -1556,6 +1596,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                     filterCategory !== 'all',
                     filterLine !== 'all',
                     filterSalePrice !== 'all',
+                    filterCost !== 'all',
                     filterStock !== 'all',
                     filterBuilt !== 'all',
                     filterPhotos !== 'all',
@@ -1851,6 +1892,19 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
               </div>
 
               <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{t('inventory.cost')}</label>
+                <select
+                  value={filterCost}
+                  onChange={(e) => setFilterCost(e.target.value as 'all' | 'with' | 'without')}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#515151]"
+                >
+                  <option value="all">{t('inventory.filterCostAll')}</option>
+                  <option value="with">{t('inventory.filterCostWith')}</option>
+                  <option value="without">{t('inventory.filterCostWithout')}</option>
+                </select>
+              </div>
+
+              <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">{t('inventory.totalStock')}</label>
                 <select
                   value={filterStock}
@@ -1905,6 +1959,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
               filterCategory !== 'all' ||
               filterLine !== 'all' ||
               filterSalePrice !== 'all' ||
+              filterCost !== 'all' ||
               filterStock !== 'all' ||
               filterBuilt !== 'all' ||
               filterPhotos !== 'all' ||
@@ -1916,6 +1971,7 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                     setFilterCategory('all');
                     setFilterLine('all');
                     setFilterSalePrice('all');
+                    setFilterCost('all');
                     setFilterStock('all');
                     setFilterBuilt('all');
                     setFilterPhotos('all');
@@ -2261,6 +2317,32 @@ export default function Inventory({ darkMode = false }: InventoryProps) {
                 <p className="mt-1 text-xs text-gray-500">{t('inventory.salePriceUnset')}</p>
               </div>
               )}
+
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-700">
+                  {t('inventory.unitCost') || t('inventory.cost')}
+                  {!editingItem ? ' *' : ''}
+                </label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
+                    $
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    required={!editingItem}
+                    value={formData.unitCost}
+                    onChange={(e) => setFormData({ ...formData, unitCost: e.target.value })}
+                    placeholder={t('inventory.unitCostPlaceholder')}
+                    className="w-full rounded-lg border border-gray-300 py-2 pl-7 pr-3 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#515151]"
+                  />
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  {editingItem
+                    ? t('inventory.unitCostEditHint')
+                    : t('inventory.unitCostHint')}
+                </p>
+              </div>
 
               <div>
                 <label className="block text-sm font-medium mb-1 text-gray-700">

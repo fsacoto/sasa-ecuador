@@ -43,6 +43,15 @@ const translateMaterialName = (materialName: string): string => {
     
     // Check for common material name patterns
     if (
+      materialLower.includes('plata 925') &&
+      (materialLower.includes('baño') || materialLower.includes('bano'))
+    ) {
+      return materialTranslations.plata925BanoEnOro || 'PLATA 925- BAÑO EN ORO';
+    }
+    if (materialLower.includes('plata 925')) {
+      return materialTranslations.plata925 || 'PLATA 925';
+    }
+    if (
       materialLower.includes('laminado en oro') ||
       materialLower.includes('enchapado en oro') ||
       materialLower.includes('gold plated') ||

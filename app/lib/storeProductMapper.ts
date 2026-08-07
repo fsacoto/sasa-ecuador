@@ -39,17 +39,21 @@ export function mapInventoryLineToStoreMaterial(line: string): StoreMaterial {
 
   if (canonical === 'Baño en Oro') return 'gold-filled';
   if (canonical === 'Laminado en Oro' || canonical === 'Enchapado en Oro') return 'gold-plated';
-  if (canonical === 'Plata esterlina') return 'sterling-silver';
+  if (canonical === 'Plata 925' || canonical === 'Plata esterlina') return 'sterling-silver';
+  if (canonical === 'Plata 925- Baño en Oro') return 'gold-plated';
 
   const lower = line.trim().toLowerCase();
+  if (lower.includes('plata 925') && (lower.includes('baño') || lower.includes('bano'))) {
+    return 'gold-plated';
+  }
+  if (lower.includes('plata 925') || lower.includes('sterling') || lower.includes('plata')) {
+    return 'sterling-silver';
+  }
   if (lower.includes('gold filled') || lower.includes('baño') || lower.includes('bano') || lower.includes('oro laminado') || lower.includes('oro relleno')) {
     return 'gold-filled';
   }
   if (lower.includes('gold plated') || lower.includes('enchapado') || lower.includes('laminado en oro')) {
     return 'gold-plated';
-  }
-  if (lower.includes('sterling') || lower.includes('plata')) {
-    return 'sterling-silver';
   }
 
   return 'gold-filled';
