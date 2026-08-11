@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { SalesInvoice, SalesInvoiceLine, InventoryItem, SalesReturnIssueRef } from '../types';
+import { SalesInvoice, SalesInvoiceLine, InventoryItem, SalesReturnIssueRef, Client } from '../types';
 import { updateInvoice } from '../services/invoicesService';
+import { getAllClients, getClient, formatClientAddress } from '../services/clientsService';
 import { useInventory } from '../context/InventoryContext';
 import { useTranslation } from '../context/TranslationContext';
 import AlertDialog from './ui/AlertDialog';
@@ -55,6 +56,10 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
   const [editNotes, setEditNotes] = useState('');
   const [editSearchTerm, setEditSearchTerm] = useState('');
   const [editShowDropdown, setEditShowDropdown] = useState(false);
+  const [editClient, setEditClient] = useState<Client | null>(null);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [showClientPicker, setShowClientPicker] = useState(false);
+  const [clientPickerSearch, setClientPickerSearch] = useState('');
 
   const [showReturnWarning, setShowReturnWarning] = useState(false);
   const [returnWarningItems, setReturnWarningItems] = useState<StockImpactRow[]>([]);
@@ -88,6 +93,17 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
   }, []);
 
   useEffect(() => {
+    if (!invoice) return;
+    void (async () => {
+      try {
+        setClients(await getAllClients());
+      } catch (error) {
+        console.error('Error loading clients:', error);
+      }
+    })();
+  }, [invoice?.id]);
+
+  useEffect(() => {
     if (!invoice) {
       setEditItems([]);
       setEditDiscountType('percentage');
@@ -96,6 +112,9 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
       setEditPaymentComment('');
       setEditSearchTerm('');
       setEditShowDropdown(false);
+      setEditClient(null);
+      setShowClientPicker(false);
+      setClientPickerSearch('');
       return;
     }
 
@@ -118,6 +137,37 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
     setEditPaymentComment(invoice.paymentComment || '');
     setEditNotes(invoice.notes || '');
   }, [invoice, inventory]);
+
+  useEffect(() => {
+    if (!invoice) return;
+
+    setEditClient({
+      id: invoice.clientId,
+      name: invoice.clientName,
+      address: invoice.clientAddress || '',
+      city: '',
+      country: 'Ecuador',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    setShowClientPicker(false);
+    setClientPickerSearch('');
+
+    let cancelled = false;
+    void (async () => {
+      if (!invoice.clientId) return;
+      try {
+        const full = await getClient(invoice.clientId);
+        if (!cancelled && full) setEditClient(full);
+      } catch (error) {
+        console.error('Error loading client for invoice edit:', error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [invoice?.id]);
 
   const getFilteredEditInventory = () => {
     if (!editSearchTerm.trim()) return [];
@@ -437,6 +487,16 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
       newDeliveryStatus = 'Partially Delivered';
     }
 
+    if (!editClient) {
+      showAlert(t('sales.pleaseSelectClient'), 'Validación');
+      return;
+    }
+
+    const clientAddress =
+      editClient.id !== inv.clientId || Boolean(editClient.city)
+        ? formatClientAddress(editClient)
+        : editClient.address || inv.clientAddress;
+
     try {
       const updatedInvoice: Partial<SalesInvoice> = {
         items: clampedItems,
@@ -448,6 +508,9 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
         remainingBalance: newRemainingBalance,
         paymentStatus: newPaymentStatus,
         deliveryStatus: newDeliveryStatus,
+        clientId: editClient.id,
+        clientName: editClient.name,
+        clientAddress,
       };
       if (editPaymentMethod) updatedInvoice.paymentMethod = editPaymentMethod;
       if (editPaymentComment) updatedInvoice.paymentComment = editPaymentComment;
@@ -465,8 +528,22 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
     }
   };
 
+  const clientsPickerFiltered = clients.filter((client) => {
+    const q = clientPickerSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      client.name.toLowerCase().includes(q) ||
+      client.email?.toLowerCase().includes(q) ||
+      client.phone?.includes(clientPickerSearch.trim())
+    );
+  });
+
   const saveInvoiceEdit = async () => {
     if (!invoice) return;
+    if (!editClient) {
+      showAlert(t('sales.pleaseSelectClient'), 'Validación');
+      return;
+    }
     if (editItems.length === 0) {
       showAlert(t('invoiceTracking.invoiceMustHaveItem'), 'Validation Error');
       return;
@@ -503,6 +580,74 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
           <h3 className="mb-4 text-xl font-semibold text-gray-900">
             {t('invoiceTracking.editInvoiceTitle')} — {invoice.invoiceNumber}
           </h3>
+
+          <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+              <h4 className="text-sm font-semibold text-gray-900">
+                {t('sales.clientInformation')}
+              </h4>
+              <button
+                type="button"
+                onClick={() => {
+                  setClientPickerSearch('');
+                  setShowClientPicker(true);
+                }}
+                className="rounded-lg bg-gray-100 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-200"
+              >
+                {t('sales.changeClient')}
+              </button>
+            </div>
+            {editClient ? (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <div className="mb-0.5 text-xs uppercase tracking-wide text-gray-500">
+                    {t('sales.clientName')}
+                  </div>
+                  <div className="font-semibold text-gray-900">{editClient.name}</div>
+                </div>
+                {editClient.country && (
+                  <div>
+                    <div className="mb-0.5 text-xs uppercase tracking-wide text-gray-500">
+                      {t('sales.country')}
+                    </div>
+                    <div className="text-gray-800">
+                      {editClient.country === 'Ecuador' ? 'Ecuador' : 'USA'}
+                    </div>
+                  </div>
+                )}
+                {(editClient.address || invoice.clientAddress) && (
+                  <div className="sm:col-span-2">
+                    <div className="mb-0.5 text-xs uppercase tracking-wide text-gray-500">
+                      {t('sales.address')}
+                    </div>
+                    <div className="text-gray-700">
+                      {editClient.city
+                        ? formatClientAddress(editClient)
+                        : editClient.address || invoice.clientAddress}
+                    </div>
+                  </div>
+                )}
+                {editClient.phone && (
+                  <div>
+                    <div className="mb-0.5 text-xs uppercase tracking-wide text-gray-500">
+                      {t('sales.phone')}
+                    </div>
+                    <div className="text-gray-700">{editClient.phone}</div>
+                  </div>
+                )}
+                {editClient.email && (
+                  <div>
+                    <div className="mb-0.5 text-xs uppercase tracking-wide text-gray-500">
+                      {t('sales.email')}
+                    </div>
+                    <div className="text-gray-700">{editClient.email}</div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">{t('sales.pleaseSelectClient')}</p>
+            )}
+          </div>
 
           <div className="relative mb-6" ref={editDropdownRef}>
             <label className="mb-2 block text-sm font-medium text-gray-700">
@@ -720,6 +865,77 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
         </div>
       </div>
       </ModalPortal>
+
+      {showClientPicker && (
+        <ModalPortal>
+          <div
+            className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm`}
+          >
+            <div className="sasa-modal-panel max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl p-6 shadow-xl">
+              <h3 className="mb-4 text-xl font-semibold text-gray-900">
+                {t('sales.clientPickerTitle')}
+              </h3>
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                {t('sales.selectClient')}
+              </label>
+              <input
+                type="search"
+                autoComplete="off"
+                placeholder={t('sales.searchClientsPlaceholder')}
+                value={clientPickerSearch}
+                onChange={(e) => setClientPickerSearch(e.target.value)}
+                className="mb-3 w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-transparent focus:ring-2 focus:ring-[#515151]"
+              />
+              <div className="max-h-[min(24rem,50vh)] space-y-2 overflow-y-auto pr-1">
+                {clientsPickerFiltered.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-gray-500">
+                    {clients.length === 0 ? t('sales.noClientsYet') : t('sales.noClientsMatch')}
+                  </p>
+                ) : (
+                  clientsPickerFiltered.map((client) => (
+                    <button
+                      key={client.id}
+                      type="button"
+                      onClick={() => {
+                        setEditClient(client);
+                        setShowClientPicker(false);
+                        setClientPickerSearch('');
+                      }}
+                      className={`w-full rounded-lg border p-4 text-left transition-colors hover:bg-gray-50 ${
+                        editClient?.id === client.id
+                          ? 'border-[#515151] bg-[#515151]/5'
+                          : 'border-gray-200'
+                      }`}
+                    >
+                      <div className="font-semibold text-gray-900">{client.name}</div>
+                      <div className="mt-1 text-sm text-gray-500">
+                        {client.address}, {client.city}, {client.country}
+                      </div>
+                      {(client.phone || client.email) && (
+                        <div className="mt-1 text-xs text-gray-400">
+                          {client.phone}
+                          {client.phone && client.email ? ' · ' : ''}
+                          {client.email}
+                        </div>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowClientPicker(false);
+                  setClientPickerSearch('');
+                }}
+                className="mt-4 w-full rounded-lg bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200"
+              >
+                {t('invoiceTracking.cancel')}
+              </button>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
 
       {showReturnWarning && (
         <ModalPortal>
