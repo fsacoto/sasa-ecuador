@@ -323,6 +323,31 @@ export interface ConsignmentItem {
   unitPrice?: number;
 }
 
+/** One line inside a registered consignment sale (before or after emitting the nota). */
+export interface ConsignmentSaleLine {
+  /** Index in consignment.items at registration time (helps reverse duplicate SKUs). */
+  itemIndex: number;
+  sku: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  line?: string;
+  category?: string;
+}
+
+/** A registered sale batch on a consignment. Nota is emitted separately. */
+export interface ConsignmentSaleRecord {
+  id: string;
+  createdAt: Date;
+  createdBy?: string;
+  lines: ConsignmentSaleLine[];
+  /** Included in the linked nota de pedido. */
+  invoiced: boolean;
+  reversed?: boolean;
+  reversedAt?: Date;
+}
+
 export interface Consignment {
   id: string;
   consignmentId: string; // Format: CSG-00001
@@ -333,6 +358,11 @@ export interface Consignment {
   status: ConsignmentStatus;
   dateCreated: Date;
   createdAt: Date;
+  /** Registered sales (pending or already on the linked nota). */
+  sales?: ConsignmentSaleRecord[];
+  /** Single linked nota de pedido for this consignment's sales. */
+  linkedSalesInvoiceId?: string;
+  linkedSalesInvoiceNumber?: string;
 }
 
 export interface InventoryMedia {

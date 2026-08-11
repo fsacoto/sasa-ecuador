@@ -1,47 +1,63 @@
-import { 
-  collection, 
-  doc, 
-  getDoc, 
-  getDocs, 
-  setDoc, 
-  deleteDoc, 
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  deleteDoc,
   query,
-  orderBy
+  orderBy,
+  deleteField,
 } from 'firebase/firestore';
 import { db } from '../utils/firebase';
-import { Consignment } from '../types';
+import { Consignment, ConsignmentSaleRecord } from '../types';
+import { parseConsignmentSales } from '../utils/consignmentSales';
 
 const CONSIGNMENTS_COLLECTION = 'consignments';
 
 // Helper to convert Firestore data to Consignment
-const toConsignment = (doc: any): Consignment => {
-  const data = doc.data();
-  
-  // Safely convert dates
+const toConsignment = (docSnap: { id: string; data: () => Record<string, unknown> }): Consignment => {
+  const data = docSnap.data();
+
   let dateCreated: Date;
   let createdAt: Date;
-  
+
   try {
-    dateCreated = data.dateCreated?.toDate ? data.dateCreated.toDate() : 
-                  (data.dateCreated instanceof Date ? data.dateCreated : 
-                  (data.dateCreated ? new Date(data.dateCreated) : new Date()));
-  } catch (e) {
+    const raw = data.dateCreated as { toDate?: () => Date } | Date | string | undefined;
+    dateCreated =
+      raw && typeof (raw as { toDate?: () => Date }).toDate === 'function'
+        ? (raw as { toDate: () => Date }).toDate()
+        : raw instanceof Date
+          ? raw
+          : raw
+            ? new Date(raw as string)
+            : new Date();
+  } catch {
     dateCreated = new Date();
   }
-  
+
   try {
-    createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : 
-                (data.createdAt instanceof Date ? data.createdAt : 
-                (data.createdAt ? new Date(data.createdAt) : new Date()));
-  } catch (e) {
+    const raw = data.createdAt as { toDate?: () => Date } | Date | string | undefined;
+    createdAt =
+      raw && typeof (raw as { toDate?: () => Date }).toDate === 'function'
+        ? (raw as { toDate: () => Date }).toDate()
+        : raw instanceof Date
+          ? raw
+          : raw
+            ? new Date(raw as string)
+            : new Date();
+  } catch {
     createdAt = new Date();
   }
-  
+
+  const sales = parseConsignmentSales(data.sales) as ConsignmentSaleRecord[] | undefined;
+
   return {
-    id: doc.id,
-    ...data,
+    id: docSnap.id,
+    ...(data as Omit<Consignment, 'id' | 'dateCreated' | 'createdAt' | 'sales'>),
     dateCreated,
-    createdAt
+    createdAt,
+    ...(sales ? { sales } : {}),
   };
 };
 
@@ -166,15 +182,18 @@ export async function createConsignment(consignment: Omit<Consignment, 'id' | 'c
 }
 
 // Update a consignment
-export async function updateConsignment(consignmentId: string, updates: Partial<Consignment>): Promise<void> {
+export async function updateConsignment(
+  consignmentId: string,
+  updates: Partial<Consignment> | Record<string, unknown>
+): Promise<void> {
   try {
     const docRef = doc(db, CONSIGNMENTS_COLLECTION, consignmentId);
-    
-    // Filter out undefined values
-    const cleanUpdates: Partial<Consignment> = { ...updates };
-    Object.keys(cleanUpdates).forEach(key => {
-      if (cleanUpdates[key as keyof Consignment] === undefined) {
-        delete cleanUpdates[key as keyof Consignment];
+
+    const cleanUpdates: Record<string, unknown> = { ...updates };
+    Object.keys(cleanUpdates).forEach((key) => {
+      const value = cleanUpdates[key];
+      if (value === undefined) {
+        delete cleanUpdates[key];
       }
     });
 
@@ -184,6 +203,8 @@ export async function updateConsignment(consignmentId: string, updates: Partial<
     throw error;
   }
 }
+
+export { deleteField };
 
 // Delete a consignment
 export async function deleteConsignment(consignmentId: string): Promise<void> {

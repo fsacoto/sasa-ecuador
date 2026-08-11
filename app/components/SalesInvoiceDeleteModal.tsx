@@ -38,12 +38,20 @@ export default function SalesInvoiceDeleteModal({
 
   if (!open || !invoice) return null;
 
+  const isConsignmentNote = Boolean(invoice.sourceConsignmentFirestoreId);
+
   const runDelete = async (revertInventory: boolean) => {
     const inv = invoice;
     const items = revertInventory ? [...itemsReturningToStock] : [];
     onClose();
     try {
-      await deleteSalesInvoiceWithStockRevert(inv, items, revertInventory, inventory, updateInventoryItem);
+      await deleteSalesInvoiceWithStockRevert(
+        inv,
+        items,
+        revertInventory,
+        inventory,
+        updateInventoryItem
+      );
       onDeleted();
     } catch (error) {
       console.error('Error deleting invoice:', error);
@@ -65,15 +73,23 @@ export default function SalesInvoiceDeleteModal({
         >
           <div className="border-b border-gray-200 px-6 py-5">
             <h3 className="text-xl font-semibold text-gray-900">{t('invoiceTracking.deleteInvoice')}</h3>
-            <p className="mt-2 text-sm text-gray-500">{t('invoiceTracking.deleteInvoiceOptions')}</p>
+            <p className="mt-2 text-sm text-gray-500">
+              {isConsignmentNote
+                ? t('invoiceTracking.deleteConsignmentOptions')
+                : t('invoiceTracking.deleteInvoiceOptions')}
+            </p>
           </div>
 
           <div className="max-h-[min(70vh,520px)] overflow-y-auto space-y-4 px-6 py-5">
             {itemsReturningToStock.length > 0 ? (
               <div className="sasa-delete-preview rounded-xl border border-gray-200 p-4">
-                <h4 className="mb-1 font-semibold text-gray-900">{t('invoiceTracking.itemsReturningToStock')}</h4>
+                <h4 className="mb-1 font-semibold text-gray-900">
+                  {isConsignmentNote
+                    ? t('invoiceTracking.itemsReturningToConsignment')
+                    : t('invoiceTracking.itemsReturningToStock')}
+                </h4>
                 <p className="mb-3 text-sm text-gray-500">
-                  {invoice.sourceConsignmentFirestoreId
+                  {isConsignmentNote
                     ? t('invoiceTracking.deleteConsignmentItemsMessage')
                     : t('invoiceTracking.itemsReturningToStockMessage')}
                 </p>
@@ -86,7 +102,8 @@ export default function SalesInvoiceDeleteModal({
                       <div className="min-w-0 flex-1">
                         <div className="font-medium text-gray-900">{item.description}</div>
                         <div className="text-sm text-gray-500">
-                          {t('invoiceTracking.quantityReturning')}: {item.quantity} {t('invoiceTracking.units')}
+                          {t('invoiceTracking.quantityReturning')}: {item.quantity}{' '}
+                          {t('invoiceTracking.units')}
                         </div>
                       </div>
                       <div className="shrink-0 text-left sm:text-right">
@@ -96,7 +113,8 @@ export default function SalesInvoiceDeleteModal({
                             : t('invoiceTracking.ecuadorStock')}
                         </div>
                         <div className="font-semibold tabular-nums text-gray-900">
-                          {item.currentStock} <span className="font-normal text-gray-400">→</span> {item.newStock}
+                          {item.currentStock} <span className="font-normal text-gray-400">→</span>{' '}
+                          {item.newStock}
                         </div>
                       </div>
                     </div>
@@ -117,9 +135,15 @@ export default function SalesInvoiceDeleteModal({
                     onClick={() => void runDelete(true)}
                     className="sasa-delete-option sasa-delete-option--primary w-full rounded-xl px-4 py-3 text-left transition-colors"
                   >
-                    <div className="font-semibold text-gray-900">{t('invoiceTracking.reverseAndReturn')}</div>
+                    <div className="font-semibold text-gray-900">
+                      {isConsignmentNote
+                        ? t('invoiceTracking.reverseAndReturnConsignment')
+                        : t('invoiceTracking.reverseAndReturn')}
+                    </div>
                     <div className="mt-1 text-sm text-gray-500">
-                      {t('invoiceTracking.reverseAndReturnDescription')}
+                      {isConsignmentNote
+                        ? t('invoiceTracking.reverseAndReturnConsignmentDescription')
+                        : t('invoiceTracking.reverseAndReturnDescription')}
                     </div>
                   </button>
                   <button
@@ -127,9 +151,15 @@ export default function SalesInvoiceDeleteModal({
                     onClick={() => void runDelete(false)}
                     className="sasa-delete-option w-full rounded-xl px-4 py-3 text-left transition-colors"
                   >
-                    <div className="font-semibold text-gray-900">{t('invoiceTracking.cancelWithoutAffecting')}</div>
+                    <div className="font-semibold text-gray-900">
+                      {isConsignmentNote
+                        ? t('invoiceTracking.deleteConsignmentNoteOnly')
+                        : t('invoiceTracking.cancelWithoutAffecting')}
+                    </div>
                     <div className="mt-1 text-sm text-gray-500">
-                      {t('invoiceTracking.cancelWithoutAffectingDescription')}
+                      {isConsignmentNote
+                        ? t('invoiceTracking.deleteConsignmentNoteOnlyDescription')
+                        : t('invoiceTracking.cancelWithoutAffectingDescription')}
                     </div>
                   </button>
                 </>

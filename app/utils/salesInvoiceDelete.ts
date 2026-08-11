@@ -1,10 +1,11 @@
 import { ConsignmentItem, ConsignmentStatus, InventoryItem, SalesInvoice } from '../types';
-import { getConsignment, updateConsignment } from '../services/consignmentsService';
+import { getConsignment, updateConsignment, deleteField } from '../services/consignmentsService';
 import { deleteInvoice } from '../services/invoicesService';
 import {
   getDeliveredQtyForStock,
   getUndeliveredQty,
 } from './stockReservation';
+import { reverseSaleQuantitiesOnItems } from './consignmentSales';
 
 export type InvoiceDeleteReturnItem = {
   description: string;
@@ -68,6 +69,26 @@ export function buildDeleteReturnItems(
   return items;
 }
 
+async function restoreConsignmentStockBySku(
+  qtyBySku: Map<string, number>,
+  inventory: InventoryItem[],
+  updateInventoryItem: (id: string, updates: Partial<InventoryItem>) => Promise<void>
+) {
+  for (const [sku, quantity] of qtyBySku) {
+    if (quantity <= 0) continue;
+    const inventoryItem = inventory.find((inv) => inv.sku === sku);
+    if (!inventoryItem) continue;
+    const current = inventoryItem.consignmentStock || 0;
+    await updateInventoryItem(inventoryItem.id, {
+      consignmentStock: current + quantity,
+    });
+  }
+}
+
+/**
+ * Deletes a sales note. For consignment-linked notes, reverting stock returns
+ * units to consignmentStock (still on the consignación) — never ecuadorStock.
+ */
 export async function deleteSalesInvoiceWithStockRevert(
   invoice: SalesInvoice,
   itemsToReturn: InvoiceDeleteReturnItem[],
@@ -97,42 +118,85 @@ export async function deleteSalesInvoiceWithStockRevert(
     }
   }
 
-  if (revertInventory && itemsToReturn.length > 0) {
-    const isConsignment = itemsToReturn.some((i) => i.kind === 'consignment');
+  if (invoice.sourceConsignmentFirestoreId) {
+    const consignment = await getConsignment(invoice.sourceConsignmentFirestoreId);
+    if (consignment) {
+      if (revertInventory) {
+        const invoicedSales = (consignment.sales || []).filter(
+          (s) => !s.reversed && s.invoiced
+        );
+        let updatedItems = consignment.items;
+        const qtyBySku = new Map<string, number>();
 
-    if (isConsignment && invoice.sourceConsignmentFirestoreId) {
-      const consignment = await getConsignment(invoice.sourceConsignmentFirestoreId);
-      if (consignment) {
-        const updatedItems = consignment.items.map((cItem) => {
-          const line = invoice.items.find((i) => i.sku === cItem.sku);
-          if (!line) return cItem;
-          return {
-            ...cItem,
-            quantitySold: Math.max(0, cItem.quantitySold - line.quantity),
-          };
-        });
+        if (invoicedSales.length > 0) {
+          const nextSales = (consignment.sales || []).map((s) =>
+            !s.reversed && s.invoiced
+              ? { ...s, reversed: true, reversedAt: new Date(), invoiced: false }
+              : s
+          );
+          for (const sale of invoicedSales) {
+            updatedItems = reverseSaleQuantitiesOnItems(updatedItems, sale.lines);
+            for (const line of sale.lines) {
+              qtyBySku.set(
+                line.sku,
+                (qtyBySku.get(line.sku) || 0) + (line.quantity || 0)
+              );
+            }
+          }
+          await updateConsignment(consignment.id, {
+            items: updatedItems,
+            status: consignmentStatusFromItems(updatedItems),
+            sales: nextSales,
+            linkedSalesInvoiceId: deleteField(),
+            linkedSalesInvoiceNumber: deleteField(),
+          });
+        } else {
+          // Legacy notes without sale records: undo sold qty from invoice lines
+          updatedItems = consignment.items.map((cItem) => {
+            const matching = invoice.items.filter((i) => i.sku === cItem.sku);
+            if (matching.length === 0) return cItem;
+            const deduct = matching.reduce((sum, line) => sum + (line.quantity || 0), 0);
+            return {
+              ...cItem,
+              quantitySold: Math.max(0, cItem.quantitySold - deduct),
+            };
+          });
+          for (const line of invoice.items) {
+            qtyBySku.set(
+              line.sku,
+              (qtyBySku.get(line.sku) || 0) + (line.quantity || 0)
+            );
+          }
+          await updateConsignment(consignment.id, {
+            items: updatedItems,
+            status: consignmentStatusFromItems(updatedItems),
+            linkedSalesInvoiceId: deleteField(),
+            linkedSalesInvoiceNumber: deleteField(),
+          });
+        }
+
+        // Return units to consignment stock (still on the consignación)
+        await restoreConsignmentStockBySku(qtyBySku, inventory, updateInventoryItem);
+      } else {
+        // Keep quantitySold / consignmentStock; allow re-emitting a new note.
+        const nextSales = (consignment.sales || []).map((s) =>
+          s.invoiced && !s.reversed ? { ...s, invoiced: false } : s
+        );
         await updateConsignment(consignment.id, {
-          items: updatedItems,
-          status: consignmentStatusFromItems(updatedItems),
+          ...(nextSales.length > 0 ? { sales: nextSales } : {}),
+          linkedSalesInvoiceId: deleteField(),
+          linkedSalesInvoiceNumber: deleteField(),
         });
       }
-      for (const itemReturn of itemsToReturn) {
-        const inventoryItem = inventory.find((inv) => inv.sku === itemReturn.sku);
-        if (inventoryItem) {
-          await updateInventoryItem(inventoryItem.id, {
-            consignmentStock: itemReturn.newStock,
-          });
-        }
-      }
-    } else {
-      for (const itemReturn of itemsToReturn) {
-        if (itemReturn.kind !== 'ecuador') continue;
-        const inventoryItem = inventory.find((inv) => inv.sku === itemReturn.sku);
-        if (inventoryItem) {
-          await updateInventoryItem(inventoryItem.id, {
-            ecuadorStock: itemReturn.newStock,
-          });
-        }
+    }
+  } else if (revertInventory && itemsToReturn.length > 0) {
+    for (const itemReturn of itemsToReturn) {
+      if (itemReturn.kind !== 'ecuador') continue;
+      const inventoryItem = inventory.find((inv) => inv.sku === itemReturn.sku);
+      if (inventoryItem) {
+        await updateInventoryItem(inventoryItem.id, {
+          ecuadorStock: (inventoryItem.ecuadorStock || 0) + itemReturn.quantity,
+        });
       }
     }
   }

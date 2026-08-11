@@ -5,16 +5,16 @@ import {
   Consignment,
   ConsignmentItem,
   ConsignmentReturnIssueRef,
+  ConsignmentSaleLine,
+  ConsignmentSaleRecord,
   ConsignmentStatus,
   Client,
   InventoryItem,
-  PaymentRecord,
   SalesInvoice,
-  SalesInvoiceLine,
 } from '../types';
-import { getAllConsignments, createConsignment, updateConsignment, deleteConsignment } from '../services/consignmentsService';
+import { getAllConsignments, createConsignment, updateConsignment, deleteConsignment, deleteField } from '../services/consignmentsService';
 import { formatClientAddress, getAllClients, getClient, ensureClientDocumentLinks } from '../services/clientsService';
-import { createInvoice, getAllInvoices } from '../services/invoicesService';
+import { createInvoice, getAllInvoices, getInvoice, updateInvoice, deleteInvoice } from '../services/invoicesService';
 import { useInventory } from '../context/InventoryContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../context/TranslationContext';
@@ -36,8 +36,10 @@ import DateInput from './ui/DateInput';
 import { isInsideDatePickerPortal } from '../utils/calendarUtils';
 import { usePersistedFilterState } from '../hooks/usePersistedFilterState';
 import ConsignmentReturnModal from './ConsignmentReturnModal';
+import ConsignmentSaleModal, { ConsignmentSaleSubmitParams } from './ConsignmentSaleModal';
 import ConsignmentPrintModal from './ConsignmentPrintModal';
 import ConsignmentCatalogModal from './ConsignmentCatalogModal';
+import SalesInvoiceDetailsModal from './SalesInvoiceDetailsModal';
 import { HUB_GROUP_STACK_ICON_PATH } from '../constants/businessHubUi';
 import { formatDateDMY } from '../utils/formatDate';
 import { filterSellableInventory, hasSellableStock } from '../utils/inventoryStock';
@@ -53,6 +55,20 @@ import { downloadConsignmentPrepLabelPdf } from '../utils/salesPrepLabelPdf';
 import { downloadConsignmentPdf } from '../utils/consignmentPdf';
 import { formatSalePriceDisplay, normalizeSalePrice, parseSalePriceInput } from '../utils/salePrice';
 import { useDarkMode } from '../hooks/useDarkMode';
+import {
+  activeConsignmentSales,
+  aggregateConsignmentSaleLines,
+  applyRegisterSaleQuantities,
+  createConsignmentSaleId,
+  paymentFieldsForAdjustedNote,
+  pendingConsignmentSales,
+  pickLinkedInvoice,
+  reverseSaleQuantitiesOnItems,
+  roundMoney2,
+  saleRecordTotal,
+  saleRecordUnits,
+  saleRecordsFromLegacyInvoices,
+} from '../utils/consignmentSales';
 
 type View = 'list' | 'create' | 'details';
 
@@ -141,9 +157,6 @@ export default function Consignments() {
   const lastAddedRowRef = useRef<HTMLTableRowElement>(null);
   
   // Details view state
-  const [salesQuantities, setSalesQuantities] = useState<{[key: number]: number}>({});
-  /** Unit sale price (USD) per consignment line index — used when registering sales */
-  const [saleUnitPrices, setSaleUnitPrices] = useState<Record<number, string>>({});
   /** Local draft of consignment items — persisted only on Guardar */
   const [draftItems, setDraftItems] = useState<ConsignmentItem[]>([]);
   const [detailDirty, setDetailDirty] = useState(false);
@@ -161,12 +174,19 @@ export default function Consignments() {
   const detailAddSearchInputRef = useRef<HTMLInputElement>(null);
   const [lastAddedDetailSku, setLastAddedDetailSku] = useState<string | null>(null);
   const lastAddedDetailRowRef = useRef<HTMLTableRowElement>(null);
-  const [salePaymentStatus, setSalePaymentStatus] = useState<'Unpaid' | 'Partially Paid' | 'Paid'>('Unpaid');
-  const [saleAmountPaidInput, setSaleAmountPaidInput] = useState('');
-  const [salePaymentMethod, setSalePaymentMethod] = useState('');
-  const [salePaymentComment, setSalePaymentComment] = useState('');
+  const [saleModalOpen, setSaleModalOpen] = useState(false);
   const [returnModalOpen, setReturnModalOpen] = useState(false);
+  const [linkedSalesInvoice, setLinkedSalesInvoice] = useState<SalesInvoice | null>(null);
+  const [loadingLinkedNote, setLoadingLinkedNote] = useState(false);
+  const [isEmittingSalesNote, setIsEmittingSalesNote] = useState(false);
+  const isEmittingSalesNoteRef = useRef(false);
+  const [isReversingSale, setIsReversingSale] = useState(false);
+  const isReversingSaleRef = useRef(false);
+  const [saleToReverse, setSaleToReverse] = useState<ConsignmentSaleRecord | null>(null);
+  const [emitNoteConfirmOpen, setEmitNoteConfirmOpen] = useState(false);
+  const [selectedSaleInvoice, setSelectedSaleInvoice] = useState<SalesInvoice | null>(null);
   const hasLoadedRef = useRef(false);
+  const legacySalesMigratedRef = useRef<string | null>(null);
 
   // PDF language selection modal state
   
@@ -288,7 +308,6 @@ export default function Consignments() {
     const cloned = selectedConsignment.items.map((item) => ({ ...item }));
     setDraftItems(cloned);
     setDetailDirty(false);
-    setSalesQuantities({});
     const prices: Record<number, string> = {};
     const qtys: Record<number, string> = {};
     cloned.forEach((item, index) => {
@@ -296,18 +315,88 @@ export default function Consignments() {
       if (p !== undefined) prices[index] = p.toFixed(2);
       qtys[index] = String(item.quantityDelivered);
     });
-    setSaleUnitPrices(prices);
     setDetailUnitPrices({ ...prices });
     setDetailDeliveredQtys(qtys);
     setDetailAddSearchTerm('');
     setDetailAddShowDropdown(false);
     setLastAddedDetailSku(null);
     setUnsavedLeaveOpen(false);
-    setSalePaymentStatus('Unpaid');
-    setSaleAmountPaidInput('');
-    setSalePaymentMethod('');
-    setSalePaymentComment('');
+    setSaleModalOpen(false);
+    setSelectedSaleInvoice(null);
   }, [view, selectedConsignment?.id]);
+
+  const loadLinkedSalesNote = useCallback(async (consignment: Consignment) => {
+    setLoadingLinkedNote(true);
+    try {
+      const all = await getAllInvoices();
+      const linked = all.filter(
+        (inv) =>
+          inv.sourceConsignmentFirestoreId === consignment.id &&
+          inv.deliveryStatus !== 'Canceled'
+      );
+
+      // Soft-migrate legacy multi-invoice consignments into sales[] once
+      if (
+        (!consignment.sales || consignment.sales.length === 0) &&
+        linked.length > 0 &&
+        legacySalesMigratedRef.current !== consignment.id
+      ) {
+        legacySalesMigratedRef.current = consignment.id;
+        const migrated = saleRecordsFromLegacyInvoices(linked);
+        await updateConsignment(consignment.id, {
+          sales: migrated.sales,
+          ...(migrated.linkedSalesInvoiceId
+            ? { linkedSalesInvoiceId: migrated.linkedSalesInvoiceId }
+            : {}),
+          ...(migrated.linkedSalesInvoiceNumber
+            ? { linkedSalesInvoiceNumber: migrated.linkedSalesInvoiceNumber }
+            : {}),
+        });
+        const updatedList = await getAllConsignments();
+        const refreshed = updatedList.find((c) => c.id === consignment.id);
+        if (refreshed) {
+          setSelectedConsignment(refreshed);
+          setLinkedSalesInvoice(pickLinkedInvoice(refreshed, linked));
+        } else {
+          setLinkedSalesInvoice(
+            pickLinkedInvoice(
+              {
+                ...consignment,
+                sales: migrated.sales,
+                linkedSalesInvoiceId: migrated.linkedSalesInvoiceId,
+                linkedSalesInvoiceNumber: migrated.linkedSalesInvoiceNumber,
+              },
+              linked
+            )
+          );
+        }
+        return;
+      }
+
+      setLinkedSalesInvoice(pickLinkedInvoice(consignment, linked));
+    } catch (e) {
+      console.error('Error loading linked consignment note:', e);
+      setLinkedSalesInvoice(null);
+    } finally {
+      setLoadingLinkedNote(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (view !== 'details' || !selectedConsignment) {
+      setLinkedSalesInvoice(null);
+      return;
+    }
+    void loadLinkedSalesNote(selectedConsignment);
+    // Only re-run when opening a consignment or after sales/note link change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, selectedConsignment?.id, selectedConsignment?.sales?.length, selectedConsignment?.linkedSalesInvoiceId, loadLinkedSalesNote]);
+
+  useEffect(() => {
+    if (view !== 'details') {
+      legacySalesMigratedRef.current = null;
+    }
+  }, [view]);
 
   useEffect(() => {
     if (view !== 'list') return;
@@ -537,18 +626,6 @@ export default function Consignments() {
     });
     setDetailDeliveredQtys(qtys);
     setDetailUnitPrices(prices);
-    setSaleUnitPrices((prev) => {
-      // Keep sale prices for indices that still exist; seed from draft unit prices
-      const next: Record<number, string> = {};
-      items.forEach((line, i) => {
-        if (prev[i] !== undefined) next[i] = prev[i];
-        else {
-          const p = normalizeSalePrice(line.unitPrice);
-          if (p !== undefined) next[i] = p.toFixed(2);
-        }
-      });
-      return next;
-    });
   };
 
   const deliveredBySku = (items: ConsignmentItem[], sku: string) => {
@@ -1140,209 +1217,337 @@ export default function Consignments() {
     }
   };
 
-  const roundMoney2 = (n: number) => Math.round(n * 100) / 100;
-
-  const handleRegisterSales = async () => {
-    if (isRegisteringSalesRef.current) return;
-    if (!selectedConsignment) return;
-
-    if (detailDirty) {
-      showAlert(
-        t('consignments.saveBeforeSalesOrReturns') ||
-          'Guarde o descarte los cambios de la consignación antes de registrar ventas.',
-        'Validation Error'
-      );
-      return;
+  const handleRegisterSales = async (params: ConsignmentSaleSubmitParams) => {
+    if (isRegisteringSalesRef.current) {
+      throw new Error(t('consignments.registeringSales') || 'Registrando ventas…');
+    }
+    if (!selectedConsignment) {
+      throw new Error(t('consignments.errorRegisteringSales') || 'Error al registrar ventas');
     }
 
-    const hasSales = Object.values(salesQuantities).some(qty => qty > 0);
+    if (detailDirty) {
+      throw new Error(
+        t('consignments.saveBeforeSalesOrReturns') ||
+          'Guarde o descarte los cambios de la consignación antes de registrar ventas.'
+      );
+    }
+
+    const { salesQuantities, saleUnitPrices } = params;
+
+    const hasSales = Object.values(salesQuantities).some((qty) => qty > 0);
     if (!hasSales) {
-      showAlert(t('consignments.pleaseEnterQuantitiesToSell'), 'Validation Error');
-      return;
+      throw new Error(t('consignments.pleaseEnterQuantitiesToSell'));
     }
 
     isRegisteringSalesRef.current = true;
     setIsRegisteringSales(true);
 
     try {
-      // Validate quantities + unit prices for lines being sold
-      const updatedItems = selectedConsignment.items.map((item, index) => {
+      const saleLines: ConsignmentSaleLine[] = [];
+      for (let index = 0; index < selectedConsignment.items.length; index++) {
+        const item = selectedConsignment.items[index];
         const salesQty = salesQuantities[index] || 0;
+        if (salesQty <= 0) continue;
         const availableQty = item.quantityDelivered - item.quantitySold - item.quantityReturned;
-        
         if (salesQty > availableQty) {
-          throw new Error(`Cannot sell more than available for ${item.sku}. Available: ${availableQty}`);
-        }
-        if (salesQty > 0) {
-          const raw = (saleUnitPrices[index] ?? '').trim();
-          const unitPrice = parseFloat(raw.replace(',', '.'));
-          if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
-            throw new Error(
-              t('consignments.saleUnitPriceRequired') ||
-                `Indique un precio unitario válido (> 0) para ${item.sku}.`
-            );
-          }
-        }
-        return { ...item, quantitySold: item.quantitySold + salesQty };
-      });
-
-      const salesItems: SalesInvoiceLine[] = selectedConsignment.items
-        .map((item, index) => {
-          const salesQty = salesQuantities[index] || 0;
-          if (salesQty <= 0) return null;
-          const unitPrice = roundMoney2(
-            parseFloat((saleUnitPrices[index] ?? '').trim().replace(',', '.'))
-          );
-          const totalPrice = roundMoney2(unitPrice * salesQty);
-          return {
-            sku: item.sku,
-            description: item.description,
-            quantity: salesQty,
-            unitPrice,
-            totalPrice,
-            line: item.line,
-            category: item.category,
-          } as SalesInvoiceLine;
-        })
-        .filter((item): item is SalesInvoiceLine => item !== null);
-
-      const subtotal = roundMoney2(salesItems.reduce((sum, line) => sum + line.totalPrice, 0));
-      const grandTotal = subtotal;
-
-      let amountPaid = 0;
-      let remainingBalance = grandTotal;
-      let paymentStatus: 'Unpaid' | 'Partially Paid' | 'Paid' = 'Unpaid';
-      let paymentDate: Date | undefined;
-
-      if (salePaymentStatus === 'Paid') {
-        amountPaid = grandTotal;
-        remainingBalance = 0;
-        paymentStatus = 'Paid';
-        paymentDate = new Date();
-      } else if (salePaymentStatus === 'Partially Paid') {
-        const paid = roundMoney2(parseFloat(saleAmountPaidInput.trim().replace(',', '.')));
-        if (!Number.isFinite(paid) || paid <= 0) {
           throw new Error(
-            t('consignments.salePartialAmountRequired') ||
-              'Indique el monto cobrado para un pago parcial (mayor que 0).'
+            `Cannot sell more than available for ${item.sku}. Available: ${availableQty}`
           );
         }
-        if (paid >= grandTotal - 0.005) {
+        const unitPrice = roundMoney2(
+          parseFloat((saleUnitPrices[index] ?? '').trim().replace(',', '.'))
+        );
+        if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
           throw new Error(
-            t('consignments.salePartialMustBeLessThanTotal') ||
-              'Para marcar como pago total use "Pagado". El monto parcial debe ser menor al total.'
+            t('consignments.saleUnitPriceRequired') ||
+              `Indique un precio unitario válido (> 0) para ${item.sku}.`
           );
         }
-        amountPaid = paid;
-        remainingBalance = roundMoney2(grandTotal - paid);
-        paymentStatus = 'Partially Paid';
-        paymentDate = new Date();
-      } else {
-        amountPaid = 0;
-        remainingBalance = grandTotal;
-        paymentStatus = 'Unpaid';
-      }
-
-      const paymentMethodTrim = salePaymentMethod.trim();
-      const paymentCommentTrim = salePaymentComment.trim();
-
-      let paymentHistory: PaymentRecord[] | undefined;
-      if (amountPaid > 0) {
-        const rec: PaymentRecord = {
-          date: new Date(),
-          amount: amountPaid,
-        };
-        if (paymentMethodTrim) rec.method = paymentMethodTrim;
-        if (paymentCommentTrim) rec.comment = paymentCommentTrim;
-        paymentHistory = [rec];
-      }
-
-      const notesBase =
-        t('consignments.saleNoteConsignmentPrefix')?.replace(
-          '{id}',
-          selectedConsignment.consignmentId
-        ) || `Venta consignación ${selectedConsignment.consignmentId}`;
-      const notes = notesBase;
-
-      // Update consignment
-      const newStatus = calculateStatus(updatedItems);
-      await updateConsignment(selectedConsignment.id, {
-        items: updatedItems,
-        status: newStatus
-      });
-
-      // Move from consignment stock to sold inventory (Ecuador stock)
-      // As per requirement: Move quantity sold from "Inventory on Consignment" → "Sold Inventory (Ecuador)"
-      for (let i = 0; i < selectedConsignment.items.length; i++) {
-        const salesQty = salesQuantities[i] || 0;
-        if (salesQty > 0) {
-          const item = selectedConsignment.items[i];
-          const inventoryItem = inventory.find(inv => inv.sku === item.sku);
-          if (inventoryItem) {
-            const newConsignmentStock = (inventoryItem.consignmentStock || 0) - salesQty;
-            await updateInventory(inventoryItem.id, {
-              consignmentStock: Math.max(0, newConsignmentStock),
-            });
-          }
-        }
-      }
-
-      if (salesItems.length > 0) {
-        // Prefer live client data so the nota reflects current name/address
-        const liveClient =
-          clients.find((c) => c.id === selectedConsignment.clientId) ||
-          (selectedConsignment.clientId
-            ? await getClient(selectedConsignment.clientId)
-            : null);
-        const clientName = liveClient?.name ?? selectedConsignment.clientName;
-        const clientAddress = liveClient
-          ? formatClientAddress(liveClient)
-          : selectedConsignment.clientAddress || '';
-
-        await createInvoice({
-          invoiceNumber: 'TEMP',
-          clientId: selectedConsignment.clientId,
-          clientName,
-          clientAddress,
-          items: salesItems,
-          subtotal,
-          discountType: 'percentage',
-          discountValue: 0,
-          discountTotal: 0,
-          grandTotal,
-          date: new Date(),
-          notes,
-          salesAgent: user?.name || user?.email || '',
-          currency: 'USD',
-          deliveryStatus: 'Delivered',
-          paymentStatus,
-          amountPaid,
-          remainingBalance,
-          paymentDate,
-          ...(paymentMethodTrim ? { paymentMethod: paymentMethodTrim } : {}),
-          ...(paymentCommentTrim ? { paymentComment: paymentCommentTrim } : {}),
-          ...(paymentHistory ? { paymentHistory } : {}),
-          sourceConsignmentId: selectedConsignment.consignmentId,
-          sourceConsignmentFirestoreId: selectedConsignment.id,
+        saleLines.push({
+          itemIndex: index,
+          sku: item.sku,
+          description: item.description,
+          quantity: salesQty,
+          unitPrice,
+          totalPrice: roundMoney2(unitPrice * salesQty),
+          ...(item.line ? { line: item.line } : {}),
+          ...(item.category ? { category: item.category } : {}),
         });
       }
 
+      if (saleLines.length === 0) {
+        throw new Error(t('consignments.pleaseEnterQuantitiesToSell'));
+      }
+
+      const updatedItems = applyRegisterSaleQuantities(selectedConsignment.items, saleLines);
+      const newSale: ConsignmentSaleRecord = {
+        id: createConsignmentSaleId(),
+        createdAt: new Date(),
+        ...(user?.name || user?.email ? { createdBy: user.name || user.email } : {}),
+        lines: saleLines,
+        invoiced: false,
+      };
+      const nextSales = [...(selectedConsignment.sales || []), newSale];
+      const newStatus = calculateStatus(updatedItems);
+
+      await updateConsignment(selectedConsignment.id, {
+        items: updatedItems,
+        status: newStatus,
+        sales: nextSales,
+      });
+
+      for (const line of saleLines) {
+        const inventoryItem = inventory.find((inv) => inv.sku === line.sku);
+        if (inventoryItem) {
+          const newConsignmentStock = (inventoryItem.consignmentStock || 0) - line.quantity;
+          await updateInventory(inventoryItem.id, {
+            consignmentStock: Math.max(0, newConsignmentStock),
+          });
+        }
+      }
+
       showAlert(t('consignments.salesRegistered'), t('common.success'));
-      setSalesQuantities({});
-      loadConsignments();
-      // Reload selected consignment
+      await loadConsignments();
       const updated = await getAllConsignments();
-      const updatedConsignment = updated.find(c => c.id === selectedConsignment.id);
+      const updatedConsignment = updated.find((c) => c.id === selectedConsignment.id);
       if (updatedConsignment) {
         setSelectedConsignment(updatedConsignment);
         hydrateDetailFromConsignment(updatedConsignment);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error registering sales:', error);
-      showAlert(error.message || t('consignments.errorRegisteringSales'), t('common.error'));
+      const msg =
+        error instanceof Error
+          ? error.message
+          : t('consignments.errorRegisteringSales');
+      throw new Error(msg || t('consignments.errorRegisteringSales'));
     } finally {
       isRegisteringSalesRef.current = false;
       setIsRegisteringSales(false);
+    }
+  };
+
+  const syncLinkedNoteFromActiveSales = async (
+    consignment: Consignment,
+    activeSales: ConsignmentSaleRecord[]
+  ) => {
+    const invoiceLines = aggregateConsignmentSaleLines(activeSales);
+    const subtotal = roundMoney2(
+      invoiceLines.reduce((sum, line) => sum + line.totalPrice, 0)
+    );
+    const grandTotal = subtotal;
+    const notesBase =
+      t('consignments.saleNoteConsignmentPrefix')?.replace('{id}', consignment.consignmentId) ||
+      `Venta consignación ${consignment.consignmentId}`;
+
+    const liveClient =
+      clients.find((c) => c.id === consignment.clientId) ||
+      (consignment.clientId ? await getClient(consignment.clientId) : null);
+    const clientName = liveClient?.name ?? consignment.clientName;
+    const clientAddress = liveClient
+      ? formatClientAddress(liveClient)
+      : consignment.clientAddress || '';
+
+    let existing =
+      linkedSalesInvoice && linkedSalesInvoice.sourceConsignmentFirestoreId === consignment.id
+        ? linkedSalesInvoice
+        : null;
+    if (!existing && consignment.linkedSalesInvoiceId) {
+      existing = await getInvoice(consignment.linkedSalesInvoiceId);
+      if (existing?.deliveryStatus === 'Canceled') existing = null;
+    }
+
+    if (invoiceLines.length === 0) {
+      if (existing) {
+        await deleteInvoice(existing.id);
+      }
+      await updateConsignment(consignment.id, {
+        sales: (consignment.sales || []).map((s) =>
+          s.reversed ? s : { ...s, invoiced: false }
+        ),
+        linkedSalesInvoiceId: deleteField(),
+        linkedSalesInvoiceNumber: deleteField(),
+      });
+      setLinkedSalesInvoice(null);
+      return null;
+    }
+
+    const payment = paymentFieldsForAdjustedNote(grandTotal, existing);
+
+    if (existing) {
+      await updateInvoice(existing.id, {
+        clientId: consignment.clientId,
+        clientName,
+        clientAddress,
+        items: invoiceLines,
+        subtotal,
+        discountType: 'percentage',
+        discountValue: 0,
+        discountTotal: 0,
+        grandTotal,
+        notes: notesBase,
+        deliveryStatus: 'Delivered',
+        ...payment,
+        sourceConsignmentId: consignment.consignmentId,
+        sourceConsignmentFirestoreId: consignment.id,
+      });
+      const marked = (consignment.sales || []).map((s) =>
+        s.reversed ? s : { ...s, invoiced: true }
+      );
+      await updateConsignment(consignment.id, {
+        sales: marked,
+        linkedSalesInvoiceId: existing.id,
+        linkedSalesInvoiceNumber: existing.invoiceNumber,
+      });
+      const refreshed = await getInvoice(existing.id);
+      setLinkedSalesInvoice(refreshed);
+      return refreshed;
+    }
+
+    const created = await createInvoice({
+      invoiceNumber: 'TEMP',
+      clientId: consignment.clientId,
+      clientName,
+      clientAddress,
+      items: invoiceLines,
+      subtotal,
+      discountType: 'percentage',
+      discountValue: 0,
+      discountTotal: 0,
+      grandTotal,
+      date: new Date(),
+      notes: notesBase,
+      salesAgent: user?.name || user?.email || '',
+      currency: 'USD',
+      deliveryStatus: 'Delivered',
+      paymentStatus: 'Unpaid',
+      amountPaid: 0,
+      remainingBalance: grandTotal,
+      sourceConsignmentId: consignment.consignmentId,
+      sourceConsignmentFirestoreId: consignment.id,
+    });
+
+    const marked = (consignment.sales || []).map((s) =>
+      s.reversed ? s : { ...s, invoiced: true }
+    );
+    await updateConsignment(consignment.id, {
+      sales: marked,
+      linkedSalesInvoiceId: created.id,
+      linkedSalesInvoiceNumber: created.invoiceNumber,
+    });
+    setLinkedSalesInvoice(created);
+    return created;
+  };
+
+  const handleEmitSalesNote = async () => {
+    if (!selectedConsignment || isEmittingSalesNoteRef.current) return;
+    if (detailDirty) {
+      showAlert(t('consignments.saveBeforeSalesOrReturns'), 'Validation Error');
+      return;
+    }
+
+    const active = activeConsignmentSales(selectedConsignment.sales);
+    if (active.length === 0) {
+      showAlert(t('consignments.noSalesToEmit'), 'Validation Error');
+      return;
+    }
+
+    isEmittingSalesNoteRef.current = true;
+    setIsEmittingSalesNote(true);
+    setEmitNoteConfirmOpen(false);
+    try {
+      const note = await syncLinkedNoteFromActiveSales(selectedConsignment, active);
+      await loadConsignments();
+      const updated = await getAllConsignments();
+      const refreshed = updated.find((c) => c.id === selectedConsignment.id);
+      if (refreshed) {
+        setSelectedConsignment(refreshed);
+        hydrateDetailFromConsignment(refreshed);
+      }
+      showAlert(
+        note
+          ? formatTemplate(t('consignments.salesNoteEmitted'), {
+              number: note.invoiceNumber,
+            })
+          : t('consignments.salesNoteCleared'),
+        t('common.success')
+      );
+    } catch (error: unknown) {
+      console.error('Error emitting consignment sales note:', error);
+      showAlert(
+        error instanceof Error ? error.message : t('consignments.errorEmittingSalesNote'),
+        t('common.error')
+      );
+    } finally {
+      isEmittingSalesNoteRef.current = false;
+      setIsEmittingSalesNote(false);
+    }
+  };
+
+  const handleReverseSaleConfirm = async () => {
+    if (!selectedConsignment || !saleToReverse || isReversingSaleRef.current) return;
+    if (detailDirty) {
+      showAlert(t('consignments.saveBeforeSalesOrReturns'), 'Validation Error');
+      return;
+    }
+
+    isReversingSaleRef.current = true;
+    setIsReversingSale(true);
+    const sale = saleToReverse;
+    setSaleToReverse(null);
+
+    try {
+      const updatedItems = reverseSaleQuantitiesOnItems(
+        selectedConsignment.items,
+        sale.lines
+      );
+      const nextSales = (selectedConsignment.sales || []).map((s) =>
+        s.id === sale.id ? { ...s, reversed: true, reversedAt: new Date(), invoiced: false } : s
+      );
+      const consignmentPatch: Consignment = {
+        ...selectedConsignment,
+        items: updatedItems,
+        status: calculateStatus(updatedItems),
+        sales: nextSales,
+      };
+
+      await updateConsignment(selectedConsignment.id, {
+        items: updatedItems,
+        status: consignmentPatch.status,
+        sales: nextSales,
+      });
+
+      for (const line of sale.lines) {
+        const inventoryItem = inventory.find((inv) => inv.sku === line.sku);
+        if (inventoryItem) {
+          await updateInventory(inventoryItem.id, {
+            consignmentStock: (inventoryItem.consignmentStock || 0) + line.quantity,
+          });
+        }
+      }
+
+      const remainingActive = activeConsignmentSales(nextSales);
+      if (sale.invoiced || selectedConsignment.linkedSalesInvoiceId) {
+        await syncLinkedNoteFromActiveSales(consignmentPatch, remainingActive);
+      }
+
+      await loadConsignments();
+      const updated = await getAllConsignments();
+      const refreshed = updated.find((c) => c.id === selectedConsignment.id);
+      if (refreshed) {
+        setSelectedConsignment(refreshed);
+        hydrateDetailFromConsignment(refreshed);
+      }
+      showAlert(t('consignments.saleReversed'), t('common.success'));
+    } catch (error: unknown) {
+      console.error('Error reversing consignment sale:', error);
+      showAlert(
+        error instanceof Error ? error.message : t('consignments.errorReversingSale'),
+        t('common.error')
+      );
+    } finally {
+      isReversingSaleRef.current = false;
+      setIsReversingSale(false);
     }
   };
 
@@ -1398,7 +1603,6 @@ export default function Consignments() {
   const handleViewDetails = (consignment: Consignment) => {
     setSelectedConsignment(consignment);
     setView('details');
-    setSalesQuantities({});
   };
 
   const handleDeleteClick = (consignment: Consignment) => {
@@ -2527,15 +2731,17 @@ export default function Consignments() {
     const detailStatus = detailDirty
       ? computeItemsStatus(detailItems)
       : selectedConsignment.status;
-    const estimatedSaleTotal = selectedConsignment.items.reduce((sum, item, index) => {
-      const qty = salesQuantities[index] || 0;
-      const unitRaw = (saleUnitPrices[index] ?? '').trim().replace(',', '.');
-      const unit = parseFloat(unitRaw);
-      if (qty > 0 && Number.isFinite(unit) && unit > 0) {
-        return sum + roundMoney2(qty * unit);
-      }
-      return sum;
-    }, 0);
+
+    const activeSales = activeConsignmentSales(selectedConsignment.sales);
+    const pendingSales = pendingConsignmentSales(selectedConsignment.sales);
+    const salesSummaryTotal = activeSales.reduce((sum, sale) => sum + saleRecordTotal(sale), 0);
+    const salesSummaryUnits = activeSales.reduce((sum, sale) => sum + saleRecordUnits(sale), 0);
+    const hasLinkedNote = Boolean(
+      linkedSalesInvoice || selectedConsignment.linkedSalesInvoiceId
+    );
+    const emitNoteLabel = hasLinkedNote
+      ? t('consignments.updateSalesNoteButton')
+      : t('consignments.emitSalesNoteButton');
 
     return (
       <>
@@ -2844,176 +3050,188 @@ export default function Consignments() {
           {/* Registrar ventas */}
           <section className={`bg-white rounded-xl border border-gray-200 overflow-hidden ${detailDirty ? 'opacity-60' : ''}`}>
             <div className="border-b border-gray-200 px-6 py-4">
-              <h3 className="text-lg font-semibold text-gray-900">{t('consignments.registerSales')}</h3>
-              <p className="mt-1 text-sm text-gray-500">
-                {detailDirty
-                  ? t('consignments.saveBeforeSalesOrReturns')
-                  : t('consignments.registerSalesIntro')}
-              </p>
-            </div>
-            <div className="p-6">
-              <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] xl:gap-8">
-                <div className="min-w-0 overflow-x-auto">
-                  <table className="w-full min-w-[640px] text-sm">
-                    <thead className={tableTheadClass}>
-                      <tr>
-                        <th className={`${tableThBaseClass} text-left`}>{t('consignments.sku')}</th>
-                        <th className={`${tableThBaseClass} text-left`}>{t('consignments.description')}</th>
-                        <th className={`${tableThBaseClass} text-center`}>{t('consignments.available')}</th>
-                        <th className={`${tableThBaseClass} text-center`}>{t('consignments.qtySold')}</th>
-                        <th className={`${tableThBaseClass} text-center`}>{t('consignments.saleUnitPriceUsd')}</th>
-                        <th className={`${tableThBaseClass} text-right`}>{t('consignments.saleLineTotalUsd')}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {selectedConsignment.items.map((item, index) => {
-                        const available = item.quantityDelivered - item.quantitySold - item.quantityReturned;
-                        const qty = salesQuantities[index] || 0;
-                        const unitRaw = (saleUnitPrices[index] ?? '').trim().replace(',', '.');
-                        const unit = parseFloat(unitRaw);
-                        const lineTotal =
-                          qty > 0 && Number.isFinite(unit) && unit > 0
-                            ? roundMoney2(qty * unit)
-                            : null;
-                        return (
-                          <tr key={index} className="transition-colors hover:bg-gray-50">
-                            <td className="px-6 py-3 font-mono text-xs text-gray-900">{item.sku}</td>
-                            <td className="px-6 py-3 text-gray-700">{item.description}</td>
-                            <td className="px-6 py-3 text-center text-gray-700 tabular-nums">{available}</td>
-                            <td className="px-6 py-3 text-center">
-                              <input
-                                type="number"
-                                min="0"
-                                max={available}
-                                value={salesQuantities[index] ?? ''}
-                                onChange={(e) =>
-                                  setSalesQuantities({
-                                    ...salesQuantities,
-                                    [index]: parseInt(e.target.value, 10) || 0,
-                                  })
-                                }
-                                className="w-20 px-2 py-1 border border-gray-300 rounded text-center"
-                                disabled={detailDirty || available === 0}
-                              />
-                            </td>
-                            <td className="px-6 py-3 text-center">
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                placeholder="0.00"
-                                value={saleUnitPrices[index] ?? ''}
-                                onChange={(e) =>
-                                  setSaleUnitPrices({ ...saleUnitPrices, [index]: e.target.value })
-                                }
-                                className="w-24 px-2 py-1 border border-gray-300 rounded text-center"
-                                disabled={detailDirty || available === 0}
-                              />
-                            </td>
-                            <td className="px-6 py-3 text-right font-medium text-gray-800 tabular-nums">
-                              {lineTotal != null ? `$${lineTotal.toFixed(2)}` : '—'}
-                            </td>
-                          </tr>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <h3 className="text-lg font-semibold text-gray-900">{t('consignments.registerSales')}</h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    {detailDirty
+                      ? t('consignments.saveBeforeSalesOrReturns')
+                      : t('consignments.registerSalesIntro')}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (detailDirty) {
+                        showAlert(
+                          t('consignments.saveBeforeSalesOrReturns'),
+                          'Validation Error'
                         );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                <aside className="mt-8 space-y-4 border-t border-gray-200 pt-8 xl:mt-0 xl:border-l xl:border-t-0 xl:pl-8 xl:pt-0">
-                  <h4 className="text-sm font-semibold text-gray-900">
-                    {t('consignments.salePaymentSection')}
-                  </h4>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide">
-                        {t('consignments.salePaymentStatus')}
-                      </label>
-                      <select
-                        value={salePaymentStatus}
-                        onChange={(e) =>
-                          setSalePaymentStatus(e.target.value as 'Unpaid' | 'Partially Paid' | 'Paid')
+                        return;
+                      }
+                      setSaleModalOpen(true);
+                    }}
+                    disabled={detailDirty || isRegisteringSales}
+                    className={`${tableRowActionButtonClass} shrink-0 disabled:cursor-not-allowed disabled:opacity-60`}
+                  >
+                    <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    {t('consignments.openSaleModal')}
+                  </button>
+                  {activeSales.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (detailDirty) {
+                          showAlert(
+                            t('consignments.saveBeforeSalesOrReturns'),
+                            'Validation Error'
+                          );
+                          return;
                         }
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                      >
-                        <option value="Unpaid">{t('invoiceTracking.unpaid')}</option>
-                        <option value="Paid">{t('invoiceTracking.paid')}</option>
-                        <option value="Partially Paid">{t('invoiceTracking.partial')}</option>
-                      </select>
-                    </div>
-                    {salePaymentStatus === 'Partially Paid' && (
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide">
-                          {t('consignments.saleAmountReceived')}
-                        </label>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={saleAmountPaidInput}
-                          onChange={(e) => setSaleAmountPaidInput(e.target.value)}
-                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                          placeholder="0.00"
-                        />
-                      </div>
-                    )}
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide">
-                        {t('consignments.salePaymentMethod')}
-                      </label>
-                      <input
-                        type="text"
-                        value={salePaymentMethod}
-                        onChange={(e) => setSalePaymentMethod(e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                        placeholder={t('consignments.salePaymentMethodPh')}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-500 uppercase tracking-wide">
-                        {t('consignments.salePaymentComment')}
-                      </label>
-                      <textarea
-                        value={salePaymentComment}
-                        onChange={(e) => setSalePaymentComment(e.target.value)}
-                        rows={3}
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                        placeholder={t('consignments.salePaymentCommentPh')}
-                      />
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-500">{t('consignments.salePaymentHint')}</p>
-                </aside>
-              </div>
-
-              <div className="mt-8 flex flex-col gap-4 border-t border-gray-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
-                <div className="text-sm text-gray-600">
-                  {estimatedSaleTotal > 0 ? (
-                    <>
-                      <span className="text-gray-500">{t('common.total')}: </span>
-                      <span className="text-lg font-semibold text-gray-900 tabular-nums">
-                        ${estimatedSaleTotal.toFixed(2)}
-                      </span>
-                    </>
-                  ) : null}
+                        setEmitNoteConfirmOpen(true);
+                      }}
+                      disabled={
+                        detailDirty ||
+                        isEmittingSalesNote ||
+                        (pendingSales.length === 0 && hasLinkedNote)
+                      }
+                      className="sasa-btn-primary inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isEmittingSalesNote ? (
+                        <>
+                          <svg className="h-4 w-4 shrink-0 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden>
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                          {t('consignments.emittingSalesNote')}
+                        </>
+                      ) : (
+                        emitNoteLabel
+                      )}
+                    </button>
+                  )}
                 </div>
+              </div>
+              {(linkedSalesInvoice || selectedConsignment.linkedSalesInvoiceNumber) && (
                 <button
                   type="button"
-                  onClick={handleRegisterSales}
-                  disabled={isRegisteringSales || detailDirty}
-                  className="sasa-btn-primary inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => {
+                    if (linkedSalesInvoice) setSelectedSaleInvoice(linkedSalesInvoice);
+                  }}
+                  className="mt-3 inline-flex items-center gap-2 text-sm text-gray-600 transition-colors hover:text-gray-900"
                 >
-                  {isRegisteringSales ? (
-                    <>
-                      <svg className="h-4 w-4 shrink-0 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden>
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      {t('consignments.registeringSales')}
-                    </>
-                  ) : (
-                    t('consignments.registerSalesButton')
+                  <span className="text-gray-500">{t('consignments.linkedSalesNote')}:</span>
+                  <span className="font-mono font-medium text-[#515151]">
+                    {linkedSalesInvoice?.invoiceNumber ||
+                      selectedConsignment.linkedSalesInvoiceNumber}
+                  </span>
+                  {pendingSales.length > 0 && (
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+                      {formatTemplate(t('consignments.pendingSalesBadge'), {
+                        count: String(pendingSales.length),
+                      })}
+                    </span>
                   )}
                 </button>
+              )}
+            </div>
+
+            <div className="px-6 py-5">
+              <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+                <h4 className="text-sm font-semibold text-gray-900">
+                  {t('consignments.salesSummaryTitle')}
+                </h4>
+                {activeSales.length > 0 && (
+                  <p className="text-xs text-gray-500 tabular-nums">
+                    {formatTemplate(t('consignments.salesSummaryTotals'), {
+                      count: String(activeSales.length),
+                      units: String(salesSummaryUnits),
+                      total: salesSummaryTotal.toFixed(2),
+                    })}
+                  </p>
+                )}
               </div>
+
+              {loadingLinkedNote && activeSales.length === 0 ? (
+                <p className="py-6 text-center text-sm text-gray-500">
+                  {t('consignments.salesSummaryLoading')}
+                </p>
+              ) : activeSales.length === 0 ? (
+                <p className="py-6 text-center text-sm text-gray-500">
+                  {t('consignments.salesSummaryEmpty')}
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {[...activeSales].reverse().map((sale) => {
+                    const units = saleRecordUnits(sale);
+                    const total = saleRecordTotal(sale);
+                    const skusPreview = sale.lines
+                      .slice(0, 3)
+                      .map((l) => l.sku)
+                      .join(', ');
+                    const extra = sale.lines.length > 3 ? ` +${sale.lines.length - 3}` : '';
+                    return (
+                      <div
+                        key={sale.id}
+                        className="flex flex-col gap-3 rounded-xl border border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-medium text-gray-900">
+                              {formatDateDMY(sale.createdAt)}
+                            </span>
+                            <span
+                              className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                sale.invoiced
+                                  ? 'bg-emerald-50 text-emerald-800'
+                                  : 'bg-amber-50 text-amber-800'
+                              }`}
+                            >
+                              {sale.invoiced
+                                ? t('consignments.saleStatusInvoiced')
+                                : t('consignments.saleStatusPending')}
+                            </span>
+                          </div>
+                          <p className="mt-1 truncate text-xs text-gray-500">
+                            {skusPreview}
+                            {extra}
+                            <span className="mx-1.5 text-gray-300">·</span>
+                            {units}{' '}
+                            {units === 1
+                              ? t('consignments.unitSingular')
+                              : t('consignments.unitPlural')}
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-between gap-4 sm:justify-end">
+                          <span className="text-sm font-semibold tabular-nums text-gray-900">
+                            ${total.toFixed(2)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (detailDirty) {
+                                showAlert(
+                                  t('consignments.saveBeforeSalesOrReturns'),
+                                  'Validation Error'
+                                );
+                                return;
+                              }
+                              setSaleToReverse(sale);
+                            }}
+                            disabled={detailDirty || isReversingSale}
+                            className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {t('consignments.reverseSale')}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </section>
 
@@ -3051,6 +3269,13 @@ export default function Consignments() {
             </div>
           </section>
         </div>
+        <ConsignmentSaleModal
+          open={saleModalOpen}
+          consignment={selectedConsignment}
+          inventory={inventory}
+          onClose={() => setSaleModalOpen(false)}
+          onSubmit={handleRegisterSales}
+        />
         <ConsignmentReturnModal
           open={returnModalOpen}
           consignment={selectedConsignment}
@@ -3058,6 +3283,14 @@ export default function Consignments() {
           onClose={() => setReturnModalOpen(false)}
           onSubmit={handleReturnModalSubmit}
         />
+        {selectedSaleInvoice && (
+          <SalesInvoiceDetailsModal
+            invoice={selectedSaleInvoice}
+            inventory={inventory}
+            showTrackingDetails
+            onClose={() => setSelectedSaleInvoice(null)}
+          />
+        )}
         <ConfirmDialog
           open={unsavedLeaveOpen}
           title={t('consignments.unsavedChangesTitle')}
@@ -3068,6 +3301,39 @@ export default function Consignments() {
           onConfirm={handleSaveAndLeave}
           onDiscard={handleDiscardDetailsAndLeave}
           onCancel={() => setUnsavedLeaveOpen(false)}
+        />
+        <ConfirmDialog
+          open={emitNoteConfirmOpen}
+          title={
+            hasLinkedNote
+              ? t('consignments.updateSalesNoteTitle')
+              : t('consignments.emitSalesNoteTitle')
+          }
+          description={
+            hasLinkedNote
+              ? t('consignments.updateSalesNoteMessage')
+              : t('consignments.emitSalesNoteMessage')
+          }
+          confirmText={emitNoteLabel}
+          cancelText={t('common.cancel')}
+          onConfirm={() => void handleEmitSalesNote()}
+          onCancel={() => setEmitNoteConfirmOpen(false)}
+        />
+        <ConfirmDialog
+          open={Boolean(saleToReverse)}
+          title={t('consignments.reverseSaleTitle')}
+          description={
+            saleToReverse
+              ? formatTemplate(t('consignments.reverseSaleMessage'), {
+                  units: String(saleRecordUnits(saleToReverse)),
+                  total: saleRecordTotal(saleToReverse).toFixed(2),
+                })
+              : ''
+          }
+          confirmText={t('consignments.reverseSale')}
+          cancelText={t('common.cancel')}
+          onConfirm={() => void handleReverseSaleConfirm()}
+          onCancel={() => setSaleToReverse(null)}
         />
         {/* Alert Dialog */}
         {alertDialogElement}
