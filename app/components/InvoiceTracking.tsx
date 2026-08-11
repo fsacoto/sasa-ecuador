@@ -4,6 +4,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { createPortal } from 'react-dom';
 import { SalesInvoice, Client, PaymentRecord } from '../types';
 import { getAllInvoices, updateInvoice } from '../services/invoicesService';
+import { deleteField } from '../services/consignmentsService';
 import { getAllClients, ensureClientDocumentLinks } from '../services/clientsService';
 import { useAuth } from '../context/AuthContext';
 import { useInventory } from '../context/InventoryContext';
@@ -31,7 +32,7 @@ import {
 import { formatDateDMY, formatMonthYearLong } from '../utils/formatDate';
 import {
   deliveryStatusSelectClass,
-  paymentStatusSelectClass,
+  paymentStatusBadgeClass,
 } from '../utils/invoiceStatusStyles';
 import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 import { useDarkMode } from '../hooks/useDarkMode';
@@ -194,6 +195,9 @@ export default function InvoiceTracking() {
   // Payment modal state
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentInvoice, setPaymentInvoice] = useState<SalesInvoice | null>(null);
+  const [showReversePaymentModal, setShowReversePaymentModal] = useState(false);
+  const [reversePaymentInvoice, setReversePaymentInvoice] = useState<SalesInvoice | null>(null);
+  const [reversingPaymentIndex, setReversingPaymentIndex] = useState<number | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -773,6 +777,27 @@ export default function InvoiceTracking() {
     setPaymentDate(new Date().toISOString().split('T')[0]);
   };
 
+  const openReversePaymentModal = (invoice: SalesInvoice) => {
+    setReversePaymentInvoice(invoice);
+    setShowReversePaymentModal(true);
+    setReversingPaymentIndex(null);
+  };
+
+  const closeReversePaymentModal = () => {
+    setShowReversePaymentModal(false);
+    setReversePaymentInvoice(null);
+    setReversingPaymentIndex(null);
+  };
+
+  const paymentStatusFromAmounts = (
+    amountPaid: number,
+    grandTotal: number
+  ): SalesInvoice['paymentStatus'] => {
+    if (amountPaid <= 0.01) return 'Unpaid';
+    if (amountPaid >= grandTotal - 0.01) return 'Paid';
+    return 'Partially Paid';
+  };
+
   const addPayment = async () => {
     if (!paymentInvoice || !paymentAmount) return;
 
@@ -800,10 +825,7 @@ export default function InvoiceTracking() {
       
       // Determine status based on payment - automatically change to Paid when fully covered
       // Use a tolerance of 0.01 for floating point precision issues
-      let newStatus: 'Unpaid' | 'Partially Paid' | 'Paid' = 'Partially Paid';
-      if (totalPaid >= paymentInvoice.grandTotal - 0.01 || remainingBalance <= 0.01) {
-        newStatus = 'Paid';
-      }
+      const newStatus = paymentStatusFromAmounts(totalPaid, paymentInvoice.grandTotal);
 
       // Round to 2 decimal places to avoid floating point issues
       const updateData: Partial<SalesInvoice> = {
@@ -827,85 +849,81 @@ export default function InvoiceTracking() {
     }
   };
 
-  const handleUpdatePayment = async (invoice: SalesInvoice, status: 'Unpaid' | 'Partially Paid' | 'Paid') => {
-    // Don't do anything if status hasn't changed
-    if (status === invoice.paymentStatus) return;
+  const reversePaymentAtIndex = async (index: number) => {
+    if (!reversePaymentInvoice || reversingPaymentIndex !== null) return;
 
-    // Handle transition to Unpaid (reset all payments)
-    if (status === 'Unpaid') {
-      try {
-        const updateData: Partial<SalesInvoice> = {
-          paymentStatus: 'Unpaid',
-          amountPaid: 0,
-          remainingBalance: invoice.grandTotal,
-          paymentHistory: [],
-          paymentDate: undefined
-        };
-        await updateInvoice(invoice.id, updateData);
-        loadInvoices();
-      } catch (error) {
-        console.error('Error updating payment:', error);
-        showAlert(t('invoiceTracking.errorUpdatingDeliveryStatus'), 'Error');
-      }
-      return;
-    }
+    const history = [...(reversePaymentInvoice.paymentHistory || [])];
+    const hasHistory = history.length > 0;
+    const legacyPaidWithoutHistory =
+      !hasHistory && (reversePaymentInvoice.amountPaid || 0) > 0.01;
 
-    // Handle transitions that require adding payment
-    if (status === 'Partially Paid') {
-      // If moving from Unpaid to Partially Paid, open payment modal
-      if (invoice.paymentStatus === 'Unpaid') {
-        openPaymentModal(invoice);
+    setReversingPaymentIndex(index);
+    try {
+      let nextHistory: PaymentRecord[] = [];
+      let totalPaid = 0;
+
+      if (legacyPaidWithoutHistory && index === 0) {
+        nextHistory = [];
+        totalPaid = 0;
+      } else if (hasHistory && index >= 0 && index < history.length) {
+        history.splice(index, 1);
+        nextHistory = history;
+        totalPaid = Math.round(
+          nextHistory.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) * 100
+        ) / 100;
+      } else {
         return;
       }
-      // If moving from Paid to Partially Paid, allow direct change
-      // Status will be recalculated based on amountPaid vs grandTotal
-      if (invoice.paymentStatus === 'Paid') {
-        try {
-          // Recalculate status based on current amountPaid
-          const remainingBalance = Math.max(0, invoice.grandTotal - invoice.amountPaid);
-          let newStatus: 'Unpaid' | 'Partially Paid' | 'Paid' = 'Partially Paid';
-          if (invoice.amountPaid === 0) {
-            newStatus = 'Unpaid';
-          } else if (remainingBalance <= 0.01) {
-            newStatus = 'Paid';
-          }
-          
-          const updateData: Partial<SalesInvoice> = {
-            paymentStatus: newStatus,
-            remainingBalance: Math.round(remainingBalance * 100) / 100
-          };
-          await updateInvoice(invoice.id, updateData);
-          loadInvoices();
-        } catch (error) {
-          console.error('Error updating payment:', error);
-          showAlert(t('invoiceTracking.errorUpdatingDeliveryStatus'), 'Error');
-        }
-        return;
-      }
-    }
 
-    // Handle transition to Paid
-    if (status === 'Paid') {
-      // If already fully paid or very close, just update status
-      if (invoice.amountPaid >= invoice.grandTotal - 0.01) {
-        try {
-          const updateData: Partial<SalesInvoice> = {
-            paymentStatus: 'Paid',
-            remainingBalance: 0,
-            paymentDate: invoice.paymentDate || new Date()
-          };
-          await updateInvoice(invoice.id, updateData);
-          loadInvoices();
-        } catch (error) {
-          console.error('Error updating payment:', error);
-          showAlert(t('invoiceTracking.errorUpdatingDeliveryStatus'), 'Error');
-        }
-        return;
+      const remainingBalance = Math.max(
+        0,
+        Math.round((reversePaymentInvoice.grandTotal - totalPaid) * 100) / 100
+      );
+      const newStatus = paymentStatusFromAmounts(
+        totalPaid,
+        reversePaymentInvoice.grandTotal
+      );
+
+      const updateData: Record<string, unknown> = {
+        paymentStatus: newStatus,
+        amountPaid: totalPaid,
+        remainingBalance,
+        paymentHistory: nextHistory,
+      };
+      if (newStatus === 'Paid') {
+        updateData.paymentDate =
+          reversePaymentInvoice.paymentDate || new Date();
+      } else {
+        updateData.paymentDate = deleteField();
       }
-      // If not fully paid, open payment modal to add remaining payment
-      openPaymentModal(invoice);
-      return;
+
+      await updateInvoice(reversePaymentInvoice.id, updateData as Partial<SalesInvoice>);
+      showAlert(t('invoiceTracking.paymentReversed'), 'Success');
+
+      const refreshed = {
+        ...reversePaymentInvoice,
+        ...updateData,
+        paymentHistory: nextHistory,
+      } as SalesInvoice;
+
+      if (totalPaid <= 0.01 && nextHistory.length === 0) {
+        closeReversePaymentModal();
+      } else {
+        setReversePaymentInvoice(refreshed);
+      }
+      loadInvoices();
+    } catch (error) {
+      console.error('Error reversing payment:', error);
+      showAlert(t('invoiceTracking.errorReversingPayment'), 'Error');
+    } finally {
+      setReversingPaymentIndex(null);
     }
+  };
+
+  const paymentStatusLabel = (status: SalesInvoice['paymentStatus']) => {
+    if (status === 'Paid') return t('invoiceTracking.paid');
+    if (status === 'Partially Paid') return t('invoiceTracking.partial');
+    return t('invoiceTracking.unpaid');
   };
 
   const invoicesSearchFiltered = useMemo(() => {
@@ -1200,19 +1218,12 @@ export default function InvoiceTracking() {
       </td>
       <td className="px-3 py-3 text-center align-middle">
         <div className="flex justify-center">
-          <div className="sasa-invoice-status-select-wrap">
-            <select
-              value={invoice.paymentStatus}
-              onChange={(e) => handleUpdatePayment(invoice, e.target.value as SalesInvoice['paymentStatus'])}
-              className={paymentStatusSelectClass(invoice.paymentStatus)}
-              aria-label={t('invoiceTracking.paymentStatus')}
-            >
-              <option value="Unpaid">{t('invoiceTracking.unpaid')}</option>
-              <option value="Partially Paid">{t('invoiceTracking.partial')}</option>
-              <option value="Paid">{t('invoiceTracking.paid')}</option>
-            </select>
-            <StatusSelectChevron />
-          </div>
+          <span
+            className={paymentStatusBadgeClass(invoice.paymentStatus)}
+            title={t('invoiceTracking.paymentStatusReadOnlyHint')}
+          >
+            {paymentStatusLabel(invoice.paymentStatus)}
+          </span>
         </div>
       </td>
       <td className="px-3 py-3 text-center align-middle">
@@ -1694,6 +1705,27 @@ export default function InvoiceTracking() {
             <button
               type="button"
               role="menuitem"
+              disabled={
+                !(
+                  (invoiceForActionsMenu.paymentHistory &&
+                    invoiceForActionsMenu.paymentHistory.length > 0) ||
+                  (invoiceForActionsMenu.amountPaid || 0) > 0.01
+                )
+              }
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={() => {
+                openReversePaymentModal(invoiceForActionsMenu);
+                closeInvoiceActionsMenu();
+              }}
+            >
+              <svg className="h-4 w-4 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+              {t('invoiceTracking.reversePayment')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
               className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
               onClick={() => {
                 openEditModal(invoiceForActionsMenu);
@@ -1834,6 +1866,174 @@ export default function InvoiceTracking() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Reverse payment modal */}
+      {showReversePaymentModal && reversePaymentInvoice && (
+        <ModalPortal>
+          <div
+            className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reverse-payment-modal-title"
+            onClick={closeReversePaymentModal}
+          >
+            <div
+              className="sasa-modal-panel flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="shrink-0 border-b border-gray-200 px-6 py-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <h3
+                      id="reverse-payment-modal-title"
+                      className="text-xl font-semibold text-gray-900"
+                    >
+                      {t('invoiceTracking.reversePaymentTitle')}
+                    </h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      <span className="font-mono font-medium text-gray-700">
+                        {reversePaymentInvoice.invoiceNumber}
+                      </span>
+                      <span className="mx-2 text-gray-400">·</span>
+                      {t('invoiceTracking.reversePaymentSubtitle')}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeReversePaymentModal}
+                    disabled={reversingPaymentIndex !== null}
+                    className="shrink-0 rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50"
+                    aria-label={t('common.close')}
+                  >
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-gray-500">
+                      {t('invoiceTracking.totalPaid')}
+                    </div>
+                    <div className="mt-0.5 font-semibold tabular-nums text-gray-900">
+                      ${Number(reversePaymentInvoice.amountPaid || 0).toFixed(2)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-gray-500">
+                      {t('invoiceTracking.remaining')}
+                    </div>
+                    <div className="mt-0.5 font-semibold tabular-nums text-gray-900">
+                      ${Number(reversePaymentInvoice.remainingBalance || 0).toFixed(2)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-gray-500">
+                      {t('invoiceTracking.paymentStatus')}
+                    </div>
+                    <div className="mt-1">
+                      <span className={paymentStatusBadgeClass(reversePaymentInvoice.paymentStatus)}>
+                        {paymentStatusLabel(reversePaymentInvoice.paymentStatus)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+                {(() => {
+                  const history = reversePaymentInvoice.paymentHistory || [];
+                  const legacy =
+                    history.length === 0 && (reversePaymentInvoice.amountPaid || 0) > 0.01;
+                  if (history.length === 0 && !legacy) {
+                    return (
+                      <p className="py-10 text-center text-sm text-gray-500">
+                        {t('invoiceTracking.noPaymentsToReverse')}
+                      </p>
+                    );
+                  }
+                  const rows = legacy
+                    ? [
+                        {
+                          index: 0,
+                          date: reversePaymentInvoice.paymentDate || reversePaymentInvoice.date,
+                          amount: reversePaymentInvoice.amountPaid,
+                          method: reversePaymentInvoice.paymentMethod,
+                          comment: reversePaymentInvoice.paymentComment,
+                          legacy: true,
+                        },
+                      ]
+                    : history.map((payment, index) => ({
+                        index,
+                        date: payment.date,
+                        amount: payment.amount,
+                        method: payment.method,
+                        comment: payment.comment,
+                        legacy: false,
+                      }));
+
+                  return (
+                    <div className="space-y-2">
+                      {rows.map((row) => (
+                        <div
+                          key={`${row.index}-${String(row.date)}`}
+                          className="flex flex-col gap-3 rounded-xl border border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium text-gray-900">
+                              {formatDateDMY(row.date)}
+                              {row.legacy ? (
+                                <span className="ml-2 text-xs font-normal text-amber-700">
+                                  ({t('invoiceTracking.legacyPaymentLabel')})
+                                </span>
+                              ) : null}
+                            </div>
+                            {(row.method || row.comment) && (
+                              <p className="mt-0.5 truncate text-xs text-gray-500">
+                                {[row.method, row.comment].filter(Boolean).join(' · ')}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between gap-3 sm:justify-end">
+                            <span className="text-sm font-semibold tabular-nums text-gray-900">
+                              ${Number(row.amount || 0).toFixed(2)}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={reversingPaymentIndex !== null}
+                              onClick={() => void reversePaymentAtIndex(row.index)}
+                              className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {reversingPaymentIndex === row.index
+                                ? t('invoiceTracking.reversingPayment')
+                                : t('invoiceTracking.removePayment')}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div className="flex shrink-0 justify-end border-t border-gray-200 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={closeReversePaymentModal}
+                  disabled={reversingPaymentIndex !== null}
+                  className={
+                    darkMode
+                      ? 'rounded-lg border border-white/20 bg-transparent px-4 py-2 text-sm font-medium text-gray-200 transition-colors hover:bg-white/10 disabled:opacity-50'
+                      : 'rounded-lg border border-gray-300 bg-transparent px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50'
+                  }
+                >
+                  {t('common.close')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
       )}
 
       {/* Modal entrega parcial — cantidades e inventario */}

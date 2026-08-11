@@ -223,13 +223,16 @@ export async function createInvoice(invoice: Omit<SalesInvoice, 'id' | 'createdA
 }
 
 // Update an invoice
-export async function updateInvoice(invoiceId: string, updates: Partial<SalesInvoice>): Promise<void> {
+export async function updateInvoice(
+  invoiceId: string,
+  updates: Partial<SalesInvoice> | Record<string, unknown>
+): Promise<void> {
   try {
     const docRef = doc(db, INVOICES_COLLECTION, invoiceId);
 
     const cleanUpdates: Record<string, unknown> = { ...updates };
-    if (Array.isArray(updates.items)) {
-      cleanUpdates.items = updates.items.map((item) =>
+    if (Array.isArray((updates as Partial<SalesInvoice>).items)) {
+      cleanUpdates.items = ((updates as Partial<SalesInvoice>).items || []).map((item) =>
         toFirestoreInvoiceLine(item as SalesInvoiceLine & Record<string, unknown>)
       );
     }
