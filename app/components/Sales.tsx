@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import { SalesInvoiceLine, Client, InventoryItem, SalesInvoice } from '../types';
 import { getAllClients, createClient, formatClientAddress } from '../services/clientsService';
+import { joinClientName, titleCaseWords, titleCaseWordsInput } from '../utils/clientName';
 import { createInvoice, getAllInvoices, toFirestoreInvoiceLine } from '../services/invoicesService';
 import { downloadSalesInvoicePdf } from '../utils/salesInvoicePdf';
 import { useInventory } from '../context/InventoryContext';
@@ -76,7 +77,8 @@ export default function Sales() {
   const [clientModalSearch, setClientModalSearch] = useState('');
   const [creatingClient, setCreatingClient] = useState(false);
   const [newClientForm, setNewClientForm] = useState({
-    name: '',
+    firstName: '',
+    lastName: '',
     email: '',
     phone: '',
     address: '',
@@ -453,7 +455,8 @@ export default function Sales() {
 
   const resetNewClientForm = () => {
     setNewClientForm({
-      name: '',
+      firstName: '',
+      lastName: '',
       email: '',
       phone: '',
       address: '',
@@ -495,8 +498,18 @@ export default function Sales() {
     }
     setCreatingClient(true);
     try {
+      const firstName = titleCaseWords(newClientForm.firstName);
+      const lastName = titleCaseWords(newClientForm.lastName);
+      const name = joinClientName(firstName, lastName);
+      if (!firstName.trim()) {
+        showAlert(t('clients.firstNameRequired'), 'Validación');
+        setCreatingClient(false);
+        return;
+      }
       const created = await createClient({
-        name: newClientForm.name.trim(),
+        name,
+        firstName,
+        lastName,
         email: newClientForm.email.trim() || undefined,
         phone: newClientForm.phone.trim() || undefined,
         address: newClientForm.address.trim(),
@@ -1083,16 +1096,39 @@ export default function Sales() {
               <form onSubmit={handleNewClientSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('clients.nameRequired')}</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('clients.firstNameRequired')}</label>
                     <input
                       type="text"
                       required
-                      value={newClientForm.name}
-                      onChange={(e) => setNewClientForm({ ...newClientForm, name: e.target.value })}
+                      value={newClientForm.firstName}
+                      onChange={(e) =>
+                        setNewClientForm({
+                          ...newClientForm,
+                          firstName: titleCaseWordsInput(e.target.value),
+                        })
+                      }
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
+                      autoComplete="given-name"
                     />
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('clients.lastNameRequired')}</label>
+                    <input
+                      type="text"
+                      required
+                      value={newClientForm.lastName}
+                      onChange={(e) =>
+                        setNewClientForm({
+                          ...newClientForm,
+                          lastName: titleCaseWordsInput(e.target.value),
+                        })
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
+                      autoComplete="family-name"
+                    />
+                  </div>
+                </div>
+                <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">{t('clients.countryRequired')}</label>
                     <select
                       required
@@ -1106,7 +1142,6 @@ export default function Sales() {
                       <option value="Ecuador">Ecuador</option>
                       <option value="USA">USA</option>
                     </select>
-                  </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>

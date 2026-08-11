@@ -13,11 +13,70 @@ import {
 } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { Client } from '../types';
+import {
+  joinClientName,
+  normalizeClientDisplayName,
+  splitClientName,
+  titleCaseWords,
+} from '../utils/clientName';
 
 const CLIENTS_COLLECTION = 'clients';
 const INVOICES_COLLECTION = 'invoices';
 const CONSIGNMENTS_COLLECTION = 'consignments';
 const FIRESTORE_BATCH_LIMIT = 500;
+
+function withNormalizedClientName<T extends { name: string; firstName?: string; lastName?: string }>(
+  client: T
+): T & { name: string; firstName: string; lastName: string } {
+  const fromParts =
+    client.firstName != null || client.lastName != null
+      ? joinClientName(client.firstName || '', client.lastName || '')
+      : '';
+  const name = normalizeClientDisplayName(fromParts || client.name || '');
+  const parts = splitClientName(name);
+  return {
+    ...client,
+    name,
+    firstName: titleCaseWords(client.firstName || parts.firstName),
+    lastName: titleCaseWords(client.lastName || parts.lastName),
+  };
+}
+
+function mapClientDoc(id: string, data: Record<string, unknown>): Client {
+  const rawName = String(data.name ?? '');
+  const rawFirst =
+    typeof data.firstName === 'string' ? data.firstName : undefined;
+  const rawLast = typeof data.lastName === 'string' ? data.lastName : undefined;
+  const normalized = withNormalizedClientName({
+    name: rawName,
+    firstName: rawFirst,
+    lastName: rawLast,
+  });
+  return {
+    id,
+    name: normalized.name,
+    firstName: normalized.firstName,
+    lastName: normalized.lastName,
+    email: data.email !== undefined ? String(data.email) : undefined,
+    phone: data.phone !== undefined ? String(data.phone) : undefined,
+    address: String(data.address ?? ''),
+    city: String(data.city ?? ''),
+    country: data.country === 'USA' ? 'USA' : 'Ecuador',
+    notes: data.notes !== undefined ? String(data.notes) : undefined,
+    createdAt:
+      data.createdAt && typeof (data.createdAt as { toDate?: () => Date }).toDate === 'function'
+        ? (data.createdAt as { toDate: () => Date }).toDate()
+        : data.createdAt instanceof Date
+          ? data.createdAt
+          : new Date(),
+    updatedAt:
+      data.updatedAt && typeof (data.updatedAt as { toDate?: () => Date }).toDate === 'function'
+        ? (data.updatedAt as { toDate: () => Date }).toDate()
+        : data.updatedAt instanceof Date
+          ? data.updatedAt
+          : new Date(),
+  };
+}
 
 /** Same address format used when creating notas de pedido and consignaciones. */
 export function formatClientAddress(client: Pick<Client, 'address' | 'city' | 'country'>): string {
@@ -309,15 +368,12 @@ export async function getAllClients(country?: 'Ecuador' | 'USA'): Promise<Client
     }
 
     const snapshot = await getDocs(q);
-    const clients = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-      updatedAt: doc.data().updatedAt?.toDate() || new Date(),
-    })) as Client[];
+    const clients = snapshot.docs.map((docSnap) =>
+      mapClientDoc(docSnap.id, docSnap.data() as Record<string, unknown>)
+    );
     
     // Sort in-memory as a workaround while index builds
-    return clients.sort((a, b) => a.name.localeCompare(b.name));
+    return clients.sort((a, b) => a.name.localeCompare(b.name, 'es'));
   } catch (error) {
     console.error('Error fetching clients:', error);
     throw error;
@@ -331,13 +387,7 @@ export async function getClient(clientId: string): Promise<Client | null> {
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
-      const data = docSnap.data();
-      return {
-        id: docSnap.id,
-        ...data,
-        createdAt: data.createdAt?.toDate() || new Date(),
-        updatedAt: data.updatedAt?.toDate() || new Date(),
-      } as Client;
+      return mapClientDoc(docSnap.id, docSnap.data() as Record<string, unknown>);
     }
     return null;
   } catch (error) {
@@ -350,8 +400,10 @@ export async function getClient(clientId: string): Promise<Client | null> {
 export async function createClient(client: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>): Promise<Client> {
   try {
     const docRef = doc(collection(db, CLIENTS_COLLECTION));
+    const normalized = withNormalizedClientName(client);
     const newClient: Omit<Client, 'id'> = {
       ...client,
+      ...normalized,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -387,16 +439,37 @@ export async function updateClient(
     const docRef = doc(db, CLIENTS_COLLECTION, clientId);
     const previousName = options?.previousName;
 
+    const nameTouched =
+      updates.name !== undefined ||
+      updates.firstName !== undefined ||
+      updates.lastName !== undefined;
+
+    let payload: Partial<Client> = { ...updates };
+    if (nameTouched) {
+      const latest = await getClient(clientId);
+      const merged = withNormalizedClientName({
+        name: updates.name ?? latest?.name ?? '',
+        firstName: updates.firstName ?? latest?.firstName,
+        lastName: updates.lastName ?? latest?.lastName,
+      });
+      payload = {
+        ...payload,
+        name: merged.name,
+        firstName: merged.firstName,
+        lastName: merged.lastName,
+      };
+    }
+
     await setDoc(
       docRef,
       {
-        ...updates,
+        ...payload,
         updatedAt: new Date(),
       },
       { merge: true }
     );
 
-    if (!clientSnapshotFieldsChanged(updates)) {
+    if (!clientSnapshotFieldsChanged(payload)) {
       return;
     }
 
@@ -411,6 +484,51 @@ export async function updateClient(
     console.error('Error updating client:', error);
     throw error;
   }
+}
+
+/**
+ * Corrige mayúsculas de Nombre/Apellido en todos los clientes y propaga
+ * el nombre a notas/consignaciones vinculadas cuando cambia.
+ */
+export async function ensureClientNamesTitleCase(): Promise<{ updated: number }> {
+  const snapshot = await getDocs(collection(db, CLIENTS_COLLECTION));
+  let updated = 0;
+
+  for (const docSnap of snapshot.docs) {
+    const data = docSnap.data() as Record<string, unknown>;
+    const rawName = String(data.name ?? '');
+    const rawFirst = typeof data.firstName === 'string' ? data.firstName : '';
+    const rawLast = typeof data.lastName === 'string' ? data.lastName : '';
+    const hasParts = data.firstName != null && data.lastName != null;
+
+    const normalized = withNormalizedClientName({
+      name: rawName,
+      firstName: rawFirst || undefined,
+      lastName: rawLast || undefined,
+    });
+
+    if (
+      hasParts &&
+      normalized.name === rawName &&
+      normalized.firstName === rawFirst &&
+      normalized.lastName === rawLast
+    ) {
+      continue;
+    }
+
+    await updateClient(
+      docSnap.id,
+      {
+        name: normalized.name,
+        firstName: normalized.firstName,
+        lastName: normalized.lastName,
+      },
+      { previousName: rawName }
+    );
+    updated += 1;
+  }
+
+  return { updated };
 }
 
 // Delete a client

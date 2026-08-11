@@ -246,7 +246,12 @@ export type CMSContentDraftInput = Omit<CMSContent, 'id' | 'metadata' | 'status'
 
 export interface Client {
   id: string;
+  /** Nombre completo para mostrar y documentos (NOTAV, consignaciones). */
   name: string;
+  /** Nombre de pila (opcional; se deriva de `name` si falta). */
+  firstName?: string;
+  /** Apellido(s) (opcional; se deriva de `name` si falta). */
+  lastName?: string;
   email?: string;
   phone?: string;
   address: string;

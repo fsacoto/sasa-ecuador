@@ -8,7 +8,9 @@ import {
   updateClient, 
   deleteClient,
   ensureClientDocumentLinks,
+  ensureClientNamesTitleCase,
 } from '../services/clientsService';
+import { joinClientName, splitClientName, titleCaseWords, titleCaseWordsInput } from '../utils/clientName';
 import { useAuth } from '../context/AuthContext';
 import { usePersistedFilterState } from '../hooks/usePersistedFilterState';
 import { useTranslation } from '../context/TranslationContext';
@@ -32,7 +34,8 @@ export default function Clients() {
   const [showModal, setShowModal] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [formData, setFormData] = useState({
-    name: '',
+    firstName: '',
+    lastName: '',
     email: '',
     phone: '',
     address: '',
@@ -52,12 +55,13 @@ export default function Clients() {
   const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc' | 'desc'}>({key: 'name', direction: 'asc'});
 
   useEffect(() => {
-    loadClients();
-  }, []);
-
-  // Link historical notas/consignaciones to clients (by id or name) once per tab
-  useEffect(() => {
+    void loadClients();
     void ensureClientDocumentLinks();
+    void ensureClientNamesTitleCase()
+      .then(() => loadClients())
+      .catch((error) => {
+        console.warn('[clients] name title-case backfill skipped:', error);
+      });
   }, []);
 
   const loadClients = async () => {
@@ -97,8 +101,16 @@ export default function Clients() {
   const openModal = (client?: Client) => {
     if (client) {
       setSelectedClient(client);
+      const parts =
+        client.firstName || client.lastName
+          ? {
+              firstName: client.firstName || '',
+              lastName: client.lastName || '',
+            }
+          : splitClientName(client.name);
       setFormData({
-        name: client.name,
+        firstName: parts.firstName,
+        lastName: parts.lastName,
         email: client.email || '',
         phone: client.phone || '',
         address: client.address,
@@ -109,7 +121,8 @@ export default function Clients() {
     } else {
       setSelectedClient(null);
       setFormData({
-        name: '',
+        firstName: '',
+        lastName: '',
         email: '',
         phone: '',
         address: '',
@@ -129,13 +142,32 @@ export default function Clients() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const firstName = titleCaseWords(formData.firstName);
+      const lastName = titleCaseWords(formData.lastName);
+      const name = joinClientName(firstName, lastName);
+      if (!firstName.trim()) {
+        alert(t('clients.firstNameRequired'));
+        return;
+      }
+      const payload = {
+        name,
+        firstName,
+        lastName,
+        email: formData.email,
+        phone: formData.phone,
+        address: formData.address,
+        city: formData.city,
+        country: formData.country,
+        notes: formData.notes,
+      };
+
       if (selectedClient) {
         // Sales role can only edit Ecuador clients
         if (user?.role === 'sales' && selectedClient.country !== 'Ecuador') {
           alert(t('clients.onlyEditEcuador'));
           return;
         }
-        await updateClient(selectedClient.id, formData, {
+        await updateClient(selectedClient.id, payload, {
           previousName: selectedClient.name,
         });
       } else {
@@ -144,7 +176,7 @@ export default function Clients() {
           alert(t('clients.onlyCreateEcuador'));
           return;
         }
-        await createClient(formData);
+        await createClient(payload);
         setToastMessage(t('clients.addedSuccess'));
         setTimeout(() => setToastMessage(null), 4000);
       }
@@ -540,17 +572,42 @@ export default function Clients() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {t('clients.nameRequired')}
+                    {t('clients.firstNameRequired')}
                   </label>
                   <input
                     type="text"
                     required
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    value={formData.firstName}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        firstName: titleCaseWordsInput(e.target.value),
+                      })
+                    }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
+                    autoComplete="given-name"
                   />
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {t('clients.lastNameRequired')}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.lastName}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        lastName: titleCaseWordsInput(e.target.value),
+                      })
+                    }
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151]"
+                    autoComplete="family-name"
+                  />
+                </div>
+              </div>
+              <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {t('clients.countryRequired')}
                   </label>
@@ -564,7 +621,6 @@ export default function Clients() {
                     <option value="Ecuador">Ecuador</option>
                     <option value="USA">USA</option>
                   </select>
-                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
