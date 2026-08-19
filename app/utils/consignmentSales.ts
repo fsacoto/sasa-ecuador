@@ -21,6 +21,34 @@ export function consignmentItemRemaining(
   return Math.max(0, delivered - sold - returned);
 }
 
+/** Units this sale may keep/assign on a line: remaining on consignment plus what this sale already holds. */
+export function availableForSaleEdit(
+  item: Pick<ConsignmentItem, 'quantityDelivered' | 'quantitySold' | 'quantityReturned'>,
+  originalQtyOnThisSale: number
+): number {
+  return consignmentItemRemaining(item) + Math.max(0, originalQtyOnThisSale);
+}
+
+export function saleLinesQtyBySku(lines: ConsignmentSaleLine[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const line of lines) {
+    const sku = (line.sku || '').trim();
+    if (!sku) continue;
+    map.set(sku, (map.get(sku) || 0) + (Number(line.quantity) || 0));
+  }
+  return map;
+}
+
+export function saleLinesQtyByItemIndex(lines: ConsignmentSaleLine[]): Map<number, number> {
+  const map = new Map<number, number>();
+  for (const line of lines) {
+    const idx = Number(line.itemIndex);
+    if (!Number.isFinite(idx)) continue;
+    map.set(idx, (map.get(idx) || 0) + (Number(line.quantity) || 0));
+  }
+  return map;
+}
+
 export type ConsignmentItemLineOutcome =
   | { kind: 'available' }
   | { kind: 'sold' }

@@ -260,15 +260,42 @@ export default function SalesInvoiceDetailsModal({
                         {invoice.paymentHistory.map((payment, index) => (
                           <div
                             key={`${String(payment.date)}-${index}`}
-                            className="flex justify-between rounded bg-white p-2 text-sm"
+                            className="rounded bg-white p-2 text-sm"
                           >
-                            <span className="text-gray-600">
-                              {formatDateDMY(payment.date)}
-                              {payment.method ? ` (${payment.method})` : ''}
-                            </span>
-                            <span className="font-semibold tabular-nums text-green-600">
-                              ${Number(payment.amount || 0).toFixed(2)}
-                            </span>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">
+                                {formatDateDMY(payment.date)}
+                                {payment.method
+                                  ? ` (${
+                                      payment.method === 'cash'
+                                        ? t('invoiceTracking.cash')
+                                        : payment.method === 'card'
+                                          ? t('invoiceTracking.card')
+                                          : payment.method === 'transfer'
+                                            ? t('invoiceTracking.transfer')
+                                            : payment.method
+                                    })`
+                                  : ''}
+                              </span>
+                              <span className="font-semibold tabular-nums text-green-600">
+                                ${Number(payment.amount || 0).toFixed(2)}
+                              </span>
+                            </div>
+                            {payment.receipts && payment.receipts.length > 0 ? (
+                              <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1">
+                                {payment.receipts.map((receipt, receiptIndex) => (
+                                  <a
+                                    key={`${receipt.url}-${receiptIndex}`}
+                                    href={receipt.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-xs text-blue-600 underline hover:text-blue-800"
+                                  >
+                                    {receipt.name || t('invoiceTracking.viewReceipt')}
+                                  </a>
+                                ))}
+                              </div>
+                            ) : null}
                           </div>
                         ))}
                       </div>

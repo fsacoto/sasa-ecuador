@@ -517,7 +517,7 @@ function ConsignmentNotePages({
 
         {consignment.items.map((item, index) => {
           const mark = markItemOutcomes ? lineOutcomeMark(item, t) : { strike: false, label: null };
-          const struck = mark.strike ? styles.textStruck : false;
+          const struck = mark.strike ? styles.textStruck : {};
           return (
             <View key={index} style={styles.tableRow} wrap={false}>
               <Text style={[styles.colNo, { width: cols.no }, struck]}>{index + 1}</Text>

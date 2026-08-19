@@ -37,6 +37,7 @@ import { isInsideDatePickerPortal } from '../utils/calendarUtils';
 import { usePersistedFilterState } from '../hooks/usePersistedFilterState';
 import ConsignmentReturnModal from './ConsignmentReturnModal';
 import ConsignmentSaleModal, { ConsignmentSaleSubmitParams } from './ConsignmentSaleModal';
+import ConsignmentSaleDetailModal from './ConsignmentSaleDetailModal';
 import ConsignmentPrintModal from './ConsignmentPrintModal';
 import ConsignmentCatalogModal from './ConsignmentCatalogModal';
 import SalesInvoiceDetailsModal from './SalesInvoiceDetailsModal';
@@ -65,6 +66,7 @@ import {
   pickLinkedInvoice,
   reverseSaleQuantitiesOnItems,
   roundMoney2,
+  saleLinesQtyBySku,
   saleRecordTotal,
   saleRecordUnits,
   saleRecordsFromLegacyInvoices,
@@ -183,6 +185,9 @@ export default function Consignments() {
   const [isReversingSale, setIsReversingSale] = useState(false);
   const isReversingSaleRef = useRef(false);
   const [saleToReverse, setSaleToReverse] = useState<ConsignmentSaleRecord | null>(null);
+  const [saleToView, setSaleToView] = useState<ConsignmentSaleRecord | null>(null);
+  const [isUpdatingSale, setIsUpdatingSale] = useState(false);
+  const isUpdatingSaleRef = useRef(false);
   const [emitNoteConfirmOpen, setEmitNoteConfirmOpen] = useState(false);
   const [selectedSaleInvoice, setSelectedSaleInvoice] = useState<SalesInvoice | null>(null);
   const hasLoadedRef = useRef(false);
@@ -1552,6 +1557,120 @@ export default function Consignments() {
     }
   };
 
+  const handleUpdateSale = async (sale: ConsignmentSaleRecord, nextLines: ConsignmentSaleLine[]) => {
+    if (!selectedConsignment || isUpdatingSaleRef.current) {
+      throw new Error(t('consignments.saleDetailError'));
+    }
+    if (detailDirty) {
+      throw new Error(
+        t('consignments.saveBeforeSalesOrReturns') ||
+          'Guarde o descarte los cambios de la consignación antes de registrar ventas.'
+      );
+    }
+    if (nextLines.length === 0) {
+      throw new Error(t('consignments.saleDetailEmptyLines'));
+    }
+
+    const resolvedLines: ConsignmentSaleLine[] = nextLines.map((line) => {
+      const idx = line.itemIndex;
+      const matchByIndex =
+        idx >= 0 &&
+        idx < selectedConsignment.items.length &&
+        selectedConsignment.items[idx].sku.trim() === line.sku.trim();
+      const itemIndex = matchByIndex
+        ? idx
+        : selectedConsignment.items.findIndex((item) => item.sku.trim() === line.sku.trim());
+      if (itemIndex < 0) {
+        throw new Error(
+          t('consignments.saleBarcodeNotOnConsignment') ||
+            `El SKU ${line.sku} ya no está en esta consignación.`
+        );
+      }
+      const item = selectedConsignment.items[itemIndex];
+      return {
+        ...line,
+        itemIndex,
+        description: item.description || line.description,
+        ...(item.line ? { line: item.line } : {}),
+        ...(item.category ? { category: item.category } : {}),
+      };
+    });
+
+    isUpdatingSaleRef.current = true;
+    setIsUpdatingSale(true);
+    try {
+      let updatedItems = reverseSaleQuantitiesOnItems(
+        selectedConsignment.items,
+        sale.lines
+      );
+      for (const line of resolvedLines) {
+        const item = updatedItems[line.itemIndex];
+        const available = item.quantityDelivered - item.quantitySold - item.quantityReturned;
+        if (line.quantity > available) {
+          throw new Error(
+            t('consignments.saleExceedsAvailable') ||
+              `La cantidad a vender no puede superar lo disponible para ${line.sku}.`
+          );
+        }
+      }
+      updatedItems = applyRegisterSaleQuantities(updatedItems, resolvedLines);
+
+      const nextSales = (selectedConsignment.sales || []).map((s) =>
+        s.id === sale.id ? { ...s, lines: resolvedLines } : s
+      );
+      const consignmentPatch: Consignment = {
+        ...selectedConsignment,
+        items: updatedItems,
+        status: calculateStatus(updatedItems),
+        sales: nextSales,
+      };
+
+      await updateConsignment(selectedConsignment.id, {
+        items: updatedItems,
+        status: consignmentPatch.status,
+        sales: nextSales,
+      });
+
+      const oldBySku = saleLinesQtyBySku(sale.lines);
+      const newBySku = saleLinesQtyBySku(resolvedLines);
+      const skus = new Set([...oldBySku.keys(), ...newBySku.keys()]);
+      for (const sku of skus) {
+        const delta = (newBySku.get(sku) || 0) - (oldBySku.get(sku) || 0);
+        if (delta === 0) continue;
+        const inventoryItem = inventory.find((inv) => inv.sku === sku);
+        if (!inventoryItem) continue;
+        await updateInventory(inventoryItem.id, {
+          consignmentStock: Math.max(0, (inventoryItem.consignmentStock || 0) - delta),
+        });
+      }
+
+      if (sale.invoiced) {
+        await syncLinkedNoteFromActiveSales(
+          consignmentPatch,
+          activeConsignmentSales(nextSales)
+        );
+      }
+
+      await loadConsignments();
+      const updated = await getAllConsignments();
+      const refreshed = updated.find((c) => c.id === selectedConsignment.id);
+      if (refreshed) {
+        setSelectedConsignment(refreshed);
+        hydrateDetailFromConsignment(refreshed);
+      }
+      setSaleToView(null);
+      showAlert(t('consignments.saleDetailSaved'), t('common.success'));
+    } catch (error: unknown) {
+      console.error('Error updating consignment sale:', error);
+      const msg =
+        error instanceof Error ? error.message : t('consignments.saleDetailError');
+      throw new Error(msg || t('consignments.saleDetailError'));
+    } finally {
+      isUpdatingSaleRef.current = false;
+      setIsUpdatingSale(false);
+    }
+  };
+
   const handleReturnModalSubmit = async ({
     updatedItems,
     inventoryPatches,
@@ -2849,6 +2968,7 @@ export default function Consignments() {
                 </span>
               </span>
             </label>
+            </div>
           </div>
 
           {/* Resumen */}
@@ -3166,9 +3286,16 @@ export default function Consignments() {
 
             <div className="px-6 py-5">
               <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-                <h4 className="text-sm font-semibold text-gray-900">
-                  {t('consignments.salesSummaryTitle')}
-                </h4>
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-900">
+                    {t('consignments.salesSummaryTitle')}
+                  </h4>
+                  {activeSales.length > 0 ? (
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      {t('consignments.salesSummaryClickHint')}
+                    </p>
+                  ) : null}
+                </div>
                 {activeSales.length > 0 && (
                   <p className="text-xs text-gray-500 tabular-nums">
                     {formatTemplate(t('consignments.salesSummaryTotals'), {
@@ -3198,42 +3325,86 @@ export default function Consignments() {
                       .map((l) => l.sku)
                       .join(', ');
                     const extra = sale.lines.length > 3 ? ` +${sale.lines.length - 3}` : '';
+                    const previewLines = sale.lines.slice(0, 4);
+                    const openDetail = () => {
+                      if (detailDirty) {
+                        showAlert(
+                          t('consignments.saveBeforeSalesOrReturns'),
+                          'Validation Error'
+                        );
+                        return;
+                      }
+                      setSaleToView(sale);
+                    };
                     return (
                       <div
                         key={sale.id}
                         className="flex flex-col gap-3 rounded-xl border border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                       >
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-medium text-gray-900">
-                              {formatDateDMY(sale.createdAt)}
-                            </span>
-                            <span
-                              className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                                sale.invoiced
-                                  ? 'bg-emerald-50 text-emerald-800'
-                                  : 'bg-amber-50 text-amber-800'
-                              }`}
-                            >
-                              {sale.invoiced
-                                ? t('consignments.saleStatusInvoiced')
-                                : t('consignments.saleStatusPending')}
-                            </span>
+                        <button
+                          type="button"
+                          onClick={openDetail}
+                          disabled={detailDirty || isUpdatingSale}
+                          className="flex min-w-0 flex-1 items-start gap-3 text-left disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <div className="flex shrink-0 -space-x-2">
+                            {previewLines.map((line, i) => {
+                              const imageUrl = inventory.find((inv) => inv.sku === line.sku)
+                                ?.images?.[0];
+                              return (
+                                <div
+                                  key={`${line.sku}-${i}`}
+                                  className="relative"
+                                  style={{ zIndex: previewLines.length - i }}
+                                >
+                                  <ConsignmentProductThumb
+                                    imageUrl={imageUrl}
+                                    alt={line.description || line.sku}
+                                  />
+                                </div>
+                              );
+                            })}
                           </div>
-                          <p className="mt-1 truncate text-xs text-gray-500">
-                            {skusPreview}
-                            {extra}
-                            <span className="mx-1.5 text-gray-300">·</span>
-                            {units}{' '}
-                            {units === 1
-                              ? t('consignments.unitSingular')
-                              : t('consignments.unitPlural')}
-                          </p>
-                        </div>
-                        <div className="flex items-center justify-between gap-4 sm:justify-end">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-medium text-gray-900">
+                                {formatDateDMY(sale.createdAt)}
+                              </span>
+                              <span
+                                className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                  sale.invoiced
+                                    ? 'bg-emerald-50 text-emerald-800'
+                                    : 'bg-amber-50 text-amber-800'
+                                }`}
+                              >
+                                {sale.invoiced
+                                  ? t('consignments.saleStatusInvoiced')
+                                  : t('consignments.saleStatusPending')}
+                              </span>
+                            </div>
+                            <p className="mt-1 truncate text-xs text-gray-500">
+                              {skusPreview}
+                              {extra}
+                              <span className="mx-1.5 text-gray-300">·</span>
+                              {units}{' '}
+                              {units === 1
+                                ? t('consignments.unitSingular')
+                                : t('consignments.unitPlural')}
+                            </p>
+                          </div>
+                        </button>
+                        <div className="flex items-center justify-between gap-2 sm:justify-end">
                           <span className="text-sm font-semibold tabular-nums text-gray-900">
                             ${total.toFixed(2)}
                           </span>
+                          <button
+                            type="button"
+                            onClick={openDetail}
+                            disabled={detailDirty || isUpdatingSale}
+                            className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {t('consignments.saleDetailView')}
+                          </button>
                           <button
                             type="button"
                             onClick={() => {
@@ -3301,6 +3472,21 @@ export default function Consignments() {
           onClose={() => setSaleModalOpen(false)}
           onSubmit={handleRegisterSales}
         />
+        {saleToView ? (
+          <ConsignmentSaleDetailModal
+            open
+            sale={saleToView}
+            consignment={selectedConsignment}
+            inventory={inventory}
+            onClose={() => setSaleToView(null)}
+            onSave={(lines) => handleUpdateSale(saleToView, lines)}
+            onReverse={() => {
+              const sale = saleToView;
+              setSaleToView(null);
+              setSaleToReverse(sale);
+            }}
+          />
+        ) : null}
         <ConsignmentReturnModal
           open={returnModalOpen}
           consignment={selectedConsignment}

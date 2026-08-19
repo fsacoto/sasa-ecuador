@@ -274,11 +274,18 @@ export interface SalesInvoiceLine {
   category?: string;
 }
 
+export interface PaymentReceipt {
+  url: string;
+  name: string;
+  contentType?: string;
+}
+
 export interface PaymentRecord {
   date: Date;
   amount: number;
   method?: string;
   comment?: string;
+  receipts?: PaymentReceipt[];
 }
 
 export interface SalesInvoice {

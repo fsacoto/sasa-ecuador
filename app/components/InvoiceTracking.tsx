@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from 'react';
 import { createPortal } from 'react-dom';
-import { SalesInvoice, Client, PaymentRecord } from '../types';
+import { SalesInvoice, Client, PaymentRecord, PaymentReceipt } from '../types';
 import { getAllInvoices, updateInvoice } from '../services/invoicesService';
 import { deleteField } from '../services/consignmentsService';
+import { uploadMultipleFiles, extractStoragePath, deleteFile } from '../services/storageService';
 import { getAllClients, ensureClientDocumentLinks } from '../services/clientsService';
 import { useAuth } from '../context/AuthContext';
 import { useInventory } from '../context/InventoryContext';
@@ -41,6 +42,38 @@ import {
   getUndeliveredQty,
   nextReservedStock,
 } from '../utils/stockReservation';
+
+const MAX_PAYMENT_RECEIPTS = 10;
+const MAX_PAYMENT_RECEIPT_BYTES = 10 * 1024 * 1024;
+
+function isAllowedPaymentReceiptFile(file: File): boolean {
+  if (file.type.startsWith('image/')) return true;
+  if (file.type === 'application/pdf') return true;
+  return file.name.toLowerCase().endsWith('.pdf');
+}
+
+function paymentMethodLabel(method: string | undefined, t: (key: string) => string): string {
+  if (!method) return '';
+  if (method === 'cash') return t('invoiceTracking.cash');
+  if (method === 'card') return t('invoiceTracking.card');
+  if (method === 'transfer') return t('invoiceTracking.transfer');
+  return method;
+}
+
+async function deletePaymentReceipts(receipts: PaymentReceipt[] | undefined) {
+  if (!receipts?.length) return;
+  await Promise.all(
+    receipts.map(async (receipt) => {
+      const path = extractStoragePath(receipt.url);
+      if (!path) return;
+      try {
+        await deleteFile(path);
+      } catch (error) {
+        console.warn('Could not delete payment receipt from storage:', path, error);
+      }
+    })
+  );
+}
 
 /** Cantidad ya descontada de inventario Ecuador para esta línea (antes de editar en el modal). */
 function getPreviouslyDeliveredQty(invoice: SalesInvoice, index: number): number {
@@ -200,6 +233,10 @@ export default function InvoiceTracking() {
   const [reversingPaymentIndex, setReversingPaymentIndex] = useState<number | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash' | 'transfer' | ''>('');
+  const [paymentReceiptFiles, setPaymentReceiptFiles] = useState<File[]>([]);
+  const [addingPayment, setAddingPayment] = useState(false);
+  const paymentReceiptInputRef = useRef<HTMLInputElement>(null);
 
   // Delivery modal state
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
@@ -770,11 +807,66 @@ export default function InvoiceTracking() {
     }
   };
 
+  const closePaymentModal = () => {
+    setShowPaymentModal(false);
+    setPaymentInvoice(null);
+    setPaymentAmount('');
+    setPaymentMethod('');
+    setPaymentReceiptFiles([]);
+    setAddingPayment(false);
+    if (paymentReceiptInputRef.current) {
+      paymentReceiptInputRef.current.value = '';
+    }
+  };
+
   const openPaymentModal = (invoice: SalesInvoice) => {
     setPaymentInvoice(invoice);
     setShowPaymentModal(true);
     setPaymentAmount('');
     setPaymentDate(new Date().toISOString().split('T')[0]);
+    setPaymentMethod('');
+    setPaymentReceiptFiles([]);
+    setAddingPayment(false);
+    if (paymentReceiptInputRef.current) {
+      paymentReceiptInputRef.current.value = '';
+    }
+  };
+
+  const onPaymentReceiptFilesChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (selected.length === 0) return;
+
+    const accepted: File[] = [];
+    for (const file of selected) {
+      if (!isAllowedPaymentReceiptFile(file)) {
+        showAlert(t('invoiceTracking.receiptFileTypeInvalid'), 'Validation Error');
+        continue;
+      }
+      if (file.size > MAX_PAYMENT_RECEIPT_BYTES) {
+        showAlert(t('invoiceTracking.receiptFileTooLarge'), 'Validation Error');
+        continue;
+      }
+      accepted.push(file);
+    }
+
+    setPaymentReceiptFiles((prev) => {
+      const next = [...prev];
+      for (const file of accepted) {
+        const duplicate = next.some(
+          (existing) =>
+            existing.name === file.name &&
+            existing.size === file.size &&
+            existing.lastModified === file.lastModified
+        );
+        if (!duplicate) next.push(file);
+      }
+      if (next.length > MAX_PAYMENT_RECEIPTS) {
+        queueMicrotask(() => showAlert(t('invoiceTracking.receiptsLimitReached'), 'Validation Error'));
+        return next.slice(0, MAX_PAYMENT_RECEIPTS);
+      }
+      return next;
+    });
   };
 
   const openReversePaymentModal = (invoice: SalesInvoice) => {
@@ -799,7 +891,7 @@ export default function InvoiceTracking() {
   };
 
   const addPayment = async () => {
-    if (!paymentInvoice || !paymentAmount) return;
+    if (!paymentInvoice || !paymentAmount || addingPayment) return;
 
     const payment = parseFloat(paymentAmount);
     if (isNaN(payment) || payment <= 0) {
@@ -813,12 +905,37 @@ export default function InvoiceTracking() {
       return;
     }
 
+    if (!paymentMethod) {
+      showAlert(t('invoiceTracking.paymentMethodRequired'), 'Validation Error');
+      return;
+    }
+
+    setAddingPayment(true);
     try {
+      let receipts: PaymentReceipt[] = [];
+      if (paymentReceiptFiles.length > 0) {
+        const invoiceSeg = paymentInvoice.invoiceNumber.replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 64);
+        const basePath = `documents/payment-receipts/${paymentInvoice.id}/${invoiceSeg}/`;
+        const urls = await uploadMultipleFiles(paymentReceiptFiles, basePath);
+        receipts = paymentReceiptFiles.map((file, index) => {
+          const receipt: PaymentReceipt = {
+            url: urls[index],
+            name: file.name,
+          };
+          if (file.type) receipt.contentType = file.type;
+          return receipt;
+        });
+      }
+
       const newPaymentHistory = paymentInvoice.paymentHistory || [];
       const newPayment: PaymentRecord = {
         date: new Date(paymentDate),
         amount: payment,
+        method: paymentMethod,
       };
+      if (receipts.length > 0) {
+        newPayment.receipts = receipts;
+      }
 
       const totalPaid = paymentInvoice.amountPaid + payment;
       const remainingBalance = paymentInvoice.grandTotal - totalPaid;
@@ -832,7 +949,8 @@ export default function InvoiceTracking() {
         paymentStatus: newStatus,
         amountPaid: Math.round(totalPaid * 100) / 100,
         remainingBalance: Math.max(0, Math.round(remainingBalance * 100) / 100),
-        paymentHistory: [...newPaymentHistory, newPayment]
+        paymentHistory: [...newPaymentHistory, newPayment],
+        paymentMethod,
       };
 
       if (newStatus === 'Paid') {
@@ -841,11 +959,13 @@ export default function InvoiceTracking() {
 
       await updateInvoice(paymentInvoice.id, updateData);
       showAlert(t('invoiceTracking.paymentAdded'), 'Success');
-      setShowPaymentModal(false);
+      closePaymentModal();
       loadInvoices();
     } catch (error) {
       console.error('Error adding payment:', error);
       showAlert(t('invoiceTracking.errorAddingPayment'), 'Error');
+    } finally {
+      setAddingPayment(false);
     }
   };
 
@@ -862,10 +982,12 @@ export default function InvoiceTracking() {
       let nextHistory: PaymentRecord[] = [];
       let totalPaid = 0;
 
+      let removedReceipts: PaymentReceipt[] | undefined;
       if (legacyPaidWithoutHistory && index === 0) {
         nextHistory = [];
         totalPaid = 0;
       } else if (hasHistory && index >= 0 && index < history.length) {
+        removedReceipts = history[index]?.receipts;
         history.splice(index, 1);
         nextHistory = history;
         totalPaid = Math.round(
@@ -898,6 +1020,7 @@ export default function InvoiceTracking() {
       }
 
       await updateInvoice(reversePaymentInvoice.id, updateData as Partial<SalesInvoice>);
+      await deletePaymentReceipts(removedReceipts);
       showAlert(t('invoiceTracking.paymentReversed'), 'Success');
 
       const refreshed = {
@@ -1795,77 +1918,188 @@ export default function InvoiceTracking() {
 
       {/* Payment Modal */}
       {showPaymentModal && paymentInvoice && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-xl font-semibold mb-4">{t('invoiceTracking.addPaymentTitle')} - {paymentInvoice.invoiceNumber}</h3>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.paymentAmount')}</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
-                  placeholder={`${t('invoiceTracking.max')}: $${paymentInvoice.remainingBalance.toFixed(2)}`}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#515151] focus:border-transparent"
-                />
+        <ModalPortal>
+          <div
+            className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-payment-modal-title"
+            onClick={addingPayment ? undefined : closePaymentModal}
+          >
+            <div
+              className="sasa-modal-panel flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="min-h-0 flex-1 overflow-y-auto p-6">
+                <h3 id="add-payment-modal-title" className="mb-4 text-xl font-semibold text-gray-900">
+                  {t('invoiceTracking.addPaymentTitle')} - {paymentInvoice.invoiceNumber}
+                </h3>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-gray-700">
+                      {t('invoiceTracking.paymentAmount')}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paymentAmount}
+                      onChange={(e) => setPaymentAmount(e.target.value)}
+                      placeholder={`${t('invoiceTracking.max')}: $${paymentInvoice.remainingBalance.toFixed(2)}`}
+                      disabled={addingPayment}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-[#515151]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPaymentAmount(paymentInvoice.remainingBalance.toFixed(2))}
+                      disabled={addingPayment}
+                      className="mt-2 text-xs text-blue-600 underline hover:text-blue-800 disabled:opacity-50"
+                    >
+                      {t('invoiceTracking.payFullBalance')} (${paymentInvoice.remainingBalance.toFixed(2)})
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-gray-700">
+                      {t('invoiceTracking.paymentDate')}
+                    </label>
+                    <DateInput
+                      value={paymentDate}
+                      onChange={setPaymentDate}
+                      disabled={addingPayment}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-gray-700">
+                      {t('invoiceTracking.paymentMethod')}
+                    </label>
+                    <select
+                      value={paymentMethod}
+                      onChange={(e) =>
+                        setPaymentMethod(e.target.value as 'card' | 'cash' | 'transfer' | '')
+                      }
+                      disabled={addingPayment}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-[#515151]"
+                    >
+                      <option value="">{t('invoiceTracking.selectPaymentMethod')}</option>
+                      <option value="cash">{t('invoiceTracking.cash')}</option>
+                      <option value="card">{t('invoiceTracking.card')}</option>
+                      <option value="transfer">{t('invoiceTracking.transfer')}</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <span className="mb-2 block text-sm font-medium text-gray-700">
+                      {t('invoiceTracking.paymentReceiptsOptional')}
+                    </span>
+                    <input
+                      ref={paymentReceiptInputRef}
+                      id="payment-receipts-upload"
+                      type="file"
+                      multiple
+                      accept="image/*,.pdf,application/pdf"
+                      className="sr-only"
+                      disabled={addingPayment}
+                      onChange={onPaymentReceiptFilesChange}
+                    />
+                    <label
+                      htmlFor="payment-receipts-upload"
+                      className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 ${
+                        addingPayment ? 'pointer-events-none opacity-50' : ''
+                      }`}
+                    >
+                      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
+                        />
+                      </svg>
+                      {paymentReceiptFiles.length > 0
+                        ? t('invoiceTracking.paymentReceiptsAddMore')
+                        : t('invoiceTracking.paymentReceiptsChoose')}
+                    </label>
+                    <p className="mt-1 text-xs text-gray-500">{t('invoiceTracking.paymentReceiptsHint')}</p>
+                    {paymentReceiptFiles.length > 0 && (
+                      <ul className="mt-3 space-y-2">
+                        {paymentReceiptFiles.map((file, index) => (
+                          <li
+                            key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
+                            className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                          >
+                            <span className="min-w-0 truncate text-gray-700" title={file.name}>
+                              {file.name}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={addingPayment}
+                              onClick={() =>
+                                setPaymentReceiptFiles((prev) => prev.filter((_, i) => i !== index))
+                              }
+                              className="shrink-0 text-xs font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
+                            >
+                              {t('invoiceTracking.removeReceipt')}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {paymentReceiptFiles.length > 0 && (
+                      <p className="mt-2 text-xs text-gray-500">
+                        {paymentReceiptFiles.length === 1
+                          ? t('invoiceTracking.fileSelectedOne')
+                          : `${paymentReceiptFiles.length} ${t('invoiceTracking.filesSelectedMany')}`}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2 rounded-lg bg-gray-50 p-4">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">{t('invoiceTracking.invoiceTotal')}:</span>
+                      <span className="font-semibold">${paymentInvoice.grandTotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">{t('invoiceTracking.totalPaid')}:</span>
+                      <span className="font-semibold text-green-600">${paymentInvoice.amountPaid.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">{t('invoiceTracking.remaining')}:</span>
+                      <span className="font-semibold text-red-600">${paymentInvoice.remainingBalance.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex shrink-0 gap-2 border-t border-gray-200 p-6">
                 <button
                   type="button"
-                  onClick={() => setPaymentAmount(paymentInvoice.remainingBalance.toFixed(2))}
-                  className="mt-2 text-xs text-blue-600 hover:text-blue-800 underline"
+                  onClick={() => void addPayment()}
+                  disabled={addingPayment}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#515151] px-4 py-2 text-white hover:bg-[#000000] disabled:opacity-50"
                 >
-                  {t('invoiceTracking.payFullBalance')} (${paymentInvoice.remainingBalance.toFixed(2)})
+                  <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  {addingPayment
+                    ? paymentReceiptFiles.length > 0
+                      ? t('invoiceTracking.uploadingPaymentReceipts')
+                      : t('invoiceTracking.addingPayment')
+                    : t('invoiceTracking.addPayment')}
+                </button>
+                <button
+                  type="button"
+                  onClick={closePaymentModal}
+                  disabled={addingPayment}
+                  className="flex-1 rounded-lg bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                >
+                  {t('invoiceTracking.cancel')}
                 </button>
               </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">{t('invoiceTracking.paymentDate')}</label>
-                <DateInput
-                  value={paymentDate}
-                  onChange={setPaymentDate}
-                />
-              </div>
-
-              <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">{t('invoiceTracking.invoiceTotal')}:</span>
-                  <span className="font-semibold">${paymentInvoice.grandTotal.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">{t('invoiceTracking.totalPaid')}:</span>
-                  <span className="font-semibold text-green-600">${paymentInvoice.amountPaid.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">{t('invoiceTracking.remaining')}:</span>
-                  <span className="font-semibold text-red-600">${paymentInvoice.remainingBalance.toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-2 mt-6">
-              <button
-                onClick={addPayment}
-                className="inline-flex flex-1 items-center justify-center gap-2 px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000]"
-              >
-                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                </svg>
-                {t('invoiceTracking.addPayment')}
-              </button>
-              <button
-                onClick={() => {
-                  setShowPaymentModal(false);
-                  setPaymentInvoice(null);
-                  setPaymentAmount('');
-                }}
-                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-              >
-                {t('invoiceTracking.cancel')}
-              </button>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {/* Reverse payment modal */}
@@ -1961,6 +2195,7 @@ export default function InvoiceTracking() {
                           amount: reversePaymentInvoice.amountPaid,
                           method: reversePaymentInvoice.paymentMethod,
                           comment: reversePaymentInvoice.paymentComment,
+                          receipts: [] as PaymentReceipt[],
                           legacy: true,
                         },
                       ]
@@ -1970,6 +2205,7 @@ export default function InvoiceTracking() {
                         amount: payment.amount,
                         method: payment.method,
                         comment: payment.comment,
+                        receipts: payment.receipts || [],
                         legacy: false,
                       }));
 
@@ -1991,8 +2227,25 @@ export default function InvoiceTracking() {
                             </div>
                             {(row.method || row.comment) && (
                               <p className="mt-0.5 truncate text-xs text-gray-500">
-                                {[row.method, row.comment].filter(Boolean).join(' · ')}
+                                {[paymentMethodLabel(row.method, t) || row.method, row.comment]
+                                  .filter(Boolean)
+                                  .join(' · ')}
                               </p>
+                            )}
+                            {row.receipts.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1">
+                                {row.receipts.map((receipt, receiptIndex) => (
+                                  <a
+                                    key={`${receipt.url}-${receiptIndex}`}
+                                    href={receipt.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-xs text-blue-600 underline hover:text-blue-800"
+                                  >
+                                    {receipt.name || t('invoiceTracking.viewReceipt')}
+                                  </a>
+                                ))}
+                              </div>
                             )}
                           </div>
                           <div className="flex items-center justify-between gap-3 sm:justify-end">
