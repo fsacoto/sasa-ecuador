@@ -30,6 +30,7 @@ const styles = StyleSheet.create({
   page: {
     backgroundColor: '#FFFFFF',
     padding: 30,
+    paddingBottom: 120,
     fontFamily: 'Helvetica',
     fontSize: 10,
   },
@@ -219,11 +220,24 @@ const styles = StyleSheet.create({
   },
   summarySection: {
     marginTop: 20,
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     width: '100%',
+  },
+  summaryDisclaimer: {
+    flexGrow: 1,
+    flexShrink: 1,
+    fontSize: 9,
+    color: '#666666',
+    fontStyle: 'italic',
+    lineHeight: 1.4,
+    paddingRight: 18,
+    maxWidth: '55%',
   },
   summaryTable: {
     width: 250,
+    flexShrink: 0,
     borderTopWidth: 1,
     borderTopColor: '#E0E0E0',
     paddingTop: 10,
@@ -275,15 +289,8 @@ const styles = StyleSheet.create({
     borderTopColor: '#E0E0E0',
     paddingTop: 15,
   },
-  footerNote: {
-    fontSize: 10,
-    color: '#666666',
-    textAlign: 'center',
-    marginBottom: 10,
-    fontStyle: 'italic',
-  },
   signatureLine: {
-    marginTop: 40,
+    marginTop: 28,
     marginBottom: 10,
     borderTopWidth: 1,
     borderTopColor: '#000000',
@@ -555,7 +562,8 @@ function ConsignmentNotePages({
         })}
       </View>
 
-      <View style={styles.summarySection}>
+      <View style={styles.summarySection} wrap={false}>
+        <Text style={styles.summaryDisclaimer}>{t('pdf.consignment.footerNote')}</Text>
         <View style={styles.summaryTable}>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>{t('pdf.consignment.totalItemsDelivered')}</Text>
@@ -586,7 +594,6 @@ function ConsignmentNotePages({
       </View>
 
       <View style={styles.footer}>
-        <Text style={styles.footerNote}>{t('pdf.consignment.footerNote')}</Text>
         <View style={styles.signatureLine} />
         <Text style={styles.signatureLabel}>{t('pdf.consignment.clientSignature')}</Text>
       </View>
