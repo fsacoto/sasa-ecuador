@@ -197,6 +197,7 @@ export default function Consignments() {
   // Alert dialog state
   const [alertDialog, setAlertDialog] = useState<{open: boolean, title?: string, message: string}>({open: false, message: ''});
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [markPdfOutcomes, setMarkPdfOutcomes] = useState(false);
 
   const [filterMonth, setFilterMonth] = usePersistedFilterState('consignments', 'filterMonth', '', userId);
   const [dateFrom, setDateFrom] = usePersistedFilterState('consignments', 'dateFrom', '', userId);
@@ -1669,7 +1670,9 @@ export default function Consignments() {
     setIsGeneratingPdf(true);
 
     try {
-      await downloadConsignmentPdf(consignment, inventory);
+      await downloadConsignmentPdf(consignment, inventory, {
+        markItemOutcomes: markPdfOutcomes,
+      });
     } catch (error) {
       console.error('Error generating PDF:', error);
       showAlert(t('consignments.errorGeneratingPdf'), t('common.error'));
@@ -2771,7 +2774,8 @@ export default function Consignments() {
                 {t('consignments.dateCreated')}: {formatDateDMY(selectedConsignment.dateCreated)}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2 shrink-0">
+            <div className="flex flex-col items-stretch gap-2 shrink-0 sm:items-end">
+              <div className="flex flex-wrap gap-2 shrink-0">
               <button
                 type="button"
                 onClick={() => void handleSaveConsignmentDetails(false)}
@@ -2824,6 +2828,27 @@ export default function Consignments() {
                 {t('consignments.backToList')}
               </button>
             </div>
+            <label
+              className={`flex max-w-sm cursor-pointer items-start gap-2 text-left ${
+                detailDirty || isGeneratingPdf ? 'opacity-50' : ''
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={markPdfOutcomes}
+                onChange={(e) => setMarkPdfOutcomes(e.target.checked)}
+                disabled={isGeneratingPdf || detailDirty}
+                className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-[#515151] focus:ring-[#515151]"
+              />
+              <span className="min-w-0">
+                <span className="block text-xs font-medium text-gray-800">
+                  {t('consignments.markPdfOutcomes')}
+                </span>
+                <span className="mt-0.5 block text-[11px] leading-snug text-gray-500">
+                  {t('consignments.markPdfOutcomesHint')}
+                </span>
+              </span>
+            </label>
           </div>
 
           {/* Resumen */}

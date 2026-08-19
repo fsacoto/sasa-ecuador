@@ -1,11 +1,15 @@
 'use client';
 
 import { Document, Page, Text, View, Image, StyleSheet, Svg, Path, Line } from '@react-pdf/renderer';
-import { Consignment, ConsignmentStatus } from '../types';
+import { Consignment, ConsignmentItem, ConsignmentStatus } from '../types';
 import esMessages from '../locales/es.json';
 import { toPdfDate } from '../utils/pdfRenderHelpers';
 import { formatDateLong } from '../utils/formatDate';
 import { formatSalePriceDisplay, normalizeSalePrice } from '../utils/salePrice';
+import {
+  consignmentItemLineOutcome,
+  consignmentItemRemaining,
+} from '../utils/consignmentSales';
 
 const translate = (key: string): string => {
   const keys = key.split('.');
@@ -108,6 +112,34 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E0E0E0',
     minHeight: 66,
     alignItems: 'center',
+    position: 'relative',
+  },
+  strikeBar: {
+    position: 'absolute',
+    left: '20%',
+    right: 8,
+    top: '50%',
+    height: 0.7,
+    backgroundColor: '#8A8A8A',
+  },
+  textStruck: {
+    color: '#6B6B6B',
+    textDecoration: 'line-through',
+  },
+  colOutcome: {
+    textAlign: 'right',
+    fontSize: 7.5,
+    color: '#444444',
+    fontWeight: 'bold',
+    letterSpacing: 0.15,
+    paddingLeft: 4,
+  },
+  headerOutcome: {
+    fontSize: 8,
+    fontWeight: 'bold',
+    color: '#000000',
+    textTransform: 'uppercase',
+    textAlign: 'right',
   },
   colNo: {
     width: '6%',
@@ -280,6 +312,62 @@ interface ConsignmentPDFProps {
   consignments?: Consignment[];
   logoSrc?: string;
   productImagesBySku?: Record<string, string>;
+  /** Show sold/returned marks; the full delivered list is always kept. */
+  markItemOutcomes?: boolean;
+}
+
+const COLS_DEFAULT = {
+  no: '6%',
+  photo: '16%',
+  sku: '14%',
+  desc: '30%',
+  qty: '16%',
+  price: '18%',
+  outcome: '0%',
+} as const;
+
+const COLS_MARKED = {
+  no: '5%',
+  photo: '13%',
+  sku: '12%',
+  desc: '24%',
+  qty: '10%',
+  price: '14%',
+  outcome: '22%',
+} as const;
+
+function fillQty(template: string, qty: number): string {
+  return template.replace(/\{qty\}/g, String(qty));
+}
+
+function lineOutcomeMark(
+  item: ConsignmentItem,
+  t: (key: string) => string
+): { strike: boolean; label: string | null } {
+  const outcome = consignmentItemLineOutcome(item);
+  switch (outcome.kind) {
+    case 'available':
+      return { strike: false, label: null };
+    case 'sold':
+      return { strike: true, label: t('pdf.consignment.itemSold') };
+    case 'returned':
+      return { strike: true, label: t('pdf.consignment.itemReturned') };
+    case 'mixed': {
+      const parts: string[] = [];
+      if (outcome.sold > 0) {
+        parts.push(fillQty(t('pdf.consignment.itemSoldQty'), outcome.sold));
+      }
+      if (outcome.returned > 0) {
+        parts.push(fillQty(t('pdf.consignment.itemReturnedQty'), outcome.returned));
+      }
+      if (outcome.remaining > 0) {
+        parts.push(fillQty(t('pdf.consignment.itemAvailableQty'), outcome.remaining));
+      }
+      return { strike: false, label: parts.join(' · ') };
+    }
+    default:
+      return { strike: false, label: null };
+  }
 }
 
 function PhotoPlaceholder() {
@@ -325,14 +413,17 @@ function ConsignmentNotePages({
   consignment,
   logoSrc,
   productImagesBySku,
+  markItemOutcomes,
   t,
 }: {
   consignment: Consignment;
   logoSrc: string;
   productImagesBySku: Record<string, string>;
+  markItemOutcomes: boolean;
   t: (key: string) => string;
 }) {
   const formatDate = (date: unknown) => formatDateLong(toPdfDate(date));
+  const cols = markItemOutcomes ? COLS_MARKED : COLS_DEFAULT;
 
   const parseAddress = (address: string): string[] => {
     if (!address) return [];
@@ -347,7 +438,19 @@ function ConsignmentNotePages({
   const city = addressParts.length > 1 ? addressParts[addressParts.length - 2] : '';
   const country = addressParts.length > 0 ? addressParts[addressParts.length - 1] : '';
   const totalItemsDelivered = consignment.items.reduce(
-    (sum, item) => sum + item.quantityDelivered,
+    (sum, item) => sum + (Number(item.quantityDelivered) || 0),
+    0
+  );
+  const totalSold = consignment.items.reduce(
+    (sum, item) => sum + (Number(item.quantitySold) || 0),
+    0
+  );
+  const totalReturned = consignment.items.reduce(
+    (sum, item) => sum + (Number(item.quantityReturned) || 0),
+    0
+  );
+  const totalAvailable = consignment.items.reduce(
+    (sum, item) => sum + consignmentItemRemaining(item),
     0
   );
 
@@ -387,44 +490,69 @@ function ConsignmentNotePages({
 
       <View style={styles.table}>
         <View style={styles.tableHeader}>
-          <Text style={[styles.colNo, styles.headerText]}>{t('pdf.consignment.no')}</Text>
-          <View style={styles.colPhotoHeader}>
+          <Text style={[styles.colNo, { width: cols.no }, styles.headerText]}>
+            {t('pdf.consignment.no')}
+          </Text>
+          <View style={[styles.colPhotoHeader, { width: cols.photo }]}>
             <Text style={styles.headerText}>{t('pdf.consignment.photo')}</Text>
           </View>
-          <Text style={[styles.colSku, styles.headerText]}>{t('pdf.consignment.sku')}</Text>
-          <Text style={[styles.colDescription, styles.headerText]}>
+          <Text style={[styles.colSku, { width: cols.sku }, styles.headerText]}>
+            {t('pdf.consignment.sku')}
+          </Text>
+          <Text style={[styles.colDescription, { width: cols.desc }, styles.headerText]}>
             {t('pdf.consignment.description')}
           </Text>
-          <Text style={[styles.colQty, styles.headerText]}>
+          <Text style={[styles.colQty, { width: cols.qty }, styles.headerText]}>
             {t('pdf.consignment.qtyDelivered')}
           </Text>
-          <Text style={[styles.colPrice, styles.headerText]}>{t('pdf.consignment.price')}</Text>
+          <Text style={[styles.colPrice, { width: cols.price }, styles.headerText]}>
+            {t('pdf.consignment.price')}
+          </Text>
+          {markItemOutcomes ? (
+            <Text style={[styles.colOutcome, { width: cols.outcome }, styles.headerOutcome]}>
+              {t('pdf.consignment.outcome')}
+            </Text>
+          ) : null}
         </View>
 
-        {consignment.items.map((item, index) => (
-          <View key={index} style={styles.tableRow} wrap={false}>
-            <Text style={styles.colNo}>{index + 1}</Text>
-            <View style={styles.colPhotoCell}>
-              <View style={styles.photoBox}>
-                {productImagesBySku[item.sku] ? (
-                  <Image
-                    src={productImagesBySku[item.sku]}
-                    style={styles.photoImage}
-                    cache={false}
-                  />
-                ) : (
-                  <PhotoPlaceholder />
-                )}
+        {consignment.items.map((item, index) => {
+          const mark = markItemOutcomes ? lineOutcomeMark(item, t) : { strike: false, label: null };
+          const struck = mark.strike ? styles.textStruck : false;
+          return (
+            <View key={index} style={styles.tableRow} wrap={false}>
+              <Text style={[styles.colNo, { width: cols.no }, struck]}>{index + 1}</Text>
+              <View style={[styles.colPhotoCell, { width: cols.photo }]}>
+                <View style={styles.photoBox}>
+                  {productImagesBySku[item.sku] ? (
+                    <Image
+                      src={productImagesBySku[item.sku]}
+                      style={styles.photoImage}
+                      cache={false}
+                    />
+                  ) : (
+                    <PhotoPlaceholder />
+                  )}
+                </View>
               </View>
+              <Text style={[styles.colSku, { width: cols.sku }, struck]}>{item.sku}</Text>
+              <Text style={[styles.colDescription, { width: cols.desc }, struck]}>
+                {item.description}
+              </Text>
+              <Text style={[styles.colQty, { width: cols.qty }, struck]}>
+                {item.quantityDelivered}
+              </Text>
+              <Text style={[styles.colPrice, { width: cols.price }, struck]}>
+                {formatSalePriceDisplay(normalizeSalePrice(item.unitPrice))}
+              </Text>
+              {markItemOutcomes ? (
+                <Text style={[styles.colOutcome, { width: cols.outcome }]}>
+                  {mark.label || ''}
+                </Text>
+              ) : null}
+              {mark.strike ? <View style={styles.strikeBar} /> : null}
             </View>
-            <Text style={styles.colSku}>{item.sku}</Text>
-            <Text style={styles.colDescription}>{item.description}</Text>
-            <Text style={styles.colQty}>{item.quantityDelivered}</Text>
-            <Text style={styles.colPrice}>
-              {formatSalePriceDisplay(normalizeSalePrice(item.unitPrice))}
-            </Text>
-          </View>
-        ))}
+          );
+        })}
       </View>
 
       <View style={styles.summarySection}>
@@ -433,6 +561,22 @@ function ConsignmentNotePages({
             <Text style={styles.summaryLabel}>{t('pdf.consignment.totalItemsDelivered')}</Text>
             <Text style={styles.summaryValue}>{totalItemsDelivered}</Text>
           </View>
+          {markItemOutcomes ? (
+            <>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>{t('pdf.consignment.totalAvailable')}</Text>
+                <Text style={styles.summaryValue}>{totalAvailable}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>{t('pdf.consignment.totalSold')}</Text>
+                <Text style={styles.summaryValue}>{totalSold}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>{t('pdf.consignment.totalReturned')}</Text>
+                <Text style={styles.summaryValue}>{totalReturned}</Text>
+              </View>
+            </>
+          ) : null}
 
           <View style={styles.statusRow}>
             <Text style={styles.statusLabel}>{t('pdf.consignment.status')}</Text>
@@ -455,6 +599,7 @@ export default function ConsignmentPDF({
   consignments,
   logoSrc = '/sasa.png',
   productImagesBySku = {},
+  markItemOutcomes = false,
 }: ConsignmentPDFProps) {
   const t = (key: string) => translate(key);
   const list =
@@ -477,6 +622,7 @@ export default function ConsignmentPDF({
           consignment={c}
           logoSrc={logoSrc}
           productImagesBySku={productImagesBySku}
+          markItemOutcomes={markItemOutcomes}
           t={t}
         />
       ))}

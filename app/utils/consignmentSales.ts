@@ -12,6 +12,34 @@ export function roundMoney2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+export function consignmentItemRemaining(
+  item: Pick<ConsignmentItem, 'quantityDelivered' | 'quantitySold' | 'quantityReturned'>
+): number {
+  const delivered = Number(item.quantityDelivered) || 0;
+  const sold = Number(item.quantitySold) || 0;
+  const returned = Number(item.quantityReturned) || 0;
+  return Math.max(0, delivered - sold - returned);
+}
+
+export type ConsignmentItemLineOutcome =
+  | { kind: 'available' }
+  | { kind: 'sold' }
+  | { kind: 'returned' }
+  | { kind: 'mixed'; sold: number; returned: number; remaining: number };
+
+/** Outcome of a delivered line for PDF marking (sold / returned / still with seller). */
+export function consignmentItemLineOutcome(
+  item: Pick<ConsignmentItem, 'quantityDelivered' | 'quantitySold' | 'quantityReturned'>
+): ConsignmentItemLineOutcome {
+  const sold = Number(item.quantitySold) || 0;
+  const returned = Number(item.quantityReturned) || 0;
+  const remaining = consignmentItemRemaining(item);
+  if (sold <= 0 && returned <= 0) return { kind: 'available' };
+  if (remaining <= 0 && sold > 0 && returned <= 0) return { kind: 'sold' };
+  if (remaining <= 0 && returned > 0 && sold <= 0) return { kind: 'returned' };
+  return { kind: 'mixed', sold, returned, remaining };
+}
+
 export function consignmentStatusFromItems(items: ConsignmentItem[]): ConsignmentStatus {
   const totalDelivered = items.reduce((sum, item) => sum + item.quantityDelivered, 0);
   const totalSold = items.reduce((sum, item) => sum + item.quantitySold, 0);

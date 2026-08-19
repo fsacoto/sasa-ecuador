@@ -2,6 +2,10 @@
 
 import type { Consignment, InventoryItem } from '../types';
 
+export type ConsignmentPdfOptions = {
+  markItemOutcomes?: boolean;
+};
+
 function safeFilePart(value: string): string {
   return value
     .trim()
@@ -23,7 +27,8 @@ function triggerDownload(blob: Blob, fileName: string) {
 
 async function buildConsignmentPdfBlob(
   consignments: Consignment[],
-  inventory: InventoryItem[]
+  inventory: InventoryItem[],
+  options: ConsignmentPdfOptions = {}
 ): Promise<Blob> {
   if (consignments.length === 0) {
     throw new Error('No consignments to render');
@@ -52,6 +57,7 @@ async function buildConsignmentPdfBlob(
     consignments,
     logoSrc,
     productImagesBySku,
+    markItemOutcomes: Boolean(options.markItemOutcomes),
   });
 
   return pdf(pdfDocument as never).toBlob();
@@ -60,9 +66,10 @@ async function buildConsignmentPdfBlob(
 /** Download a single consignment note PDF. */
 export async function downloadConsignmentPdf(
   consignment: Consignment,
-  inventory: InventoryItem[]
+  inventory: InventoryItem[],
+  options: ConsignmentPdfOptions = {}
 ): Promise<void> {
-  const blob = await buildConsignmentPdfBlob([consignment], inventory);
+  const blob = await buildConsignmentPdfBlob([consignment], inventory, options);
   triggerDownload(blob, `consignment-${safeFilePart(consignment.consignmentId)}.pdf`);
 }
 
@@ -72,9 +79,10 @@ export async function downloadConsignmentPdf(
  */
 export async function downloadCombinedConsignmentsPdf(
   consignments: Consignment[],
-  inventory: InventoryItem[]
+  inventory: InventoryItem[],
+  options: ConsignmentPdfOptions = {}
 ): Promise<void> {
-  const blob = await buildConsignmentPdfBlob(consignments, inventory);
+  const blob = await buildConsignmentPdfBlob(consignments, inventory, options);
   const stamp = new Date().toISOString().slice(0, 10);
   const name =
     consignments.length === 1
@@ -86,7 +94,8 @@ export async function downloadCombinedConsignmentsPdf(
 /** Separate PDF per consignación, packaged as a ZIP. */
 export async function downloadConsignmentsPdfsZip(
   consignments: Consignment[],
-  inventory: InventoryItem[]
+  inventory: InventoryItem[],
+  options: ConsignmentPdfOptions = {}
 ): Promise<void> {
   if (consignments.length === 0) {
     throw new Error('No consignments to zip');
@@ -97,7 +106,7 @@ export async function downloadConsignmentsPdfsZip(
   const usedNames = new Set<string>();
 
   for (const consignment of consignments) {
-    const blob = await buildConsignmentPdfBlob([consignment], inventory);
+    const blob = await buildConsignmentPdfBlob([consignment], inventory, options);
     let base = `consignment-${safeFilePart(consignment.consignmentId) || consignment.id}.pdf`;
     if (usedNames.has(base)) {
       base = `consignment-${safeFilePart(consignment.consignmentId)}-${consignment.id.slice(0, 6)}.pdf`;

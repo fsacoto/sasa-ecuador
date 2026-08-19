@@ -54,6 +54,7 @@ export default function ConsignmentPrintModal({
   const [search, setSearch] = useState('');
   const [clientId, setClientId] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [markItemOutcomes, setMarkItemOutcomes] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const sorted = useMemo(() => {
@@ -114,10 +115,11 @@ export default function ConsignmentPrintModal({
     setBusy(true);
     try {
       if (tab === 'notes') {
+        const pdfOptions = { markItemOutcomes };
         if (pdfMode === 'combined') {
-          await downloadCombinedConsignmentsPdf(selectedForPrint, inventory);
+          await downloadCombinedConsignmentsPdf(selectedForPrint, inventory, pdfOptions);
         } else {
-          await downloadConsignmentsPdfsZip(selectedForPrint, inventory);
+          await downloadConsignmentsPdfsZip(selectedForPrint, inventory, pdfOptions);
         }
       } else {
         await downloadConsignmentsPrepLabelPdf(selectedForPrint);
@@ -232,6 +234,29 @@ export default function ConsignmentPrintModal({
                 );
               })}
             </div>
+            <label
+              className={`mt-3 flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
+                markItemOutcomes
+                  ? 'border-[#515151] bg-[#515151]/5 ring-1 ring-[#515151]/25'
+                  : 'border-transparent hover:border-gray-200'
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={markItemOutcomes}
+                onChange={(e) => setMarkItemOutcomes(e.target.checked)}
+                disabled={busy}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-[#515151] focus:ring-[#515151]"
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-gray-900">
+                  {t('consignments.printModalMarkOutcomes')}
+                </span>
+                <span className="mt-0.5 block text-xs text-gray-500">
+                  {t('consignments.printModalMarkOutcomesHint')}
+                </span>
+              </span>
+            </label>
           </div>
         ) : (
           <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600">

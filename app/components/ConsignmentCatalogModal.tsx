@@ -10,9 +10,11 @@ import { displayCategory } from '../utils/merchandiseLabels';
 import { isMaterialCategory } from '../utils/materials';
 import { normalizeSalePrice } from '../utils/salePrice';
 import { generateCatalogPDF } from '../utils/catalogPdfDownload';
+import { consignmentItemRemaining } from '../utils/consignmentSales';
 
 type PhotosMode = 'all' | 'with';
 type PriceMode = 'with' | 'without';
+type ContentsMode = 'delivered' | 'stock';
 
 interface ConsignmentCatalogModalProps {
   consignments: Consignment[];
@@ -42,10 +44,12 @@ function statusLabel(
 function buildCatalogProductsFromConsignments(
   selected: Consignment[],
   inventory: InventoryItem[],
-  photosMode: PhotosMode
+  photosMode: PhotosMode,
+  contentsMode: ContentsMode
 ): InventoryItem[] {
   const priceBySku = new Map<string, number>();
   const metaBySku = new Map<string, { category?: string; line?: string; description?: string }>();
+  const remainingBySku = new Map<string, number>();
   const skuOrder: string[] = [];
   const seen = new Set<string>();
 
@@ -54,6 +58,8 @@ function buildCatalogProductsFromConsignments(
       const sku = (line.sku || '').trim();
       if (!sku) continue;
       if ((Number(line.quantityDelivered) || 0) <= 0) continue;
+
+      remainingBySku.set(sku, (remainingBySku.get(sku) || 0) + consignmentItemRemaining(line));
 
       if (!seen.has(sku)) {
         seen.add(sku);
@@ -80,6 +86,7 @@ function buildCatalogProductsFromConsignments(
 
   const products: InventoryItem[] = [];
   for (const sku of skuOrder) {
+    if (contentsMode === 'stock' && (remainingBySku.get(sku) || 0) <= 0) continue;
     const inv = invBySku.get(sku);
     if (inv && isMaterialCategory(inv.category)) continue;
 
@@ -156,6 +163,7 @@ export default function ConsignmentCatalogModal({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [photosMode, setPhotosMode] = useState<PhotosMode>('all');
   const [priceMode, setPriceMode] = useState<PriceMode>('with');
+  const [contentsMode, setContentsMode] = useState<ContentsMode>('delivered');
   const [categorySeparators, setCategorySeparators] = useState(true);
   const [orientation, setOrientation] = useState<'landscape' | 'portrait'>('landscape');
   const [catalogTitle, setCatalogTitle] = useState(() => t('consignments.catalogModalDefaultTitle'));
@@ -194,10 +202,11 @@ export default function ConsignmentCatalogModal({
     const built = buildCatalogProductsFromConsignments(
       selectedForCatalog,
       inventory,
-      photosMode
+      photosMode,
+      contentsMode
     );
     return sortProductsForCatalog(built, categorySeparators);
-  }, [selectedForCatalog, inventory, photosMode, categorySeparators]);
+  }, [selectedForCatalog, inventory, photosMode, contentsMode, categorySeparators]);
 
   const allFilteredSelected =
     filtered.length > 0 && filtered.every((c) => selectedIds.has(c.id));
@@ -286,6 +295,40 @@ export default function ConsignmentCatalogModal({
     >
       <div className="flex flex-col gap-4 p-5">
         <p className="text-sm text-gray-600">{t('consignments.catalogModalIntro')}</p>
+
+        <div className="sasa-modal-section rounded-xl border border-gray-200 p-4">
+          <p className="mb-3 text-sm font-semibold text-gray-900">
+            {t('consignments.catalogContentsLabel')}
+          </p>
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2" role="radiogroup">
+            {optionCard(
+              contentsMode === 'delivered',
+              t('consignments.catalogContentsDelivered'),
+              t('consignments.catalogContentsDeliveredHint'),
+              <input
+                type="radio"
+                name="catalog-contents"
+                checked={contentsMode === 'delivered'}
+                onChange={() => setContentsMode('delivered')}
+                disabled={busy}
+                className="mt-0.5 h-4 w-4 shrink-0 border-gray-300 text-[#515151] focus:ring-[#515151]"
+              />
+            )}
+            {optionCard(
+              contentsMode === 'stock',
+              t('consignments.catalogContentsStock'),
+              t('consignments.catalogContentsStockHint'),
+              <input
+                type="radio"
+                name="catalog-contents"
+                checked={contentsMode === 'stock'}
+                onChange={() => setContentsMode('stock')}
+                disabled={busy}
+                className="mt-0.5 h-4 w-4 shrink-0 border-gray-300 text-[#515151] focus:ring-[#515151]"
+              />
+            )}
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <div className="sasa-modal-section rounded-xl border border-gray-200 p-4">
@@ -501,8 +544,14 @@ export default function ConsignmentCatalogModal({
               <ul className="divide-y divide-gray-100">
                 {filtered.map((c) => {
                   const checked = selectedIds.has(c.id);
-                  const units = c.items.reduce((sum, item) => sum + item.quantityDelivered, 0);
-                  const skuCount = c.items.length;
+                  const units =
+                    contentsMode === 'stock'
+                      ? c.items.reduce((sum, item) => sum + consignmentItemRemaining(item), 0)
+                      : c.items.reduce((sum, item) => sum + item.quantityDelivered, 0);
+                  const skuCount =
+                    contentsMode === 'stock'
+                      ? c.items.filter((item) => consignmentItemRemaining(item) > 0).length
+                      : c.items.length;
                   return (
                     <li key={c.id}>
                       <label
