@@ -830,6 +830,7 @@ export default function BulkImportModal({
         status: 'Ordered' as const,
         bulkImportId,
         bulkImportLabel,
+        bulkImportRowIndex: index,
       });
 
       if (orderShowsNeedsReviewInTab) {
@@ -1070,6 +1071,7 @@ export default function BulkImportModal({
         status: existingOrder?.status ?? ('Ordered' as const),
         bulkImportId,
         bulkImportLabel,
+        bulkImportRowIndex: index,
       };
 
       if (orderShowsNeedsReviewInTab) {

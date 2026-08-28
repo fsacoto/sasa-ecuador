@@ -69,6 +69,8 @@ export interface PurchaseOrder {
   bulkImportId?: string;
   /** Display label for the bulk import (e.g. CSV filename). */
   bulkImportLabel?: string;
+  /** 0-based row index in the Excel/CSV used to create this line (preserves upload order). */
+  bulkImportRowIndex?: number;
   /**
    * Unit of measure when category is Materiales (metro, gramo, par, unidad).
    * Quantity / costPerUnit are expressed in this unit.

@@ -67,6 +67,10 @@ import { useAuth } from '../context/AuthContext';
 import { usePersistedFilterState, usePersistedStringSetFilter } from '../hooks/usePersistedFilterState';
 import POVerificationModal from './POVerificationModal';
 import { generatePOVerificationPDF } from '../utils/poVerificationPDF';
+import {
+  sortPurchaseOrdersForVerification,
+  type VerificationPdfSortMode,
+} from '../utils/poVerificationSort';
 import ConfirmDialog from './ui/ConfirmDialog';
 import DateInput from './ui/DateInput';
 import {
@@ -1640,31 +1644,34 @@ export default function PurchaseOrders() {
     return unverifiedInvoices.sort((a, b) => a.invoice.localeCompare(b.invoice));
   };
 
-  const handleDownloadVerificationSheet = async (invoiceNumber: string) => {
+  const handleDownloadVerificationSheet = async (
+    invoiceNumber: string,
+    sortMode: VerificationPdfSortMode = 'excel'
+  ): Promise<boolean> => {
     try {
-      // Get all orders for this invoice
       const invoiceOrders = purchaseOrders.filter(order => order.invoice === invoiceNumber);
       if (invoiceOrders.length === 0) {
         alert(t('purchaseOrders.noOrdersFound') || 'No orders found for this invoice.');
-        return;
+        return false;
       }
-      
-      // Get supplier (should be same for all orders in invoice)
+
       const supplierId = invoiceOrders[0].supplierId;
       const supplier = suppliers.find(s => s.id === supplierId);
-      
+      const sortedOrders = sortPurchaseOrdersForVerification(invoiceOrders, sortMode);
+
       await generatePOVerificationPDF({
-        orders: invoiceOrders,
+        orders: sortedOrders,
         supplier: supplier || null,
         invoiceNumber,
       });
 
-      // Show toast notification
       setToastMessage(t('purchaseOrders.verificationPDFGenerated') || 'Verification PDF generated successfully.');
       setTimeout(() => setToastMessage(null), 3000);
+      return true;
     } catch (error) {
       console.error('Error generating verification sheet:', error);
       alert(t('purchaseOrders.verificationSheetError') || 'Error generating verification sheet. Please try again.');
+      return false;
     }
   };
 
@@ -3816,9 +3823,9 @@ export default function PurchaseOrders() {
           purchaseOrders={purchaseOrders}
           suppliers={suppliers}
           onClose={() => setIsPOVerificationModalOpen(false)}
-          onSelect={(invoiceNumber) => {
-            setIsPOVerificationModalOpen(false);
-            handleDownloadVerificationSheet(invoiceNumber);
+          onSelect={async (invoiceNumber, sortMode) => {
+            const ok = await handleDownloadVerificationSheet(invoiceNumber, sortMode);
+            if (ok) setIsPOVerificationModalOpen(false);
           }}
         />
       )}

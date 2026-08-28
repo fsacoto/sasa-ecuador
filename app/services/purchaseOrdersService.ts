@@ -131,7 +131,10 @@ export async function getPurchaseOrdersByStatus(status: PurchaseOrderStatus): Pr
 // Add a new purchase order
 export async function addPurchaseOrder(order: Omit<PurchaseOrder, 'id' | 'createdAt'>): Promise<string> {
   try {
-    const docRef = await addDoc(collection(db, COLLECTION_NAME), toFirestore(order));
+    const docRef = await addDoc(collection(db, COLLECTION_NAME), {
+      ...toFirestore(order),
+      createdAt: Timestamp.now(),
+    });
     return docRef.id;
   } catch (error) {
     console.error('Error adding purchase order:', error);
@@ -142,7 +145,13 @@ export async function addPurchaseOrder(order: Omit<PurchaseOrder, 'id' | 'create
 // Add multiple purchase orders
 export async function addPurchaseOrdersBulk(orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]): Promise<string[]> {
   try {
-    const promises = orders.map(order => addDoc(collection(db, COLLECTION_NAME), toFirestore(order)));
+    const createdAtBase = Date.now();
+    const promises = orders.map((order, index) =>
+      addDoc(collection(db, COLLECTION_NAME), {
+        ...toFirestore(order),
+        createdAt: Timestamp.fromMillis(createdAtBase + index),
+      })
+    );
     const docRefs = await Promise.all(promises);
     return docRefs.map(doc => doc.id);
   } catch (error) {

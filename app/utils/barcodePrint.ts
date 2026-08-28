@@ -3,6 +3,12 @@ import {
   boxSetExtraLabelCount,
   expectedSaleableQuantity,
 } from './purchaseOrderPack';
+import {
+  sortItemsByPurchaseOrderList,
+  type VerificationPdfSortMode,
+} from './poVerificationSort';
+
+export type BarcodePrintSortMode = VerificationPdfSortMode;
 
 function normalizeSkuKey(sku: string): string {
   return String(sku ?? '').trim().toLowerCase();
@@ -31,6 +37,13 @@ export interface BarcodePrintRow {
   order: PurchaseOrder;
   inventoryItem: InventoryItem | null;
   barcodeUrl: string;
+}
+
+export function sortBarcodePrintRows(
+  rows: BarcodePrintRow[],
+  mode: BarcodePrintSortMode
+): BarcodePrintRow[] {
+  return sortItemsByPurchaseOrderList(rows, mode);
 }
 
 export function findInventoryForPurchaseOrder(

@@ -10,7 +10,9 @@ import {
   buildInventoryForPdfLabel,
   labelCountForExtraPrint,
   labelCountForFullPrint,
+  sortBarcodePrintRows,
   type BarcodePrintRow,
+  type BarcodePrintSortMode,
 } from '../utils/barcodePrint';
 
 interface BarcodePrintModalProps {
@@ -99,6 +101,7 @@ export default function BarcodePrintModal({
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null);
   const [printMode, setPrintMode] = useState<PrintMode>('full');
+  const [sortMode, setSortMode] = useState<BarcodePrintSortMode>('excel');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -107,9 +110,20 @@ export default function BarcodePrintModal({
     [purchaseOrders, inventory]
   );
 
+  const sortedItemsByInvoice = useMemo(() => {
+    const next: typeof itemsByInvoice = {};
+    for (const [invoice, data] of Object.entries(itemsByInvoice)) {
+      next[invoice] = {
+        ...data,
+        rows: sortBarcodePrintRows(data.rows, sortMode),
+      };
+    }
+    return next;
+  }, [itemsByInvoice, sortMode]);
+
   const allPrintRows = useMemo(
-    () => buildAllPrintRows(purchaseOrders, inventory),
-    [purchaseOrders, inventory]
+    () => sortBarcodePrintRows(buildAllPrintRows(purchaseOrders, inventory), sortMode),
+    [purchaseOrders, inventory, sortMode]
   );
 
   const invoices = useMemo(() => {
@@ -231,7 +245,7 @@ export default function BarcodePrintModal({
         return;
       }
 
-      const invoiceData = itemsByInvoice[selectedInvoice];
+      const invoiceData = sortedItemsByInvoice[selectedInvoice];
       if (!invoiceData || invoiceData.rows.length === 0) {
         alert(
           t('purchaseOrders.noBarcodesOnInvoice') ||
@@ -247,9 +261,9 @@ export default function BarcodePrintModal({
         return;
       }
 
-      selectedOrderIds.forEach((orderId) => {
-        const row = filteredPrintRows.find((r) => r.order.id === orderId);
-        if (row) {
+      const selected = new Set(selectedOrderIds);
+      filteredPrintRows.forEach((row) => {
+        if (selected.has(row.order.id)) {
           appendLabelsForRow(row, itemsToPrint);
         }
       });
@@ -274,7 +288,7 @@ export default function BarcodePrintModal({
   const totalSelectedItems =
     groupingMode === 'invoice'
       ? selectedInvoice
-        ? itemsByInvoice[selectedInvoice]?.rows.length || 0
+        ? sortedItemsByInvoice[selectedInvoice]?.rows.length || 0
         : 0
       : selectedOrderIds.length;
 
@@ -325,6 +339,30 @@ export default function BarcodePrintModal({
     },
   ];
 
+  const sortOptions: RadioOption<BarcodePrintSortMode>[] = [
+    {
+      value: 'excel',
+      label: t('purchaseOrders.verificationPdfSortExcel') || 'Como se subió el Excel',
+      hint:
+        t('purchaseOrders.labelSortExcelHint') ||
+        'Las etiquetas salen en el mismo orden de las filas al importar.',
+    },
+    {
+      value: 'category',
+      label: t('purchaseOrders.verificationPdfSortCategory') || 'Por categoría',
+      hint:
+        t('purchaseOrders.labelSortCategoryHint') ||
+        'Etiquetas agrupadas por categoría y luego por línea.',
+    },
+    {
+      value: 'line',
+      label: t('purchaseOrders.verificationPdfSortLine') || 'Por línea',
+      hint:
+        t('purchaseOrders.labelSortLineHint') ||
+        'Etiquetas agrupadas por línea y luego por categoría.',
+    },
+  ];
+
   const rowSourceLabel = (row: BarcodePrintRow) => {
     if (row.inventoryItem) return null;
     if ((row.order.barcode || '').trim()) {
@@ -359,6 +397,16 @@ export default function BarcodePrintModal({
             value={printMode}
             onChange={setPrintMode}
             options={printModeOptions}
+          />
+        </div>
+
+        <div className="mt-4">
+          <RadioOptionGroup
+            title={t('purchaseOrders.labelSortTitle') || 'Orden de las etiquetas'}
+            name="labelSortMode"
+            value={sortMode}
+            onChange={setSortMode}
+            options={sortOptions}
           />
         </div>
 
@@ -437,7 +485,7 @@ export default function BarcodePrintModal({
                 </div>
               ) : (
                 filteredInvoices.map((invoice) => {
-                  const invoiceData = itemsByInvoice[invoice];
+                  const invoiceData = sortedItemsByInvoice[invoice];
                   const rows = invoiceData?.rows || [];
                   const totalOrders = invoiceData?.orders.length || 0;
                   const isSelected = selectedInvoice === invoice;

@@ -264,10 +264,11 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   const addPurchaseOrdersBulk = async (orders: Omit<PurchaseOrder, 'id' | 'createdAt'>[]): Promise<PurchaseOrder[]> => {
     try {
       const newIds = await purchaseOrdersService.addPurchaseOrdersBulk(orders);
+      const createdAtBase = Date.now();
       const newOrders: PurchaseOrder[] = orders.map((order, index) => ({
         ...order,
         id: newIds[index],
-        createdAt: new Date(),
+        createdAt: new Date(createdAtBase + index),
       }));
       setPurchaseOrders((prev) => [...prev, ...newOrders]);
       return newOrders;
