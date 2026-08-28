@@ -28,6 +28,8 @@ const BARCODE_W = CONTENT_W * 0.8;
 const BARCODE_H = BARCODE_BAND_H * 0.96;
 
 const TOP_TEXT_SIZE = 4.5 * 1.1; // +10%
+const SKU_TEXT_SIZE = TOP_TEXT_SIZE * 1.5; // +50%
+const CATEGORY_LINE_SIZE = TOP_TEXT_SIZE * 1.25; // +25%
 const BOTTOM_TEXT_SIZE = 4 * 1.1; // +10%
 
 const styles = StyleSheet.create({
@@ -55,21 +57,23 @@ const styles = StyleSheet.create({
     width: CONTENT_W,
   },
   sku: {
-    fontSize: TOP_TEXT_SIZE,
+    fontSize: SKU_TEXT_SIZE,
     fontWeight: 'bold',
     color: '#000000',
     fontFamily: 'Helvetica-Bold',
-    flexShrink: 1,
-    maxWidth: '40%',
+    flexShrink: 0,
+    maxWidth: '38%',
+    lineHeight: 1,
   },
   categoryLine: {
-    fontSize: TOP_TEXT_SIZE,
+    fontSize: CATEGORY_LINE_SIZE,
     fontWeight: 'bold',
     color: '#000000',
     fontFamily: 'Helvetica-Bold',
     textAlign: 'right',
     flexShrink: 1,
-    maxWidth: '58%',
+    maxWidth: '60%',
+    lineHeight: 1,
   },
   barcodeContainer: {
     flexShrink: 0,
@@ -112,6 +116,34 @@ function truncate(text: string, max: number): string {
   return `${text.substring(0, Math.max(0, max - 1))}…`;
 }
 
+/** Palabra corta de la línea cuando “categoría • línea” no cabe en la etiqueta. */
+function lineKeywordForLabel(line: string): string {
+  const raw = line.trim();
+  if (!raw) return '';
+  const n = raw
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (n.includes('laminado')) return 'Laminado';
+  if (n.includes('bano')) return 'Baño';
+  if (n.includes('plata')) return 'Plata';
+  const first = raw.split(/[\s/]+/)[0] ?? raw;
+  return first.replace(/[-–—,;:]+$/g, '');
+}
+
+/** Cabe ~20 glifos a +25% en la banda derecha (p. ej. “Aretes • Laminado”). */
+const CATEGORY_LINE_MAX_CHARS = 20;
+
+/** Si no cabe “Aretes • Laminado en Oro”, se acorta la línea: “Aretes • Laminado”. */
+function categoryLineForLabel(category: string, line: string): string {
+  const full = [category, line].filter(Boolean).join(' • ');
+  if (!full) return '';
+  if (full.length <= CATEGORY_LINE_MAX_CHARS) return full;
+
+  const keyword = lineKeywordForLabel(line);
+  return [category, keyword].filter(Boolean).join(' • ') || category;
+}
+
 export default function BarcodeLabelPDF({
   items,
   documentTitle = 'Etiquetas',
@@ -142,7 +174,7 @@ export default function BarcodeLabelPDF({
         const sku = order?.sku || inventoryItem.sku || '';
         const category = displayCategory(order?.category || inventoryItem.category || '');
         const line = displayLine(order?.line || inventoryItem.line || '');
-        const categoryLineText = [category, line].filter(Boolean).join(' • ');
+        const categoryLineText = categoryLineForLabel(category, line);
         const itemId = order?.id || inventoryItem.id || `item-${index}`;
 
         return (
@@ -154,12 +186,16 @@ export default function BarcodeLabelPDF({
             <View style={styles.label}>
               <View style={styles.topRow}>
                 {sku ? (
-                  <Text style={styles.sku}>{truncate(sku, 14)}</Text>
+                  <Text style={styles.sku} wrap={false}>
+                    {truncate(sku, 14)}
+                  </Text>
                 ) : (
                   <View style={{ width: 1 }} />
                 )}
                 {categoryLineText ? (
-                  <Text style={styles.categoryLine}>{truncate(categoryLineText, 24)}</Text>
+                  <Text style={styles.categoryLine} wrap={false}>
+                    {categoryLineText}
+                  </Text>
                 ) : null}
               </View>
 
