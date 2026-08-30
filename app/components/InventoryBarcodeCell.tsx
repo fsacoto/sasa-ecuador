@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { InventoryItem } from '../types';
 import { isValidBarcodeInput } from '../utils/barcodeGenerator';
+import InventoryListImage from './InventoryListImage';
 
 interface InventoryBarcodeCellProps {
   item: InventoryItem;
@@ -56,10 +57,12 @@ export default function InventoryBarcodeCell({
         {displayUrl ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={displayUrl}
+            <InventoryListImage
+              urls={[displayUrl]}
               alt={labels.alt}
               className="h-10 w-auto max-w-[7rem] object-contain"
+              loading="lazy"
+              decoding="async"
             />
             {!isReadOnly && (
               <button

@@ -4,26 +4,10 @@ import { useState } from 'react';
 import { InventoryItem } from '../types';
 import { formatSalePriceDisplay } from '../utils/salePrice';
 import CatalogDownloadButton from './CatalogDownloadButton';
+import InventoryListImage from './InventoryListImage';
 import { useTranslation } from '../context/TranslationContext';
 import { displayCategory, displayLine } from '../utils/merchandiseLabels';
 import { isMaterialCategory } from '../utils/materials';
-
-/** Tras EO→LO, prueba la URL alternativa si la principal no carga. */
-function imageUrlFallbacks(url: string): string[] {
-  const variants = new Set<string>([url]);
-  const swap = (input: string, from: 'EO' | 'LO', to: 'EO' | 'LO') =>
-    input.replace(
-      new RegExp(`([A-Za-z]{2})${from}(\\d{4}(?:-\\d+)?)`, 'gi'),
-      (_m, prefix: string, seq: string) => `${prefix.toUpperCase()}${to}${seq}`
-    );
-  for (const base of [...variants]) {
-    const toLo = swap(base, 'EO', 'LO');
-    const toEo = swap(base, 'LO', 'EO');
-    if (toLo !== base) variants.add(toLo);
-    if (toEo !== base) variants.add(toEo);
-  }
-  return [...variants];
-}
 
 function CatalogItemImage({
   images,
@@ -34,11 +18,8 @@ function CatalogItemImage({
   alt: string;
   placeholderClassName: string;
 }) {
-  const candidates = images.flatMap((u) => (u?.trim() ? imageUrlFallbacks(u.trim()) : []));
-  const [index, setIndex] = useState(0);
-  const src = candidates[index];
-
-  if (!src) {
+  const urls = (images || []).map((u) => u?.trim()).filter(Boolean);
+  if (urls.length === 0) {
     return (
       <div className={`w-full h-full flex items-center justify-center ${placeholderClassName}`}>
         <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -49,11 +30,12 @@ function CatalogItemImage({
   }
 
   return (
-    <img
-      src={src}
+    <InventoryListImage
+      urls={urls}
       alt={alt}
       className="h-full w-full object-contain p-1"
-      onError={() => setIndex((i) => i + 1)}
+      loading="lazy"
+      decoding="async"
     />
   );
 }

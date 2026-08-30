@@ -17,8 +17,24 @@ import {
 } from 'firebase/storage';
 import app, { auth, storage } from '../utils/firebase';
 
+/** Browser may cache Storage downloads ~1 year (stops Inventario from re-fetching originals every visit). */
+export const STORAGE_DOWNLOAD_CACHE_CONTROL = 'public, max-age=31536000';
+
 /** After a successful upload via the alternate default bucket, keep using it for deletes/uploads in this session. */
 let sessionStorageInstance: FirebaseStorage | null = null;
+
+async function scheduleCompanionListThumb(file: File, originalPath: string): Promise<void> {
+  try {
+    const { listThumbStoragePath, fileToListThumbFile } = await import('../utils/listThumb');
+    const thumbPath = listThumbStoragePath(originalPath);
+    if (!thumbPath) return;
+    if (!file.type.startsWith('image/') || file.type.includes('svg')) return;
+    const thumbFile = await fileToListThumbFile(file);
+    await uploadFile(thumbFile, thumbPath);
+  } catch (error) {
+    console.warn('List thumb upload skipped:', originalPath, error);
+  }
+}
 
 function normalizeEnvBucket(): string | undefined {
   const raw = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim();
@@ -310,14 +326,15 @@ async function runUploadWithStorage(
 ): Promise<string> {
   const storageRef = ref(st, path);
   const useResumable = file.size >= RESUMABLE_THRESHOLD_BYTES || onProgress != null;
+  const metadata = { cacheControl: STORAGE_DOWNLOAD_CACHE_CONTROL };
 
   if (!useResumable) {
-    await uploadBytes(storageRef, file);
+    await uploadBytes(storageRef, file, metadata);
     return await getDownloadURL(storageRef);
   }
 
   return new Promise((resolve, reject) => {
-    const uploadTask = uploadBytesResumable(storageRef, file);
+    const uploadTask = uploadBytesResumable(storageRef, file, metadata);
 
     uploadTask.on(
       'state_changed',
@@ -459,7 +476,9 @@ export async function uploadImage(
     throw new Error(`Image must be ${INVENTORY_IMAGE_MAX_SIZE_MB}MB or smaller`);
   }
   
-  return uploadFile(file, path, onProgress);
+  const url = await uploadFile(file, path, onProgress);
+  void scheduleCompanionListThumb(file, path);
+  return url;
 }
 
 /**
@@ -477,7 +496,9 @@ export async function uploadCmsImage(
   if (file.size > maxSize) {
     throw new Error('Image must be less than 50MB for CMS');
   }
-  return uploadFile(file, path, onProgress);
+  const url = await uploadFile(file, path, onProgress);
+  void scheduleCompanionListThumb(file, path);
+  return url;
 }
 
 /**
@@ -576,6 +597,13 @@ export async function uploadVideo(
   return uploadFile(file, path, onProgress);
 }
 
+/** Authenticated blob download (list thumbs, PDFs). Uses the same bucket as uploads. */
+export async function getStorageFileBlob(path: string): Promise<Blob> {
+  await ensureAuthReadyForStorage();
+  const st = sessionStorageInstance ?? storage;
+  return getBlob(ref(st, path));
+}
+
 /**
  * Delete a file from Firebase Storage
  * @param path - Storage path
@@ -586,6 +614,15 @@ export async function deleteFile(path: string): Promise<void> {
   try {
     const storageRef = ref(st, path);
     await deleteObject(storageRef);
+    const { listThumbStoragePath } = await import('../utils/listThumb');
+    const thumbPath = listThumbStoragePath(path);
+    if (thumbPath) {
+      try {
+        await deleteObject(ref(st, thumbPath));
+      } catch {
+        /* companion thumb may not exist */
+      }
+    }
   } catch (error) {
     logStorageFailure(error);
     console.error('Error deleting file:', error);
@@ -647,7 +684,9 @@ export function extractStoragePath(url: string): string | null {
  * Check if a URL is a Firebase Storage URL
  */
 export function isFirebaseStorageURL(url: string): boolean {
-  return url.includes('firebasestorage.googleapis.com');
+  return (
+    url.includes('firebasestorage.googleapis.com') || url.includes('.firebasestorage.app')
+  );
 }
 
 /** Descarga una imagen (Firebase Storage o URL http) como data URL para edición local. */
@@ -662,7 +701,7 @@ export async function downloadStorageImageAsDataUrl(url: string): Promise<string
     const path = extractStoragePath(trimmed);
     if (path) {
       try {
-        blob = await getBlob(ref(storage, path));
+        blob = await getStorageFileBlob(path);
       } catch (error) {
         console.warn('Firebase getBlob failed for profile photo:', path, error);
       }

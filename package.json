@@ -13,7 +13,9 @@
     "migrate:enchapado-to-laminado:dry": "node scripts/migrate-enchapado-to-laminado.mjs --project sasa-ecuador",
     "migrate:enchapado-to-laminado:apply": "node scripts/migrate-enchapado-to-laminado.mjs --project sasa-ecuador --apply --storage",
     "firebase:cors:prod": "gsutil cors set storage-cors.json gs://sasa-ecuador.firebasestorage.app",
-    "firebase:cors": "echo \"Apply CORS: gsutil cors set storage-cors.json gs://YOUR_BUCKET_ID\" && echo \"Bucket id = Firebase Console → Storage (same as NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET).\""
+    "firebase:cors": "echo \"Apply CORS: gsutil cors set storage-cors.json gs://YOUR_BUCKET_ID\" && echo \"Bucket id = Firebase Console → Storage (same as NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET).\"",
+    "storage:cache-control:dry": "node scripts/set-storage-cache-control.mjs --project sasa-ecuador",
+    "storage:cache-control:apply": "node scripts/set-storage-cache-control.mjs --project sasa-ecuador --apply"
   },
   "dependencies": {
     "@dataconnect/generated": "file:src/dataconnect-generated",

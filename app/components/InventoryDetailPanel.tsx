@@ -24,6 +24,7 @@ import { isBuiltInventoryItem } from '../utils/productBuild';
 import { formatMaterialStock, isMaterialCategory } from '../utils/materials';
 import { resolveSkuUnitCost } from '../utils/landedCostCalculation';
 import { displayCategory } from '../utils/merchandiseLabels';
+import InventoryListImage from './InventoryListImage';
 
 interface InventoryDetailPanelProps {
   item: InventoryItem;
@@ -280,8 +281,8 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
                             preload="metadata"
                           />
                         ) : (
-                          <img
-                            src={currentUrl}
+                          <InventoryListImage
+                            urls={[currentUrl]}
                             alt=""
                             className="max-h-72 w-full object-contain"
                           />

@@ -7,6 +7,21 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
+/** Only Firebase Storage hosts — this route must not be an open proxy. */
+function isAllowedStorageUrl(imageUrl: string): boolean {
+  try {
+    const parsed = new URL(imageUrl);
+    if (parsed.protocol !== 'https:') return false;
+    const host = parsed.hostname.toLowerCase();
+    if (host === 'firebasestorage.googleapis.com') return true;
+    if (host.endsWith('.firebasestorage.app')) return true;
+    if (host === 'storage.googleapis.com') return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function inferContentType(imageUrl: string, blobType: string): string {
   if (blobType && blobType !== 'application/octet-stream') return blobType;
   const urlLower = imageUrl.toLowerCase();
@@ -57,6 +72,9 @@ export async function GET(request: NextRequest) {
     if (!imageUrl) {
       return NextResponse.json({ error: 'Missing image URL' }, { status: 400 });
     }
+    if (!isAllowedStorageUrl(imageUrl)) {
+      return NextResponse.json({ error: 'URL not allowed' }, { status: 400 });
+    }
     return proxyDownload(imageUrl);
   } catch (error: unknown) {
     console.error('Error downloading image:', error);
@@ -72,6 +90,9 @@ export async function POST(request: NextRequest) {
     const imageUrl = body?.url?.trim();
     if (!imageUrl) {
       return NextResponse.json({ error: 'Missing image URL' }, { status: 400 });
+    }
+    if (!isAllowedStorageUrl(imageUrl)) {
+      return NextResponse.json({ error: 'URL not allowed' }, { status: 400 });
     }
     return proxyDownload(imageUrl);
   } catch (error: unknown) {
