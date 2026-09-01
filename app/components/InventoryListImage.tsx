@@ -19,9 +19,8 @@ type InventoryListImageProps = {
 };
 
 /**
- * Muestra la foto en cuanto hay una URL usable (miniatura o original).
- * Sin crossOrigin: en prod la lista siempre pinta aunque CORS del bucket no
- * incluya el dominio. La miniatura se genera en segundo plano.
+ * Miniatura de lista (~10%). No usa la URL del JPEG original.
+ * En Inventario, el original solo se ve en Pantalla completa.
  */
 export default function InventoryListImage({
   urls,
@@ -58,7 +57,7 @@ export default function InventoryListImage({
         if (cancelled) return;
         setSrc(resolved);
       } catch {
-        if (!cancelled) setSrc(primary);
+        if (!cancelled) onFail?.();
       }
     })();
 
@@ -90,7 +89,24 @@ export default function InventoryListImage({
         const list = candidatesRef.current;
         const original = list[candidateIndexRef.current];
         if (original && src !== original && isLikelyListThumbSrc(src)) {
-          setSrc(original);
+          void (async () => {
+            try {
+              setSrc(await resolveInventoryListImageSrc(original));
+            } catch {
+              const next = candidateIndexRef.current + 1;
+              if (next < list.length) {
+                candidateIndexRef.current = next;
+                setCandidateIndex(next);
+                try {
+                  setSrc(await resolveInventoryListImageSrc(list[next]));
+                } catch {
+                  onFail?.();
+                }
+              } else {
+                onFail?.();
+              }
+            }
+          })();
           return;
         }
         const next = candidateIndex + 1;
@@ -102,7 +118,7 @@ export default function InventoryListImage({
             try {
               setSrc(await resolveInventoryListImageSrc(fallback));
             } catch {
-              setSrc(fallback);
+              onFail?.();
             }
           })();
           return;

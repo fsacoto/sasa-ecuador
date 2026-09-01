@@ -1,7 +1,7 @@
 /**
- * Miniaturas de lista: mostrar lo antes posible.
- * 1) caché local  2) URL del .thumb.jpg  3) original (el navegador lo pinta al vuelo)
- * La miniatura en Storage se genera en segundo plano, sin bloquear la pantalla.
+ * Miniaturas de lista (~10% del JPEG).
+ * 1) caché local  2) `.thumb.jpg` en Storage  3) generar miniatura (una vez)
+ * Las listas nunca pintan la URL del original.
  */
 
 import {
@@ -17,7 +17,6 @@ const GENERATE_CONCURRENCY = 2;
 
 const memory = new Map<string, Blob>();
 const objectUrls = new Map<string, string>();
-const inflightGenerate = new Set<string>();
 
 let generateInFlight = 0;
 const generateWaiters: Array<() => void> = [];
@@ -94,7 +93,7 @@ async function tryThumbDownloadUrl(originalUrl: string): Promise<string | null> 
     return await Promise.race([
       getDownloadURL(ref(storage, thumbPath)),
       new Promise<string>((_, reject) =>
-        setTimeout(() => reject(new Error('thumb-url-timeout')), 2500)
+        setTimeout(() => reject(new Error('thumb-url-timeout')), 4000)
       ),
     ]);
   } catch {
@@ -167,25 +166,6 @@ async function persistThumb(originalUrl: string, thumb: Blob, originalSize?: num
   void uploadGeneratedThumb(originalUrl, thumb);
 }
 
-function loadCorsImage(url: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const im = new Image();
-    im.crossOrigin = 'anonymous';
-    im.onload = () => resolve(im);
-    im.onerror = () => reject(new Error('cors-image'));
-    im.src = url;
-  });
-}
-
-async function blobFromCorsImage(url: string): Promise<Blob | null> {
-  try {
-    const im = await loadCorsImage(url);
-    return await blobFromImgScaled(im);
-  } catch {
-    return null;
-  }
-}
-
 function blobFromImgScaled(img: HTMLImageElement): Promise<Blob | null> {
   const srcW = img.naturalWidth || img.width;
   const srcH = img.naturalHeight || img.height;
@@ -226,6 +206,42 @@ async function blobFromStorage(originalUrl: string): Promise<Blob | null> {
   }
 }
 
+const generateByUrl = new Map<string, Promise<Blob | null>>();
+
+async function canApplyListThumb(url: string): Promise<boolean> {
+  const { extractStoragePath, isFirebaseStorageURL } = await import('../services/storageService');
+  if (!isFirebaseStorageURL(url)) return false;
+  const path = extractStoragePath(url);
+  return Boolean(path && listThumbStoragePath(path));
+}
+
+/** One-time original download to create a ~10% JPEG; lists never display the original URL. */
+function generateListThumbBlob(url: string): Promise<Blob | null> {
+  const existing = generateByUrl.get(url);
+  if (existing) return existing;
+  const pending = (async () => {
+    const mem = memory.get(url);
+    if (mem) return mem;
+    return withGenerateSlot(async () => {
+      const again = memory.get(url);
+      if (again) return again;
+      const original = (await blobFromStorage(url)) || (await blobFromSameOriginProxy(url));
+      if (!original?.size) return null;
+      const thumb = await rasterizeBlobToListThumb(original);
+      if (!thumb.size || thumb.size > MAX_CACHED_THUMB_BYTES) return null;
+      await writePersistentCache(url, thumb);
+      if (original.size <= 0 || thumb.size < original.size * 0.6) {
+        void uploadGeneratedThumb(url, thumb);
+      }
+      return thumb;
+    });
+  })().finally(() => {
+    generateByUrl.delete(url);
+  });
+  generateByUrl.set(url, pending);
+  return pending;
+}
+
 async function blobFromSameOriginProxy(originalUrl: string): Promise<Blob | null> {
   try {
     const res = await fetch('/api/download-image', {
@@ -242,7 +258,11 @@ async function blobFromSameOriginProxy(originalUrl: string): Promise<Blob | null
   }
 }
 
-/** Pinta ya: caché → miniatura en Storage → original (sin esperar a recortar). */
+/**
+ * Caché local → `.thumb.jpg` en Storage → generar miniatura.
+ * Nunca devuelve la URL del JPEG original de producto (eso solo va en
+ * Pantalla completa de Inventario).
+ */
 export async function resolveInventoryListImageSrc(originalUrl: string): Promise<string> {
   const url = originalUrl.trim();
   if (!url) throw new Error('empty url');
@@ -250,43 +270,35 @@ export async function resolveInventoryListImageSrc(originalUrl: string): Promise
   const cached = await readPersistentCache(url);
   if (cached) return objectUrlFor(url, cached);
 
+  if (!(await canApplyListThumb(url))) return url;
+
   const thumbHref = await tryThumbDownloadUrl(url);
   if (thumbHref) return thumbHref;
 
-  return url;
+  const generated = await generateListThumbBlob(url);
+  if (generated) return objectUrlFor(url, generated);
+
+  throw new Error('no-list-thumb');
 }
 
-/** Tras pintar el original, crea el .thumb.jpg sin bloquear ni volver a pintar. */
+/** Si por error se pintó el original, recorta y sube el .thumb.jpg. */
 export async function captureListThumbFromImg(
   originalUrl: string,
   img: HTMLImageElement
 ): Promise<void> {
   const url = originalUrl.trim();
   if (!url || url.startsWith('blob:') || url.includes('.thumb.jpg')) return;
-  if (memory.has(url) || inflightGenerate.has(url)) return;
+  if (memory.has(url)) return;
 
-  inflightGenerate.add(url);
   try {
-    await withGenerateSlot(async () => {
-      if (memory.has(url)) return;
-
-      const fromCanvas =
-        (await blobFromImgScaled(img)) || (await blobFromCorsImage(url));
-      if (fromCanvas && isSmallEnoughListThumb(fromCanvas)) {
-        await persistThumb(url, fromCanvas);
-        return;
-      }
-
-      const original =
-        (await blobFromStorage(url)) || (await blobFromSameOriginProxy(url));
-      if (!original?.size) return;
-      const thumb = await rasterizeBlobToListThumb(original);
-      await persistThumb(url, thumb, original.size);
-    });
+    const fromCanvas = await blobFromImgScaled(img);
+    if (fromCanvas && fromCanvas.size <= MAX_CACHED_THUMB_BYTES) {
+      await persistThumb(url, fromCanvas);
+      return;
+    }
+    await generateListThumbBlob(url);
   } catch {
-    /* next visit still shows original until a thumb exists */
-  } finally {
-    inflightGenerate.delete(url);
+    /* lists keep showing placeholder until a thumb exists */
   }
 }
 

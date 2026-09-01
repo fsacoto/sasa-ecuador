@@ -20,6 +20,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../context/TranslationContext';
 import { useBarcodeScanner } from '../hooks/useBarcodeScanner';
 import ConfirmDialog from './ui/ConfirmDialog';
+import InventoryListImage from './InventoryListImage';
 import TableSortIcon from './ui/TableSortIcon';
 import {
   tableTheadClass,
@@ -97,11 +98,13 @@ function ConsignmentProductThumb({
 
   return showImage ? (
     <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
-      <img
-        src={imageUrl}
+      <InventoryListImage
+        urls={[imageUrl!]}
         alt={alt}
         className="h-full w-full object-cover object-center"
-        onError={() => setBroken(true)}
+        loading="lazy"
+        decoding="async"
+        onFail={() => setBroken(true)}
       />
     </div>
   ) : (

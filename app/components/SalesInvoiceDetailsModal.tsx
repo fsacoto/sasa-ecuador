@@ -1,12 +1,13 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { InventoryItem, SalesInvoice } from '../types';
 import { useTranslation } from '../context/TranslationContext';
 import { useDarkMode } from '../hooks/useDarkMode';
 import { formatDateDMY } from '../utils/formatDate';
 import { deliveryStatusBadgeClass, paymentStatusBadgeClass } from '../utils/invoiceStatusStyles';
 import ModalPortal from './ui/ModalPortal';
+import InventoryListImage from './InventoryListImage';
 
 function resolveItemImageUrl(sku: string, inventory: InventoryItem[]): string | null {
   const trimmed = sku.trim();
@@ -34,6 +35,31 @@ function NoPhotoThumb({ label }: { label: string }) {
       <span className="text-[8px] font-medium uppercase leading-none tracking-wide text-gray-400">
         {label}
       </span>
+    </div>
+  );
+}
+
+function InvoiceLinePhoto({
+  imageUrl,
+  alt,
+  noPhotoLabel,
+}: {
+  imageUrl: string;
+  alt: string;
+  noPhotoLabel: string;
+}) {
+  const [broken, setBroken] = useState(false);
+  if (broken) return <NoPhotoThumb label={noPhotoLabel} />;
+  return (
+    <div className="h-12 w-12 overflow-hidden rounded-md border border-gray-200 bg-gray-50">
+      <InventoryListImage
+        urls={[imageUrl]}
+        alt={alt}
+        className="h-full w-full object-contain object-center"
+        loading="lazy"
+        decoding="async"
+        onFail={() => setBroken(true)}
+      />
     </div>
   );
 }
@@ -171,13 +197,11 @@ export default function SalesInvoiceDetailsModal({
                         <tr key={`${sku}-${index}`} className="transition-colors hover:bg-gray-50">
                           <td className="px-3 py-2.5">
                             {imageUrl ? (
-                              <div className="h-12 w-12 overflow-hidden rounded-md border border-gray-200 bg-gray-50">
-                                <img
-                                  src={imageUrl}
-                                  alt={item.description || sku}
-                                  className="h-full w-full object-contain object-center"
-                                />
-                              </div>
+                              <InvoiceLinePhoto
+                                imageUrl={imageUrl}
+                                alt={item.description || sku}
+                                noPhotoLabel={noPhotoLabel}
+                              />
                             ) : (
                               <NoPhotoThumb label={noPhotoLabel} />
                             )}

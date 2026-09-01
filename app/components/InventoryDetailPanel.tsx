@@ -358,7 +358,13 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
                               </svg>
                             </div>
                           ) : (
-                            <img src={url} alt="" className="w-full h-full object-cover" />
+                            <InventoryListImage
+                              urls={[url]}
+                              alt=""
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                              decoding="async"
+                            />
                           )}
                         </button>
                       );
@@ -387,7 +393,13 @@ export default function InventoryDetailPanel({ item, onClose }: InventoryDetailP
                       key={`${url}-${index}`}
                       className="h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-dashed border-gray-300 bg-gray-50"
                     >
-                      <img src={url} alt="" className="h-full w-full object-cover opacity-90" />
+                      <InventoryListImage
+                        urls={[url]}
+                        alt=""
+                        className="h-full w-full object-cover opacity-90"
+                        loading="lazy"
+                        decoding="async"
+                      />
                     </div>
                   ))}
                 </div>
