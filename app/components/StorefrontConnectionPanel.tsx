@@ -56,6 +56,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   bracelets: 'Pulseras',
   anklets: 'Tobilleras',
   sets: 'Juegos',
+  charms: 'Dijes',
 };
 
 type Props = {

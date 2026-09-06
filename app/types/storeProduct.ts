@@ -5,7 +5,8 @@ export type StoreCategory =
   | 'rings'
   | 'bracelets'
   | 'anklets'
-  | 'sets';
+  | 'sets'
+  | 'charms';
 
 export type StoreMaterial = 'gold-filled' | 'gold-plated' | 'sterling-silver';
 
@@ -46,6 +47,7 @@ export const STORE_CATEGORIES: StoreCategory[] = [
   'bracelets',
   'anklets',
   'sets',
+  'charms',
 ];
 
 export function isStoreCategory(value: string): value is StoreCategory {

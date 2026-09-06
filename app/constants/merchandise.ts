@@ -6,6 +6,7 @@ export const PREDEFINED_CATEGORIES_ES = [
   'Sets',
   'Tobilleras',
   'Aretes',
+  'Dijes',
   'Materiales',
 ] as const;
 
@@ -64,6 +65,12 @@ export const CATEGORY_TO_ES: Record<string, string> = {
   earring: 'Aretes',
   earrings: 'Aretes',
   [LEGACY_CATEGORIES_EN[5]]: 'Aretes',
+  dije: 'Dijes',
+  dijes: 'Dijes',
+  charm: 'Dijes',
+  charms: 'Dijes',
+  pendant: 'Dijes',
+  pendants: 'Dijes',
 };
 
 for (const c of PREDEFINED_CATEGORIES_ES) {

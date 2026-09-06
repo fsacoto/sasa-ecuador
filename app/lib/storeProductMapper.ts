@@ -18,6 +18,7 @@ const CATEGORY_ES_TO_STORE: Record<string, StoreCategory> = {
   Pulseras: 'bracelets',
   Tobilleras: 'anklets',
   Sets: 'sets',
+  Dijes: 'charms',
 };
 
 function slugify(value: string): string {

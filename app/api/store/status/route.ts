@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     },
     {
       method: 'GET',
-      path: '/api/store/products?category=earrings|necklaces|rings|bracelets|anklets|sets',
+      path: '/api/store/products?category=earrings|necklaces|rings|bracelets|anklets|sets|charms',
       description: 'Filtro por categoría',
     },
     { method: 'GET', path: '/api/store/status', description: 'Estado de conexión (este panel)' },
@@ -54,6 +54,7 @@ export async function GET(request: NextRequest) {
     bracelets: 0,
     anklets: 0,
     sets: 0,
+    charms: 0,
   };
 
   try {
