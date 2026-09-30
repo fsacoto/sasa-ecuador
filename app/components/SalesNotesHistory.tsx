@@ -31,6 +31,7 @@ import {
 import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 import { formatDateDMY, formatMonthYearLong } from '../utils/formatDate';
 import { deliveryStatusBadgeClass, paymentStatusBadgeClass } from '../utils/invoiceStatusStyles';
+import SellerCommissionIcon, { hasSellerCommission } from './icons/SellerCommissionIcon';
 
 const SESSION_TRACKING_FOCUS = 'sasa_focus_invoice_tracking_id';
 
@@ -402,14 +403,23 @@ export default function SalesNotesHistory({ onOpenInTracking }: SalesNotesHistor
                 <tr key={inv.id} className="transition-colors hover:bg-gray-50">
                   {!hiddenColumns.has('comprobante') && (
                     <td className="whitespace-nowrap px-6 py-4 text-center">
-                      <button
-                        type="button"
-                        className="font-mono text-sm font-semibold text-[#515151] transition-colors hover:text-black hover:underline"
-                        onClick={() => setDetailsInvoice(inv)}
-                        title={t('invoiceTracking.clickToViewDetails')}
-                      >
-                        {inv.invoiceNumber}
-                      </button>
+                      <div className="inline-flex items-center justify-center gap-1.5">
+                        <button
+                          type="button"
+                          className="font-mono text-sm font-semibold text-[#515151] transition-colors hover:text-black hover:underline"
+                          onClick={() => setDetailsInvoice(inv)}
+                          title={t('invoiceTracking.clickToViewDetails')}
+                        >
+                          {inv.invoiceNumber}
+                        </button>
+                        {hasSellerCommission(inv) ? <SellerCommissionIcon /> : null}
+                      </div>
+                      {inv.sourceConsignmentId ? (
+                        <div className="mt-1 text-xs font-medium text-amber-800">
+                          {t('consignments.sourceConsignmentTag') || 'Consignación'}:{' '}
+                          {inv.sourceConsignmentId}
+                        </div>
+                      ) : null}
                     </td>
                   )}
                   {!hiddenColumns.has('client') && (

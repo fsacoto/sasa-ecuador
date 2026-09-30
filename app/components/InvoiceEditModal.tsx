@@ -51,6 +51,8 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
   const [editItems, setEditItems] = useState<(SalesInvoiceLine & { maxQuantity?: number })[]>([]);
   const [editDiscountType, setEditDiscountType] = useState<'percentage' | 'flat'>('percentage');
   const [editDiscountValue, setEditDiscountValue] = useState(0);
+  const [editSellerCommissionType, setEditSellerCommissionType] = useState<'percentage' | 'flat'>('percentage');
+  const [editSellerCommissionValue, setEditSellerCommissionValue] = useState(0);
   const [editPaymentMethod, setEditPaymentMethod] = useState('');
   const [editPaymentComment, setEditPaymentComment] = useState('');
   const [editNotes, setEditNotes] = useState('');
@@ -108,6 +110,8 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
       setEditItems([]);
       setEditDiscountType('percentage');
       setEditDiscountValue(0);
+      setEditSellerCommissionType('percentage');
+      setEditSellerCommissionValue(0);
       setEditPaymentMethod('');
       setEditPaymentComment('');
       setEditSearchTerm('');
@@ -133,6 +137,8 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
     setEditItems(enrichedItems);
     setEditDiscountType(invoice.discountType || 'percentage');
     setEditDiscountValue(invoice.discountValue || 0);
+    setEditSellerCommissionType(invoice.sellerCommissionType || 'percentage');
+    setEditSellerCommissionValue(invoice.sellerCommissionValue || 0);
     setEditPaymentMethod(invoice.paymentMethod || '');
     setEditPaymentComment(invoice.paymentComment || '');
     setEditNotes(invoice.notes || '');
@@ -253,7 +259,16 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
     return editDiscountValue;
   };
 
-  const calculateEditGrandTotal = () => calculateEditSubtotal() - calculateEditDiscount();
+  const calculateEditSellerCommission = () => {
+    const subtotal = calculateEditSubtotal();
+    if (editSellerCommissionType === 'percentage') {
+      return (subtotal * editSellerCommissionValue) / 100;
+    }
+    return editSellerCommissionValue;
+  };
+
+  const calculateEditGrandTotal = () =>
+    Math.max(0, calculateEditSubtotal() - calculateEditDiscount() - calculateEditSellerCommission());
 
   /** Clamp quantityDelivered so it never exceeds the new line quantity after edits. */
   const clampEditItemsDelivered = (inv: SalesInvoice): SalesInvoiceLine[] => {
@@ -504,6 +519,9 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
         discountType: editDiscountType,
         discountValue: editDiscountValue,
         discountTotal: calculateEditDiscount(),
+        sellerCommissionType: editSellerCommissionType,
+        sellerCommissionValue: editSellerCommissionValue,
+        sellerCommissionTotal: calculateEditSellerCommission(),
         grandTotal: newGrandTotal,
         remainingBalance: newRemainingBalance,
         paymentStatus: newPaymentStatus,
@@ -794,6 +812,29 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
             </div>
           </div>
 
+          <div className="mb-6 grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium">{t('invoiceTracking.sellerCommissionType')}</label>
+              <select
+                value={editSellerCommissionType}
+                onChange={(e) => setEditSellerCommissionType(e.target.value as 'percentage' | 'flat')}
+                className="w-full rounded border border-gray-300 px-3 py-2"
+              >
+                <option value="percentage">{t('invoiceTracking.percentage')} (%)</option>
+                <option value="flat">{t('invoiceTracking.flatAmount')}</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium">{t('invoiceTracking.sellerCommissionValue')}</label>
+              <input
+                type="number"
+                value={editSellerCommissionValue}
+                onChange={(e) => setEditSellerCommissionValue(parseFloat(e.target.value) || 0)}
+                className="w-full rounded border border-gray-300 px-3 py-2"
+              />
+            </div>
+          </div>
+
           <div className="mb-6">
             <label className="mb-2 block text-sm font-medium">{t('invoiceTracking.additionalNotes')}</label>
             <textarea
@@ -839,6 +880,10 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
             <div className="mb-2 flex justify-between">
               <span>{t('invoiceTracking.discount')}:</span>
               <span className="font-semibold">${calculateEditDiscount().toFixed(2)}</span>
+            </div>
+            <div className="mb-2 flex justify-between">
+              <span>{t('invoiceTracking.sellerCommission')}:</span>
+              <span className="font-semibold">${calculateEditSellerCommission().toFixed(2)}</span>
             </div>
             <div className="flex justify-between border-t pt-2 text-xl font-bold text-[#515151]">
               <span>{t('invoiceTracking.grandTotal')}:</span>

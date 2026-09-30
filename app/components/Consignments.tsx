@@ -1344,7 +1344,6 @@ export default function Consignments() {
     const subtotal = roundMoney2(
       invoiceLines.reduce((sum, line) => sum + line.totalPrice, 0)
     );
-    const grandTotal = subtotal;
     const notesBase =
       t('consignments.saleNoteConsignmentPrefix')?.replace('{id}', consignment.consignmentId) ||
       `Venta consignación ${consignment.consignmentId}`;
@@ -1381,6 +1380,16 @@ export default function Consignments() {
       return null;
     }
 
+    // Preserve seller commission previously set in Entregas y cobros; recalculate on new subtotal.
+    const sellerCommissionType = existing?.sellerCommissionType || 'percentage';
+    const sellerCommissionValue = existing?.sellerCommissionValue || 0;
+    const sellerCommissionTotal = roundMoney2(
+      sellerCommissionType === 'percentage'
+        ? (subtotal * sellerCommissionValue) / 100
+        : sellerCommissionValue
+    );
+    const grandTotal = roundMoney2(Math.max(0, subtotal - sellerCommissionTotal));
+
     const payment = paymentFieldsForAdjustedNote(grandTotal, existing);
 
     if (existing) {
@@ -1393,6 +1402,9 @@ export default function Consignments() {
         discountType: 'percentage',
         discountValue: 0,
         discountTotal: 0,
+        sellerCommissionType,
+        sellerCommissionValue,
+        sellerCommissionTotal,
         grandTotal,
         notes: notesBase,
         deliveryStatus: 'Delivered',

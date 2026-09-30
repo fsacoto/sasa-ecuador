@@ -8,6 +8,7 @@ import { formatDateDMY } from '../utils/formatDate';
 import { deliveryStatusBadgeClass, paymentStatusBadgeClass } from '../utils/invoiceStatusStyles';
 import ModalPortal from './ui/ModalPortal';
 import InventoryListImage from './InventoryListImage';
+import SellerCommissionIcon, { hasSellerCommission } from './icons/SellerCommissionIcon';
 
 function resolveItemImageUrl(sku: string, inventory: InventoryItem[]): string | null {
   const trimmed = sku.trim();
@@ -109,8 +110,12 @@ export default function SalesInvoiceDetailsModal({
         >
           <div className="mb-6 flex items-start justify-between gap-4">
             <div>
-              <h3 id="sales-invoice-details-title" className="text-2xl font-bold text-[#515151]">
+              <h3
+                id="sales-invoice-details-title"
+                className="flex items-center gap-2 text-2xl font-bold text-[#515151]"
+              >
                 {invoice.invoiceNumber}
+                {hasSellerCommission(invoice) ? <SellerCommissionIcon className="h-4 w-4" /> : null}
               </h3>
               <p className="mt-1 text-sm text-gray-500">
                 {t('invoiceTracking.invoiceDetails') || 'Detalle de la nota de pedido'}
@@ -241,6 +246,21 @@ export default function SalesInvoiceDetailsModal({
                     -${Number(invoice.discountTotal || 0).toFixed(2)}
                   </span>
                 </div>
+                {(Number(invoice.sellerCommissionTotal || 0) > 0 ||
+                  Number(invoice.sellerCommissionValue || 0) > 0) && (
+                  <div className="flex justify-between">
+                    <span>
+                      {t('invoiceTracking.sellerCommission')}
+                      {invoice.sellerCommissionType === 'percentage'
+                        ? ` (${invoice.sellerCommissionValue}%)`
+                        : ''}
+                      :
+                    </span>
+                    <span className="font-medium text-red-600 tabular-nums">
+                      -${Number(invoice.sellerCommissionTotal || 0).toFixed(2)}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between border-t border-gray-300 pt-2 text-lg font-bold text-[#515151]">
                   <span>{t('invoiceTracking.grandTotal')}:</span>
                   <span className="tabular-nums">${Number(invoice.grandTotal || 0).toFixed(2)}</span>

@@ -21,6 +21,7 @@ import {
 import DateInput from '../ui/DateInput';
 import { useAuth } from '../../context/AuthContext';
 import { usePersistedFilterState } from '../../hooks/usePersistedFilterState';
+import { invoiceRevenueTotal } from '../../utils/salesProfit';
 
 type SalesPeriodPreset = 'last30' | 'thisMonth' | 'custom';
 
@@ -140,7 +141,7 @@ export default function DashboardSalesSection({ t }: Props) {
     return {
       unpaid: inPeriodInvoices.filter((inv) => inv.paymentStatus === 'Unpaid').length,
       pendingCollection: inPeriodInvoices.reduce((sum, inv) => sum + (inv.remainingBalance || 0), 0),
-      totalSales: inPeriodInvoices.reduce((sum, inv) => sum + (inv.grandTotal || 0), 0),
+      totalSales: inPeriodInvoices.reduce((sum, inv) => sum + invoiceRevenueTotal(inv), 0),
       notesCount: inPeriodInvoices.length,
       consignmentsCount: csgInPeriod.length,
     };
@@ -164,7 +165,7 @@ export default function DashboardSalesSection({ t }: Props) {
       inPeriodInvoices.forEach((inv) => {
         const d = invoiceDate(inv);
         if (d && d >= startOfDay(dayStart) && d <= dayEnd) {
-          total += inv.grandTotal || 0;
+          total += invoiceRevenueTotal(inv);
         }
       });
       result.push({ label, value: Math.round(total * 100) / 100 });

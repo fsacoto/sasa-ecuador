@@ -301,6 +301,10 @@ export interface SalesInvoice {
   discountType?: 'percentage' | 'flat';
   discountValue: number;
   discountTotal: number;
+  /** Comisión a la vendedora (consignaciones u otras notas). Reduce el total como un descuento. */
+  sellerCommissionType?: 'percentage' | 'flat';
+  sellerCommissionValue?: number;
+  sellerCommissionTotal?: number;
   grandTotal: number;
   date: Date;
   notes?: string;

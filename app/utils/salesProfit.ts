@@ -80,11 +80,25 @@ function marginPercent(profit: number, revenue: number): number {
   return (profit / revenue) * 100;
 }
 
+/**
+ * Net sales revenue for an invoice.
+ * Explicitly excludes discount and seller commission so commission never counts as income.
+ */
+export function invoiceRevenueTotal(invoice: SalesInvoice): number {
+  const subtotal = Number(invoice.subtotal) || 0;
+  const discount = Number(invoice.discountTotal) || 0;
+  const commission = Number(invoice.sellerCommissionTotal) || 0;
+  if (subtotal > 0 || discount > 0 || commission > 0) {
+    return Math.max(0, Math.round((subtotal - discount - commission) * 100) / 100);
+  }
+  return Math.max(0, Number(invoice.grandTotal) || 0);
+}
+
 function lineNetRevenue(lineTotal: number, invoice: SalesInvoice): number {
   const subtotal = invoice.subtotal ?? 0;
-  const grandTotal = invoice.grandTotal ?? 0;
+  const netTotal = invoiceRevenueTotal(invoice);
   if (subtotal > 0) {
-    return lineTotal * (grandTotal / subtotal);
+    return lineTotal * (netTotal / subtotal);
   }
   return lineTotal;
 }
@@ -169,7 +183,7 @@ export function computeSalesProfit(
       }
     }
 
-    const revenue = invoice.grandTotal ?? 0;
+    const revenue = invoiceRevenueTotal(invoice);
     const profit = revenue - invCogs;
 
     byInvoice.push({

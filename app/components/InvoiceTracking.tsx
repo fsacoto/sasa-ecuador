@@ -38,6 +38,7 @@ import {
 import { tableRowActionButtonClass } from './ui/tableRowActionClass';
 import { useDarkMode } from '../hooks/useDarkMode';
 import ModalPortal from './ui/ModalPortal';
+import SellerCommissionIcon, { hasSellerCommission } from './icons/SellerCommissionIcon';
 import {
   getUndeliveredQty,
   nextReservedStock,
@@ -224,7 +225,14 @@ export default function InvoiceTracking() {
   
   // Edit modal (shared component)
   const [editingInvoice, setEditingInvoice] = useState<SalesInvoice | null>(null);
-  
+
+  // Seller commission modal
+  const [showSellerCommissionModal, setShowSellerCommissionModal] = useState(false);
+  const [sellerCommissionInvoice, setSellerCommissionInvoice] = useState<SalesInvoice | null>(null);
+  const [sellerCommissionType, setSellerCommissionType] = useState<'percentage' | 'flat'>('percentage');
+  const [sellerCommissionValue, setSellerCommissionValue] = useState('');
+  const [savingSellerCommission, setSavingSellerCommission] = useState(false);
+
   // Payment modal state
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentInvoice, setPaymentInvoice] = useState<SalesInvoice | null>(null);
@@ -382,6 +390,90 @@ export default function InvoiceTracking() {
 
   const openEditModal = (inv: SalesInvoice) => setEditingInvoice(inv);
   const closeEditModal = () => setEditingInvoice(null);
+
+  const openSellerCommissionModal = (inv: SalesInvoice) => {
+    setSellerCommissionInvoice(inv);
+    setSellerCommissionType(inv.sellerCommissionType || 'percentage');
+    setSellerCommissionValue(
+      inv.sellerCommissionValue != null && inv.sellerCommissionValue > 0
+        ? String(inv.sellerCommissionValue)
+        : ''
+    );
+    setShowSellerCommissionModal(true);
+  };
+
+  const closeSellerCommissionModal = () => {
+    if (savingSellerCommission) return;
+    setShowSellerCommissionModal(false);
+    setSellerCommissionInvoice(null);
+    setSellerCommissionType('percentage');
+    setSellerCommissionValue('');
+  };
+
+  const calcSellerCommissionTotal = (
+    subtotal: number,
+    type: 'percentage' | 'flat',
+    value: number
+  ) => {
+    if (!value || value < 0) return 0;
+    if (type === 'percentage') return Math.round(((subtotal * value) / 100) * 100) / 100;
+    return Math.round(value * 100) / 100;
+  };
+
+  const handleSaveSellerCommission = async (clear = false) => {
+    if (!sellerCommissionInvoice || savingSellerCommission) return;
+
+    const rawValue = clear ? 0 : parseFloat(sellerCommissionValue);
+    if (!clear && (sellerCommissionValue.trim() === '' || isNaN(rawValue) || rawValue < 0)) {
+      showAlert(t('invoiceTracking.sellerCommissionInvalidValue'), 'Validación');
+      return;
+    }
+
+    const type = clear ? 'percentage' : sellerCommissionType;
+    const value = clear ? 0 : rawValue;
+    const subtotal = sellerCommissionInvoice.subtotal || 0;
+    const discountTotal = sellerCommissionInvoice.discountTotal || 0;
+    const commissionTotal = calcSellerCommissionTotal(subtotal, type, value);
+
+    if (discountTotal + commissionTotal > subtotal + 0.01) {
+      showAlert(t('invoiceTracking.sellerCommissionExceedsSubtotal'), 'Validación');
+      return;
+    }
+
+    const grandTotal = Math.max(0, Math.round((subtotal - discountTotal - commissionTotal) * 100) / 100);
+    const amountPaid = sellerCommissionInvoice.amountPaid || 0;
+    const remainingBalance = Math.max(0, Math.round((grandTotal - amountPaid) * 100) / 100);
+    let paymentStatus: SalesInvoice['paymentStatus'] = 'Unpaid';
+    if (amountPaid <= 0.01) {
+      paymentStatus = 'Unpaid';
+    } else if (amountPaid >= grandTotal - 0.01 || remainingBalance <= 0.01) {
+      paymentStatus = 'Paid';
+    } else {
+      paymentStatus = 'Partially Paid';
+    }
+
+    setSavingSellerCommission(true);
+    try {
+      await updateInvoice(sellerCommissionInvoice.id, {
+        sellerCommissionType: type,
+        sellerCommissionValue: value,
+        sellerCommissionTotal: commissionTotal,
+        grandTotal,
+        remainingBalance,
+        paymentStatus,
+      });
+      showAlert(t('invoiceTracking.sellerCommissionSaved'), 'Success');
+      setShowSellerCommissionModal(false);
+      setSellerCommissionInvoice(null);
+      setSellerCommissionValue('');
+      await loadInvoices();
+    } catch (error) {
+      console.error('Error saving seller commission:', error);
+      showAlert(t('invoiceTracking.errorSavingSellerCommission'), 'Error');
+    } finally {
+      setSavingSellerCommission(false);
+    }
+  };
 
   const loadInvoices = async () => {
     try {
@@ -1313,15 +1405,18 @@ export default function InvoiceTracking() {
       }`}
     >
       <td className="px-6 py-4 whitespace-nowrap">
-        <div
-          className="text-xl font-bold text-[#515151] cursor-pointer hover:text-[#000000] transition-colors"
-          onClick={() => {
-            setDetailsInvoice(invoice);
-            setShowInvoiceDetailsModal(true);
-          }}
-          title={t('invoiceTracking.clickToViewDetails')}
-        >
-          {invoice.invoiceNumber}
+        <div className="flex items-center gap-1.5">
+          <div
+            className="text-xl font-bold text-[#515151] cursor-pointer hover:text-[#000000] transition-colors"
+            onClick={() => {
+              setDetailsInvoice(invoice);
+              setShowInvoiceDetailsModal(true);
+            }}
+            title={t('invoiceTracking.clickToViewDetails')}
+          >
+            {invoice.invoiceNumber}
+          </div>
+          {hasSellerCommission(invoice) ? <SellerCommissionIcon /> : null}
         </div>
         {invoice.sourceConsignmentId && (
           <div className="mt-1 text-xs font-medium text-amber-800">
@@ -1865,6 +1960,24 @@ export default function InvoiceTracking() {
               role="menuitem"
               className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
               onClick={() => {
+                openSellerCommissionModal(invoiceForActionsMenu);
+                closeInvoiceActionsMenu();
+              }}
+            >
+              <svg className="h-4 w-4 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              {t('invoiceTracking.sellerCommissionAction')}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              onClick={() => {
                 handleGeneratePDFClick(invoiceForActionsMenu);
                 closeInvoiceActionsMenu();
               }}
@@ -1915,6 +2028,150 @@ export default function InvoiceTracking() {
         onClose={closeEditModal}
         onSaved={loadInvoices}
       />
+
+      {/* Seller commission modal */}
+      {showSellerCommissionModal && sellerCommissionInvoice && (
+        <ModalPortal>
+          <div
+            className={`sasa-modal-root ${darkMode ? 'sasa-modal-dark' : ''} sasa-modal-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="seller-commission-modal-title"
+            onClick={savingSellerCommission ? undefined : closeSellerCommissionModal}
+          >
+            <div
+              className="sasa-modal-panel flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="min-h-0 flex-1 overflow-y-auto p-6">
+                <h3
+                  id="seller-commission-modal-title"
+                  className="mb-2 text-xl font-semibold text-gray-900"
+                >
+                  {t('invoiceTracking.sellerCommissionTitle')} -{' '}
+                  {sellerCommissionInvoice.invoiceNumber}
+                </h3>
+                <p className="mb-4 text-sm text-gray-600">
+                  {t('invoiceTracking.sellerCommissionHint')}
+                </p>
+
+                <div className="mb-4 rounded-lg bg-gray-50 p-3 text-sm">
+                  <div className="mb-1 flex justify-between">
+                    <span>{t('invoiceTracking.subtotal')}:</span>
+                    <span className="font-semibold tabular-nums">
+                      ${Number(sellerCommissionInvoice.subtotal || 0).toFixed(2)}
+                    </span>
+                  </div>
+                  {(sellerCommissionInvoice.discountTotal || 0) > 0 && (
+                    <div className="mb-1 flex justify-between">
+                      <span>{t('invoiceTracking.discount')}:</span>
+                      <span className="font-semibold tabular-nums text-red-600">
+                        -${Number(sellerCommissionInvoice.discountTotal || 0).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-gray-700">
+                      {t('invoiceTracking.sellerCommissionType')}
+                    </label>
+                    <select
+                      value={sellerCommissionType}
+                      onChange={(e) =>
+                        setSellerCommissionType(e.target.value as 'percentage' | 'flat')
+                      }
+                      disabled={savingSellerCommission}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-[#515151]"
+                    >
+                      <option value="percentage">{t('invoiceTracking.percentage')} (%)</option>
+                      <option value="flat">{t('invoiceTracking.flatAmount')}</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-gray-700">
+                      {t('invoiceTracking.sellerCommissionValue')}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={sellerCommissionValue}
+                      onChange={(e) => setSellerCommissionValue(e.target.value)}
+                      placeholder={sellerCommissionType === 'percentage' ? '20' : '200.00'}
+                      disabled={savingSellerCommission}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-[#515151]"
+                    />
+                  </div>
+
+                  <div className="rounded-lg border border-gray-200 p-3 text-sm">
+                    <div className="mb-1 flex justify-between">
+                      <span>{t('invoiceTracking.sellerCommission')}:</span>
+                      <span className="font-semibold tabular-nums text-red-600">
+                        -$
+                        {calcSellerCommissionTotal(
+                          sellerCommissionInvoice.subtotal || 0,
+                          sellerCommissionType,
+                          parseFloat(sellerCommissionValue) || 0
+                        ).toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-t border-gray-200 pt-2 font-bold text-[#515151]">
+                      <span>{t('invoiceTracking.grandTotal')}:</span>
+                      <span className="tabular-nums">
+                        $
+                        {Math.max(
+                          0,
+                          (sellerCommissionInvoice.subtotal || 0) -
+                            (sellerCommissionInvoice.discountTotal || 0) -
+                            calcSellerCommissionTotal(
+                              sellerCommissionInvoice.subtotal || 0,
+                              sellerCommissionType,
+                              parseFloat(sellerCommissionValue) || 0
+                            )
+                        ).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 border-t border-gray-200 p-4">
+                <button
+                  type="button"
+                  onClick={() => void handleSaveSellerCommission(false)}
+                  disabled={savingSellerCommission}
+                  className="flex-1 rounded-lg bg-[#515151] px-4 py-2 text-white hover:bg-black disabled:opacity-50"
+                >
+                  {savingSellerCommission
+                    ? t('common.saving') || 'Guardando…'
+                    : t('invoiceTracking.save')}
+                </button>
+                {(sellerCommissionInvoice.sellerCommissionTotal || 0) > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveSellerCommission(true)}
+                    disabled={savingSellerCommission}
+                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {t('invoiceTracking.clearSellerCommission')}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={closeSellerCommissionModal}
+                  disabled={savingSellerCommission}
+                  className="rounded-lg border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {t('invoiceTracking.cancel')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
 
       {/* Payment Modal */}
       {showPaymentModal && paymentInvoice && (

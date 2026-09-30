@@ -439,6 +439,20 @@ export default function InvoicePDF({
               </View>
             )}
 
+            {(invoice.sellerCommissionTotal || 0) > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>
+                  {t('pdf.invoice.sellerCommission')}{' '}
+                  {invoice.sellerCommissionType === 'percentage'
+                    ? `(${invoice.sellerCommissionValue}%)`
+                    : ''}
+                </Text>
+                <Text style={styles.summaryValue}>
+                  -${pdfMoney(invoice.sellerCommissionTotal || 0)}
+                </Text>
+              </View>
+            )}
+
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>{t('pdf.invoice.total')}</Text>
               <Text style={styles.totalValue}>${pdfMoney(invoice.grandTotal)}</Text>
