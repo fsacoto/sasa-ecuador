@@ -40,6 +40,11 @@ import { useDarkMode } from '../hooks/useDarkMode';
 import ModalPortal from './ui/ModalPortal';
 import SellerCommissionIcon, { hasSellerCommission } from './icons/SellerCommissionIcon';
 import {
+  calcSellerCommissionAmount,
+  computeCollectibleTotal,
+  normalizePrepaidPercent,
+} from '../utils/sellerCommission';
+import {
   getUndeliveredQty,
   nextReservedStock,
 } from '../utils/stockReservation';
@@ -231,6 +236,8 @@ export default function InvoiceTracking() {
   const [sellerCommissionInvoice, setSellerCommissionInvoice] = useState<SalesInvoice | null>(null);
   const [sellerCommissionType, setSellerCommissionType] = useState<'percentage' | 'flat'>('percentage');
   const [sellerCommissionValue, setSellerCommissionValue] = useState('');
+  const [sellerCommissionPrepaid, setSellerCommissionPrepaid] = useState(false);
+  const [sellerCommissionPrepaidPercent, setSellerCommissionPrepaidPercent] = useState('100');
   const [savingSellerCommission, setSavingSellerCommission] = useState(false);
 
   // Payment modal state
@@ -399,6 +406,9 @@ export default function InvoiceTracking() {
         ? String(inv.sellerCommissionValue)
         : ''
     );
+    const prepaidPct = normalizePrepaidPercent(inv.sellerCommissionPrepaidPercent);
+    setSellerCommissionPrepaid(prepaidPct > 0);
+    setSellerCommissionPrepaidPercent(prepaidPct > 0 ? String(prepaidPct) : '100');
     setShowSellerCommissionModal(true);
   };
 
@@ -408,16 +418,8 @@ export default function InvoiceTracking() {
     setSellerCommissionInvoice(null);
     setSellerCommissionType('percentage');
     setSellerCommissionValue('');
-  };
-
-  const calcSellerCommissionTotal = (
-    subtotal: number,
-    type: 'percentage' | 'flat',
-    value: number
-  ) => {
-    if (!value || value < 0) return 0;
-    if (type === 'percentage') return Math.round(((subtotal * value) / 100) * 100) / 100;
-    return Math.round(value * 100) / 100;
+    setSellerCommissionPrepaid(false);
+    setSellerCommissionPrepaidPercent('100');
   };
 
   const handleSaveSellerCommission = async (clear = false) => {
@@ -429,18 +431,33 @@ export default function InvoiceTracking() {
       return;
     }
 
+    let prepaidPercent = 0;
+    if (!clear && sellerCommissionPrepaid) {
+      const rawPrepaid = parseFloat(sellerCommissionPrepaidPercent);
+      if (isNaN(rawPrepaid) || rawPrepaid <= 0 || rawPrepaid > 100) {
+        showAlert(t('invoiceTracking.sellerCommissionPrepaidInvalid'), 'Validación');
+        return;
+      }
+      prepaidPercent = normalizePrepaidPercent(rawPrepaid);
+    }
+
     const type = clear ? 'percentage' : sellerCommissionType;
     const value = clear ? 0 : rawValue;
     const subtotal = sellerCommissionInvoice.subtotal || 0;
     const discountTotal = sellerCommissionInvoice.discountTotal || 0;
-    const commissionTotal = calcSellerCommissionTotal(subtotal, type, value);
+    const commissionTotal = calcSellerCommissionAmount(subtotal, type, value);
 
     if (discountTotal + commissionTotal > subtotal + 0.01) {
       showAlert(t('invoiceTracking.sellerCommissionExceedsSubtotal'), 'Validación');
       return;
     }
 
-    const grandTotal = Math.max(0, Math.round((subtotal - discountTotal - commissionTotal) * 100) / 100);
+    const grandTotal = computeCollectibleTotal({
+      subtotal,
+      discountTotal,
+      commissionTotal,
+      prepaidPercent,
+    });
     const amountPaid = sellerCommissionInvoice.amountPaid || 0;
     const remainingBalance = Math.max(0, Math.round((grandTotal - amountPaid) * 100) / 100);
     let paymentStatus: SalesInvoice['paymentStatus'] = 'Unpaid';
@@ -458,6 +475,7 @@ export default function InvoiceTracking() {
         sellerCommissionType: type,
         sellerCommissionValue: value,
         sellerCommissionTotal: commissionTotal,
+        sellerCommissionPrepaidPercent: prepaidPercent,
         grandTotal,
         remainingBalance,
         paymentStatus,
@@ -466,6 +484,8 @@ export default function InvoiceTracking() {
       setShowSellerCommissionModal(false);
       setSellerCommissionInvoice(null);
       setSellerCommissionValue('');
+      setSellerCommissionPrepaid(false);
+      setSellerCommissionPrepaidPercent('100');
       await loadInvoices();
     } catch (error) {
       console.error('Error saving seller commission:', error);
@@ -2106,35 +2126,100 @@ export default function InvoiceTracking() {
                     />
                   </div>
 
-                  <div className="rounded-lg border border-gray-200 p-3 text-sm">
-                    <div className="mb-1 flex justify-between">
-                      <span>{t('invoiceTracking.sellerCommission')}:</span>
-                      <span className="font-semibold tabular-nums text-red-600">
-                        -$
-                        {calcSellerCommissionTotal(
-                          sellerCommissionInvoice.subtotal || 0,
-                          sellerCommissionType,
-                          parseFloat(sellerCommissionValue) || 0
-                        ).toFixed(2)}
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                    <label className="flex cursor-pointer items-start gap-2">
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={sellerCommissionPrepaid}
+                        disabled={savingSellerCommission}
+                        onChange={(e) => {
+                          setSellerCommissionPrepaid(e.target.checked);
+                          if (e.target.checked && !sellerCommissionPrepaidPercent.trim()) {
+                            setSellerCommissionPrepaidPercent('100');
+                          }
+                        }}
+                      />
+                      <span>
+                        <span className="block text-sm font-medium text-gray-800">
+                          {t('invoiceTracking.sellerCommissionPrepaid')}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-gray-600">
+                          {t('invoiceTracking.sellerCommissionPrepaidHint')}
+                        </span>
                       </span>
-                    </div>
-                    <div className="flex justify-between border-t border-gray-200 pt-2 font-bold text-[#515151]">
-                      <span>{t('invoiceTracking.grandTotal')}:</span>
-                      <span className="tabular-nums">
-                        $
-                        {Math.max(
-                          0,
-                          (sellerCommissionInvoice.subtotal || 0) -
-                            (sellerCommissionInvoice.discountTotal || 0) -
-                            calcSellerCommissionTotal(
-                              sellerCommissionInvoice.subtotal || 0,
-                              sellerCommissionType,
-                              parseFloat(sellerCommissionValue) || 0
-                            )
-                        ).toFixed(2)}
-                      </span>
-                    </div>
+                    </label>
+                    {sellerCommissionPrepaid && (
+                      <div className="mt-3">
+                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                          {t('invoiceTracking.sellerCommissionPrepaidPercent')}
+                        </label>
+                        <input
+                          type="number"
+                          step="1"
+                          min="1"
+                          max="100"
+                          value={sellerCommissionPrepaidPercent}
+                          onChange={(e) => setSellerCommissionPrepaidPercent(e.target.value)}
+                          placeholder="100"
+                          disabled={savingSellerCommission}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-transparent focus:ring-2 focus:ring-[#515151]"
+                        />
+                      </div>
+                    )}
                   </div>
+
+                  {(() => {
+                    const commissionPreview = calcSellerCommissionAmount(
+                      sellerCommissionInvoice.subtotal || 0,
+                      sellerCommissionType,
+                      parseFloat(sellerCommissionValue) || 0
+                    );
+                    const prepaidPct = sellerCommissionPrepaid
+                      ? normalizePrepaidPercent(parseFloat(sellerCommissionPrepaidPercent) || 0)
+                      : 0;
+                    const prepaidAmount = Math.round(commissionPreview * (prepaidPct / 100) * 100) / 100;
+                    const collectible = computeCollectibleTotal({
+                      subtotal: sellerCommissionInvoice.subtotal || 0,
+                      discountTotal: sellerCommissionInvoice.discountTotal || 0,
+                      commissionTotal: commissionPreview,
+                      prepaidPercent: prepaidPct,
+                    });
+                    const paid = sellerCommissionInvoice.amountPaid || 0;
+                    const remaining = Math.max(0, Math.round((collectible - paid) * 100) / 100);
+                    return (
+                      <div className="rounded-lg border border-gray-200 p-3 text-sm">
+                        <div className="mb-1 flex justify-between">
+                          <span>{t('invoiceTracking.sellerCommission')}:</span>
+                          <span className="font-semibold tabular-nums text-red-600">
+                            -${commissionPreview.toFixed(2)}
+                          </span>
+                        </div>
+                        {prepaidPct > 0 && (
+                          <div className="mb-1 flex justify-between text-amber-800">
+                            <span>
+                              {t('invoiceTracking.sellerCommissionPrepaidLabel')} ({prepaidPct}%):
+                            </span>
+                            <span className="font-semibold tabular-nums">
+                              +${prepaidAmount.toFixed(2)}
+                            </span>
+                          </div>
+                        )}
+                        <div className="mb-1 flex justify-between border-t border-gray-200 pt-2 font-bold text-[#515151]">
+                          <span>{t('invoiceTracking.amountToCollect')}:</span>
+                          <span className="tabular-nums">${collectible.toFixed(2)}</span>
+                        </div>
+                        <div className="mb-1 flex justify-between text-gray-600">
+                          <span>{t('invoiceTracking.amountPaid')}:</span>
+                          <span className="tabular-nums">${paid.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between font-semibold text-red-700">
+                          <span>{t('invoiceTracking.remainingBalance')}:</span>
+                          <span className="tabular-nums">${remaining.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 

@@ -248,18 +248,36 @@ export default function SalesInvoiceDetailsModal({
                 </div>
                 {(Number(invoice.sellerCommissionTotal || 0) > 0 ||
                   Number(invoice.sellerCommissionValue || 0) > 0) && (
-                  <div className="flex justify-between">
-                    <span>
-                      {t('invoiceTracking.sellerCommission')}
-                      {invoice.sellerCommissionType === 'percentage'
-                        ? ` (${invoice.sellerCommissionValue}%)`
-                        : ''}
-                      :
-                    </span>
-                    <span className="font-medium text-red-600 tabular-nums">
-                      -${Number(invoice.sellerCommissionTotal || 0).toFixed(2)}
-                    </span>
-                  </div>
+                  <>
+                    <div className="flex justify-between">
+                      <span>
+                        {t('invoiceTracking.sellerCommission')}
+                        {invoice.sellerCommissionType === 'percentage'
+                          ? ` (${invoice.sellerCommissionValue}%)`
+                          : ''}
+                        :
+                      </span>
+                      <span className="font-medium text-red-600 tabular-nums">
+                        -${Number(invoice.sellerCommissionTotal || 0).toFixed(2)}
+                      </span>
+                    </div>
+                    {(Number(invoice.sellerCommissionPrepaidPercent) || 0) > 0 && (
+                      <div className="flex justify-between text-amber-800">
+                        <span>
+                          {t('invoiceTracking.sellerCommissionPrepaidLabel')} (
+                          {invoice.sellerCommissionPrepaidPercent}%):
+                        </span>
+                        <span className="font-medium tabular-nums">
+                          +$
+                          {(
+                            (Number(invoice.sellerCommissionTotal || 0) *
+                              Number(invoice.sellerCommissionPrepaidPercent || 0)) /
+                            100
+                          ).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                  </>
                 )}
                 <div className="flex justify-between border-t border-gray-300 pt-2 text-lg font-bold text-[#515151]">
                   <span>{t('invoiceTracking.grandTotal')}:</span>

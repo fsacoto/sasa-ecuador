@@ -1383,12 +1383,16 @@ export default function Consignments() {
     // Preserve seller commission previously set in Entregas y cobros; recalculate on new subtotal.
     const sellerCommissionType = existing?.sellerCommissionType || 'percentage';
     const sellerCommissionValue = existing?.sellerCommissionValue || 0;
+    const sellerCommissionPrepaidPercent = existing?.sellerCommissionPrepaidPercent || 0;
     const sellerCommissionTotal = roundMoney2(
       sellerCommissionType === 'percentage'
         ? (subtotal * sellerCommissionValue) / 100
         : sellerCommissionValue
     );
-    const grandTotal = roundMoney2(Math.max(0, subtotal - sellerCommissionTotal));
+    const appliedCommission = roundMoney2(
+      sellerCommissionTotal * (1 - Math.min(100, Math.max(0, sellerCommissionPrepaidPercent)) / 100)
+    );
+    const grandTotal = roundMoney2(Math.max(0, subtotal - appliedCommission));
 
     const payment = paymentFieldsForAdjustedNote(grandTotal, existing);
 
@@ -1405,6 +1409,7 @@ export default function Consignments() {
         sellerCommissionType,
         sellerCommissionValue,
         sellerCommissionTotal,
+        sellerCommissionPrepaidPercent,
         grandTotal,
         notes: notesBase,
         deliveryStatus: 'Delivered',

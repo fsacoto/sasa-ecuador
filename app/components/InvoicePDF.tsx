@@ -453,6 +453,23 @@ export default function InvoicePDF({
               </View>
             )}
 
+            {(invoice.sellerCommissionPrepaidPercent || 0) > 0 &&
+              (invoice.sellerCommissionTotal || 0) > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>
+                  {t('pdf.invoice.sellerCommissionPrepaid')} ({invoice.sellerCommissionPrepaidPercent}%)
+                </Text>
+                <Text style={styles.summaryValue}>
+                  +$
+                  {pdfMoney(
+                    ((invoice.sellerCommissionTotal || 0) *
+                      (invoice.sellerCommissionPrepaidPercent || 0)) /
+                      100
+                  )}
+                </Text>
+              </View>
+            )}
+
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>{t('pdf.invoice.total')}</Text>
               <Text style={styles.totalValue}>${pdfMoney(invoice.grandTotal)}</Text>

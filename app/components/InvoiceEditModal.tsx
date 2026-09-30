@@ -19,6 +19,7 @@ import {
 import { getAllInvoices } from '../services/invoicesService';
 import { useDarkMode } from '../hooks/useDarkMode';
 import ModalPortal from './ui/ModalPortal';
+import { computeCollectibleTotal } from '../utils/sellerCommission';
 
 export type InvoiceEditModalProps = {
   invoice: SalesInvoice | null;
@@ -268,7 +269,12 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
   };
 
   const calculateEditGrandTotal = () =>
-    Math.max(0, calculateEditSubtotal() - calculateEditDiscount() - calculateEditSellerCommission());
+    computeCollectibleTotal({
+      subtotal: calculateEditSubtotal(),
+      discountTotal: calculateEditDiscount(),
+      commissionTotal: calculateEditSellerCommission(),
+      prepaidPercent: invoice?.sellerCommissionPrepaidPercent || 0,
+    });
 
   /** Clamp quantityDelivered so it never exceeds the new line quantity after edits. */
   const clampEditItemsDelivered = (inv: SalesInvoice): SalesInvoiceLine[] => {
@@ -522,6 +528,7 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
         sellerCommissionType: editSellerCommissionType,
         sellerCommissionValue: editSellerCommissionValue,
         sellerCommissionTotal: calculateEditSellerCommission(),
+        sellerCommissionPrepaidPercent: inv.sellerCommissionPrepaidPercent || 0,
         grandTotal: newGrandTotal,
         remainingBalance: newRemainingBalance,
         paymentStatus: newPaymentStatus,
@@ -885,6 +892,22 @@ export default function InvoiceEditModal({ invoice, onClose, onSaved }: InvoiceE
               <span>{t('invoiceTracking.sellerCommission')}:</span>
               <span className="font-semibold">${calculateEditSellerCommission().toFixed(2)}</span>
             </div>
+            {(invoice?.sellerCommissionPrepaidPercent || 0) > 0 && (
+              <div className="mb-2 flex justify-between text-amber-800">
+                <span>
+                  {t('invoiceTracking.sellerCommissionPrepaidLabel')} (
+                  {invoice?.sellerCommissionPrepaidPercent}%):
+                </span>
+                <span className="font-semibold">
+                  +$
+                  {(
+                    (calculateEditSellerCommission() *
+                      Number(invoice?.sellerCommissionPrepaidPercent || 0)) /
+                    100
+                  ).toFixed(2)}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between border-t pt-2 text-xl font-bold text-[#515151]">
               <span>{t('invoiceTracking.grandTotal')}:</span>
               <span>${calculateEditGrandTotal().toFixed(2)}</span>

@@ -82,7 +82,8 @@ function marginPercent(profit: number, revenue: number): number {
 
 /**
  * Net sales revenue for an invoice.
- * Explicitly excludes discount and seller commission so commission never counts as income.
+ * Always excludes the full seller commission (never counts as income),
+ * even when that commission was prepaid to the seller.
  */
 export function invoiceRevenueTotal(invoice: SalesInvoice): number {
   const subtotal = Number(invoice.subtotal) || 0;

@@ -301,10 +301,15 @@ export interface SalesInvoice {
   discountType?: 'percentage' | 'flat';
   discountValue: number;
   discountTotal: number;
-  /** Comisión a la vendedora (consignaciones u otras notas). Reduce el total como un descuento. */
+  /** Comisión a la vendedora (consignaciones u otras notas). */
   sellerCommissionType?: 'percentage' | 'flat';
   sellerCommissionValue?: number;
   sellerCommissionTotal?: number;
+  /**
+   * % de la comisión ya pagada a la vendedora por adelantado (0–100).
+   * Esa parte no reduce el saldo que el cliente debe.
+   */
+  sellerCommissionPrepaidPercent?: number;
   grandTotal: number;
   date: Date;
   notes?: string;
