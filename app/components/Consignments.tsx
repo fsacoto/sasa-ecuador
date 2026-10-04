@@ -41,6 +41,10 @@ import ConsignmentSaleModal, { ConsignmentSaleSubmitParams } from './Consignment
 import ConsignmentSaleDetailModal from './ConsignmentSaleDetailModal';
 import ConsignmentPrintModal from './ConsignmentPrintModal';
 import ConsignmentCatalogModal from './ConsignmentCatalogModal';
+import ConsignmentDuplicateModal, {
+  type DuplicateDraftItem,
+  type DuplicateMode,
+} from './ConsignmentDuplicateModal';
 import SalesInvoiceDetailsModal from './SalesInvoiceDetailsModal';
 import { HUB_GROUP_STACK_ICON_PATH } from '../constants/businessHubUi';
 import { formatDateDMY } from '../utils/formatDate';
@@ -220,6 +224,7 @@ export default function Consignments() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
+  const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
   const listToolbarRef = useRef<HTMLDivElement>(null);
   const groupByDropdownRef = useRef<HTMLDivElement>(null);
   
@@ -1113,22 +1118,26 @@ export default function Consignments() {
     return 'Open';
   };
 
-  const handleCreateConsignment = async () => {
-    if (isCreatingConsignmentRef.current) return;
+  const createConsignmentFromDraft = async (
+    client: Client,
+    draftItems: DraftConsignmentItem[],
+    options?: { successMessage?: (consignmentId: string) => string }
+  ): Promise<Consignment | null> => {
+    if (isCreatingConsignmentRef.current) return null;
 
-    if (!selectedClient) {
+    if (!client) {
       showAlert(t('consignments.pleaseSelectClient'), 'Validation Error');
-      return;
+      return null;
     }
 
-    if (consignmentItems.length === 0) {
+    if (draftItems.length === 0) {
       showAlert(t('consignments.pleaseAddItems'), 'Validation Error');
-      return;
+      return null;
     }
 
     // Check free stock (ecuador − reserved notes). Units already on consignments
     // are out of ecuadorStock and cannot be taken again.
-    for (const item of consignmentItems) {
+    for (const item of draftItems) {
       const inventoryItem = inventory.find(inv => inv.sku === item.sku);
       const available = inventoryItem ? getAvailableStock(inventoryItem) : 0;
       if (!inventoryItem || available < item.quantity) {
@@ -1139,7 +1148,7 @@ export default function Consignments() {
           }),
           'Stock Error'
         );
-        return;
+        return null;
       }
     }
 
@@ -1147,8 +1156,7 @@ export default function Consignments() {
     setIsCreatingConsignment(true);
 
     try {
-      // Create consignment items
-      const consignmentItemsData: ConsignmentItem[] = consignmentItems.map(item => {
+      const consignmentItemsData: ConsignmentItem[] = draftItems.map(item => {
         const unitPrice = parseSalePriceInput(item.unitPriceInput);
         return {
           sku: item.sku,
@@ -1162,12 +1170,11 @@ export default function Consignments() {
         };
       });
 
-      const clientAddress = formatClientAddress(selectedClient);
+      const clientAddress = formatClientAddress(client);
 
-      // Create consignment
       const newConsignment = await createConsignment({
-        clientId: selectedClient.id,
-        clientName: selectedClient.name,
+        clientId: client.id,
+        clientName: client.name,
         clientAddress,
         items: consignmentItemsData,
         status: 'Open',
@@ -1175,7 +1182,7 @@ export default function Consignments() {
       });
 
       // Move inventory from free Ecuador stock to consignment stock (never touch reserved note holds).
-      for (const item of consignmentItems) {
+      for (const item of draftItems) {
         const inventoryItem = inventory.find(inv => inv.sku === item.sku);
         if (!inventoryItem) continue;
         const available = getAvailableStock(inventoryItem);
@@ -1204,11 +1211,13 @@ export default function Consignments() {
         });
       }
 
-      const createdConsignmentId = String(newConsignment.consignmentId ?? '').trim();
+      const createdConsignmentId = String(newConsignment.consignmentId ?? '').trim() || '—';
       showAlert(
-        formatTemplate(t('consignments.consignmentCreated'), {
-          consignmentId: createdConsignmentId || '—',
-        }),
+        options?.successMessage
+          ? options.successMessage(createdConsignmentId)
+          : formatTemplate(t('consignments.consignmentCreated'), {
+              consignmentId: createdConsignmentId,
+            }),
         t('consignments.consignmentCreatedTitle')
       );
       setView('list');
@@ -1217,12 +1226,59 @@ export default function Consignments() {
       setLastAddedSku(null);
       setItemEntryMode(null);
       loadConsignments();
+      return newConsignment;
     } catch (error) {
       console.error('Error creating consignment:', error);
       showAlert(t('consignments.errorCreating'), t('common.error'));
+      return null;
     } finally {
       isCreatingConsignmentRef.current = false;
       setIsCreatingConsignment(false);
+    }
+  };
+
+  const handleCreateConsignment = async () => {
+    if (!selectedClient) {
+      showAlert(t('consignments.pleaseSelectClient'), 'Validation Error');
+      return;
+    }
+    await createConsignmentFromDraft(selectedClient, consignmentItems);
+  };
+
+  const handleDuplicateConfirm = async (payload: {
+    source: Consignment;
+    client: Client;
+    mode: DuplicateMode;
+    items: DuplicateDraftItem[];
+    createOnlyAvailable: boolean;
+  }) => {
+    const draftItems: DraftConsignmentItem[] = payload.items.map((item) => ({
+      sku: item.sku,
+      description: item.description,
+      quantity: item.quantity,
+      line: item.line,
+      category: item.category,
+      unitPriceInput: item.unitPriceInput,
+      imageUrl: item.imageUrl,
+    }));
+
+    const units = draftItems.reduce((sum, item) => sum + item.quantity, 0);
+    const created = await createConsignmentFromDraft(payload.client, draftItems, {
+      successMessage: (consignmentId) =>
+        formatTemplate(t('consignments.duplicateSuccess'), {
+          consignmentId,
+          sourceId: payload.source.consignmentId,
+          mode:
+            payload.mode === 'returned'
+              ? t('consignments.duplicateModeReturnedShort')
+              : t('consignments.duplicateModeAllShort'),
+          skus: String(draftItems.length),
+          units: String(units),
+        }),
+    });
+
+    if (created) {
+      setDuplicateModalOpen(false);
     }
   };
 
@@ -2052,6 +2108,22 @@ export default function Consignments() {
               {t('consignments.generateCatalog')}
             </button>
             <button
+              type="button"
+              onClick={() => setDuplicateModalOpen(true)}
+              disabled={consignments.length === 0 || loading || isCreatingConsignment}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                />
+              </svg>
+              {t('consignments.duplicate')}
+            </button>
+            <button
               onClick={() => setView('create')}
               className="px-4 py-2 bg-[#515151] text-white rounded-lg hover:bg-[#000000] transition-colors"
             >
@@ -2469,6 +2541,19 @@ export default function Consignments() {
             inventory={inventory}
             onClose={() => setCatalogModalOpen(false)}
             onError={(message) => showAlert(message, t('common.error'))}
+          />
+        ) : null}
+        {duplicateModalOpen ? (
+          <ConsignmentDuplicateModal
+            consignments={consignments}
+            clients={clients}
+            inventory={inventory}
+            openInvoices={openInvoices}
+            submitting={isCreatingConsignment}
+            onClose={() => {
+              if (!isCreatingConsignment) setDuplicateModalOpen(false);
+            }}
+            onConfirm={handleDuplicateConfirm}
           />
         ) : null}
         {/* Delete Confirmation Dialog */}
