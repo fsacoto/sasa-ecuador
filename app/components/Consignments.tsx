@@ -65,6 +65,7 @@ import {
   activeConsignmentSales,
   aggregateConsignmentSaleLines,
   applyRegisterSaleQuantities,
+  consignmentMerchandiseTotal,
   createConsignmentSaleId,
   paymentFieldsForAdjustedNote,
   pendingConsignmentSales,
@@ -2954,6 +2955,25 @@ export default function Consignments() {
     const detailSold = calculateTotalSold(detailItems);
     const detailReturned = calculateTotalReturned(detailItems);
     const detailRemaining = calculateTotalRemaining(detailItems);
+    // Live editors (price / qty) so the merchandise total matches what the user sees.
+    const detailMerchandiseTotal = consignmentMerchandiseTotal(
+      detailItems.map((item, index) => {
+        const priceRaw = detailUnitPrices[index];
+        const price =
+          priceRaw !== undefined
+            ? parseSalePriceInput(priceRaw)
+            : normalizeSalePrice(item.unitPrice);
+        const qtyRaw = (detailDeliveredQtys[index] ?? '').trim();
+        const qty =
+          qtyRaw !== ''
+            ? Math.max(0, Math.floor(Number(qtyRaw) || 0))
+            : Math.max(0, Number(item.quantityDelivered) || 0);
+        return {
+          quantityDelivered: qty,
+          ...(price !== undefined ? { unitPrice: price } : {}),
+        };
+      })
+    );
     const detailFilteredInventory = getFilteredInventory(detailAddSearchTerm);
     const detailStatus = detailDirty
       ? computeItemsStatus(detailItems)
@@ -3077,12 +3097,16 @@ export default function Consignments() {
           </div>
 
           {/* Resumen */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {[
-              { label: t('consignments.totalItemsDelivered'), value: detailDelivered },
-              { label: t('consignments.totalSold'), value: detailSold },
-              { label: t('consignments.totalReturned'), value: detailReturned },
-              { label: t('consignments.remaining'), value: detailRemaining },
+              { label: t('consignments.totalItemsDelivered'), value: String(detailDelivered) },
+              { label: t('consignments.totalSold'), value: String(detailSold) },
+              { label: t('consignments.totalReturned'), value: String(detailReturned) },
+              { label: t('consignments.remaining'), value: String(detailRemaining) },
+              {
+                label: t('consignments.merchandiseTotal'),
+                value: formatSalePriceDisplay(detailMerchandiseTotal),
+              },
             ].map((stat) => (
               <div key={stat.label} className="sasa-consignment-stat rounded-xl px-4 py-3">
                 <div className="text-xs font-medium uppercase tracking-wider text-gray-500">{stat.label}</div>

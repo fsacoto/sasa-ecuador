@@ -9,6 +9,7 @@ import { formatSalePriceDisplay, normalizeSalePrice } from '../utils/salePrice';
 import {
   consignmentItemLineOutcome,
   consignmentItemRemaining,
+  consignmentMerchandiseTotal,
 } from '../utils/consignmentSales';
 
 const translate = (key: string): string => {
@@ -460,6 +461,7 @@ function ConsignmentNotePages({
     (sum, item) => sum + consignmentItemRemaining(item),
     0
   );
+  const merchandiseTotal = consignmentMerchandiseTotal(consignment.items);
 
   return (
     <Page size="A4" style={styles.page}>
@@ -568,6 +570,12 @@ function ConsignmentNotePages({
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>{t('pdf.consignment.totalItemsDelivered')}</Text>
             <Text style={styles.summaryValue}>{totalItemsDelivered}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>{t('pdf.consignment.merchandiseTotal')}</Text>
+            <Text style={styles.summaryValue}>
+              {formatSalePriceDisplay(merchandiseTotal)}
+            </Text>
           </View>
           {markItemOutcomes ? (
             <>

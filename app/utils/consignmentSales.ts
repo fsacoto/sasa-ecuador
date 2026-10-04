@@ -7,9 +7,24 @@ import {
   SalesInvoice,
   SalesInvoiceLine,
 } from '../types';
+import { normalizeSalePrice } from './salePrice';
 
 export function roundMoney2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/** Sum of unit sale price × quantity delivered (skips lines without a price). */
+export function consignmentMerchandiseTotal(
+  items: Pick<ConsignmentItem, 'unitPrice' | 'quantityDelivered'>[]
+): number {
+  return roundMoney2(
+    items.reduce((sum, item) => {
+      const price = normalizeSalePrice(item.unitPrice);
+      if (price === undefined) return sum;
+      const qty = Math.max(0, Number(item.quantityDelivered) || 0);
+      return sum + price * qty;
+    }, 0)
+  );
 }
 
 export function consignmentItemRemaining(
